@@ -42,6 +42,21 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   from their games outside the stack (see below).
 - **Each match:** map, mode, score, date, each member's line, and (when the full
   match record is fetched) game length, ranks and whether all five shared a party.
+- **Visualizations tab:** charts built from all of the above. Each has a
+  one-line takeaway, hover details and a table view:
+  - record in close games vs. blowouts, win rate after a win vs. after a loss,
+    and first game of the night vs. later games
+  - form over time (rolling 10-game win rate plus every game's round margin)
+  - when you win: day of week × time of day, in your local time
+  - whether the squad fades later in a night
+  - each player's ACS on each map against their own average
+  - who swings results (ACS in wins vs. losses)
+  - aim profile (head / body / legs)
+  - share of team damage, game by game
+  - team comps by role mix
+  - bettor profit over time
+
+  A "night" is a run of games with no break over 3 hours.
 
 Only modes listed under `modes` count. The default is `competitive`, `unrated`
 and `premier`; deathmatch and other non-5v5 modes are ignored so averages stay
@@ -204,11 +219,12 @@ fivestack/             the backend package
   henrik.py            HenrikDev API client
   db.py                SQLite schema and queries (data/tracker.db)
   stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
+  insights.py          datasets for the Visualizations tab (sessions, comps, damage share, ...)
   odds.py              odds engine
   bets.py              betting ledger and settlement
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
-web/                   index.html, app.js, style.css (no build step)
+web/                   index.html, app.js, viz.js (charts), style.css (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```

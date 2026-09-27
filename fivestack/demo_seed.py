@@ -4,12 +4,12 @@ import time
 import uuid
 
 MEMBERS = [
-    # name, tag, nickname, agent pool, skill multiplier, skill multiplier outside the 5-stack
+    # name, tag, nickname, agent pool (repeats weight a pick), skill multiplier, skill outside the 5-stack
     ("Matt", "5STK", "Matt", ["Jett", "Raze", "Neon", "Reyna"], 1.10, 1.02),
-    ("Jordan", "DUEL", "Jordan", ["Omen", "Astra", "Clove"], 0.95, 0.96),
+    ("Jordan", "DUEL", "Jordan", ["Omen", "Astra", "Clove", "Omen", "Sova"], 0.95, 0.96),
     ("Sam", "SMOKE", "Sam", ["Sova", "Fade", "Gekko"], 1.00, 1.12),
-    ("Alex", "FLASH", "Alex", ["Killjoy", "Cypher", "Vyse"], 0.90, 0.78),
-    ("Riley", "INFO", "Riley", ["Phoenix", "Yoru", "Iso", "Jett"], 1.05, 1.07),
+    ("Alex", "FLASH", "Alex", ["Killjoy", "Cypher", "Vyse", "Killjoy", "Viper"], 0.90, 0.78),
+    ("Riley", "INFO", "Riley", ["Phoenix", "Yoru", "Iso", "Jett", "Skye", "Fade"], 1.05, 1.07),
 ]
 MAPS = ["Ascent", "Bind", "Haven", "Lotus", "Sunset", "Abyss", "Corrode", "Split", "Pearl"]
 MAP_EDGE = {
@@ -62,9 +62,23 @@ def seed(db, games=48, seed=7):
         _seed_stack(db, rng, games)
     if not db.count_member_games():
         _seed_other_games(db, random.Random(seed + 1))
-    for n in ("Matt", "Jordan"):
-        if not db.get_bettor(n):
-            db.create_bettor(n, 1000)
+    if not db.bets():
+        _seed_bets(db, random.Random(seed + 2))
+
+
+def _game_times(rng, games):
+    """Evening sessions of 1-4 games (UTC evening/late night, longer on weekends), oldest first."""
+    times, day = [], time.time() - 42 * 86400
+    while len(times) < games:
+        day += rng.choice([1, 1, 1, 2, 2, 3]) * 86400
+        weekend = time.gmtime(day).tm_wday >= 5
+        start = day - day % 86400 + rng.choice([19, 21, 22, 23, 24, 25, 26] if weekend else [23, 24, 24, 25, 26]) * 3600
+        count = rng.choice([1, 2, 2, 3, 3, 4] + ([4, 5] if weekend else []))
+        for k in range(count):
+            times.append(start + k * rng.uniform(38, 52) * 60)
+    times = times[:games]
+    shift = (time.time() - 86400 - times[-1]) // 86400 * 86400  # whole days, so times of day are kept
+    return [t + shift for t in times]
 
 
 def _seed_stack(db, rng, games):
@@ -73,11 +87,13 @@ def _seed_stack(db, rng, games):
     members = db.members()
     profile = {m[0]: m for m in MEMBERS}
 
-    t = time.time() - games * 86400 * 0.9
-    for _ in range(games):
-        t += rng.uniform(0.3, 1.6) * 86400
+    prev = None
+    in_session = 0
+    for t in _game_times(rng, games):
+        in_session = in_session + 1 if prev and t - prev < 3 * 3600 else 1
+        prev = t
         map_name = rng.choice(MAPS)
-        win = rng.random() < MAP_EDGE[map_name]
+        win = rng.random() < MAP_EDGE[map_name] - 0.06 * (in_session - 1)  # the squad fades late at night
         rw, rl = _score(rng, win)
         rounds = rw + rl
         mode = "Competitive" if rng.random() < 0.8 else "Unrated"
@@ -137,3 +153,33 @@ def _member_game(match, line):
                                   "rounds_won", "rounds_lost", "result")}
     row.update({k: v for k, v in line.items() if k not in ("tier", "tier_name")})
     return row
+
+
+def _seed_bets(db, rng):
+    """Three bettors with a settled history on the most recent games, so the betting views have data."""
+    bettors = [("Matt", 0.06), ("Jordan", -0.06), ("Sam", 0.0)]  # name, edge over the book
+    base = time.time() - 60 * 86400
+    for i, (name, _edge) in enumerate(bettors):
+        if not db.get_bettor(name):
+            db.execute("INSERT INTO bettors(name, balance, created_at) VALUES(?,?,?)", (name, 1000, base + i))
+    members = db.members()
+    stats = [("kills", "kills", 16.5), ("acs", "ACS", 205.5), ("assists", "assists", 5.5), ("deaths", "deaths", 15.5)]
+    for m in db.matches(30):
+        for name, edge in bettors:
+            if rng.random() > 0.6:
+                continue
+            who = rng.choice(members)
+            key, label, line = rng.choice(stats)
+            side = rng.choice(["over", "under"])
+            odds = round(rng.uniform(1.6, 2.8), 2)
+            stake = float(rng.choice([25, 50, 50, 75, 100, 150]))
+            won = rng.random() < min(0.9, 0.95 / odds + edge)
+            bet_id = db.insert_bet({
+                "bettor": name, "market_id": f"ou:{key}:{who['puuid']}", "market_type": "ou",
+                "description": f"{who['nickname'] or who['name']} {label} {side} {line}", "selection": side,
+                "selection_label": f"{side.capitalize()} {line}", "line": line, "odds_decimal": odds, "stake": stake,
+                "placed_ts": m["started_ts"] - 1800, "context": "{}", "status": "won" if won else "lost",
+            })
+            payout = round(stake * odds, 2) if won else 0.0
+            db.update_bet(bet_id, settled_match_id=m["match_id"], settled_ts=m["started_ts"] + 2700, payout=payout)
+            db.adjust_balance(name, payout - stake)

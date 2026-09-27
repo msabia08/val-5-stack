@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
+from fivestack.insights import build_insights  # noqa: E402
 from fivestack.odds import OddsEngine  # noqa: E402
 from fivestack.stats import build_stats, deviation  # noqa: E402
 from fivestack.tracker import Tracker  # noqa: E402
@@ -237,6 +238,26 @@ def main():
     assert abs(bal - expected) < 0.05, (bal, expected)
     lb = bets.leaderboard()
     assert lb[0]["name"] == "Tester" and lb[0]["won"] == 2 and lb[0]["cancelled"] == 2, lb
+
+    # --- visualizations datasets ------------------------------------------
+    # Games: m1 (Ascent, W 13-9, all Jett), m3 (Bind, L 11-13, all Sova), m9 (Haven, W 13-7, all Jett), days apart.
+    ins = build_insights(db)
+    assert [g["match_id"] for g in ins["games"]] == ["m1", "m3", "m9"], ins["games"]
+    assert [g["margin"] for g in ins["games"]] == [4, -2, 6] and all(g["form"] is None for g in ins["games"])
+    assert [g["session"] for g in ins["games"]] == [1, 2, 3] and ins["moments"]["sessions"] == 3
+    mo = ins["moments"]
+    assert (mo["close"]["wins"], mo["close"]["losses"]) == (0, 1) and (mo["blowout"]["wins"], mo["blowout"]["losses"]) == (1, 0), mo
+    assert mo["after_win"]["games"] == 0 and mo["after_loss"]["games"] == 0  # momentum only counts within a night
+    assert ins["session_games"][0]["games"] == 3 and ins["session_games"][0]["wins"] == 2
+    assert [(c["key"], c["games"], c["wins"]) for c in ins["comps"]] == [("5D", 2, 2), ("5I", 1, 0)], ins["comps"]
+    m9 = ins["games"][2]
+    assert abs(sum(m9["damage_share"].values()) - 1) < 1e-9 and abs(m9["damage_share"]["puuid-2"] - 0.2) < 1e-9
+    ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
+    assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
+    assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
+    (roll,) = ins["bankroll"]  # cancelled bets are left out; the two winners are
+    assert roll["name"] == "Tester" and len(roll["points"]) == 2, roll
+    assert abs(roll["points"][-1]["profit"] - (100 * (bet["odds_decimal"] - 1) + 50 * (bet2["odds_decimal"] - 1))) < 0.05, roll
 
     # Second sync: nothing new, no duplicates, no re-verification of rejected ids.
     calls_before = client.calls

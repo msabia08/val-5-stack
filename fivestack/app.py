@@ -22,6 +22,7 @@ from .bets import BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_config, mask
 from .db import DB
 from .henrik import HenrikClient
+from .insights import build_insights
 from .odds import OddsEngine
 from .stats import build_stats
 from .tracker import Tracker
@@ -246,6 +247,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(app.status())
         if path == "/api/stats":
             return self._json(build_stats(app.db))
+        if path == "/api/insights":
+            return self._json(build_insights(app.db))
         if path == "/api/content":
             return self._json(app.content())
         if path == "/api/matches":
