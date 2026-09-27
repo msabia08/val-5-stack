@@ -38,6 +38,8 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
 - **Each player:** games, win rate, ACS (combat score per round), K/D, KDA,
   kills / deaths / assists per game, ADR, headshot %, kills per round, plus the
   same breakdown **per agent** and **per map**, recent form and best games.
+- **5-stack vs. their other games:** how each player's 5-stack numbers differ
+  from their games outside the stack (see below).
 - **Each match:** map, mode, score, date, each member's line, and (when the full
   match record is fetched) game length, ranks and whether all five shared a party.
 
@@ -53,6 +55,25 @@ shows up for **every** member, with everyone on the same team, is a 5-stack
 game. Stored history can have holes, so when a match shows up for all but one
 member the full match record is fetched to check whether the missing member was
 in it too. Anything else is remembered as rejected so it is never re-checked.
+
+## 5-stack vs. their other games
+
+The same stored-match responses also contain every game each member played
+without the full stack (solo queue, duos, 3- and 4-stacks). Those games, in the
+tracked `modes`, are kept as each player's baseline, so this costs no extra API
+calls. The Players page compares the two on ACS, kills / deaths / assists per
+round, ADR, headshot %, K/D and win rate.
+
+A difference is labelled **better** or **worse** when it is about two standard
+errors or more (judged from how much the stat swings game to game on each side),
+**slightly** better or worse between one and two, and *no real change* below
+that. Nothing is judged until both sides have at least 5 games. Stats rise and
+fall with winning, so part of a gap can reflect the stack's win rate rather than
+the player.
+
+A database created before this feature existed only holds 5-stack games; the
+first sync after upgrading fetches everyone's full history once to fill in the
+baseline.
 
 ## How the odds work
 

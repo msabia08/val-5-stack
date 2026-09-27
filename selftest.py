@@ -14,7 +14,7 @@ from bets import BetError, BetManager  # noqa: E402
 from db import DB  # noqa: E402
 from henrik import HenrikError  # noqa: E402
 from odds import OddsEngine  # noqa: E402
-from stats import build_stats  # noqa: E402
+from stats import build_stats, deviation  # noqa: E402
 from tracker import Tracker  # noqa: E402
 
 MEMBERS = [f"P{i}#TAG" for i in range(1, 6)]
@@ -134,6 +134,31 @@ def main():
     assert p1["overall"]["games"] == 2 and p1["by_map"][0]["games"] == 1
     assert p1["tier_name"] == "Diamond 3"
 
+    # --- 5-stack vs. other games ------------------------------------------
+    # Every counted-mode line is kept (m1, m2, m3, m5; not the deathmatch m4); only m2 and m5 are baseline.
+    assert db.count_member_games() == 5 + 5 + 4 + 3, db.count_member_games()
+    base = db.baseline_rows()
+    assert sorted((r["puuid"], r["match_id"]) for r in base) == sorted(
+        [(f"puuid-{i}", "m2") for i in range(1, 6)] + [(f"puuid-{i}", "m5") for i in range(1, 4)]
+    ), base
+    dv = p1["deviation"]
+    assert dv["stack_games"] == 2 and dv["usual_games"] == 2 and dv["enough"] is False, dv
+    assert all(mt["verdict"] == "too_few" for mt in dv["metrics"]), dv
+    p5 = next(m for m in st["members"] if m["name"] == "P5")
+    assert next(mt for mt in p5["deviation"]["metrics"] if mt["key"] == "win_rate")["usual"] == 0.0  # P5 was on the losing team in m2
+
+    def line(kills, deaths, i):
+        return {"match_id": f"x{i}", "rounds_won": 13, "rounds_lost": 10, "result": "win" if i % 2 else "loss",
+                "kills": kills + i % 3, "deaths": deaths + i % 2, "assists": 4, "score": (kills + i % 3) * 230,
+                "damage_dealt": (kills + i % 3) * 140, "headshots": 5, "bodyshots": 20, "legshots": 1}
+    d = deviation([line(22, 12, i) for i in range(10)], [line(14, 16, i) for i in range(30)])
+    by_key = {mt["key"]: mt for mt in d["metrics"]}
+    assert d["enough"] and by_key["kpr"]["verdict"] == "better" and by_key["kpr"]["diff"] > 0, by_key["kpr"]
+    assert by_key["dpr"]["diff"] < 0 and by_key["dpr"]["verdict"] == "better", by_key["dpr"]  # fewer deaths is better
+    assert by_key["hs_pct"]["verdict"] == "same" and by_key["win_rate"]["verdict"] == "same", by_key
+    assert d["standout"] in ("acs", "kpr", "dpr", "adr", "kd"), d["standout"]
+    assert deviation([line(22, 12, 0)], []) is None
+
     # --- odds -------------------------------------------------------------
     board = engine.build(db, {"map": "Ascent", "agents": {"puuid-1": "Jett"}})
     assert board["ready"]
@@ -185,6 +210,12 @@ def main():
     assert res2["ok"] and res2["new_matches"] == 0, res2
     assert client.calls - calls_before == 5, client.calls - calls_before  # only the 5 stored-match calls
     assert db.count_matches() == 3
+    assert db.count_member_games() == 17  # re-fetched lines are not duplicated
+
+    # A database from before member_games existed gets one full history fetch, then goes back to normal.
+    db.set_meta("history_backfilled", False)
+    assert tracker.sync()["full"] is True and db.get_meta("history_backfilled") is True
+    assert tracker.sync()["full"] is False and db.count_matches() == 3
 
     print("selftest OK")
     print(json.dumps({"first_sync": res, "second_sync": res2, "tester_balance": round(bal, 2),

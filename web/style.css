@@ -145,6 +145,10 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .chip.win { background: rgba(12, 163, 12, 0.18); color: var(--up); }
 .chip.loss { background: rgba(208, 59, 59, 0.16); color: var(--down); }
 .chip.draw { background: var(--surface-2); color: var(--text-2); }
+.dev { font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--muted); }
+.dev.better, .dev.leaning_better { color: var(--up); }
+.dev.worse, .dev.leaning_worse { color: var(--down); }
+.dev.leaning_better, .dev.leaning_worse { font-weight: 500; }
 .form { margin-left: auto; display: flex; gap: 3px; flex-wrap: wrap; }
 
 /* ---- bar chart ------------------------------------------------------ */
