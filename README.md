@@ -1,0 +1,192 @@
+# 5-Stack Tracker
+
+A small local website that follows your Valorant 5-stack through the
+[HenrikDev API](https://docs.henrikdev.xyz). It only counts games where **all
+five of you were on the same team**, keeps per-game averages overall, per agent
+and per map for each player, and turns that history into **betting lines for
+your next game** that the squad can bet on with virtual credits.
+
+No Node, no build step, no third-party packages: Python 3.10+ and a browser.
+
+## Quick start
+
+1. **Get an API key** (free). Open <https://api.henrikdev.xyz/dashboard/>, sign in
+   with Discord, choose *API Keys* and generate a **Basic** key.
+2. **Configure.** Copy `config.example.json` to `config.json` (the server does
+   this for you on first run) and fill in:
+   - `api_key`
+   - `region`: `na`, `eu`, `ap`, `kr`, `latam` or `br`
+   - `members`: the five Riot IDs as `Name#TAG`, with an optional `nickname`
+3. **Run it.**
+   ```
+   python server.py
+   ```
+   or double-click `run.bat`. The site opens at <http://localhost:8080>.
+
+The first sync pulls each member's stored match history and keeps only the
+games where all five of you were together. After that it re-checks every
+`poll_interval_minutes` (default 10), records new 5-stack games and settles any
+open bets.
+
+Want to see it with data before you have a key? Run `python server.py --demo`.
+That uses a separate synthetic database (`data/demo.db`) and never touches the API.
+
+## What it tracks
+
+- **Team:** record, win rate, streak, average round differential, per-map and
+  per-mode records, recent results.
+- **Each player:** games, win rate, ACS (combat score per round), K/D, KDA,
+  kills / deaths / assists per game, ADR, headshot %, kills per round, plus the
+  same breakdown **per agent** and **per map**, recent form and best games.
+- **Each match:** map, mode, score, date, each member's line, and (when the full
+  match record is fetched) game length, ranks and whether all five shared a party.
+
+Only modes listed under `modes` count. The default is `competitive`, `unrated`
+and `premier`; deathmatch and other non-5v5 modes are ignored so averages stay
+comparable.
+
+## How 5-stack detection works
+
+HenrikDev's *stored matches* endpoint returns a player's own line for every
+match the API has stored, and it costs one request per member. A match id that
+shows up for **every** member, with everyone on the same team, is a 5-stack
+game. Stored history can have holes, so when a match shows up for all but one
+member the full match record is fetched to check whether the missing member was
+in it too. Anything else is remembered as rejected so it is never re-checked.
+
+## How the odds work
+
+For each player the history of 5-stack games is turned into a
+recency-weighted sample (half-life `recency_half_life_games`, default 15 games).
+If you pick an expected **map** or an expected **agent** per player on the Odds
+page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`).
+
+- **Player props (over/under):** kills, deaths, assists, ACS, ADR, headshot %.
+  The line sits at the weighted median; the over/under probability comes from a
+  Gaussian-kernel smoothed distribution of past games.
+- **"Who tops the scoreboard" markets:** top fragger, highest ACS, most
+  assists, most deaths, best headshot %. Probabilities come from a Monte Carlo
+  simulation that draws one game per player from their weighted history.
+- **Team markets:** match result and total rounds.
+
+Fair probabilities are then shaded by `house_edge` (default 5%, doubled for the
+multi-way markets), exactly like a sportsbook's vig, and shown as American or
+decimal odds. Players with fewer than a few games borrow the team's pooled
+distribution at low weight and are flagged *low confidence*.
+
+## Betting rules
+
+- Every bettor starts with `starting_balance` credits (default 1000). Just type
+  a name in the bet slip; new names are created on the spot.
+- Bets are on the **next 5-stack game** that starts after the bet is placed, no
+  matter which map ends up being played. Odds are locked when you place the bet.
+- Settlement happens automatically during the sync that records that game.
+  Landing exactly on a line, a tie for a "tops the scoreboard" market, or a draw
+  for the match-result market refunds the stake (void).
+- Pending bets can be cancelled for a full refund until the game is recorded.
+- The **Bettors** tab ranks everyone by balance, with profit against the
+  starting bankroll, record, win rate, ROI, open stakes and recent results.
+- *Reset season* on the Odds page puts everyone back to the starting balance
+  and clears all bets.
+
+## Going online (share it with the squad)
+
+The server can publish itself through a Cloudflare Tunnel, so your friends can
+open it from anywhere while it keeps running on your PC.
+
+1. Make sure `site_password` is set in `config.json` (one is generated for you
+   on the first setup). Everyone logs in with it once per browser. Without a
+   password the tunnel refuses to start.
+2. Run `run-online.bat` (or `python server.py --tunnel`). The first time,
+   `cloudflared` is downloaded into `tools/` automatically.
+3. Open the Setup page. The public link is shown under *Online access* with a
+   Copy button, and it is printed in the console too.
+
+That is a *quick tunnel*: free, no account, HTTPS. The address is random and
+changes every time the server restarts, so re-share it after a reboot.
+
+**Permanent address (optional).** With a domain on Cloudflare: Zero Trust
+dashboard → Networks → Tunnels → *Create a tunnel* → add a public hostname that
+points at `http://localhost:8080` → copy the token. Then set
+`"tunnel": "token"`, `"tunnel_token": "<token>"` and
+`"tunnel_hostname": "stack.yourdomain.com"` in `config.json`. You can also lock
+that hostname behind Cloudflare Access (Zero Trust → Access → Applications) so
+only your friends' email addresses get through; it is free for up to 50 users.
+
+**Start with Windows.** Press Win+R, run `shell:startup`, and drop a shortcut
+to `run-online.bat` in that folder. The server and the tunnel then start every
+time you log in.
+
+**What protects the site**
+
+- Everything except the login page needs the password cookie (30 days, HttpOnly).
+- Eight wrong passwords from one address lock it out for ten minutes.
+- `admin_password` (optional) is asked for on *Reset season*, so nobody wipes
+  the leaderboard by accident.
+- Keep `host` at `127.0.0.1`. The tunnel talks to the server locally and nothing
+  is opened on your router.
+- Bettors are on the honour system: anyone with the password can bet as any name.
+
+## Configuration reference (`config.json`)
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `api_key` | – | HenrikDev key. Can also be given as the `HENRIK_API_KEY` environment variable. |
+| `region` | `na` | Riot affinity of the squad: `na`, `eu`, `ap`, `kr`, `latam`, `br`. |
+| `members` | – | List of `"Name#TAG"` strings or `{ "riot_id": "Name#TAG", "nickname": "Matt" }` objects. |
+| `modes` | competitive, unrated, premier | Modes that count. Empty list = every mode. |
+| `poll_interval_minutes` | 10 | How often to check for new games. |
+| `poll_size` | 40 | Stored matches fetched per member on a regular sync (the first sync fetches everything). |
+| `fetch_match_details` | true | Fetch full match records to verify holes and enrich games. |
+| `details_per_sync` | 6 | Cap on enrichment fetches per sync, to stay well inside the rate limit. |
+| `min_request_interval_s` | 1.5 | Minimum spacing between API requests. |
+| `host` / `port` | `127.0.0.1` / `8080` | Bind address. Use `0.0.0.0` to let friends on your LAN open the site. |
+| `open_browser` | true | Open the site automatically on start. |
+| `site_password` | – | Shared squad password. Required before the tunnel will start. |
+| `admin_password` | – | Optional second password asked for on *Reset season*. |
+| `tunnel` | `off` | `off`, `quick` (random trycloudflare.com address) or `token` (Cloudflare dashboard tunnel). `--tunnel` and `--no-tunnel` override it. |
+| `tunnel_token` / `tunnel_hostname` | – | For `token` mode: the dashboard token and the hostname you assigned. |
+| `house_edge` | 0.05 | Bookmaker margin applied to fair probabilities. |
+| `recency_half_life_games` | 15 | Older games count for less; this many games back a game has half weight. |
+| `map_weight_boost` / `agent_weight_boost` | 2.5 / 2.0 | Extra weight for games matching the chosen map / agent. |
+| `simulations` | 4000 | Monte Carlo draws for the "tops the scoreboard" markets. |
+| `starting_balance` | 1000 | Credits for a new bettor. |
+
+Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
+`--config=path/to/other.json`.
+
+## Rate limits
+
+A Basic key allows about 30 requests per minute, and HenrikDev also counts the
+Riot requests it makes in the background to fill its cache. A regular sync is
+one request per member plus a handful of match-detail fetches, spaced 1.5 s
+apart; the client reads the rate-limit headers and backs off automatically on
+`429`. If a sync fails you will see why on the Setup page and in the console.
+
+## Project layout
+
+```
+server.py        HTTP server + JSON API + login (stdlib http.server)
+tunnel.py        Cloudflare Tunnel runner (downloads cloudflared into tools/)
+tracker.py       member resolution, 5-stack detection, background polling
+henrik.py        HenrikDev API client
+stats.py         aggregation (overall / per agent / per map / team)
+odds.py          odds engine
+bets.py          betting ledger and settlement
+db.py            SQLite schema and queries (data/tracker.db)
+demo_seed.py     synthetic data for --demo
+selftest.py      offline test of detection, stats, odds and settlement
+web/             index.html, app.js, style.css (no build step)
+```
+
+Run `python selftest.py` to check the backend end-to-end without touching the API.
+
+## Notes and limits
+
+- The API is unofficial and rate-limited; keep the poller interval reasonable
+  and do not point several instances at the same key.
+- Stored history only contains matches that HenrikDev has seen for at least one
+  player, so very old games may be missing. Everything from the moment the
+  tracker starts running is captured.
+- Data lives in `data/tracker.db` (SQLite). Delete it to start over; the next
+  sync rebuilds the history.

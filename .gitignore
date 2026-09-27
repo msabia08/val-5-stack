@@ -1,0 +1,10 @@
+# Local secrets and data
+config.json
+data/
+
+# Downloaded binaries (cloudflared)
+tools/
+
+# Python
+__pycache__/
+*.pyc
