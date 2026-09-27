@@ -16,10 +16,11 @@ from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, build_insights  # noqa: E402
-from fivestack.odds import OddsEngine  # noqa: E402
+from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
+from fivestack.odds import OddsEngine, partial_game  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import build_stats, deviation  # noqa: E402
-from fivestack.tracker import Tracker  # noqa: E402
+from fivestack.tracker import Tracker, parse_details  # noqa: E402
 
 MEMBERS = [f"P{i}#TAG" for i in range(1, 6)]
 PUUIDS = {f"P{i}": f"puuid-{i}" for i in range(1, 6)}
@@ -68,6 +69,7 @@ class FakeClient:
         items.append(stored_item("m4", puuid, mode="Deathmatch", started="2026-09-23T18:00:00Z"))  # mode filtered
         if n in "123":                                                             # only 3 present -> reject
             items.append(stored_item("m5", puuid, started="2026-09-19T18:00:00Z"))
+        items.append(stored_item("m6", puuid, started="2026-09-18T18:00:00Z", red=1, blue=2))  # remake -> skipped
         return {"status": 200, "results": {"total": len(items)}, "data": items}
 
     def match_details(self, region, match_id):
@@ -154,6 +156,7 @@ def main():
     assert m1["result"] == "win" and m1["details_fetched"] == 1 and m1["party_verified"] == 1, m1
     rejected = db.get_meta("rejected_matches")
     assert "m2" in rejected and "m5" in rejected and "m4" not in rejected, rejected
+    assert "m6" in rejected and not db.has_match("m6")  # a 2-1 remake is no contest: never recorded
     assert len(db.members()) == 5
 
     # --- stats ------------------------------------------------------------
@@ -309,6 +312,61 @@ def main():
     assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 250
     bets.reset()
     assert db.rewards() == [] and db.reward_totals() == {} and db.get_bettor("P2")["balance"] == 1000
+
+    # --- forfeits (surrenders) and no-contest games -------------------------------
+    comp = lambda rw, rl, mode="competitive": {"mode": mode, "rounds_won": rw, "rounds_lost": rl}  # noqa: E731
+    assert [ending(comp(*x)) for x in [(13, 9), (14, 12), (9, 4), (4, 9), (2, 1), (3, 1)]] ==         [COMPLETE, COMPLETE, FORFEIT, FORFEIT, NO_CONTEST, NO_CONTEST]
+    assert ending(comp(5, 3, "swiftplay")) == COMPLETE and ending(comp(4, 3, "swiftplay")) == FORFEIT
+    assert ending({"rounds_won": None, "rounds_lost": None}) == COMPLETE
+    assert full_game_rounds([comp(13, 9)] * 4) == 22.0  # too few games: default
+    assert full_game_rounds([comp(13, 5), comp(13, 7), comp(13, 11), comp(14, 12), comp(9, 4), comp(13, 9)]) == 22.0  # median, forfeit ignored
+
+    # The full record's winner flag decides a surrender, even when the team that gave up led on rounds.
+    rec = {"metadata": {"match_id": "ff", "map": {"name": "Bind"}, "queue": {"id": "competitive"}, "started_at": "2026-09-22T18:00:00Z"},
+           "players": [v4_player(p, "Blue") for p in PUUIDS.values()],
+           "teams": [{"team_id": "Blue", "rounds": {"won": 5, "lost": 7}, "won": True},
+                     {"team_id": "Red", "rounds": {"won": 7, "lost": 5}, "won": False}]}
+    assert parse_details(rec, set(PUUIDS.values()))[0]["result"] == "win"
+
+    # Settlement on a 9-4 surrender (13 rounds played): only already-decided markets settle.
+    ff = {"match_id": "ff", "mode": "competitive", "rounds_won": 9, "rounds_lost": 4, "result": "win"}
+    ff_metrics = {"puuid-1": {"kills": 12, "deaths": 5, "assists": 3, "acs": 300.0, "adr": 190.0, "hs_pct": 30.0},
+                  "puuid-2": {"kills": 8, "deaths": 7, "assists": 2, "acs": 200.0, "adr": 130.0, "hs_pct": 20.0}}
+
+    def settle(mtype, sel, line=None, **ctx):
+        st, _, note = bets._evaluate({"market_type": mtype, "selection": sel, "line": line, "context": json.dumps(ctx)}, ff, ff_metrics)
+        return st if st != "void" else f"void: {note[:24]}"
+    assert settle("team_win", "win") == "won" and settle("team_win", "loss") == "lost"  # a surrender is an official result
+    assert settle("team_ou", "over", 12.5) == "won" and settle("team_ou", "under", 12.5) == "lost"  # 13 already > 12.5
+    assert settle("team_ou", "over", 21.5).startswith("void") and settle("team_ou", "under", 21.5).startswith("void")
+    assert settle("ou", "over", 10.5, stat="kills", puuid="puuid-1") == "won"  # 12 kills already cleared 10.5
+    assert settle("ou", "under", 10.5, stat="kills", puuid="puuid-1") == "lost"
+    assert settle("ou", "over", 10.5, stat="kills", puuid="puuid-2").startswith("void")  # 8 kills: undecided
+    assert settle("ou", "under", 10.5, stat="kills", puuid="puuid-2").startswith("void")
+    assert settle("ou", "over", 150.5, stat="acs", puuid="puuid-1").startswith("void")  # rates are never decided early
+    assert settle("top", "puuid-1", stat="kills").startswith("void")
+    done = dict(ff, rounds_won=13, rounds_lost=4)  # the same numbers in a completed game settle normally
+    assert bets._evaluate({"market_type": "ou", "selection": "under", "line": 10.5,
+                           "context": json.dumps({"stat": "kills", "puuid": "puuid-2"})}, done, ff_metrics)[0] == "won"
+
+    # Odds: a forfeit is scaled to a full-length game at reduced weight, and kept out of the rounds market.
+    scaled, share = partial_game({"kills": 10, "deaths": 6, "assists": 2, "acs": 250.0}, 11, 22.0)
+    assert share == 0.5 and scaled["kills"] == 20 and scaled["deaths"] == 12 and scaled["acs"] == 250.0
+    assert partial_game({"kills": 10}, 24, 22.0) == ({"kills": 10}, 1.0)
+    odb = DB(os.path.join(tmp, "odds.db"))
+    for i, pu in enumerate(PUUIDS.values()):
+        odb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+    for k in range(7):  # six full 13-11 games (24 rounds, 20 kills each) and one 8-4 surrender with 10 kills
+        rw, rl = (8, 4) if k == 3 else (13, 11)
+        odb.insert_match({"match_id": f"o{k}", "map": "Ascent", "mode": "competitive", "started_ts": 1000 + k,
+                          "rounds_won": rw, "rounds_lost": rl, "result": "win"},
+                         [{"puuid": pu, "agent": "Jett", "kills": 10 if k == 3 else 20, "deaths": 15, "assists": 4,
+                           "score": 4800, "damage_dealt": 3000, "headshots": 5, "bodyshots": 20, "legshots": 1} for pu in PUUIDS.values()])
+    ob = OddsEngine(cfg).build(odb)
+    assert ob["partial_games"] == {"forfeits": 1, "full_game_rounds": 24.0}, ob["partial_games"]
+    kills = next(mk for mk in ob["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
+    assert kills["mean"] == 20.0 and kills["line"] > 19, kills  # 10 kills in half a game counts as 20, not 10
+    assert next(mk for mk in ob["team"] if mk["market_id"] == "team:rounds")["mean"] == 24.0  # the 12-round total is left out
 
     # Second sync: nothing new, no duplicates, no re-verification of rejected ids.
     calls_before = client.calls

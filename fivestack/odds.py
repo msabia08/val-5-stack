@@ -5,6 +5,12 @@ Optional context (expected map, expected agent per member) boosts the weight
 of matching games. Lines sit at the weighted median, probabilities come from a
 Gaussian-kernel smoothed empirical distribution, and a house edge is applied
 so the book is not perfectly fair (just like a real sportsbook).
+
+Games that ended early (a surrender) are partial data. Their counting stats are
+scaled up to a full-length game and the game's weight is cut to the share of a
+full game that was played, so a 9-round forfeit neither drags the kills line
+down nor counts as much as a real game. They are left out of the total-rounds
+market altogether, and count normally toward the match-result market.
 """
 import math
 import random
@@ -12,6 +18,7 @@ import time
 from bisect import bisect_left
 from collections import defaultdict
 
+from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, full_game_rounds, rounds_to_win
 from .stats import player_metrics
 
 STAT_DEFS = [
@@ -23,6 +30,19 @@ STAT_DEFS = [
     {"key": "hs_pct", "label": "Headshot %", "kind": "pct", "floor_h": 2.5},
 ]
 FLOOR_H = {d["key"]: d["floor_h"] for d in STAT_DEFS}
+COUNT_KEYS = [d["key"] for d in STAT_DEFS if d["kind"] == "count"]
+
+
+def partial_game(metrics, rounds, full_rounds):
+    """Scale a forfeited game's counting stats to a full-length game. Returns (metrics, share of a game played)."""
+    share = min(1.0, rounds / full_rounds) if rounds else 0.0
+    if share <= 0 or share >= 1:
+        return metrics, max(share, 0.0)
+    scaled = dict(metrics)
+    for k in COUNT_KEYS:
+        if scaled.get(k) is not None:
+            scaled[k] = scaled[k] / share
+    return scaled, share
 
 TOP_DEFS = [
     {"id": "top:kills", "key": "kills", "label": "Top fragger", "desc": "Most kills on the team"},
@@ -208,8 +228,11 @@ class OddsEngine:
                 w *= self.map_boost
                 map_games += 1
             wv = 1.0 if m.get("result") == "win" else (0.5 if m.get("result") == "draw" else 0.0)
-            pts_win.append((w, wv))
-            pts_rounds.append((w, (m.get("rounds_won") or 0) + (m.get("rounds_lost") or 0)))
+            pts_win.append((w, wv))  # a surrender is still a real result
+            if ending(m) != FORFEIT:  # a surrendered game's round total was cut short
+                pts_rounds.append((w, (m.get("rounds_won") or 0) + (m.get("rounds_lost") or 0)))
+        if not pts_rounds:
+            pts_rounds = [(1.0, 22.0)]
         tw = sum(w for w, _ in pts_win)
         p_win = clamp((sum(w * v for w, v in pts_win) + 1.0) / (tw + 2.0), 0.1, 0.9)
         raw_wr = sum(1 for m in matches if m.get("result") == "win") / len(matches)
@@ -236,7 +259,7 @@ class OddsEngine:
             "label": "Total rounds",
             "desc": "Rounds played in the next game (both teams combined)",
             "line": line,
-            "mean": round(sum(w * v for w, v in pts_rounds) / tw, 1),
+            "mean": round(sum(w * v for w, v in pts_rounds) / sum(w for w, _ in pts_rounds), 1),
             "selections": [
                 selection("over", f"Over {line:g}", p_over, two_way),
                 selection("under", f"Under {line:g}", 1.0 - p_over, two_way),
@@ -262,6 +285,8 @@ class OddsEngine:
         by_member = defaultdict(list)
         for r in rows:
             by_member[r["puuid"]].append(r)
+        full = full_game_rounds(matches)
+        forfeits = sum(1 for m in matches if ending(m) == FORFEIT)
 
         pooled = []
         member_samples = {}
@@ -271,7 +296,12 @@ class OddsEngine:
             samples = []
             for w, r in zip(ws, mrows):
                 rounds = (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)
-                samples.append((w, player_metrics(r, rounds)))
+                metrics = player_metrics(r, rounds)
+                if ending(r) == FORFEIT:
+                    game_full = full * rounds_to_win(r.get("mode")) / DEFAULT_ROUNDS_TO_WIN
+                    metrics, share = partial_game(metrics, rounds, game_full)
+                    w *= share
+                samples.append((w, metrics))
             member_samples[m["puuid"]] = samples
             pooled.extend(samples)
 
@@ -318,6 +348,7 @@ class OddsEngine:
             "context": {"map": ctx_map, "agents": ctx_agents},
             "house_edge": self.edge,
             "games_considered": len(matches),
+            "partial_games": {"forfeits": forfeits, "full_game_rounds": full},
             "latest_match": {
                 "match_id": matches[0]["match_id"],
                 "started_at": matches[0].get("started_at"),

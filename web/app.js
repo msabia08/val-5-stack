@@ -340,7 +340,9 @@
         <button class="btn ghost" id="ctx-clear">Clear</button>
         <label class="right">Odds format<select id="odds-format"><option value="american" ${state.oddsFormat === 'american' ? 'selected' : ''}>American</option><option value="decimal" ${state.oddsFormat === 'decimal' ? 'selected' : ''}>Decimal</option></select></label>
       </div>
-      <p class="muted small">Lines come from your 5-stack history, weighted toward recent games. Choosing a map or agents up-weights matching games. House edge ${Math.round((od.house_edge || 0) * 100)}%.</p></section>`;
+      <p class="muted small">Lines come from your 5-stack history, weighted toward recent games. Choosing a map or agents up-weights matching games. House edge ${Math.round((od.house_edge || 0) * 100)}%.` +
+      `${od.partial_games?.forfeits ? ` ${od.partial_games.forfeits} surrendered ${od.partial_games.forfeits === 1 ? 'game is' : 'games are'} scaled to a full ${od.partial_games.full_game_rounds}-round game and counted at reduced weight.` : ''}</p>
+      <p class="muted small">If the next game ends early by a surrender, the match result stands. Other bets settle only if they were already decided (an over that had already cleared its line wins; its under loses); everything else is refunded. A remake in the first few rounds doesn't count as a game: bets carry over to the next one.</p></section>`;
     if (!od.ready) {
       return ctxBar + `<div class="card empty"><h2>No odds yet</h2><p>${esc(od.message)}</p></div>` + betsSection();
     }
@@ -577,7 +579,7 @@
       const net = (b.payout || 0) - b.stake;
       return `<li class="recent-row bet"><span class="status ${b.status}">${b.status}</span>` +
         `<span class="num ${net > 0 ? 'up' : net < 0 ? 'down' : ''}">${fmt.signed(net, 0)}</span>` +
-        `<span><b>${esc(b.bettor)}</b> · ${esc(b.description)}</span>` +
+        `<span><b>${esc(b.bettor)}</b> · ${esc(b.description)}${b.note ? `<div class="muted small">${esc(b.note)}</div>` : ''}</span>` +
         `<span class="muted small">${fmt.date(b.settled_ts ? b.settled_ts * 1000 : null)}</span></li>`;
     }).join('');
     return `<section class="kpis">${kpis.join('')}</section>
@@ -639,7 +641,7 @@
       const rounds = (m.rounds_won || 0) + (m.rounds_lost || 0) || 1;
       const top = m.players[0];
       return `<tr class="match-row ${m.result}" data-id="${esc(m.match_id)}"><td><span class="chip ${m.result}">${fmt.res(m.result)}</span></td>` +
-        `<td class="num"><b>${m.rounds_won}–${m.rounds_lost}</b></td><td>${esc(m.map)}</td><td class="muted">${esc(m.mode_label || '')}</td>` +
+        `<td class="num"><b>${m.rounds_won}–${m.rounds_lost}</b>${m.ending === 'forfeit' ? ' <span class="tag ff" title="Ended early by a surrender">Surrendered</span>' : ''}</td><td>${esc(m.map)}</td><td class="muted">${esc(m.mode_label || '')}</td>` +
         `<td>${top ? `${esc(top.nickname || top.name)} · ${fmt.n0((top.score || 0) / rounds)} ACS · ${esc(top.agent || '')}` : ''}</td>` +
         `<td class="muted small">${fmt.date(m.started_at)}</td><td class="muted small">${open ? '▾' : '▸'}</td></tr>` +
         (open ? `<tr class="detail"><td colspan="7">${matchDetail(m, idx)}</td></tr>` : '');

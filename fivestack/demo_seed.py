@@ -97,6 +97,9 @@ def _seed_stack(db, rng, games):
         map_name = rng.choice(MAPS)
         win = rng.random() < MAP_EDGE[map_name] - 0.06 * (in_session - 1)  # the squad fades late at night
         rw, rl = _score(rng, win)
+        if abs(rw - rl) >= 8 and rng.random() < 0.2:  # lopsided games sometimes end in a surrender
+            ahead, behind = rng.randint(8, 10), min(rw, rl, 3)
+            rw, rl = (ahead, behind) if win else (behind, ahead)
         rounds = rw + rl
         mode = "Competitive" if rng.random() < 0.8 else "Unrated"
         match = {
