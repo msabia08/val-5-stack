@@ -2,10 +2,10 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'odds', 'bettors', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'viz', 'odds', 'bettors', 'matches', 'setup'];
   const state = {
     view: 'overview',
-    status: null, stats: null, matches: null, odds: null, content: null,
+    status: null, stats: null, matches: null, odds: null, content: null, insights: null,
     bets: [], bettors: [], slip: [], me: null,
     ctx: { map: '', agents: {} },
     bettor: localStorage.getItem('fs.bettor') || '',
@@ -68,6 +68,7 @@
   }
   const loadStatus = async () => { state.status = await api('/api/status'); renderHeader(); };
   const loadStats = async () => { state.stats = await api('/api/stats'); };
+  const loadInsights = async () => { state.insights = await api('/api/insights'); };
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadContent = async () => { state.content = await api('/api/content'); };
   const loadBets = async () => {
@@ -310,6 +311,13 @@
         <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div><div class="form">${form}</div></header>
         ${body}</section>`;
     }).join('');
+  }
+
+  // ---- visualizations (drawn by web/viz.js) ---------------------------------------
+  function viewViz() {
+    const idx = memberIndex();
+    const out = window.FiveViz.html(state.insights, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot });
+    return out == null ? emptyState() : out;
   }
 
   // ---- odds & bets --------------------------------------------------------------
@@ -660,6 +668,7 @@
       switch (state.view) {
         case 'overview': view.innerHTML = viewOverview(); break;
         case 'players': view.innerHTML = viewPlayers(); break;
+        case 'viz': view.innerHTML = viewViz(); break;
         case 'odds': view.innerHTML = viewOdds(); break;
         case 'bettors': view.innerHTML = viewBettors(); break;
         case 'matches': view.innerHTML = viewMatches(); break;
@@ -670,6 +679,7 @@
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
     bind();
+    if (state.view === 'viz' && view.querySelector('[data-chart]')) window.FiveViz.mount(view);
   }
 
   async function render() {
@@ -678,6 +688,7 @@
     try {
       switch (state.view) {
         case 'overview': case 'players': await loadStats(); break;
+        case 'viz': await loadInsights(); break;
         case 'odds': await Promise.all([loadOdds(), loadBets(), loadContent()]); break;
         case 'bettors': await loadBets(); break;
         case 'matches': await loadMatches(); break;
@@ -765,6 +776,7 @@
   function route() {
     const v = (location.hash || '#overview').slice(1);
     state.view = VIEWS.includes(v) ? v : 'overview';
+    window.FiveViz?.hideTip();
     $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === state.view));
     render();
   }
