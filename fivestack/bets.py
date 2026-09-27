@@ -5,8 +5,14 @@ import json
 import secrets
 import time
 
-from .odds import find_market
+from .gamestate import FORFEIT, ending
+from .odds import STAT_DEFS, find_market
 from .stats import player_metrics
+
+# Stats that only ever go up during a game: an over that cleared the line before a surrender is already won.
+COUNTING_STATS = {d["key"] for d in STAT_DEFS if d["kind"] == "count"}
+# Note on a bet voided by a surrender. A void single is refunded; a void parlay leg is dropped from the parlay.
+EARLY_END = "Game ended early (surrender) before this was decided"
 
 
 class BetError(Exception):
@@ -331,8 +337,12 @@ class BetManager:
                 overall, payout = "won", round(b["stake"] * eff, 2)
             else:
                 overall, payout = "won", round(b["stake"] * b["odds_decimal"], 2)
+        surrendered = ending(match) == FORFEIT
         if overall == "void":
-            note = "Push: every leg voided, stake refunded"
+            note = ("Game ended early (surrender) before any leg was decided: stake refunded" if surrendered
+                    else "Push: every leg voided, stake refunded")
+        elif voided and surrendered and overall == "won":
+            note = f"Game ended early (surrender): {voided} undecided leg(s) dropped; payout uses the remaining odds"
         elif voided:
             note = f"{voided} leg(s) voided (no action); payout uses the remaining odds"
         else:
@@ -340,10 +350,20 @@ class BetManager:
         return overall, payout, None, note, json.dumps({"legs": results})
 
     def _evaluate(self, b, match, metrics):
+        """Settle one bet on a recorded game.
+
+        A surrendered game (forfeit) is an official result, so the match-result market settles as usual.
+        Every other market is void unless the surrender came after it was already decided: an over on a
+        counting stat (kills, deaths, assists, total rounds) that had already cleared the line wins, and the
+        matching under loses. Per-round rates (ACS, ADR, HS%) and top-of-scoreboard markets could still have
+        swung either way, so they are void.
+        """
         meta = json.loads(b.get("context") or "{}")
         t = b["market_type"]
         sel = b["selection"]
         line = b.get("line")
+        if ending(match) == FORFEIT and t != "team_win":
+            return self._evaluate_forfeit(b, match, metrics, meta)
         if t == "ou":
             m = metrics.get(meta.get("puuid"))
             if not m:
@@ -381,3 +401,23 @@ class BetManager:
             won = total > line if sel == "over" else total < line
             return ("won" if won else "lost"), total, None
         return "void", None, "Unknown market type"
+
+    @staticmethod
+    def _evaluate_forfeit(b, match, metrics, meta):
+        t, sel, line = b["market_type"], b["selection"], b.get("line")
+        if t == "team_ou":
+            value = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
+        elif t == "ou" and meta.get("stat") in COUNTING_STATS:
+            m = metrics.get(meta.get("puuid"))
+            if not m:
+                return "void", None, "Player was not in this game"
+            value = m.get(meta.get("stat"))
+        else:  # rates and top-of-scoreboard markets are never decided before the end
+            m = metrics.get(meta.get("puuid")) if t == "ou" else None
+            actual = round(m[meta["stat"]], 2) if m and m.get(meta.get("stat")) is not None else None
+            return "void", actual, EARLY_END
+        if value is None:
+            return "void", None, "Stat unavailable for this game"
+        if value > line:  # already past the line when the game stopped
+            return ("won" if sel == "over" else "lost"), round(value, 2), "Decided before the surrender"
+        return "void", round(value, 2), EARLY_END

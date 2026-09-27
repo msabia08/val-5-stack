@@ -21,6 +21,7 @@ from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bets import BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
+from .gamestate import ending
 from .henrik import HenrikClient
 from .insights import build_insights
 from .odds import OddsEngine
@@ -267,6 +268,7 @@ class Handler(BaseHTTPRequestHandler):
                 by[p["match_id"]].append(p)
             for m in matches:
                 m["players"] = sorted(by.get(m["match_id"], []), key=lambda p: -(p.get("score") or 0))
+                m["ending"] = ending(m)
             return self._json({"matches": matches})
         if path.startswith("/api/match/"):
             mid = path.rsplit("/", 1)[1]

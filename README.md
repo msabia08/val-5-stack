@@ -105,6 +105,11 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   assists, most deaths, best headshot %. Probabilities come from a Monte Carlo
   simulation that draws one game per player from their weighted history.
 - **Team markets:** match result and total rounds.
+- **Surrendered games are partial data.** Their kills, deaths and assists are
+  scaled up to a full-length game (the median length of your completed games,
+  or 22 rounds until there are 5 of them), and the game counts only as much as
+  the share of a full game that was played. They are left out of the
+  total-rounds line, and count normally toward the match-result odds.
 
 Fair probabilities are then shaded by `house_edge` (default 5%, doubled for the
 multi-way markets), exactly like a sportsbook's vig, and shown as American or
@@ -126,6 +131,20 @@ distribution at low weight and are flagged *low confidence*.
   Landing exactly on a line, a tie for a "tops the scoreboard" market, or a draw
   for the match-result market refunds the stake (void).
 - Pending bets can be cancelled for a full refund until the game is recorded.
+- **Surrenders (forfeits).** A game that ends before either team reaches the
+  rounds needed to win (13 in competitive, unrated and premier) was
+  surrendered. The **match result stands** and match-result bets settle as
+  usual. Every other bet settles only if it was **already decided** when the
+  game stopped: an over on a counting stat (kills, deaths, assists, total
+  rounds) that had already cleared its line wins, and the matching under
+  loses. Anything else is refunded, including per-round stats (ACS, ADR,
+  headshot %) and "tops the scoreboard" markets, which could still have
+  swung. When the full match record is available, its winner flag decides
+  who won, even if the surrendering team was ahead on rounds. Parlay legs
+  follow the same rule, leg by leg (see Parlays).
+- **Remakes.** A game that ends within the first 4 rounds is treated as a
+  remake or an abandoned lobby, not a game: it isn't recorded, open bets
+  carry over to the next game, and it pays no rewards.
 - The **Bettors** tab ranks everyone by balance, with profit against the
   starting bankroll, record, win rate, ROI, open stakes and recent results.
 - The Odds & Bets tab shows every bet as a **slip**, grouped card by card under
@@ -146,6 +165,11 @@ there are 2+ picks.
 - If a leg is voided (push, tie for the top, a draw) it's dropped with no
   effect: the payout is recalculated from the odds of the legs that stood. If
   every leg is voided, the stake is refunded.
+- If the game is **surrendered**, each leg is judged by the surrender rule
+  above: the match-result leg stands, a leg that was already decided keeps its
+  result, and an undecided leg is dropped like any other void leg. So a leg
+  already lost (say an under that was already beaten) still loses the parlay,
+  and a parlay where nothing was decided is refunded.
 - The **Open bets** / **Settled bets** slips show each leg of a parlay
   underneath the ticket, with a ✓ / ✗ / ↺ per leg once it settles.
 - *Reset season* on the Odds page puts everyone back to the starting balance
@@ -277,6 +301,7 @@ fivestack/             the backend package
   stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
   insights.py          datasets for the Visualizations tab (sessions, comps, damage share, ...)
   odds.py              odds engine
+  gamestate.py         how a game ended: complete, surrendered, or a remake
   bets.py              betting ledger and settlement
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo

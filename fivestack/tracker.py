@@ -22,6 +22,7 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime
 
+from .gamestate import NO_CONTEST, ending
 from .henrik import HenrikError
 
 MODE_ALIASES = {
@@ -149,8 +150,17 @@ def parse_details(data, member_puuids):
         return None
     team = ours[0].get("team_id") or ""
     tinfo = next((t for t in (data.get("teams") or []) if t.get("team_id") == team), None) or {}
+    other = next((t for t in (data.get("teams") or []) if t.get("team_id") != team), None) or {}
     rounds = tinfo.get("rounds") or {}
     rw, rl = rounds.get("won"), rounds.get("lost")
+    # The record's own winner flag beats the score: after a surrender the team that gave up loses,
+    # even in the rare case it was ahead on rounds.
+    if tinfo.get("won") is True:
+        result = "win"
+    elif other.get("won") is True:
+        result = "loss"
+    else:
+        result = result_of(rw, rl)
     party_ids = {p.get("party_id") for p in ours}
     queue = meta.get("queue") or {}
     mode_label = queue.get("name") or queue.get("id") or ""
@@ -167,7 +177,7 @@ def parse_details(data, member_puuids):
         "team": team.capitalize(),
         "rounds_won": rw,
         "rounds_lost": rl,
-        "result": result_of(rw, rl),
+        "result": result,
         "game_length_ms": meta.get("game_length_in_ms"),
         "source": "details",
         "party_verified": 1 if (len(party_ids) == 1 and None not in party_ids) else 0,
@@ -302,7 +312,8 @@ class Tracker:
                     rec = parse_stored_item(item)
                     if rec["match_id"] and rec["player"]["puuid"]:
                         by_id[rec["match_id"]][m["puuid"]] = rec
-                        if rec["rounds_won"] is not None and (not self.modes or rec["mode"] in self.modes):
+                        if (rec["rounds_won"] is not None and (not self.modes or rec["mode"] in self.modes)
+                                and ending(rec) != NO_CONTEST):
                             member_games.append(member_game_row(rec))
             self.db.insert_member_games(member_games)
 
@@ -319,6 +330,10 @@ class Tracker:
                 teams = {r["team"] for r in recs.values()}
                 if len(teams) != 1 or not (teams & {"Red", "Blue"}):
                     rejected.add(mid)
+                    continue
+                if ending(sample) == NO_CONTEST:
+                    rejected.add(mid)  # remake / abandoned lobby: not a game, so bets roll to the next one
+                    self.log(f"Skipped {sample['map']} {sample['rounds_won']}-{sample['rounds_lost']}: ended within the first rounds (remake)")
                     continue
                 if len(recs) == len(puuids):
                     match = {k: v for k, v in sample.items() if k != "player"}
@@ -362,11 +377,13 @@ class Tracker:
                     parsed = parse_details(data, pset)
                     if parsed:
                         pm, players = parsed
-                        self.db.update_match(
-                            m["match_id"], game_length_ms=pm.get("game_length_ms"),
-                            party_verified=pm.get("party_verified"), details_fetched=1,
-                            season=pm.get("season") or m.get("season"),
-                        )
+                        fields = dict(game_length_ms=pm.get("game_length_ms"),
+                                      party_verified=pm.get("party_verified"), details_fetched=1,
+                                      season=pm.get("season") or m.get("season"))
+                        if pm.get("result") and pm["result"] != m.get("result"):
+                            fields["result"] = pm["result"]  # e.g. a surrender by the team that led on rounds
+                            self.log(f"Corrected {m['map']} {m['rounds_won']}-{m['rounds_lost']} to a {pm['result']} from the full record")
+                        self.db.update_match(m["match_id"], **fields)
                         for p in players:
                             self.db.update_player(m["match_id"], p["puuid"], tier_name=p.get("tier_name"), tier=p.get("tier"))
                     else:
