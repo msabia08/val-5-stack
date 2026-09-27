@@ -10,10 +10,11 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 
+from fivestack.app import KNOWN_AGENTS  # noqa: E402
 from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
-from fivestack.insights import build_insights  # noqa: E402
+from fivestack.insights import AGENT_ROLE, build_insights  # noqa: E402
 from fivestack.odds import OddsEngine  # noqa: E402
 from fivestack.stats import build_stats, deviation  # noqa: E402
 from fivestack.tracker import Tracker  # noqa: E402
@@ -240,6 +241,8 @@ def main():
     assert lb[0]["name"] == "Tester" and lb[0]["won"] == 2 and lb[0]["cancelled"] == 2, lb
 
     # --- visualizations datasets ------------------------------------------
+    unroled = [a for a in KNOWN_AGENTS if a.lower() not in AGENT_ROLE]
+    assert not unroled, f"add these agents to insights.ROLES: {unroled}"
     # Games: m1 (Ascent, W 13-9, all Jett), m3 (Bind, L 11-13, all Sova), m9 (Haven, W 13-7, all Jett), days apart.
     ins = build_insights(db)
     assert [g["match_id"] for g in ins["games"]] == ["m1", "m3", "m9"], ins["games"]
