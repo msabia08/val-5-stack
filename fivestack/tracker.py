@@ -22,7 +22,7 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime
 
-from henrik import HenrikError
+from .henrik import HenrikError
 
 MODE_ALIASES = {
     "competitive": "competitive",

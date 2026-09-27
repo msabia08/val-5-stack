@@ -5,8 +5,8 @@ import json
 import secrets
 import time
 
-from odds import find_market
-from stats import player_metrics
+from .odds import find_market
+from .stats import player_metrics
 
 
 class BetError(Exception):

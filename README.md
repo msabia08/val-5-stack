@@ -193,20 +193,27 @@ apart; the client reads the rate-limit headers and backs off automatically on
 ## Project layout
 
 ```
-server.py        HTTP server + JSON API + login (stdlib http.server)
-tunnel.py        Cloudflare Tunnel runner (downloads cloudflared into tools/)
-tracker.py       member resolution, 5-stack detection, background polling
-henrik.py        HenrikDev API client
-stats.py         aggregation (overall / per agent / per map / team)
-odds.py          odds engine
-bets.py          betting ledger and settlement
-db.py            SQLite schema and queries (data/tracker.db)
-demo_seed.py     synthetic data for --demo
-selftest.py      offline test of detection, stats, odds and settlement
-web/             index.html, app.js, style.css (no build step)
+server.py              launcher: python server.py [flags]
+run.bat, run-online.bat  double-click launchers (the second adds --tunnel)
+config.example.json    template copied to config.json on first run
+fivestack/             the backend package
+  app.py               HTTP server + JSON API routes (stdlib http.server), command-line flags
+  config.py            file locations, config.json loading and validation
+  auth.py              site / admin passwords and bettor sessions (signed cookies)
+  tracker.py           member resolution, 5-stack detection, background polling
+  henrik.py            HenrikDev API client
+  db.py                SQLite schema and queries (data/tracker.db)
+  stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
+  odds.py              odds engine
+  bets.py              betting ledger and settlement
+  tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
+  demo_seed.py         synthetic data for --demo
+web/                   index.html, app.js, style.css (no build step)
+tests/selftest.py      offline test of detection, stats, odds and settlement
+data/, tools/          created at runtime (database, cloudflared); not committed
 ```
 
-Run `python selftest.py` to check the backend end-to-end without touching the API.
+Run `python tests/selftest.py` to check the backend end-to-end without touching the API.
 
 ## Notes and limits
 
