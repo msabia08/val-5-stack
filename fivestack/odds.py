@@ -12,7 +12,7 @@ import time
 from bisect import bisect_left
 from collections import defaultdict
 
-from stats import player_metrics
+from .stats import player_metrics
 
 STAT_DEFS = [
     {"key": "kills", "label": "Kills", "kind": "count", "floor_h": 1.2},

@@ -1,6 +1,6 @@
 """Offline self-test: detection, stats, odds, betting and settlement against a fake API.
 
-    python selftest.py
+    python tests/selftest.py
 """
 import json
 import os
@@ -8,14 +8,14 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 
-from bets import BetError, BetManager  # noqa: E402
-from db import DB  # noqa: E402
-from henrik import HenrikError  # noqa: E402
-from odds import OddsEngine  # noqa: E402
-from stats import build_stats, deviation  # noqa: E402
-from tracker import Tracker  # noqa: E402
+from fivestack.bets import BetError, BetManager  # noqa: E402
+from fivestack.db import DB  # noqa: E402
+from fivestack.henrik import HenrikError  # noqa: E402
+from fivestack.odds import OddsEngine  # noqa: E402
+from fivestack.stats import build_stats, deviation  # noqa: E402
+from fivestack.tracker import Tracker  # noqa: E402
 
 MEMBERS = [f"P{i}#TAG" for i in range(1, 6)]
 PUUIDS = {f"P{i}": f"puuid-{i}" for i in range(1, 6)}

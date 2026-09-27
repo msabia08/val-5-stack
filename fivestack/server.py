@@ -5,37 +5,27 @@
     python server.py --demo          # explore the UI with synthetic data, no API key needed
     python server.py --no-browser --port=8090 --no-tunnel
 """
-import hashlib
-import hmac
 import html
 import json
 import os
-import secrets
-import shutil
 import sys
 import threading
 import time
 import traceback
 import webbrowser
 from collections import defaultdict
-from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, urlparse
 
-from bets import BetError, BetManager
-from db import DB
-from henrik import HenrikClient
-from odds import OddsEngine
-from stats import build_stats
-from tracker import Tracker
-from tunnel import Tunnel
-
-ROOT = os.path.dirname(os.path.abspath(__file__))
-WEB_DIR = os.path.join(ROOT, "web")
-DATA_DIR = os.path.join(ROOT, "data")
-TOOLS_DIR = os.path.join(ROOT, "tools")
-CONFIG_PATH = os.path.join(ROOT, "config.json")
-EXAMPLE_PATH = os.path.join(ROOT, "config.example.json")
+from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
+from .bets import BetError, BetManager
+from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_config, mask
+from .db import DB
+from .henrik import HenrikClient
+from .odds import OddsEngine
+from .stats import build_stats
+from .tracker import Tracker
+from .tunnel import Tunnel
 
 KNOWN_MAPS = ["Abyss", "Ascent", "Bind", "Breeze", "Corrode", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset"]
 KNOWN_AGENTS = [
@@ -43,7 +33,6 @@ KNOWN_AGENTS = [
     "Iso", "Jett", "KAY/O", "Killjoy", "Neon", "Omen", "Phoenix", "Raze", "Reyna", "Sage", "Skye", "Sova",
     "Tejo", "Viper", "Vyse", "Waylay", "Yoru",
 ]
-PLACEHOLDER_IDS = {"friend1#tag1", "friend2#tag2", "friend3#tag3", "friend4#tag4", "yourname#tag"}
 MIME = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
@@ -53,11 +42,6 @@ MIME = {
     ".png": "image/png",
     ".ico": "image/x-icon",
 }
-COOKIE = "fs_auth"
-CLEAR_COOKIE = f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
-BETTOR_COOKIE = "fs_bettor"
-CLEAR_BETTOR_COOKIE = f"{BETTOR_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
-THROTTLE_MSG = "Too many attempts. Try again in a few minutes."
 
 LOGIN_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -68,139 +52,6 @@ LOGIN_PAGE = """<!doctype html>
 <label>Password<input type="password" name="password" autofocus autocomplete="current-password" required></label>
 <button class="btn primary" type="submit">Log in</button>
 </form></main></body></html>"""
-
-
-def load_config(path=CONFIG_PATH):
-    if not os.path.exists(path):
-        shutil.copy(EXAMPLE_PATH, path)
-        print(f"Created {path}. Add your HenrikDev API key and your squad's Riot IDs, then restart.")
-    try:
-        with open(path, encoding="utf-8") as f:
-            cfg = json.load(f)
-    except json.JSONDecodeError as e:
-        print(f"{os.path.basename(path)} is not valid JSON: {e}")
-        sys.exit(1)
-    env_key = os.environ.get("HENRIK_API_KEY")
-    if env_key:
-        cfg["api_key"] = env_key
-    return cfg
-
-
-def config_problems(cfg):
-    problems = []
-    key = (cfg.get("api_key") or "").strip()
-    if not key or "PASTE" in key.upper() or "YOUR" in key.upper():
-        problems.append("Add your HenrikDev API key to config.json (api_key).")
-    members = cfg.get("members") or []
-    ids = [(m.get("riot_id") if isinstance(m, dict) else m) or "" for m in members]
-    bad = [i for i in ids if "#" not in str(i) or str(i).strip().lower() in PLACEHOLDER_IDS]
-    if len(members) < 2:
-        problems.append("List your squad's Riot IDs (Name#TAG) under members in config.json.")
-    elif bad:
-        problems.append("Replace the placeholder members in config.json with real Riot IDs: " + ", ".join(str(b) for b in bad))
-    if (cfg.get("region") or "").lower() not in {"na", "eu", "ap", "kr", "latam", "br"}:
-        problems.append("region must be one of na, eu, ap, kr, latam, br.")
-    return problems
-
-
-def mask(key):
-    key = key or ""
-    if len(key) < 10:
-        return "set" if key else "not set"
-    return key[:5] + "..." + key[-3:]
-
-
-class Auth:
-    """Shared squad password -> signed cookie. Optional separate admin password for destructive actions."""
-
-    def __init__(self, cfg, db):
-        self.password = (cfg.get("site_password") or "").strip()
-        self.admin_password = (cfg.get("admin_password") or "").strip()
-        secret = db.get_meta("cookie_secret")
-        if not secret:
-            secret = secrets.token_hex(32)
-            db.set_meta("cookie_secret", secret)
-        self.secret = secret.encode()
-        self.failures = {}
-        self.lock = threading.Lock()
-
-    @property
-    def enabled(self):
-        return bool(self.password)
-
-    def token(self):
-        return hmac.new(self.secret, self.password.encode(), hashlib.sha256).hexdigest()
-
-    def cookie_header(self, secure):
-        return f"{COOKIE}={self.token()}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax" + ("; Secure" if secure else "")
-
-    def check_cookie(self, header):
-        if not self.enabled:
-            return True
-        jar = cookies.SimpleCookie()
-        try:
-            jar.load(header or "")
-        except cookies.CookieError:
-            return False
-        morsel = jar.get(COOKIE)
-        return bool(morsel) and hmac.compare_digest(morsel.value, self.token())
-
-    # ---- brute-force throttle (8 failures -> 10 minute lockout per key) -----
-    def throttled(self, key):
-        with self.lock:
-            _, until = self.failures.get(key, (0, 0.0))
-            return until > time.time()
-
-    def record(self, key, ok):
-        with self.lock:
-            if ok:
-                self.failures.pop(key, None)
-                return
-            count, _ = self.failures.get(key, (0, 0.0))
-            count += 1
-            self.failures[key] = (count, time.time() + 600 if count >= 8 else 0.0)
-
-    def check_password(self, ip, candidate):
-        key = f"site|{ip}"
-        if self.throttled(key):
-            return False, THROTTLE_MSG
-        ok = hmac.compare_digest((candidate or "").strip(), self.password)
-        self.record(key, ok)
-        if not ok:
-            time.sleep(0.8)
-        return ok, (None if ok else "Wrong password.")
-
-    def is_admin(self, candidate):
-        if not self.admin_password:
-            return True
-        return hmac.compare_digest((candidate or "").strip(), self.admin_password)
-
-    def is_configured_admin(self, candidate):
-        """Like is_admin, but False when no admin password is configured at all."""
-        return bool(self.admin_password) and self.is_admin(candidate)
-
-    # ---- bettor sessions (signed cookie, invalidated when the password changes) ----
-    def bettor_token(self, name, password_hash):
-        return hmac.new(self.secret, f"bettor|{name.lower()}|{password_hash}".encode(), hashlib.sha256).hexdigest()
-
-    def bettor_cookie(self, bettor, secure):
-        value = f"{quote(bettor['name'], safe='')}.{self.bettor_token(bettor['name'], bettor['password_hash'])}"
-        return f"{BETTOR_COOKIE}={value}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax" + ("; Secure" if secure else "")
-
-    def current_bettor(self, header, db):
-        jar = cookies.SimpleCookie()
-        try:
-            jar.load(header or "")
-        except cookies.CookieError:
-            return None
-        morsel = jar.get(BETTOR_COOKIE)
-        if not morsel or "." not in morsel.value:
-            return None
-        qname, token = morsel.value.rsplit(".", 1)
-        b = db.get_bettor(unquote(qname))
-        if not b or not b.get("password_hash"):
-            return None
-        return b if hmac.compare_digest(token, self.bettor_token(b["name"], b["password_hash"])) else None
 
 
 class App:
@@ -217,7 +68,7 @@ class App:
         self.client = None
         self.tracker = None
         if demo:
-            import demo_seed
+            from . import demo_seed
             demo_seed.seed(self.db)
         elif not self.problems:
             self.client = HenrikClient(cfg["api_key"].strip(), min_interval=float(cfg.get("min_request_interval_s", 1.5)))
