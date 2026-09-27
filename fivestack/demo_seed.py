@@ -1,4 +1,5 @@
 """Synthetic 5-stack history for `python server.py --demo` (no API key needed)."""
+import json
 import random
 import time
 import uuid
@@ -194,3 +195,47 @@ def _seed_bets(db, rng):
             payout = round(stake * odds, 2) if won else 0.0
             db.update_bet(bet_id, settled_match_id=m["match_id"], settled_ts=m["started_ts"] + 2700, payout=payout)
             db.adjust_balance(name, payout - stake)
+
+    # A couple of parlays, so the slip UI has a multi-leg example out of the box.
+    recent = db.matches(1)
+    if recent and len(members) >= 2:
+        last = recent[0]
+        p1, p2 = rng.sample(members, 2)
+        won_legs = [
+            {"market_id": "team:win", "market_type": "team_win", "description": "5-stack wins",
+             "selection": "win", "selection_label": "5-stack wins", "line": None, "odds_decimal": 1.85,
+             "meta": {}, "result": "won", "actual": None, "note": None},
+            {"market_id": f"ou:kills:{p1['puuid']}", "market_type": "ou",
+             "description": f"{p1['nickname'] or p1['name']} kills Over 16.5", "selection": "over",
+             "selection_label": "Over 16.5", "line": 16.5, "odds_decimal": 1.9,
+             "meta": {"stat": "kills", "puuid": p1["puuid"]}, "result": "won", "actual": 22, "note": None},
+        ]
+        odds = round(won_legs[0]["odds_decimal"] * won_legs[1]["odds_decimal"], 2)
+        stake = 40.0
+        bet_id = db.insert_bet({
+            "bettor": "Jordan", "market_id": "parlay", "market_type": "parlay",
+            "description": " + ".join(l["description"] for l in won_legs), "selection": "parlay",
+            "selection_label": "2-leg parlay", "line": None, "odds_decimal": odds, "stake": stake,
+            "placed_ts": last["started_ts"] - 1800, "context": json.dumps({"legs": won_legs}), "status": "won",
+        })
+        payout = round(stake * odds, 2)
+        db.update_bet(bet_id, settled_match_id=last["match_id"], settled_ts=last["started_ts"] + 2700, payout=payout)
+        db.adjust_balance("Jordan", payout - stake)
+
+        open_legs = [
+            {"market_id": "team:win", "market_type": "team_win", "description": "5-stack wins",
+             "selection": "win", "selection_label": "5-stack wins", "line": None, "odds_decimal": 1.85, "meta": {}},
+            {"market_id": f"ou:acs:{p2['puuid']}", "market_type": "ou",
+             "description": f"{p2['nickname'] or p2['name']} ACS Over 205.5", "selection": "over",
+             "selection_label": "Over 205.5", "line": 205.5, "odds_decimal": 1.95,
+             "meta": {"stat": "acs", "puuid": p2["puuid"]}},
+        ]
+        odds2 = round(open_legs[0]["odds_decimal"] * open_legs[1]["odds_decimal"], 2)
+        stake2 = 25.0
+        db.insert_bet({
+            "bettor": "Sam", "market_id": "parlay", "market_type": "parlay",
+            "description": " + ".join(l["description"] for l in open_legs), "selection": "parlay",
+            "selection_label": "2-leg parlay", "line": None, "odds_decimal": odds2, "stake": stake2,
+            "placed_ts": time.time() - 60, "context": json.dumps({"legs": open_legs}), "status": "pending",
+        })
+        db.adjust_balance("Sam", -stake2)
