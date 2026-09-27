@@ -227,6 +227,33 @@ def main():
     bets.cancel(b4["id"], admin=True)
     assert db.bet(b4["id"])["status"] == "cancelled" and db.get_bettor("Tester")["balance"] == 850
 
+    # --- parlays ------------------------------------------------------------
+    bets.register("Parlay", "secret1")
+    try:
+        bets.place_parlay("Parlay", [{"market_id": "team:win", "selection": "win"}], 10, {})
+        raise AssertionError("a parlay needs at least 2 legs")
+    except BetError:
+        pass
+    try:
+        bets.place_parlay("Parlay", [
+            {"market_id": "team:win", "selection": "win"},
+            {"market_id": "team:win", "selection": "loss"},
+        ], 10, {})
+        raise AssertionError("a parlay cannot repeat the same market")
+    except BetError:
+        pass
+    parlay_win = bets.place_parlay("Parlay", [
+        {"market_id": "team:win", "selection": "win"},
+        {"market_id": "ou:kills:puuid-1", "selection": "over"},
+    ], 20, {})
+    leg_odds = [l["odds_decimal"] for l in json.loads(parlay_win["context"])["legs"]]
+    assert parlay_win["market_type"] == "parlay" and parlay_win["odds_decimal"] > max(leg_odds)
+    parlay_lose = bets.place_parlay("Parlay", [
+        {"market_id": "team:win", "selection": "win"},
+        {"market_id": "ou:kills:puuid-1", "selection": "under"},
+    ], 20, {})
+    assert db.get_bettor("Parlay")["balance"] == 960  # 1000 - 20 - 20
+
     # A new game arrives after the bets were placed -> settle.
     new_match = {"match_id": "m9", "map": "Haven", "mode": "competitive", "mode_label": "Competitive",
                  "started_at": "2026-09-25T18:00:00Z", "started_ts": time.time() + 5, "season": "e11a2",
@@ -238,12 +265,25 @@ def main():
         for p in PUUIDS.values()
     ])
     settled = bets.settle_for_match(db.match("m9"), db.match_players("m9"))
-    assert len(settled) == 2 and all(b["status"] == "won" for b in settled), settled
+    assert len(settled) == 4, settled
+    won_ids = {b["id"] for b in settled if b["status"] == "won"}
+    lost_ids = {b["id"] for b in settled if b["status"] == "lost"}
+    assert {bet["id"], bet2["id"], parlay_win["id"]} == won_ids and lost_ids == {parlay_lose["id"]}, settled
     bal = db.get_bettor("Tester")["balance"]
     expected = 850 + 100 * bet["odds_decimal"] + 50 * bet2["odds_decimal"]
     assert abs(bal - expected) < 0.05, (bal, expected)
+    parlay_bal = db.get_bettor("Parlay")["balance"]
+    parlay_expected = 960 + 20 * parlay_win["odds_decimal"]  # no legs voided, so the pre-agreed price applies
+    assert abs(parlay_bal - parlay_expected) < 0.05, (parlay_bal, parlay_expected)
+    win_legs = json.loads(db.bet(parlay_win["id"])["context"])["legs"]
+    assert [l["result"] for l in win_legs] == ["won", "won"], win_legs
+    lose_legs = json.loads(db.bet(parlay_lose["id"])["context"])["legs"]
+    assert [l["result"] for l in lose_legs] == ["won", "lost"], lose_legs
     lb = bets.leaderboard()
-    assert lb[0]["name"] == "Tester" and lb[0]["won"] == 2 and lb[0]["cancelled"] == 2, lb
+    tester_row = next(r for r in lb if r["name"] == "Tester")
+    assert tester_row["won"] == 2 and tester_row["cancelled"] == 2, tester_row
+    parlay_row = next(r for r in lb if r["name"] == "Parlay")
+    assert parlay_row["won"] == 1 and parlay_row["lost"] == 1, parlay_row
 
     # --- visualizations datasets ------------------------------------------
     unroled = [a for a in KNOWN_AGENTS if a.lower() not in AGENT_ROLE]
@@ -263,8 +303,9 @@ def main():
     ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
     assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
     assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
-    (roll,) = ins["bankroll"]  # cancelled bets are left out; the two winners are
-    assert roll["name"] == "Tester" and len(roll["points"]) == 2, roll
+    assert len(ins["bankroll"]) == 2, ins["bankroll"]  # cancelled bets are left out; Tester and Parlay both settled
+    roll = next(r for r in ins["bankroll"] if r["name"] == "Tester")
+    assert len(roll["points"]) == 2, roll
     assert abs(roll["points"][-1]["profit"] - (100 * (bet["odds_decimal"] - 1) + 50 * (bet2["odds_decimal"] - 1))) < 0.05, roll
 
     # --- game rewards: 250 per game + up to 250 for beating your own baseline ---

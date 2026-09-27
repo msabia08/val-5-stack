@@ -186,6 +186,78 @@ class BetManager:
             bet_id = self.db.insert_bet(bet)
         return self.db.bet(bet_id)
 
+    def place_parlay(self, bettor_name, legs, stake, context):
+        """Combine 2+ selections (from different markets) into a single all-or-nothing bet."""
+        try:
+            stake = round(float(stake), 2)
+        except (TypeError, ValueError):
+            raise BetError("Invalid stake.")
+        if stake < 1:
+            raise BetError("Minimum stake is 1 credit.")
+        if not isinstance(legs, list) or len(legs) < 2:
+            raise BetError("A parlay needs at least 2 legs.")
+        if len(legs) > 10:
+            raise BetError("A parlay can have at most 10 legs.")
+        bettor = self.db.get_bettor(self._valid_name(bettor_name))
+        if not bettor:
+            raise BetError("Sign in as a bettor first.")
+        if stake > bettor["balance"] + 1e-9:
+            raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
+        board = self.engine.build(self.db, context or {})
+        if not board.get("ready"):
+            raise BetError(board.get("message", "Odds are not available yet."))
+
+        seen, built, odds_decimal = set(), [], 1.0
+        for leg in legs:
+            market_id, sel_key = (leg or {}).get("market_id"), (leg or {}).get("selection")
+            if not market_id or not sel_key:
+                raise BetError("Each parlay leg needs a market and a selection.")
+            if market_id in seen:
+                raise BetError("Each leg of a parlay must be a different market.")
+            seen.add(market_id)
+            market, sel = find_market(board, market_id, sel_key)
+            if not market or not sel:
+                raise BetError("One of the legs is no longer available. Refresh the odds board.")
+            mtype = market["type"]
+            if mtype == "ou":
+                desc = f"{market['member']} {market['stat_label']} {sel['label']}"
+                meta = {"stat": market["stat"], "puuid": market["puuid"]}
+            elif mtype == "top":
+                desc = f"{market['label']}: {sel['label']}"
+                meta = {"stat": market["stat"]}
+            elif mtype == "team_win":
+                desc = sel["label"]
+                meta = {}
+            else:
+                desc = f"Total rounds {sel['label']}"
+                meta = {}
+            odds_decimal *= sel["decimal"]
+            built.append({
+                "market_id": market_id, "market_type": mtype, "description": desc,
+                "selection": sel_key, "selection_label": sel["label"], "line": market.get("line"),
+                "odds_decimal": sel["decimal"], "meta": meta,
+            })
+        odds_decimal = round(odds_decimal, 2)
+
+        bet = {
+            "bettor": bettor["name"],
+            "market_id": "parlay",
+            "market_type": "parlay",
+            "description": " + ".join(l["description"] for l in built),
+            "selection": "parlay",
+            "selection_label": f"{len(built)}-leg parlay",
+            "line": None,
+            "odds_decimal": odds_decimal,
+            "stake": stake,
+            "placed_ts": time.time(),
+            "context": json.dumps({"legs": built, "ctx": board.get("context")}),
+            "status": "pending",
+        }
+        with self.db.lock:
+            self.db.adjust_balance(bettor["name"], -stake)
+            bet_id = self.db.insert_bet(bet)
+        return self.db.bet(bet_id)
+
     def cancel(self, bet_id, by=None, admin=False):
         bet = self.db.bet(bet_id)
         if not bet:
@@ -213,22 +285,64 @@ class BetManager:
         metrics = {p["puuid"]: player_metrics(p, rounds) for p in players}
         settled = []
         for b in pending:
-            status, actual, note = self._evaluate(b, match, metrics)
-            if status == "won":
-                payout = round(b["stake"] * b["odds_decimal"], 2)
-            elif status == "void":
-                payout = b["stake"]
+            new_context = None
+            if b["market_type"] == "parlay":
+                status, payout, actual, note, new_context = self._evaluate_parlay(b, match, metrics)
             else:
-                payout = 0.0
+                status, actual, note = self._evaluate(b, match, metrics)
+                if status == "won":
+                    payout = round(b["stake"] * b["odds_decimal"], 2)
+                elif status == "void":
+                    payout = b["stake"]
+                else:
+                    payout = 0.0
             with self.db.lock:
-                self.db.update_bet(
-                    b["id"], status=status, settled_match_id=match["match_id"],
+                fields = dict(
+                    status=status, settled_match_id=match["match_id"],
                     settled_ts=time.time(), payout=payout, actual_value=actual, note=note,
                 )
+                if new_context is not None:
+                    fields["context"] = new_context
+                self.db.update_bet(b["id"], **fields)
                 if payout:
                     self.db.adjust_balance(b["bettor"], payout)
             settled.append(self.db.bet(b["id"]))
         return settled
+
+    def _evaluate_parlay(self, b, match, metrics):
+        """Every leg must win. A void leg is dropped (no action); if none are left, the whole parlay is void."""
+        legs = json.loads(b.get("context") or "{}").get("legs", [])
+        results = []
+        for leg in legs:
+            fake = {
+                "market_type": leg["market_type"], "selection": leg["selection"],
+                "line": leg.get("line"), "context": json.dumps(leg.get("meta") or {}),
+            }
+            status, actual, note = self._evaluate(fake, match, metrics)
+            results.append({**leg, "result": status, "actual": actual, "note": note})
+
+        statuses = [r["result"] for r in results]
+        voided = sum(1 for s in statuses if s == "void")
+        if any(s == "lost" for s in statuses):
+            overall, payout = "lost", 0.0
+        else:
+            won = [r for r in results if r["result"] == "won"]
+            if not won:
+                overall, payout = "void", b["stake"]
+            elif voided:
+                eff = 1.0
+                for r in won:
+                    eff *= r["odds_decimal"]
+                overall, payout = "won", round(b["stake"] * eff, 2)
+            else:
+                overall, payout = "won", round(b["stake"] * b["odds_decimal"], 2)
+        if overall == "void":
+            note = "Push: every leg voided, stake refunded"
+        elif voided:
+            note = f"{voided} leg(s) voided (no action); payout uses the remaining odds"
+        else:
+            note = None
+        return overall, payout, None, note, json.dumps({"legs": results})
 
     def _evaluate(self, b, match, metrics):
         """Settle one bet on a recorded game.

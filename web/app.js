@@ -11,6 +11,7 @@
     bettor: localStorage.getItem('fs.bettor') || '',
     oddsFormat: localStorage.getItem('fs.oddsFormat') || 'american',
     stake: Number(localStorage.getItem('fs.stake') || 50) || 50,
+    slipMode: 'single',
     matchFilter: { map: '', result: '', mode: '' },
     expanded: new Set(),
   };
@@ -53,6 +54,14 @@
     (state.status?.members || []).forEach((x, i) => m.set(x.puuid, { ...x, slot: (i % 8) + 1 }));
     return m;
   };
+
+  // Stable color per bettor name, so a person's slips always look the same at a glance.
+  function bettorSlot(name) {
+    let h = 0;
+    const s = String(name || '');
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return (h % 8) + 1;
+  }
 
   // ---- data ---------------------------------------------------------------
   async function api(path, opts = {}) {
@@ -386,34 +395,102 @@
         `<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>` +
         `<div class="btn-row"><button class="btn small" id="bettor-signin">Sign in</button><button class="btn ghost small" id="bettor-register">Create account</button></div>` +
         `<p class="muted small">Each bettor has a personal password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits.</p></div>`;
-    const items = state.slip.map((x, i) =>
-      `<div class="slip-item"><div><div class="slip-desc">${esc(x.desc)}</div><div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)} (${Number(x.decimal).toFixed(2)})</div></div>` +
-      `<input type="number" min="1" step="1" value="${x.stake}" data-i="${i}" class="stake" aria-label="Stake">` +
-      `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button>` +
-      `<div class="muted small towin">To win ${fmt.credits(x.stake * (x.decimal - 1))}</div></div>`).join('');
-    const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
+    if (!state.slip.length) {
+      return `<h2>Bet slip</h2>${account}<p class="muted">Tap any odds to add a pick.</p>`;
+    }
+    const canParlay = state.slip.length >= 2;
+    const mode = canParlay ? state.slipMode : 'single';
+    const modeToggle = canParlay
+      ? `<div class="slip-mode" role="tablist">
+          <button type="button" class="mode-btn ${mode === 'single' ? 'on' : ''}" data-mode="single" role="tab" aria-selected="${mode === 'single'}">Singles</button>
+          <button type="button" class="mode-btn ${mode === 'parlay' ? 'on' : ''}" data-mode="parlay" role="tab" aria-selected="${mode === 'parlay'}">Parlay</button>
+        </div>`
+      : '';
+    let body, placeLabel;
+    if (mode === 'parlay') {
+      const combinedDecimal = state.slip.reduce((a, x) => a * Number(x.decimal), 1);
+      const combined = { decimal: combinedDecimal, american: fmt.american(combinedDecimal) };
+      const stake = state.stake;
+      const legs = state.slip.map((x, i) =>
+        `<div class="slip-item parlay-leg"><div><div class="slip-desc">${esc(x.desc)}</div><div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)}</div></div>` +
+        `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
+      body = `${legs}
+        <div class="parlay-summary"><span>${state.slip.length}-leg parlay</span><b>${fmt.odds(combined)}</b></div>
+        <label>Stake<input type="number" min="1" step="1" value="${stake}" id="parlay-stake" aria-label="Parlay stake"></label>
+        <div class="muted small parlay-towin">To win ${fmt.credits(stake * (combinedDecimal - 1))}</div>
+        <p class="muted small">All ${state.slip.length} legs must win. If one is voided (a push), the payout uses the odds of the legs that stood.</p>`;
+      placeLabel = 'Place parlay';
+    } else {
+      const items = state.slip.map((x, i) =>
+        `<div class="slip-item"><div><div class="slip-desc">${esc(x.desc)}</div><div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)} (${Number(x.decimal).toFixed(2)})</div></div>` +
+        `<input type="number" min="1" step="1" value="${x.stake}" data-i="${i}" class="stake" aria-label="Stake">` +
+        `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button>` +
+        `<div class="muted small towin">To win ${fmt.credits(x.stake * (x.decimal - 1))}</div></div>`).join('');
+      const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
+      body = `${items}<div class="slip-total">Total stake ${fmt.credits(total)}</div>`;
+      placeLabel = `Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}`;
+    }
     return `<h2>Bet slip</h2>
       ${account}
-      ${items || '<p class="muted">Tap any odds to add a pick.</p>'}
-      ${state.slip.length ? `<div class="slip-total">Total stake ${fmt.credits(total)}</div><button class="btn primary" id="place-bets" ${me ? '' : 'disabled title="Sign in first"'}>Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}</button><button class="btn ghost" id="clear-slip" style="width:100%;margin-top:6px">Clear slip</button>` : ''}`;
+      ${modeToggle}
+      ${body}
+      <button class="btn primary" id="place-bets" ${me ? '' : 'disabled title="Sign in first"'}>${placeLabel}</button>
+      <button class="btn ghost" id="clear-slip" style="width:100%;margin-top:6px">Clear slip</button>`;
+  }
+
+  // ---- bet tickets (slip-style rendering, grouped by bettor) --------------------
+  function betTicket(b) {
+    const legs = b.market_type === 'parlay' ? (JSON.parse(b.context || '{}').legs || []) : null;
+    const legIcon = { won: '✓', lost: '✗', void: '↺' };
+    const legRows = legs ? legs.map((l) =>
+      `<div class="bet-leg ${l.result || ''}"><span class="leg-icon">${legIcon[l.result] || '•'}</span>` +
+      `<span class="leg-desc">${esc(l.description)}</span><span class="muted small">@ ${fmt.american(l.odds_decimal)}</span></div>`).join('') : '';
+    const cancelBtn = isMine(b) ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`
+      : (state.status.auth && state.status.auth.admin_required) ? `<button class="btn ghost small cancel-bet admin" data-id="${b.id}" title="Needs the admin password">Admin cancel</button>`
+      : '';
+    return `<div class="bet-ticket ${b.status}">
+        <div class="bet-ticket-row">
+          <div class="bet-desc">${legs ? `<span class="parlay-badge">Parlay ×${legs.length}</span>` : ''}${esc(b.description)}</div>
+          <span class="status ${b.status}">${b.status}</span>
+        </div>
+        ${legRows ? `<div class="bet-legs">${legRows}</div>` : ''}
+        <div class="bet-ticket-row muted small">
+          <span>Stake ${fmt.credits(b.stake)} @ ${fmt.american(b.odds_decimal)} <span class="muted">(${Number(b.odds_decimal).toFixed(2)})</span></span>
+          <span>${b.status === 'pending' ? `To win ${fmt.credits(b.stake * (b.odds_decimal - 1))}` : `Return ${fmt.credits(b.payout || 0)}`}</span>
+        </div>
+        ${b.note ? `<div class="muted small bet-note">${esc(b.note)}</div>` : ''}
+        ${b.status === 'pending' && cancelBtn ? `<div class="bet-ticket-row">${cancelBtn}</div>` : ''}
+      </div>`;
+  }
+
+  function bettorSlips(bets) {
+    if (!bets.length) return '';
+    const groups = new Map();
+    bets.forEach((b) => {
+      if (!groups.has(b.bettor)) groups.set(b.bettor, []);
+      groups.get(b.bettor).push(b);
+    });
+    const names = [...groups.keys()].sort((a, b) => {
+      if (isMine({ bettor: a }) !== isMine({ bettor: b })) return isMine({ bettor: a }) ? -1 : 1;
+      return groups.get(b).length - groups.get(a).length || a.localeCompare(b);
+    });
+    return `<div class="bettor-slips">${names.map((name) => {
+      const rows = groups.get(name);
+      return `<div class="bet-slip-card ${isMine({ bettor: name }) ? 'me' : ''}">
+        <div class="bet-slip-head"><span class="swatch s${bettorSlot(name)} lg"></span><b>${esc(name)}</b><span class="muted small right">${rows.length} bet${rows.length > 1 ? 's' : ''}</span></div>
+        ${rows.map(betTicket).join('')}
+      </div>`;
+    }).join('')}</div>`;
   }
 
   function betsSection() {
     const pending = state.bets.filter((b) => b.status === 'pending');
     const settled = state.bets.filter((b) => b.status !== 'pending').slice(0, 40);
-    const head = '<thead><tr><th>Bettor</th><th>Pick</th><th class="num">Odds</th><th class="num">Stake</th><th>Status</th><th class="num">Return</th></tr></thead>';
-    const row = (b) =>
-      `<tr><td>${esc(b.bettor)}</td><td>${esc(b.description)}</td><td class="num">${fmt.american(b.odds_decimal)}</td><td class="num">${fmt.credits(b.stake)}</td>` +
-      `<td><span class="status ${b.status}">${b.status}</span>${b.note ? `<div class="muted small">${esc(b.note)}</div>` : ''}${b.actual_value != null && b.status !== 'pending' ? `<div class="muted small">actual ${fmt.n1(b.actual_value)}</div>` : ''}</td>` +
-      `<td class="num">${b.status !== 'pending' ? fmt.credits(b.payout || 0)
-        : isMine(b) ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`
-        : (state.status.auth && state.status.auth.admin_required) ? `<button class="btn ghost small cancel-bet admin" data-id="${b.id}" title="Needs the admin password">Admin cancel</button>`
-        : ''}</td></tr>`;
     return `<section class="card"><h2>Open bets <span class="muted">(${pending.length})</span></h2>
-        ${pending.length ? `<div class="table-wrap"><table class="compact">${head}<tbody>${pending.map(row).join('')}</tbody></table></div>` : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
+        ${pending.length ? bettorSlips(pending) : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
         <p class="muted small">Balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>
       <section class="card"><h2>Settled bets</h2>
-        ${settled.length ? `<div class="table-wrap"><table class="compact">${head}<tbody>${settled.map(row).join('')}</tbody></table></div>` : '<p class="muted">Nothing settled yet.</p>'}</section>`;
+        ${settled.length ? bettorSlips(settled) : '<p class="muted">Nothing settled yet.</p>'}</section>`;
   }
 
   function findMarket(id, key) {
@@ -506,6 +583,15 @@
       const tot = $('.slip-total', slip);
       if (tot) tot.textContent = `Total stake ${fmt.credits(state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0))}`;
     }));
+    $('#parlay-stake')?.addEventListener('input', (e) => {
+      const stake = Math.max(0, Number(e.target.value) || 0);
+      state.stake = stake || state.stake;
+      localStorage.setItem('fs.stake', String(state.stake));
+      const combinedDecimal = state.slip.reduce((a, x) => a * Number(x.decimal), 1);
+      const tw = $('.parlay-towin', slip);
+      if (tw) tw.textContent = `To win ${fmt.credits(stake * (combinedDecimal - 1))}`;
+    });
+    $$('.mode-btn', slip).forEach((b) => b.addEventListener('click', () => { state.slipMode = b.dataset.mode; drawSlip(); }));
     $$('.rm', slip).forEach((b) => b.addEventListener('click', () => { state.slip.splice(Number(b.dataset.i), 1); drawSlip(); syncOddButtons(); }));
     $('#clear-slip')?.addEventListener('click', () => { state.slip = []; drawSlip(); syncOddButtons(); });
     $('#place-bets')?.addEventListener('click', placeSlip);
@@ -513,6 +599,22 @@
 
   async function placeSlip() {
     if (!state.me) { toast('Sign in as a bettor first', 'bad'); return; }
+    if (state.slip.length >= 2 && state.slipMode === 'parlay') {
+      const stake = Number($('#parlay-stake')?.value) || state.stake;
+      try {
+        await api('/api/bets', {
+          method: 'POST',
+          body: JSON.stringify({ legs: state.slip.map((x) => ({ market_id: x.market_id, selection: x.selection })), stake, context: state.ctx }),
+        });
+        state.slip = [];
+        toast('Parlay placed. It settles after the next 5-stack game.', 'good');
+      } catch (e) {
+        toast(e.message, 'bad');
+      }
+      await loadBets();
+      draw();
+      return;
+    }
     const failures = [];
     const remaining = [];
     for (const it of state.slip) {
