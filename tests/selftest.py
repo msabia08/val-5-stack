@@ -386,6 +386,22 @@ def main():
     assert settle("ou", "under", 10.5, stat="kills", puuid="puuid-2").startswith("void")
     assert settle("ou", "over", 150.5, stat="acs", puuid="puuid-1").startswith("void")  # rates are never decided early
     assert settle("top", "puuid-1", stat="kills").startswith("void")
+    # Parlays on a surrender: every leg uses the same rules. An undecided leg is dropped (not refunded) and the
+    # payout uses the legs that stood; a leg already decided against the bettor still loses the whole parlay.
+    def parlay(*legs):
+        built = [{"market_type": t, "selection": sel, "line": line, "odds_decimal": 2.0, "meta": meta, "description": t}
+                 for t, sel, line, meta in legs]
+        return bets._evaluate_parlay({"stake": 10.0, "odds_decimal": 2.0 ** len(built),
+                                      "context": json.dumps({"legs": built})}, ff, ff_metrics)
+    status, payout, _, note, ctx_json = parlay(("team_win", "win", None, {}),
+                                               ("ou", "over", 10.5, {"stat": "kills", "puuid": "puuid-1"}),  # 12: decided
+                                               ("ou", "over", 150.5, {"stat": "acs", "puuid": "puuid-1"}))   # rate: dropped
+    assert status == "won" and payout == 40.0 and "surrender" in note, (status, payout, note)  # 10 x 2.0 x 2.0
+    assert [leg["result"] for leg in json.loads(ctx_json)["legs"]] == ["won", "won", "void"]
+    assert parlay(("team_win", "win", None, {}), ("ou", "over", 10.5, {"stat": "kills", "puuid": "puuid-2"}),  # undecided
+                  ("team_ou", "under", 12.5, {}))[0] == "lost"  # 13 rounds already beat the under
+    status, payout, _, note, _ = parlay(("ou", "over", 150.5, {"stat": "acs", "puuid": "puuid-1"}), ("top", "puuid-1", None, {"stat": "kills"}))
+    assert status == "void" and payout == 10.0 and "surrender" in note, (status, payout, note)  # nothing decided: refunded
     done = dict(ff, rounds_won=13, rounds_lost=4)  # the same numbers in a completed game settle normally
     assert bets._evaluate({"market_type": "ou", "selection": "under", "line": 10.5,
                            "context": json.dumps({"stat": "kills", "puuid": "puuid-2"})}, done, ff_metrics)[0] == "won"

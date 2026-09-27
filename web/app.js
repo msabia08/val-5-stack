@@ -351,7 +351,7 @@
       </div>
       <p class="muted small">Lines come from your 5-stack history, weighted toward recent games. Choosing a map or agents up-weights matching games. House edge ${Math.round((od.house_edge || 0) * 100)}%.` +
       `${od.partial_games?.forfeits ? ` ${od.partial_games.forfeits} surrendered ${od.partial_games.forfeits === 1 ? 'game is' : 'games are'} scaled to a full ${od.partial_games.full_game_rounds}-round game and counted at reduced weight.` : ''}</p>
-      <p class="muted small">If the next game ends early by a surrender, the match result stands. Other bets settle only if they were already decided (an over that had already cleared its line wins; its under loses); everything else is refunded. A remake in the first few rounds doesn't count as a game: bets carry over to the next one.</p></section>`;
+      <p class="muted small">If the next game ends early by a surrender, the match result stands. Other bets settle only if they were already decided (an over that had already cleared its line wins; its under loses); everything else is refunded. Parlays apply this leg by leg: undecided legs are dropped and the rest still count. A remake in the first few rounds doesn't count as a game: bets carry over to the next one.</p></section>`;
     if (!od.ready) {
       return ctxBar + `<div class="card empty"><h2>No odds yet</h2><p>${esc(od.message)}</p></div>` + betsSection();
     }

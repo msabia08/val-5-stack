@@ -140,7 +140,8 @@ distribution at low weight and are flagged *low confidence*.
   loses. Anything else is refunded, including per-round stats (ACS, ADR,
   headshot %) and "tops the scoreboard" markets, which could still have
   swung. When the full match record is available, its winner flag decides
-  who won, even if the surrendering team was ahead on rounds.
+  who won, even if the surrendering team was ahead on rounds. Parlay legs
+  follow the same rule, leg by leg (see Parlays).
 - **Remakes.** A game that ends within the first 4 rounds is treated as a
   remake or an abandoned lobby, not a game: it isn't recorded, open bets
   carry over to the next game, and it pays no rewards.
@@ -164,6 +165,11 @@ there are 2+ picks.
 - If a leg is voided (push, tie for the top, a draw) it's dropped with no
   effect: the payout is recalculated from the odds of the legs that stood. If
   every leg is voided, the stake is refunded.
+- If the game is **surrendered**, each leg is judged by the surrender rule
+  above: the match-result leg stands, a leg that was already decided keeps its
+  result, and an undecided leg is dropped like any other void leg. So a leg
+  already lost (say an under that was already beaten) still loses the parlay,
+  and a parlay where nothing was decided is refunded.
 - The **Open bets** / **Settled bets** slips show each leg of a parlay
   underneath the ticket, with a ✓ / ✗ / ↺ per leg once it settles.
 - *Reset season* on the Odds page puts everyone back to the starting balance

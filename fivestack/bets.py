@@ -11,7 +11,8 @@ from .stats import player_metrics
 
 # Stats that only ever go up during a game: an over that cleared the line before a surrender is already won.
 COUNTING_STATS = {d["key"] for d in STAT_DEFS if d["kind"] == "count"}
-EARLY_END = "Game ended early (surrender) before this was decided: stake refunded"
+# Note on a bet voided by a surrender. A void single is refunded; a void parlay leg is dropped from the parlay.
+EARLY_END = "Game ended early (surrender) before this was decided"
 
 
 class BetError(Exception):
@@ -336,8 +337,12 @@ class BetManager:
                 overall, payout = "won", round(b["stake"] * eff, 2)
             else:
                 overall, payout = "won", round(b["stake"] * b["odds_decimal"], 2)
+        surrendered = ending(match) == FORFEIT
         if overall == "void":
-            note = "Push: every leg voided, stake refunded"
+            note = ("Game ended early (surrender) before any leg was decided: stake refunded" if surrendered
+                    else "Push: every leg voided, stake refunded")
+        elif voided and surrendered and overall == "won":
+            note = f"Game ended early (surrender): {voided} undecided leg(s) dropped; payout uses the remaining odds"
         elif voided:
             note = f"{voided} leg(s) voided (no action); payout uses the remaining odds"
         else:
