@@ -1,0 +1,37 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+A local website that tracks a Valorant 5-stack through the unofficial HenrikDev API, keeps per-player stats for games where all five members were on the same team, and generates sportsbook-style odds that the squad bets on with virtual credits. `README.md` covers the user-facing behaviour and every `config.json` key.
+
+**Hard constraint:** Python 3.10+ standard library only, with no third-party packages. The frontend (`web/`) is plain JS/CSS/HTML with no build step and no dependencies. Keep it that way.
+
+## Commands
+
+```
+python server.py                  # run (needs config.json; created from config.example.json on first run)
+python server.py --demo           # synthetic data in data/demo.db, never calls the API
+python server.py --no-browser --port=8090 --no-tunnel --config=other.json
+python server.py --tunnel         # also publish via Cloudflare quick tunnel (requires site_password)
+python selftest.py                # the only test suite: offline, end-to-end, prints "selftest OK"
+```
+
+There is no linter config, no test framework and no single-test runner. `selftest.py` is one `main()` of sequential asserts against a `FakeClient` that stands in for `HenrikClient`. Add new checks there, and extend `FakeClient` when new API calls are involved. `HENRIK_API_KEY` in the environment overrides `api_key` from the config.
+
+## Architecture
+
+The data flows one way: **HenrikDev → tracker → SQLite → stats/odds → JSON API → SPA**, and bets feed back in at settlement.
+
+- `server.py` wires everything together. `App` owns one instance each of `DB`, `OddsEngine`, `BetManager`, `Auth`, `Tunnel`, and (only when the config is valid and not in demo mode) `HenrikClient` + `Tracker`. `Handler` is a stdlib `BaseHTTPRequestHandler` that routes by hand in `do_GET`/`_api_get`/`do_POST`/`do_DELETE`. New endpoints go there. Every route except `/login`, `/logout` and `/style.css` sits behind the cookie check when `site_password` is set. `/api/bettors/reset` also checks the `X-Admin-Password` header.
+- `tracker.py` is the 5-stack detection (the module docstring explains the algorithm). Each sync fetches every member's *stored matches* (one API call per member). A match id seen for all members on the same team counts as a game. A match missing exactly one member is checked against the v4 match-details endpoint. Everything else goes into the `rejected_matches` meta key and is never re-checked. Polling runs on a daemon thread (`start()`/`_loop`), and `/api/sync` triggers `request_sync()` on another thread. When a sync records new matches, it calls the `on_new_matches` callback, which is where bets get settled.
+- `henrik.py` is a thin urllib client with a global minimum request interval, rate-limit header tracking and automatic 429 backoff. Stay inside the budget of about 30 requests per minute (`details_per_sync` caps enrichment fetches).
+- `db.py`: one shared `sqlite3` connection (`check_same_thread=False`, WAL) guarded by an `RLock`. The poller thread and the request threads all go through it. Multi-step writes (balance adjustment + bet insert/update) wrap `with db.lock:`. The schema is `CREATE TABLE IF NOT EXISTS` only, with no migrations, so a column added to an existing table won't reach an existing `data/tracker.db` unless you add migration logic. The `meta` table is a JSON key/value store (`cookie_secret`, `rejected_matches`, `last_sync`, `backfilled`).
+- `stats.py`: pure aggregation over DB rows. `player_metrics()` defines the per-game stat values (ACS, ADR, HS%, and so on), and both `stats.py` and bet settlement use it, so a change there alters both the displayed stats and settlement results.
+- `odds.py`: `OddsEngine.build(db, context)` recomputes the whole odds board on each call. It is stateless and uses recency-weighted samples, boosted by the chosen map/agent in `context`. Market ids are strings: `ou:<stat>:<puuid>`, `top:<stat>`, `team:win`, `team:rounds`. `find_market()` looks them up.
+- `bets.py`: `place()` rebuilds the board with the bettor's context and locks in the current odds and line on the bet row. `settle_for_match()` settles every pending bet whose `placed_ts` is before the match's `started_ts`, whatever the map. Void results (landing exactly on the line, ties, draws) refund the stake.
+- `tunnel.py` downloads `cloudflared` into `tools/` and runs it as a child process. It refuses to start without `site_password`.
+- `web/app.js`: a single IIFE SPA with views `overview/players/odds/bettors/matches/setup`, a global `state` object, and an `api()` fetch helper. It remembers the bettor name, odds format and stake in `localStorage`.
+
+`config.json`, `data/` and `tools/` are gitignored. Delete `data/tracker.db` to rebuild history from scratch.
