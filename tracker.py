@@ -13,6 +13,9 @@ How detection works
    missing member was in it too.
 5. Optionally the v4 record is fetched for stored games as well, to add game
    length, rank names and to verify everybody shared one party.
+6. Every member line in a counted mode is also kept in member_games, so each
+   member's non-5-stack games serve as the baseline their 5-stack play is
+   compared against.
 """
 import threading
 import time
@@ -123,6 +126,15 @@ def parse_stored_item(item):
             "tier_name": None,
         },
     }
+
+
+def member_game_row(rec):
+    """Flatten a parsed stored item into a member_games row."""
+    row = {k: rec[k] for k in ("match_id", "map", "mode", "mode_label", "started_at", "started_ts",
+                                "rounds_won", "rounds_lost")}
+    row["result"] = result_of(rec["rounds_won"], rec["rounds_lost"])
+    row.update({k: v for k, v in rec["player"].items() if k not in ("tier", "tier_name")})
+    return row
 
 
 def parse_details(data, member_puuids):
@@ -275,8 +287,13 @@ class Tracker:
                 raise TrackerError("Could not resolve every member: " + "; ".join(problems))
             puuids = [m["puuid"] for m in members]
             pset = set(puuids)
+            if not full and not self.db.get_meta("history_backfilled"):
+                # Databases from before member_games existed only hold 5-stack games: pull everything once.
+                full = True
+                self.log("Fetching full history once to build each member's non-5-stack baseline")
 
             by_id = defaultdict(dict)
+            member_games = []
             for m in members:
                 region = (m.get("region") or self.region).lower()
                 self.log(f"Fetching {'full' if full else 'recent'} stored matches for {m['name']}#{m['tag']}")
@@ -285,6 +302,9 @@ class Tracker:
                     rec = parse_stored_item(item)
                     if rec["match_id"] and rec["player"]["puuid"]:
                         by_id[rec["match_id"]][m["puuid"]] = rec
+                        if rec["rounds_won"] is not None and (not self.modes or rec["mode"] in self.modes):
+                            member_games.append(member_game_row(rec))
+            self.db.insert_member_games(member_games)
 
             rejected = set(self.db.get_meta("rejected_matches", []) or [])
             new_matches, skipped_mode, candidates, verified = [], 0, 0, 0
@@ -354,6 +374,8 @@ class Tracker:
                     enriched += 1
 
             self.db.set_meta("rejected_matches", sorted(rejected)[-4000:])
+            if full:
+                self.db.set_meta("history_backfilled", True)
             new_matches.sort(key=lambda x: x.get("started_ts") or 0)
             settled = []
             if new_matches and self.on_new_matches:

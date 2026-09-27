@@ -52,6 +52,32 @@ CREATE TABLE IF NOT EXISTS match_players (
     tier_name TEXT,
     PRIMARY KEY (match_id, puuid)
 );
+-- Each member's own line from every stored match in a counted mode, whoever they queued with.
+-- Rows whose match_id is also in `matches` are 5-stack games; the rest are the member's baseline.
+CREATE TABLE IF NOT EXISTS member_games (
+    match_id TEXT NOT NULL,
+    puuid TEXT NOT NULL,
+    map TEXT,
+    mode TEXT,
+    mode_label TEXT,
+    started_at TEXT,
+    started_ts REAL,
+    rounds_won INTEGER,
+    rounds_lost INTEGER,
+    result TEXT,
+    agent TEXT,
+    score INTEGER,
+    kills INTEGER,
+    deaths INTEGER,
+    assists INTEGER,
+    headshots INTEGER,
+    bodyshots INTEGER,
+    legshots INTEGER,
+    damage_dealt INTEGER,
+    damage_received INTEGER,
+    PRIMARY KEY (match_id, puuid)
+);
+CREATE INDEX IF NOT EXISTS idx_member_games_puuid ON member_games(puuid, started_ts);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS bettors (
     name TEXT PRIMARY KEY,
@@ -90,6 +116,11 @@ MATCH_FIELDS = [
 PLAYER_FIELDS = [
     "match_id", "puuid", "agent", "score", "kills", "deaths", "assists", "headshots",
     "bodyshots", "legshots", "damage_dealt", "damage_received", "tier", "tier_name",
+]
+MEMBER_GAME_FIELDS = [
+    "match_id", "puuid", "map", "mode", "mode_label", "started_at", "started_ts", "rounds_won",
+    "rounds_lost", "result", "agent", "score", "kills", "deaths", "assists", "headshots",
+    "bodyshots", "legshots", "damage_dealt", "damage_received",
 ]
 BET_FIELDS = [
     "bettor", "market_id", "market_type", "description", "selection", "selection_label",
@@ -242,6 +273,30 @@ class DB:
                       ma.rounds_won, ma.rounds_lost, ma.result, ma.team
                FROM match_players mp JOIN matches ma USING(match_id)
                ORDER BY ma.started_ts DESC"""
+        )
+
+    def insert_member_games(self, rows):
+        """Store member lines from stored-match history; already-known (match, member) pairs are kept as-is."""
+        if not rows:
+            return
+        with self.lock:
+            self.conn.executemany(
+                f"INSERT OR IGNORE INTO member_games({','.join(MEMBER_GAME_FIELDS)}) "
+                f"VALUES({_placeholders(len(MEMBER_GAME_FIELDS))})",
+                [[r.get(f) for f in MEMBER_GAME_FIELDS] for r in rows],
+            )
+            self.conn.commit()
+
+    def count_member_games(self):
+        row = self.query_one("SELECT COUNT(*) AS n FROM member_games")
+        return row["n"] if row else 0
+
+    def baseline_rows(self):
+        """Member lines from games that were NOT 5-stack games, newest first."""
+        return self.query(
+            """SELECT * FROM member_games
+               WHERE match_id NOT IN (SELECT match_id FROM matches)
+               ORDER BY started_ts DESC"""
         )
 
     def matches_needing_details(self, limit):

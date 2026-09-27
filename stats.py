@@ -1,6 +1,21 @@
 """Aggregation of per-game member lines into overall / per-agent / per-map stats."""
+import math
 import time
 from collections import defaultdict
+
+# Stats compared between a member's 5-stack games and their other games: key, label, +1 if higher is better.
+DEVIATION_METRICS = [
+    ("acs", "ACS", 1),
+    ("kpr", "Kills / round", 1),
+    ("dpr", "Deaths / round", -1),
+    ("apr", "Assists / round", 1),
+    ("adr", "ADR", 1),
+    ("hs_pct", "Headshot %", 1),
+    ("kd", "K/D", 1),
+    ("win_rate", "Win rate", 1),
+]
+MIN_DEVIATION_GAMES = 5  # per side, before a difference is judged at all
+CLEAR_Z, LEANING_Z = 2.0, 1.0
 
 
 def safe_div(a, b):
@@ -121,6 +136,97 @@ def _streak(matches):
     return f"{'W' if kind == 'win' else 'L'}{streak}"
 
 
+def _game_values(r):
+    rounds = _rounds(r)
+    met = player_metrics(r, rounds)
+    met["dpr"] = met["deaths"] / rounds
+    met["apr"] = met["assists"] / rounds
+    met["win_rate"] = 1.0 if r.get("result") == "win" else 0.0
+    return met
+
+
+def _std_err(values):
+    n = len(values)
+    if n < 2:
+        return None
+    mean = sum(values) / n
+    return math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1) / n)
+
+
+def _verdict(z, sign):
+    if z is None:
+        return "too_few"
+    z *= sign
+    if z >= CLEAR_Z:
+        return "better"
+    if z <= -CLEAR_Z:
+        return "worse"
+    if z >= LEANING_Z:
+        return "leaning_better"
+    if z <= -LEANING_Z:
+        return "leaning_worse"
+    return "same"
+
+
+def deviation(stack_rows, base_rows):
+    """How a member's 5-stack games differ from their other games.
+
+    Values are pooled the same way as `aggregate` (e.g. ACS = total score / total rounds). The
+    difference is judged with a two-sample z statistic built from the per-game spread on each side,
+    so a big gap over a handful of games still reads as noise.
+    """
+    stack_rows = [r for r in stack_rows if _rounds(r)]
+    base_rows = [r for r in base_rows if _rounds(r)]
+    if not base_rows:
+        return None
+    pooled = {}
+    for side, rows in (("stack", stack_rows), ("usual", base_rows)):
+        agg = aggregate(rows)
+        rounds = sum(_rounds(r) for r in rows)
+        agg["dpr"] = safe_div(sum(r.get("deaths") or 0 for r in rows), rounds)
+        agg["apr"] = safe_div(sum(r.get("assists") or 0 for r in rows), rounds)
+        pooled[side] = agg
+    enough = len(stack_rows) >= MIN_DEVIATION_GAMES and len(base_rows) >= MIN_DEVIATION_GAMES
+    stack_games = [_game_values(r) for r in stack_rows]
+    base_games = [_game_values(r) for r in base_rows]
+
+    metrics = []
+    for key, label, sign in DEVIATION_METRICS:
+        s, b = pooled["stack"].get(key), pooled["usual"].get(key)
+        if s is None or b is None:
+            continue
+        diff = s - b
+        z = None
+        if enough:
+            se_s = _std_err([g[key] for g in stack_games if g[key] is not None])
+            se_b = _std_err([g[key] for g in base_games if g[key] is not None])
+            if se_s is not None and se_b is not None:
+                se = math.hypot(se_s, se_b)
+                z = diff / se if se > 0 else 0.0
+        metrics.append({
+            "key": key,
+            "label": label,
+            "better": "higher" if sign > 0 else "lower",
+            "stack": s,
+            "usual": b,
+            "diff": diff,
+            "pct": (diff / b) if b else None,
+            "z": round(z, 2) if z is not None else None,
+            "verdict": _verdict(z, sign),
+        })
+    judged = [m for m in metrics if m["verdict"] not in ("same", "too_few")]
+    standout = max(judged, key=lambda m: abs(m["z"]))["key"] if judged else None
+    return {
+        "stack_games": len(stack_rows),
+        "usual_games": len(base_rows),
+        "usual_modes": sorted({r.get("mode_label") or r.get("mode") for r in base_rows} - {None}),
+        "enough": enough,
+        "min_games": MIN_DEVIATION_GAMES,
+        "metrics": metrics,
+        "standout": standout,
+    }
+
+
 def team_stats(matches):
     g = len(matches)
     wins = sum(1 for m in matches if m.get("result") == "win")
@@ -185,6 +291,9 @@ def build_stats(db):
     by_member = defaultdict(list)
     for r in rows:
         by_member[r["puuid"]].append(r)
+    baseline = defaultdict(list)
+    for r in db.baseline_rows():
+        baseline[r["puuid"]].append(r)
 
     out_members = []
     for m in members:
@@ -217,6 +326,7 @@ def build_stats(db):
             "by_agent": _group(mr, "agent"),
             "by_map": _group(mr, "map"),
             "form": form,
+            "deviation": deviation(mr, baseline.get(m["puuid"], [])),
             "best": {
                 "kills": _best(mr, "kills"),
                 "acs": _best(mr, "acs"),

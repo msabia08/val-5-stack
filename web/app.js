@@ -222,6 +222,62 @@
       </section>`;
   }
 
+  // ---- 5-stack vs. usual ----------------------------------------------------------
+  const DEV_LABEL = {
+    better: '▲ Better', worse: '▼ Worse', leaning_better: '△ Slightly better', leaning_worse: '▽ Slightly worse',
+    same: 'No real change', too_few: 'Too few games',
+  };
+  const devBadge = (v) => `<span class="dev ${v}">${DEV_LABEL[v] || ''}</span>`;
+  const devValue = (key, v) => ({ acs: fmt.n0, adr: fmt.n0, hs_pct: fmt.pct1, win_rate: fmt.pct }[key] || fmt.n2)(v);
+  // Round before signing so a -0.004 gap reads as "0.00", not "-0.00".
+  const tidy = (v, dp) => Number(v.toFixed(dp)) || 0;
+  function devDiff(mt) {
+    if (mt.key === 'win_rate') return `${fmt.signed(tidy(mt.diff * 100, 0), 0)} pts`;
+    if (mt.key === 'hs_pct') return `${fmt.signed(tidy(mt.diff, 1))} pts`;
+    const d = ['acs', 'adr'].includes(mt.key) ? fmt.signed(tidy(mt.diff, 0), 0) : (tidy(mt.diff, 2) > 0 ? '+' : '') + fmt.n2(tidy(mt.diff, 2));
+    return d + (isNum(mt.pct) ? ` <span class="muted">(${fmt.signed(tidy(mt.pct * 100, 0), 0)}%)</span>` : '');
+  }
+  const devMetric = (dv, key) => dv?.metrics.find((x) => x.key === key);
+
+  function devSummary(st, idx) {
+    const withBase = st.members.filter((m) => m.deviation && m.overall.games);
+    if (!withBase.length) {
+      return `<section class="card"><h2>5-stack vs. their other games</h2>
+        <p class="muted">No non-5-stack games stored yet. Each member's other games in the tracked modes are collected on the next sync.</p></section>`;
+    }
+    const acsPct = (m) => devMetric(m.deviation, 'acs')?.pct ?? -Infinity;
+    const rows = withBase.slice().sort((a, b) => acsPct(b) - acsPct(a)).map((m) => {
+      const dv = m.deviation, slot = idx.get(m.puuid)?.slot || 1;
+      const acs = devMetric(dv, 'acs'), kd = devMetric(dv, 'kd'), wr = devMetric(dv, 'win_rate');
+      const so = dv.standout && devMetric(dv, dv.standout);
+      return `<tr><td><span class="swatch s${slot}"></span>${esc(m.nickname)}</td>` +
+        `<td class="num">${dv.stack_games} <span class="muted">/ ${dv.usual_games}</span></td>` +
+        `<td class="num">${acs ? `${fmt.n0(acs.stack)} <span class="muted">vs ${fmt.n0(acs.usual)}</span>` : '–'}</td>` +
+        `<td class="num">${acs ? devDiff(acs) : '–'}</td>` +
+        `<td class="num">${kd ? devDiff(kd) : '–'}</td>` +
+        `<td class="num">${wr ? devDiff(wr) : '–'}</td>` +
+        `<td>${acs ? devBadge(acs.verdict) : ''}</td>` +
+        `<td>${so ? `${esc(so.label)} ${devBadge(so.verdict)}` : '<span class="muted">–</span>'}</td></tr>`;
+    }).join('');
+    return `<section class="card"><h2>5-stack vs. their other games</h2>
+      <p class="muted small">Each player's 5-stack games compared with their games outside the stack (solo queue or smaller parties) in the tracked modes. "Better" or "worse" means the gap is about two standard errors or more; "slightly" means one to two; smaller gaps are within normal game-to-game variation.</p>
+      <div class="table-wrap"><table><thead><tr><th>Player</th><th class="num">Games stack / other</th><th class="num">ACS</th><th class="num">ACS change</th><th class="num">K/D change</th><th class="num">Win % change</th><th>ACS verdict</th><th>Biggest change</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </section>`;
+  }
+
+  function devBlock(m) {
+    const dv = m.deviation;
+    if (!dv) return '<h3>Compared with their other games</h3><p class="muted small">No non-5-stack games stored for this player yet.</p>';
+    const rows = dv.metrics.map((mt) =>
+      `<tr><td>${esc(mt.label)} <span class="muted small">${mt.better === 'lower' ? '(lower is better)' : ''}</span></td>` +
+      `<td class="num">${devValue(mt.key, mt.stack)}</td><td class="num">${devValue(mt.key, mt.usual)}</td>` +
+      `<td class="num">${devDiff(mt)}</td><td>${devBadge(mt.verdict)}</td></tr>`).join('');
+    const note = dv.enough ? '' : ` Differences are judged once both sides have ${dv.min_games} games.`;
+    return `<h3>Compared with their other games</h3>
+      <p class="muted small">${dv.stack_games} 5-stack games vs. ${dv.usual_games} other games (${esc(dv.usual_modes.join(', ') || 'tracked modes')}).${note}</p>
+      <div class="table-wrap"><table class="compact"><thead><tr><th>Stat</th><th class="num">5-stack</th><th class="num">Other games</th><th class="num">Difference</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
   // ---- players ----------------------------------------------------------------
   function viewPlayers() {
     const st = state.stats, idx = memberIndex();
@@ -232,7 +288,7 @@
         rows.map((r) => `<tr><td>${esc(r[key])}</td><td class="num">${r.games}</td><td class="num">${fmt.pct(r.win_rate)}</td><td class="num">${fmt.n0(r.acs)}</td><td class="num">${fmt.n2(r.kd)}</td><td class="num">${fmt.n1(r.avg_kills)} / ${fmt.n1(r.avg_deaths)} / ${fmt.n1(r.avg_assists)}</td><td class="num">${fmt.n0(r.adr)}</td><td class="num">${fmt.pct1(r.hs_pct)}</td></tr>`).join('') +
         '</tbody></table></div>';
     };
-    return st.members.map((m) => {
+    return devSummary(st, idx) + st.members.map((m) => {
       const o = m.overall, slot = idx.get(m.puuid)?.slot || 1;
       const form = m.form.slice(0, 10).map((f) =>
         `<span class="chip ${f.result}" title="${esc(f.map)} · ${esc(f.agent)} · ${f.kills}/${f.deaths}/${f.assists} · ACS ${f.acs}">${fmt.res(f.result)}</span>`).join('');
@@ -247,6 +303,7 @@
             ${kpi('Headshot %', fmt.pct1(o.hs_pct))}
           </div>
           <div class="grid-2"><div><h3>By agent</h3>${breakdown(m.by_agent, 'agent')}</div><div><h3>By map</h3>${breakdown(m.by_map, 'map')}</div></div>
+          ${devBlock(m)}
           <p class="muted small">Best game: ${bk ? `${bk.value} kills on ${esc(bk.map)} as ${esc(bk.agent)} (${fmt.date(bk.started_at)})` : '–'}${ba ? ` · Peak ACS ${fmt.n0(ba.value)} on ${esc(ba.map)}` : ''}</p>`
         : '<p class="muted">No 5-stack games recorded for this player yet.</p>';
       return `<section class="card player">
