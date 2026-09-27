@@ -34,12 +34,22 @@
   const n0 = (v) => (v == null ? '–' : Math.round(v).toLocaleString());
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  const dateShort = (ts) => new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  // Dates carry the year whenever the history is not all from this calendar year.
+  let withYear = false;
+  const dateShort = (ts) => new Date(ts * 1000).toLocaleDateString(undefined, withYear ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' });
   const dateLong = (ts) => {
     const d = new Date(ts * 1000);
-    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' +
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) }) + ' · ' +
       d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   };
+  const GAP_DAYS = 45; // a longer break between games is marked on the form chart
+  function gapText(seconds) {
+    const days = seconds / 86400;
+    if (days >= 365) { const y = Math.round(days / 365); return `${y} yr${y > 1 ? 's' : ''} later`; }
+    const mo = Math.round(days / 30.4);
+    return mo >= 2 ? `${mo} months later` : `${Math.round(days)} days later`;
+  }
+  const SMALL_SAMPLE = 20; // below this many games, the page says its patterns are early reads
   const resultText = (g) => `${g.result === 'win' ? 'W' : g.result === 'loss' ? 'L' : 'D'} ${g.rounds_won}–${g.rounds_lost}`;
   const memberSlot = (puuid) => h.slot(puuid) || 1;
   const nick = (puuid) => (data.members.find((m) => m.puuid === puuid) || {}).nickname || '?';
@@ -106,17 +116,23 @@
     data = d; h = helpers;
     const g = d.games;
     if (!g.length) return null;
+    const thisYear = new Date().getFullYear();
+    withYear = g.some((x) => new Date(x.ts * 1000).getFullYear() !== thisYear);
     const m = d.moments;
+    const recOr = (r) => (r.games ? rec(r) : '–');
     const tile = (label, value, sub) =>
       `<div class="tile"><div class="tile-label">${h.esc(label)}</div><div class="tile-value">${value}</div><div class="tile-sub">${sub}</div></div>`;
     const kpis = `<section class="kpis">
       ${tile(`Close games (±${m.close_margin} rounds)`, m.close.games ? rec(m.close) : '–', m.close.games ? `${pct(m.close.win_rate)} won · ${plural(m.close.games, 'game')}` : 'none yet')}
       ${tile(`Blowouts (±${m.blowout_margin}+ rounds)`, m.blowout.games ? rec(m.blowout) : '–', m.blowout.games ? `${pct(m.blowout.win_rate)} won · ${plural(m.blowout.games, 'game')}` : 'none yet')}
-      ${tile('After a win / after a loss', `${pct(m.after_win.win_rate)} <span class="muted">/</span> ${pct(m.after_loss.win_rate)}`, `win rate in the next game that night · ${m.after_win.games + m.after_loss.games} games`)}
-      ${tile('First game / later games', `${pct(m.first_of_session.win_rate)} <span class="muted">/</span> ${pct(m.later_in_session.win_rate)}`, `win rate · ${plural(m.sessions, 'night')} of play`)}
+      ${tile('After a win / after a loss', `${recOr(m.after_win)} <span class="muted">/</span> ${recOr(m.after_loss)}`, `next game the same night · ${pct(m.after_win.win_rate)} / ${pct(m.after_loss.win_rate)} won`)}
+      ${tile('First game / later games', `${recOr(m.first_of_session)} <span class="muted">/</span> ${recOr(m.later_in_session)}`, `of a night · ${pct(m.first_of_session.win_rate)} / ${pct(m.later_in_session.win_rate)} won · ${plural(m.sessions, 'night')}`)}
     </section>`;
+    const early = g.length < SMALL_SAMPLE
+      ? `<p class="viz-note">Only ${plural(g.length, '5-stack game')} so far, so treat these as early reads: one more win or loss can move a percentage a lot. Records are shown next to rates for that reason.</p>`
+      : '';
 
-    return kpis +
+    return early + kpis +
       formCard() +
       `<div class="viz-cols">${timeCard()}${sessionCard()}</div>` +
       mapCard() +
@@ -176,12 +192,30 @@
     s += `<line class="viz-base" x1="${m.l}" x2="${W - m.r}" y1="${mid2}" y2="${mid2}"/>` +
       `<text class="viz-ax" x="${m.l - 8}" y="${mid2 + 4}" text-anchor="end">0</text>` +
       `<text class="viz-ax viz-panel" x="${m.l}" y="${top2 - 14}">Round margin per game</text>`;
-    // x axis: ~5 date ticks
-    const ticks = Math.min(n, Math.max(2, Math.floor(pw / 110)));
-    for (let k = 0; k < ticks; k++) {
-      const i = Math.round((k * (n - 1)) / Math.max(1, ticks - 1));
-      s += `<text class="viz-ax" x="${x(i)}" y="${Ht - 6}" text-anchor="middle">${h.esc(dateShort(g[i].ts))}</text>`;
-    }
+    // Long breaks between games are invisible on a per-game axis, so mark each one.
+    const gaps = [];
+    for (let i = 1; i < n; i++) if (g[i].ts - g[i - 1].ts > GAP_DAYS * 86400) gaps.push(i);
+    gaps.forEach((i) => {
+      const gx = m.l + i * band;
+      s += `<line class="viz-gap" x1="${gx}" x2="${gx}" y1="${m.t}" y2="${top2 + H2}"/>` +
+        `<text class="viz-ax viz-gap-label" x="${gx + 4}" y="${m.t + 10}">${h.esc(gapText(g[i].ts - g[i - 1].ts))}</text>`;
+    });
+    // x axis: first and last game and the first game after each gap, then evenly spaced fillers.
+    // Ticks need room for their label, and a date is never repeated.
+    const labelW = withYear ? 96 : 60;
+    const want = [0, n - 1, ...gaps];
+    const fill = Math.max(2, Math.floor(pw / (labelW + 30)));
+    for (let k = 0; k < fill; k++) want.push(Math.round((k * (n - 1)) / Math.max(1, fill - 1)));
+    const placed = [];
+    [...new Set(want)].forEach((i) => {
+      const label = dateShort(g[i].ts);
+      if (placed.some((p) => Math.abs(x(p.i) - x(i)) < labelW || p.label === label)) return;
+      placed.push({ i, label });
+    });
+    placed.forEach(({ i, label }) => {
+      const anchor = x(i) - labelW / 2 < 0 ? 'start' : x(i) + labelW / 2 > W ? 'end' : 'middle';
+      s += `<text class="viz-ax" x="${x(i)}" y="${Ht - 6}" text-anchor="${anchor}">${h.esc(label)}</text>`;
+    });
     s += `<line class="viz-cross" x1="0" x2="0" y1="${m.t}" y2="${top2 + H2}" visibility="hidden"/>` +
       `<rect class="viz-hit" data-cross="form" x="${m.l}" y="0" width="${pw}" height="${top2 + H2}" tabindex="0" aria-label="Game-by-game details; use the arrow keys"/></svg>`;
     el.innerHTML = s;
@@ -246,7 +280,7 @@
     const s = data.session_games, first = s[0];
     const later = s.slice(2).reduce((a, x) => ({ wins: a.wins + x.wins, losses: a.losses + x.losses, games: a.games + x.games }), { wins: 0, losses: 0, games: 0 });
     const take = first.games && later.games
-      ? `Game 1: <strong>${pct(first.win_rate)}</strong> → game 3 and later: <strong>${pct(later.wins / later.games)}</strong>`
+      ? `Game 1: <strong>${pct(first.win_rate)}</strong> (${rec(first)}) → game 3 and later: <strong>${pct(later.wins / later.games)}</strong> (${rec(later)})`
       : 'Play a few multi-game nights to see how the squad holds up.';
     return card('session', 'Does the squad fade late?', take, slot('session', 230) +
       `<p class="muted small">A night is a run of games with no break over ${data.constants.session_gap_h} hours.</p>`,
@@ -320,7 +354,8 @@
   function swingCard() {
     const rows = swingRows();
     const take = rows.length
-      ? `<strong>${h.esc(rows[0].nickname)}</strong> swings the most: ${n0(rows[0].gap)} more ACS in wins than in losses`
+      ? `<strong>${h.esc(rows[0].nickname)}</strong> swings the most: ${n0(rows[0].gap)} more ACS in wins than in losses` +
+        (rows[rows.length - 1].gap < 0 ? ` · <strong>${h.esc(rows[rows.length - 1].nickname)}</strong> actually scores more in losses` : '')
       : 'Needs both wins and losses on record.';
     return card('swing', 'Who swings results', take,
       legend([{ label: 'ACS in losses', color: '--pair-lo', kind: 'dot' }, { label: 'ACS in wins', color: '--pair-hi', kind: 'dot' }]) +
@@ -351,7 +386,7 @@
         `<line class="viz-connector" x1="${x(p.acs_loss)}" x2="${x(p.acs_win)}" y1="${cy}" y2="${cy}"/>` +
         `<circle class="viz-dot" cx="${x(p.acs_loss)}" cy="${cy}" r="5" style="fill:var(--pair-lo)"/>` +
         `<circle class="viz-dot" cx="${x(p.acs_win)}" cy="${cy}" r="5" style="fill:var(--pair-hi)"/>` +
-        `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">+${n0(p.gap)}</text></g>`;
+        `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${p.gap >= 0 ? '+' : '−'}${n0(Math.abs(p.gap))}</text></g>`;
     });
     el.innerHTML = s + '</svg>';
   }
@@ -477,7 +512,8 @@
     const final = b.map((x) => ({ name: x.name, profit: x.points[x.points.length - 1].profit })).sort((a, b2) => b2.profit - a.profit);
     const take = `<strong>${h.esc(final[0].name)}</strong> leads at ${final[0].profit >= 0 ? '+' : '−'}${n0(Math.abs(final[0].profit))} credits`;
     return card('bankroll', 'Bettor profit over time', take,
-      legend(b.map((x) => ({ label: x.name, color: colors.get(x.name), kind: 'line' }))) + slot('bankroll', 230),
+      legend(b.map((x) => ({ label: x.name, color: colors.get(x.name), kind: 'line' }))) + slot('bankroll', 230) +
+      '<p class="muted small">Each step is a moment when bets settled, evenly spaced rather than to time scale.</p>',
       table(['Bettor', 'Settled bets', 'Profit'], final.map((x) => [x.name, String(b.find((y) => y.name === x.name).points.length), n0(x.profit)])));
   }
 
@@ -486,13 +522,15 @@
     if (!b.length) return;
     const colors = bettorColors();
     const times = [...new Set(b.flatMap((x) => x.points.map((p) => p.ts)))].sort((p, q) => p - q);
-    const t0 = times[0], t1 = times[times.length - 1] > t0 ? times[times.length - 1] : t0 + 1;
+    // One step per settlement moment, not real time: long quiet stretches would squash the action.
+    const t0 = times[0], t1 = times[times.length - 1];
+    const step = new Map(times.map((t, i) => [t, i]));
     const vals = b.flatMap((x) => x.points.map((p) => p.profit)).concat([0]);
     const top = niceMax(Math.max(...vals.map(Math.abs)));
     const lo = Math.min(...vals) < 0 ? -top : 0, hi = Math.max(...vals) > 0 ? top : 0;
     const labelRoom = b.length <= 4 ? 84 : 12;
     const m = { l: 52, r: labelRoom, t: 12, b: 26 }, H = 180, pw = W - m.l - m.r;
-    const x = (ts) => m.l + ((ts - t0) / (t1 - t0)) * pw;
+    const x = (ts) => m.l + (times.length > 1 ? (step.get(ts) / (times.length - 1)) * pw : pw / 2);
     const y = (v) => m.t + ((hi - v) / ((hi - lo) || 1)) * H;
     let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="Cumulative betting profit per bettor">`;
     [hi, hi / 2, 0, lo / 2, lo].filter((v, i, a) => a.indexOf(v) === i).forEach((v) => {

@@ -276,6 +276,9 @@ line.viz-grid { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdge
 .viz-dot { stroke: var(--surface); stroke-width: 2; }
 .viz-connector { stroke: var(--axis); stroke-width: 2; }
 .viz-cross { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
+.viz-gap { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+.viz-gap-label { font-size: 10px; }
+.viz-note { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--text-2); margin: 0 0 12px; }
 .viz-hit { fill: transparent; cursor: crosshair; outline: none; }
 .viz-hit:focus-visible { stroke: var(--accent); stroke-width: 1; }
 .viz-rowhit, .viz-colhit { fill: transparent; }

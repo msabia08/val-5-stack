@@ -31,8 +31,8 @@ from .tunnel import Tunnel
 KNOWN_MAPS = ["Abyss", "Ascent", "Bind", "Breeze", "Corrode", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset"]
 KNOWN_AGENTS = [
     "Astra", "Breach", "Brimstone", "Chamber", "Clove", "Cypher", "Deadlock", "Fade", "Gekko", "Harbor",
-    "Iso", "Jett", "KAY/O", "Killjoy", "Neon", "Omen", "Phoenix", "Raze", "Reyna", "Sage", "Skye", "Sova",
-    "Tejo", "Viper", "Vyse", "Waylay", "Yoru",
+    "Iso", "Jett", "KAY/O", "Killjoy", "Miks", "Neon", "Omen", "Phoenix", "Raze", "Reyna", "Sage", "Skye", "Sova",
+    "Tejo", "Veto", "Viper", "Vyse", "Waylay", "Yoru",
 ]
 MIME = {
     ".html": "text/html; charset=utf-8",

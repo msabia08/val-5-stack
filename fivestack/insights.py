@@ -9,7 +9,7 @@ from .stats import aggregate, safe_div
 
 ROLES = {
     "Duelist": ["Iso", "Jett", "Neon", "Phoenix", "Raze", "Reyna", "Waylay", "Yoru"],
-    "Controller": ["Astra", "Brimstone", "Clove", "Harbor", "Omen", "Viper"],
+    "Controller": ["Astra", "Brimstone", "Clove", "Harbor", "Miks", "Omen", "Viper"],
     "Initiator": ["Breach", "Fade", "Gekko", "KAY/O", "Skye", "Sova", "Tejo"],
     "Sentinel": ["Chamber", "Cypher", "Deadlock", "Killjoy", "Sage", "Veto", "Vyse"],
 }
