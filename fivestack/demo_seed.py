@@ -64,6 +64,8 @@ def seed(db, games=48, seed=7):
         _seed_other_games(db, random.Random(seed + 1))
     if not db.bets():
         _seed_bets(db, random.Random(seed + 2))
+    if not db.rewards():
+        _seed_rewards(db)
 
 
 def _game_times(rng, games):
@@ -153,6 +155,15 @@ def _member_game(match, line):
                                   "rounds_won", "rounds_lost", "result")}
     row.update({k: v for k, v in line.items() if k not in ("tier", "tier_name")})
     return row
+
+
+def _seed_rewards(db, games=8):
+    """Game rewards for the most recent games, as if rewards had been on for them."""
+    from .rewards import RewardManager
+    rm = RewardManager({}, db)
+    rm.since = 0
+    for m in db.matches(games):
+        rm.pay_for_match(m, db.match_players(m["match_id"]))
 
 
 def _seed_bets(db, rng):

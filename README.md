@@ -17,6 +17,7 @@ No Node, no build step, no third-party packages: Python 3.10+ and a browser.
    - `api_key`
    - `region`: `na`, `eu`, `ap`, `kr`, `latam` or `br`
    - `members`: the five Riot IDs as `Name#TAG`, with an optional `nickname`
+     (and an optional `bettor` account name for game rewards)
 3. **Run it.**
    ```
    python server.py
@@ -128,7 +129,38 @@ distribution at low weight and are flagged *low confidence*.
 - The **Bettors** tab ranks everyone by balance, with profit against the
   starting bankroll, record, win rate, ROI, open stakes and recent results.
 - *Reset season* on the Odds page puts everyone back to the starting balance
-  and clears all bets.
+  and clears all bets and game rewards.
+
+## Game rewards
+
+Playing earns credits too. For every 5-stack game recorded, won or lost, each
+squad member's bettor account gets:
+
+- **`game_reward`** (default 250), plus `win_reward` on top for a win (default
+  0, so wins and losses pay the same unless you set it), and
+- a **performance bonus** of up to `performance_bonus_max` (default 250). The
+  bonus is the share of your *previous 5-stack games* that this game's ACS
+  beats, so you're measured against how you usually play with the squad. Beat
+  80% of them and you get 200; set a new 5-stack best and you get the full 250.
+  With fewer than 5 earlier 5-stack games to compare against, the bonus is half
+  (125).
+  Bonuses are paid in steps of 5 credits (rounded to the nearest 5).
+
+So a game pays between 250 and 500 credits per player with the defaults.
+
+Rewards go to the member's bettor account. The first of these that applies wins:
+
+1. `"bettor"` on that member in `config.json`
+2. the member's nickname in `bettor_names.json` (committed to the repo), e.g.
+   `{ "it": "Kikii", "fat": "fatty" }`
+3. the member's `nickname` (or Riot name) itself
+
+Names match regardless of case. If no such account exists yet, one is created
+with the starting balance and left unclaimed; the player claims it by signing up
+with that name.
+Only games played after rewards were switched on pay out, so upgrading doesn't
+pay for past games. The Bettors tab shows rewards in their own column and keeps
+profit and ROI betting-only.
 
 ## Going online (share it with the squad)
 
@@ -175,7 +207,7 @@ time you log in.
 | --- | --- | --- |
 | `api_key` | – | HenrikDev key. Can also be given as the `HENRIK_API_KEY` environment variable. |
 | `region` | `na` | Riot affinity of the squad: `na`, `eu`, `ap`, `kr`, `latam`, `br`. |
-| `members` | – | List of `"Name#TAG"` strings or `{ "riot_id": "Name#TAG", "nickname": "Matt" }` objects. |
+| `members` | – | List of `"Name#TAG"` strings or `{ "riot_id": "Name#TAG", "nickname": "Matt", "bettor": "Matty" }` objects. `bettor` (optional) is the betting account that receives this member's game rewards; it defaults to the nickname. |
 | `modes` | competitive, unrated, premier | Modes that count. Empty list = every mode. |
 | `poll_interval_minutes` | 10 | How often to check for new games. |
 | `poll_size` | 40 | Stored matches fetched per member on a regular sync (the first sync fetches everything). |
@@ -193,6 +225,9 @@ time you log in.
 | `map_weight_boost` / `agent_weight_boost` | 2.5 / 2.0 | Extra weight for games matching the chosen map / agent. |
 | `simulations` | 4000 | Monte Carlo draws for the "tops the scoreboard" markets. |
 | `starting_balance` | 1000 | Credits for a new bettor. |
+| `game_reward` | 250 | Credits each member earns per 5-stack game, win or loss. `0` turns it off. |
+| `win_reward` | 0 | Extra credits each member earns on top for a win. |
+| `performance_bonus_max` | 250 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
 `--config=path/to/other.json`.
@@ -211,6 +246,7 @@ apart; the client reads the rate-limit headers and backs off automatically on
 server.py              launcher: python server.py [flags]
 run.bat, run-online.bat  double-click launchers (the second adds --tunnel)
 config.example.json    template copied to config.json on first run
+bettor_names.json      squad nickname -> bettor account name, for game rewards
 fivestack/             the backend package
   app.py               HTTP server + JSON API routes (stdlib http.server), command-line flags
   config.py            file locations, config.json loading and validation

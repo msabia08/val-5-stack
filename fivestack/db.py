@@ -106,6 +106,19 @@ CREATE TABLE IF NOT EXISTS bets (
     actual_value REAL,
     note TEXT
 );
+-- Credits paid to a squad member's bettor account for a 5-stack game: win reward + performance bonus.
+CREATE TABLE IF NOT EXISTS rewards (
+    match_id TEXT NOT NULL,
+    puuid TEXT NOT NULL,
+    bettor TEXT NOT NULL,
+    base REAL NOT NULL,
+    bonus REAL NOT NULL,
+    acs REAL,
+    beat_share REAL,
+    baseline_games INTEGER,
+    created_ts REAL,
+    PRIMARY KEY (match_id, puuid)
+);
 """
 
 MATCH_FIELDS = [
@@ -341,6 +354,7 @@ class DB:
     def reset_betting(self, balance):
         with self.lock:
             self.conn.execute("DELETE FROM bets")
+            self.conn.execute("DELETE FROM rewards")
             self.conn.execute("UPDATE bettors SET balance=?", (balance,))
             self.conn.commit()
 
@@ -378,3 +392,31 @@ class DB:
 
     def pending_bets(self):
         return self.query("SELECT * FROM bets WHERE status='pending' ORDER BY placed_ts ASC")
+
+    # ---- game rewards ------------------------------------------------------
+    def pay_reward(self, reward):
+        """Record a reward and credit the bettor in one transaction. False if this member was already paid."""
+        with self.lock:
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO rewards(match_id, puuid, bettor, base, bonus, acs, beat_share, baseline_games, created_ts) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                [reward[k] for k in ("match_id", "puuid", "bettor", "base", "bonus", "acs", "beat_share", "baseline_games")] + [time.time()],
+            )
+            if cur.rowcount:
+                self.conn.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)",
+                                  (reward["base"] + reward["bonus"], reward["bettor"]))
+            self.conn.commit()
+            return bool(cur.rowcount)
+
+    def rewards(self, limit=None):
+        sql = """SELECT r.*, m.nickname, ma.map, ma.result, ma.rounds_won, ma.rounds_lost, ma.started_ts
+                 FROM rewards r LEFT JOIN members m USING(puuid) LEFT JOIN matches ma USING(match_id)
+                 ORDER BY ma.started_ts DESC, r.base + r.bonus DESC"""
+        if limit:
+            sql += f" LIMIT {int(limit)}"
+        return self.query(sql)
+
+    def reward_totals(self):
+        """Total rewards per bettor, keyed by lower-cased name."""
+        return {r["k"]: r["total"] for r in self.query(
+            "SELECT lower(bettor) AS k, SUM(base + bonus) AS total FROM rewards GROUP BY lower(bettor)")}

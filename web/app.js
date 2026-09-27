@@ -6,7 +6,7 @@
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null,
-    bets: [], bettors: [], slip: [], me: null,
+    bets: [], bettors: [], rewards: [], slip: [], me: null,
     ctx: { map: '', agents: {} },
     bettor: localStorage.getItem('fs.bettor') || '',
     oddsFormat: localStorage.getItem('fs.oddsFormat') || 'american',
@@ -72,8 +72,8 @@
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadContent = async () => { state.content = await api('/api/content'); };
   const loadBets = async () => {
-    const [b, l, m] = await Promise.all([api('/api/bets?limit=200'), api('/api/bettors'), api('/api/bettor/me')]);
-    state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null;
+    const [b, l, m, r] = await Promise.all([api('/api/bets?limit=200'), api('/api/bettors'), api('/api/bettor/me'), api('/api/rewards?limit=60')]);
+    state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null; state.rewards = r.rewards;
     if (state.me) { state.bettor = state.me.name; localStorage.setItem('fs.bettor', state.bettor); }
   };
   const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
@@ -547,13 +547,14 @@
       if (!bestWin[key] || net > bestWin[key].net) bestWin[key] = { net, desc: b.description };
     });
     const inPlay = bettors.reduce((a, b) => a + b.balance + (b.pending_stake || 0), 0);
-    const issued = bettors.length * start;
+    const rewarded = bettors.reduce((a, b) => a + (b.rewards || 0), 0);
+    const issued = bettors.length * start + rewarded;
     const house = issued - inPlay;
     const leader = bettors[0];
     const kpis = [
       kpi('Bettors', bettors.length, `${fmt.credits(start)} credits each to start`),
       kpi('Leader', esc(leader.name), `${fmt.credits(leader.balance)} credits`),
-      kpi('Credits in circulation', fmt.credits(inPlay), `${fmt.credits(issued)} issued`),
+      kpi('Credits in circulation', fmt.credits(inPlay), `${fmt.credits(issued)} issued${rewarded ? `, ${fmt.credits(rewarded)} of it as game rewards` : ''}`),
       kpi('The house is', `<span class="${house > 0 ? 'up' : house < 0 ? 'down' : ''}">${fmt.signed(house, 0)}</span>`, house >= 0 ? 'ahead of the squad' : 'behind the squad'),
     ];
     const me = (state.me ? state.me.name : '').toLowerCase();
@@ -566,6 +567,7 @@
         `<td class="num balance">${fmt.credits(b.balance)}</td>` +
         `<td class="bar-cell"><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((b.balance / maxBal) * 100)}%"></div></div></td>` +
         `<td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +
+        `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td>` +
         `<td class="num">${b.won}-${b.lost}${b.void ? '-' + b.void : ''}</td>` +
         `<td class="num">${settled ? fmt.pct(b.won / settled) : '–'}</td>` +
         `<td class="num">${b.roi != null ? fmt.signed(b.roi * 100, 0) + '%' : '–'}</td>` +
@@ -579,10 +581,36 @@
         `<span class="muted small">${fmt.date(b.settled_ts ? b.settled_ts * 1000 : null)}</span></li>`;
     }).join('');
     return `<section class="kpis">${kpis.join('')}</section>
-      <section class="card"><h2>Rankings</h2><p class="muted small">Ordered by balance. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with.</p>
-        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <section class="card"><h2>Rankings</h2><p class="muted small">Ordered by balance. Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).</p>
+        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         <div class="btn-row"><button class="btn ghost small" id="reset-bets">Reset season</button></div></section>
-      <section class="card"><h2>Recent results</h2>${recent ? `<ul class="recent">${recent}</ul>` : '<p class="muted">No settled bets yet. Bets settle when the next 5-stack game is recorded.</p>'}</section>`;
+      <section class="card"><h2>Recent results</h2>${recent ? `<ul class="recent">${recent}</ul>` : '<p class="muted">No settled bets yet. Bets settle when the next 5-stack game is recorded.</p>'}</section>
+      ${rewardsCard()}`;
+  }
+
+  function rewardsCard() {
+    const s = state.status, game = s.game_reward || 0, win = s.win_reward || 0, bonus = s.performance_bonus_max || 0;
+    if (!game && !win && !bonus) return '';
+    const rule = `Every squad member earns ${fmt.credits(game)} credits for each 5-stack game${win ? ` (${fmt.credits(game + win)} for a win)` : ''}, ` +
+      `plus a performance bonus of up to ${fmt.credits(bonus)} based on how their ACS compares with their own previous 5-stack games: ` +
+      'beat 80% of them and the bonus is 80%, rounded to the nearest 5. With fewer than 5 of those games to compare against, the bonus is half.';
+    const byGame = new Map();
+    (state.rewards || []).forEach((r) => {
+      if (!byGame.has(r.match_id)) byGame.set(r.match_id, []);
+      byGame.get(r.match_id).push(r);
+    });
+    const games = [...byGame.values()].slice(0, 8).map((rs) => {
+      const g = rs[0], won = g.result === 'win';
+      const people = rs.map((r) => {
+        const why = r.beat_share == null ? 'fewer than 5 earlier 5-stack games' : `beat ${fmt.pct(r.beat_share)} of their earlier 5-stack games`;
+        return `<span class="reward" title="${esc(`${r.nickname || r.bettor}: ACS ${fmt.n0(r.acs)}, ${why}`)}"><b>${esc(r.bettor)}</b> +${fmt.credits(r.base + r.bonus)}</span>`;
+      }).join('');
+      return `<li class="recent-row reward-row"><span class="chip ${won ? 'win' : 'loss'}">${won ? 'W' : 'L'}</span>` +
+        `<span class="recent-score">${g.rounds_won ?? '?'}–${g.rounds_lost ?? '?'}</span><span>${esc(g.map || '')}</span>` +
+        `<span class="rewards-list">${people}</span><span class="muted small">${fmt.date(g.started_ts ? g.started_ts * 1000 : null)}</span></li>`;
+    }).join('');
+    return `<section class="card"><h2>Game rewards</h2><p class="muted small">${rule} Hover a name for the details.</p>` +
+      (games ? `<ul class="recent">${games}</ul>` : '<p class="muted">No rewards yet. They are paid when the next 5-stack game is recorded.</p>') + '</section>';
   }
 
   // ---- matches --------------------------------------------------------------------
