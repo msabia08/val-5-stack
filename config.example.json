@@ -3,11 +3,11 @@
   "region": "na",
   "platform": "pc",
   "members": [
-    { "riot_id": "YourName#TAG", "nickname": "" },
-    { "riot_id": "Friend1#TAG1", "nickname": "" },
-    { "riot_id": "Friend2#TAG2", "nickname": "" },
-    { "riot_id": "Friend3#TAG3", "nickname": "" },
-    { "riot_id": "Friend4#TAG4", "nickname": "" }
+    { "riot_id": "YourName#TAG", "nickname": "", "bettor": "" },
+    { "riot_id": "Friend1#TAG1", "nickname": "", "bettor": "" },
+    { "riot_id": "Friend2#TAG2", "nickname": "", "bettor": "" },
+    { "riot_id": "Friend3#TAG3", "nickname": "", "bettor": "" },
+    { "riot_id": "Friend4#TAG4", "nickname": "", "bettor": "" }
   ],
   "modes": ["competitive", "unrated", "premier"],
   "poll_interval_minutes": 10,
@@ -28,5 +28,8 @@
   "map_weight_boost": 2.5,
   "agent_weight_boost": 2.0,
   "simulations": 4000,
-  "starting_balance": 1000
+  "starting_balance": 1000,
+  "game_reward": 250,
+  "win_reward": 0,
+  "performance_bonus_max": 250
 }

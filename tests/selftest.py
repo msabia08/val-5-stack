@@ -16,6 +16,7 @@ from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, build_insights  # noqa: E402
 from fivestack.odds import OddsEngine  # noqa: E402
+from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import build_stats, deviation  # noqa: E402
 from fivestack.tracker import Tracker  # noqa: E402
 
@@ -262,18 +263,57 @@ def main():
     assert roll["name"] == "Tester" and len(roll["points"]) == 2, roll
     assert abs(roll["points"][-1]["profit"] - (100 * (bet["odds_decimal"] - 1) + 50 * (bet2["odds_decimal"] - 1))) < 0.05, roll
 
+    # --- game rewards: 250 per game + up to 250 for beating your own baseline ---
+    assert beat_share(250, [100, 150, 200, 250, 300, 350]) == 3.5 / 6 and beat_share(9, [1, 2]) == 1.0 and beat_share(5, []) is None
+    db.set_meta("rewards_since", db.match("m9")["started_ts"] - 60)  # rewards switched on after m1 / m3 were played
+    rm = RewardManager({**cfg, "members": [{"riot_id": "P1#TAG", "bettor": "Tester"}] + MEMBERS[1:]}, db)
+    base_rows = [{"puuid": "x", "started_ts": 1, "rounds_won": 13, "rounds_lost": 7, "score": sc} for sc in (2000, 3000, 4000, 5000, 6000, 7000)]
+    base_rows.append({"puuid": "x", "started_ts": 99, "rounds_won": 13, "rounds_lost": 7, "score": 1})  # after the game: ignored
+    q = rm.quote({"started_ts": 10, "rounds_won": 13, "rounds_lost": 7}, {"puuid": "x", "score": 5000}, base_rows)
+    assert q["acs"] == 250 and q["baseline_games"] == 6 and q["bonus"] == 145, q  # 250 * 3.5/6 = 145.8 -> nearest 5
+    assert rm.pay_for_match(db.match("m1"), db.match_players("m1")) == []  # games from before rewards existed
+    assert rm.pay_for_match(db.match("m3"), db.match_players("m3")) == []
+    lb_before = {r["name"]: r for r in bets.leaderboard()}
+    paid = rm.pay_for_match(db.match("m9"), db.match_players("m9"))
+    by = {r["puuid"]: r for r in paid}
+    assert len(paid) == 5 and all(r["base"] == 250 and 0 <= r["bonus"] <= 250 and r["bonus"] % 5 == 0 for r in paid), paid
+    assert by["puuid-1"]["bettor"] == "Tester"  # config override
+    p2 = db.get_bettor("P2")  # no account yet -> created unclaimed, named after the member
+    assert p2 and not p2.get("password_hash") and p2["balance"] == 1000 + 250 + by["puuid-2"]["bonus"], p2
+    assert by["puuid-2"]["beat_share"] is None and by["puuid-2"]["bonus"] == 125  # only 2 baseline games: neutral bonus
+    assert rm.pay_for_match(db.match("m9"), db.match_players("m9")) == []  # never paid twice
+    loss = {**db.match("m9"), "match_id": "m10", "started_ts": db.match("m9")["started_ts"] + 3600,
+            "rounds_won": 9, "rounds_lost": 13, "result": "loss"}
+    db.insert_match(loss, [{**p, "match_id": "m10"} for p in db.match_players("m9")])
+    lost = rm.pay_for_match(db.match("m10"), db.match_players("m10"))  # a loss pays the same way
+    assert len(lost) == 5 and all(r["base"] == 250 and 0 <= r["bonus"] <= 250 for r in lost), lost
+    assert next(r for r in lost if r["puuid"] == "puuid-2")["bonus"] == 125
+    # The bonus compares against earlier 5-stack games only: P2 has m1, m3 before m9 and m1, m3, m9 before m10
+    # (their two non-5-stack games, m2 and m5, don't count).
+    assert by["puuid-2"]["baseline_games"] == 2 and next(r for r in lost if r["puuid"] == "puuid-2")["baseline_games"] == 3
+    lb_after = {r["name"]: r for r in bets.leaderboard()}
+    assert lb_after["Tester"]["profit"] == lb_before["Tester"]["profit"]  # rewards are not betting profit
+    tester_lost = next(r for r in lost if r["puuid"] == "puuid-1")["bonus"]
+    assert lb_after["Tester"]["rewards"] == 250 + by["puuid-1"]["bonus"] + 250 + tester_lost and lb_after["P2"]["profit"] == 0
+    assert lb_after["P2"]["rewards"] == 375 + 375 and len(db.rewards()) == 10
+    win_rm = RewardManager({**cfg, "win_reward": 100}, db)  # optional extra for wins
+    assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 350
+    assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 250
+    bets.reset()
+    assert db.rewards() == [] and db.reward_totals() == {} and db.get_bettor("P2")["balance"] == 1000
+
     # Second sync: nothing new, no duplicates, no re-verification of rejected ids.
     calls_before = client.calls
     res2 = tracker.sync()
     assert res2["ok"] and res2["new_matches"] == 0, res2
     assert client.calls - calls_before == 5, client.calls - calls_before  # only the 5 stored-match calls
-    assert db.count_matches() == 3
+    assert db.count_matches() == 4  # m1, m3, m9 and the reward test's m10
     assert db.count_member_games() == 17  # re-fetched lines are not duplicated
 
     # A database from before member_games existed gets one full history fetch, then goes back to normal.
     db.set_meta("history_backfilled", False)
     assert tracker.sync()["full"] is True and db.get_meta("history_backfilled") is True
-    assert tracker.sync()["full"] is False and db.count_matches() == 3
+    assert tracker.sync()["full"] is False and db.count_matches() == 4
 
     print("selftest OK")
     print(json.dumps({"first_sync": res, "second_sync": res2, "tester_balance": round(bal, 2),

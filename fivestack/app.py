@@ -24,6 +24,7 @@ from .db import DB
 from .henrik import HenrikClient
 from .insights import build_insights
 from .odds import OddsEngine
+from .rewards import RewardManager
 from .stats import build_stats
 from .tracker import Tracker
 from .tunnel import Tunnel
@@ -63,6 +64,7 @@ class App:
         self.db = DB(os.path.join(DATA_DIR, "demo.db" if demo else "tracker.db"))
         self.engine = OddsEngine(cfg)
         self.bets = BetManager(cfg, self.db, self.engine)
+        self.rewards = RewardManager(cfg, self.db)
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
@@ -79,7 +81,11 @@ class App:
     def on_new_matches(self, matches):
         settled = []
         for m in matches:
-            settled.extend(self.bets.settle_for_match(m, self.db.match_players(m["match_id"])))
+            players = self.db.match_players(m["match_id"])
+            settled.extend(self.bets.settle_for_match(m, players))
+            paid = self.rewards.pay_for_match(m, players)
+            if paid:
+                print(f"[rewards] {m['map']} {m['result']}: " + ", ".join(f"{r['bettor']} +{r['base'] + r['bonus']:.0f}" for r in paid), flush=True)
         return settled
 
     def status(self):
@@ -103,6 +109,9 @@ class App:
             "uptime_s": round(time.time() - self.started),
             "house_edge": self.engine.edge,
             "starting_balance": self.bets.starting,
+            "game_reward": self.rewards.game,
+            "win_reward": self.rewards.win,
+            "performance_bonus_max": self.rewards.bonus_max,
             "server_time": time.time(),
             "auth": {"enabled": self.auth.enabled, "admin_required": bool(self.auth.admin_password)},
             "tunnel": dict(self.tunnel.state),
@@ -284,6 +293,8 @@ class Handler(BaseHTTPRequestHandler):
             )})
         if path == "/api/bettors":
             return self._json({"bettors": app.bets.leaderboard()})
+        if path == "/api/rewards":
+            return self._json({"rewards": app.db.rewards(int(qs.get("limit") or 40))})
         if path == "/api/bettor/me":
             me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
             return self._json({"bettor": app.bets.public(me) if me else None})

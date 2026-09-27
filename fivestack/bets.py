@@ -106,15 +106,19 @@ class BetManager:
                 s["staked"] += b["stake"]
                 s["returned"] += b["payout"] or 0.0
                 s[st] = s.get(st, 0) + 1
+        rewards = self.db.reward_totals()
         out = []
         for b in self.db.bettors():
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
-            profit = b["balance"] + s["pending_stake"] - self.starting
+            earned = rewards.get(b["name"].lower(), 0.0)
+            # Betting profit only: game rewards are credits too, but they are reported separately.
+            profit = b["balance"] + s["pending_stake"] - self.starting - earned
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
                 "balance": round(b["balance"], 2),
                 "profit": round(profit, 2),
+                "rewards": round(earned, 2),
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }
             for k, v in s.items():
