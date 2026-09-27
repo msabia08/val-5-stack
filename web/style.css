@@ -205,35 +205,8 @@ td.prop .odd { padding: 4px 7px; margin: 0 2px; }
 .slip-item { display: grid; grid-template-columns: 1fr 72px 30px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--grid); }
 .slip-item .towin { grid-column: 1 / -1; }
 .slip-item input.stake { width: 72px; padding: 5px 7px; text-align: right; }
-.slip-item.parlay-leg { grid-template-columns: 1fr 30px; }
 .slip-desc { font-weight: 500; font-size: 14px; }
 .slip-total { margin-top: 8px; font-weight: 600; }
-
-/* ---- singles / parlay toggle ------------------------------------------ */
-.slip-mode { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; margin-bottom: 10px; }
-.mode-btn { flex: 1; background: transparent; border: 0; border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; }
-.mode-btn.on { background: var(--accent); color: #fff; }
-.parlay-summary { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 8px 0; border-top: 1px dashed var(--border); margin-top: 4px; }
-.parlay-summary b { font-variant-numeric: tabular-nums; }
-
-/* ---- bet tickets (Open / Settled bets, grouped by bettor) -------------- */
-.bettor-slips { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; align-items: start; }
-.bet-slip-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
-.bet-slip-card.me { border-color: var(--accent); }
-.bet-slip-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px dashed var(--border); font-size: 14px; }
-.bet-ticket { padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
-.bet-ticket:last-child { border-bottom: 0; }
-.bet-ticket-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.bet-desc { font-weight: 500; font-size: 13px; }
-.bet-note { margin-top: 2px; }
-.parlay-badge { display: inline-block; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; border-radius: 5px; padding: 1px 6px; margin-right: 6px; vertical-align: 1px; }
-.bet-legs { margin: 6px 0 2px; padding-left: 4px; border-left: 2px solid var(--border); }
-.bet-leg { display: flex; align-items: center; gap: 6px; padding: 2px 0 2px 8px; font-size: 12px; color: var(--text-2); }
-.bet-leg .leg-desc { flex: 1; }
-.bet-leg .leg-icon { width: 14px; text-align: center; font-weight: 700; color: var(--muted); }
-.bet-leg.won .leg-icon { color: var(--up); }
-.bet-leg.lost .leg-icon { color: var(--down); }
-.bet-leg.void .leg-icon { color: var(--muted); }
 
 .status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
 .status.won { background: rgba(12, 163, 12, 0.18); color: var(--up); }
