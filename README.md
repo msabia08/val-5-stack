@@ -128,6 +128,26 @@ distribution at low weight and are flagged *low confidence*.
 - Pending bets can be cancelled for a full refund until the game is recorded.
 - The **Bettors** tab ranks everyone by balance, with profit against the
   starting bankroll, record, win rate, ROI, open stakes and recent results.
+- The Odds & Bets tab shows every bet as a **slip**, grouped card by card under
+  the bettor who placed it, so it's obvious at a glance who has what riding on
+  the next game.
+
+## Parlays
+
+Pick 2 to 10 selections (any mix of player props, "tops the scoreboard" and
+team markets, one pick per market) and toggle the bet slip to **Parlay** to
+combine them into a single all-or-nothing bet at combined odds, instead of
+placing them as separate singles. In the slip, the toggle only appears once
+there are 2+ picks.
+
+- All legs settle off the same next 5-stack game. If every leg wins, the payout
+  is the stake times the combined odds locked in at placement.
+- If any leg loses, the whole parlay loses.
+- If a leg is voided (push, tie for the top, a draw) it's dropped with no
+  effect: the payout is recalculated from the odds of the legs that stood. If
+  every leg is voided, the stake is refunded.
+- The **Open bets** / **Settled bets** slips show each leg of a parlay
+  underneath the ticket, with a ✓ / ✗ / ↺ per leg once it settles.
 - *Reset season* on the Odds page puts everyone back to the starting balance
   and clears all bets and game rewards.
 
