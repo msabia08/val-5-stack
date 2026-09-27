@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 
 from fivestack.app import KNOWN_AGENTS  # noqa: E402
 from fivestack.bets import BetError, BetManager  # noqa: E402
+from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, build_insights  # noqa: E402
@@ -296,6 +297,13 @@ def main():
     tester_lost = next(r for r in lost if r["puuid"] == "puuid-1")["bonus"]
     assert lb_after["Tester"]["rewards"] == 250 + by["puuid-1"]["bonus"] + 250 + tester_lost and lb_after["P2"]["profit"] == 0
     assert lb_after["P2"]["rewards"] == 375 + 375 and len(db.rewards()) == 10
+    # bettor_names.json maps a nickname to another account (any case); a config.json `bettor` still wins over it.
+    named = RewardManager({**cfg, "members": [{"riot_id": "P1#TAG", "bettor": "Tester"}] + MEMBERS[1:]}, db,
+                          {"p3": "Kikii", "P1": "Ignored"})
+    assert named.bettor_for(db.member("puuid-3")) == "Kikii" and db.get_bettor("kikii")
+    assert named.bettor_for(db.member("puuid-1")) == "Tester" and named.bettor_for(db.member("puuid-4")) == "P4"
+    names = load_bettor_names()  # the committed mapping parses
+    assert names.get("it") == "Kikii" and names.get("fat") == "fatty", names
     win_rm = RewardManager({**cfg, "win_reward": 100}, db)  # optional extra for wins
     assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 350
     assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 250

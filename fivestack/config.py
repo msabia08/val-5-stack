@@ -10,8 +10,22 @@ DATA_DIR = os.path.join(ROOT, "data")
 TOOLS_DIR = os.path.join(ROOT, "tools")
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 EXAMPLE_PATH = os.path.join(ROOT, "config.example.json")
+BETTOR_NAMES_PATH = os.path.join(ROOT, "bettor_names.json")
 
 PLACEHOLDER_IDS = {"friend1#tag1", "friend2#tag2", "friend3#tag3", "friend4#tag4", "yourname#tag"}
+
+
+def load_bettor_names(path=BETTOR_NAMES_PATH):
+    """Squad nickname -> bettor account name, for members who bet under another name. Keys are lower-cased."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            names = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"Ignoring {os.path.basename(path)}: {e}")
+        return {}
+    return {str(k).strip().lower(): str(v).strip() for k, v in names.items() if str(k).strip() and str(v).strip()}
 
 
 def load_config(path=CONFIG_PATH):

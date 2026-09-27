@@ -30,12 +30,13 @@ def beat_share(acs, baseline):
 
 
 class RewardManager:
-    def __init__(self, cfg, db):
+    def __init__(self, cfg, db, bettor_names=None):
         self.db = db
         self.game = float(cfg.get("game_reward", 250))
         self.win = float(cfg.get("win_reward", 0))
         self.bonus_max = float(cfg.get("performance_bonus_max", 250))
         self.starting = float(cfg.get("starting_balance", 1000))
+        self.names = {k.lower(): v for k, v in (bettor_names or {}).items()}  # nickname -> account (bettor_names.json)
         self.overrides = {}  # (name, tag) lower-cased -> bettor account name from config members[].bettor
         for entry in cfg.get("members") or []:
             if isinstance(entry, dict) and (entry.get("bettor") or "").strip():
@@ -54,8 +55,11 @@ class RewardManager:
         return self.game > 0 or self.win > 0 or self.bonus_max > 0
 
     def bettor_for(self, member):
-        """The member's bettor account (config override, else nickname), created unclaimed if missing."""
-        name = self.overrides.get((member["name"].lower(), member["tag"].lower())) or member.get("nickname") or member["name"]
+        """The member's bettor account, created unclaimed if missing. First match wins: `bettor` on the member in
+        config.json, then bettor_names.json keyed by nickname, then the nickname (or Riot name) itself."""
+        nickname = member.get("nickname") or member["name"]
+        name = (self.overrides.get((member["name"].lower(), member["tag"].lower()))
+                or self.names.get(nickname.lower()) or nickname)
         name = name.strip()[:32]
         b = self.db.get_bettor(name)
         if not b:

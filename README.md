@@ -148,10 +148,16 @@ squad member's bettor account gets:
 
 So a game pays between 250 and 500 credits per player with the defaults.
 
-The account is the one named after the member's `nickname` (or Riot name), or
-the one set with `"bettor"` on that member in `config.json` if they bet under a
-different name. If no such account exists yet, one is created with the starting
-balance and left unclaimed; the player claims it by signing up with that name.
+Rewards go to the member's bettor account. The first of these that applies wins:
+
+1. `"bettor"` on that member in `config.json`
+2. the member's nickname in `bettor_names.json` (committed to the repo), e.g.
+   `{ "it": "Kikii", "fat": "fatty" }`
+3. the member's `nickname` (or Riot name) itself
+
+Names match regardless of case. If no such account exists yet, one is created
+with the starting balance and left unclaimed; the player claims it by signing up
+with that name.
 Only games played after rewards were switched on pay out, so upgrading doesn't
 pay for past games. The Bettors tab shows rewards in their own column and keeps
 profit and ROI betting-only.
@@ -240,6 +246,7 @@ apart; the client reads the rate-limit headers and backs off automatically on
 server.py              launcher: python server.py [flags]
 run.bat, run-online.bat  double-click launchers (the second adds --tunnel)
 config.example.json    template copied to config.json on first run
+bettor_names.json      squad nickname -> bettor account name, for game rewards
 fivestack/             the backend package
   app.py               HTTP server + JSON API routes (stdlib http.server), command-line flags
   config.py            file locations, config.json loading and validation

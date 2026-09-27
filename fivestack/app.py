@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bets import BetError, BetManager
-from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_config, mask
+from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
 from .henrik import HenrikClient
 from .insights import build_insights
@@ -64,7 +64,7 @@ class App:
         self.db = DB(os.path.join(DATA_DIR, "demo.db" if demo else "tracker.db"))
         self.engine = OddsEngine(cfg)
         self.bets = BetManager(cfg, self.db, self.engine)
-        self.rewards = RewardManager(cfg, self.db)
+        self.rewards = RewardManager(cfg, self.db, load_bettor_names())
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
