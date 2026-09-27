@@ -368,13 +368,10 @@ class Handler(BaseHTTPRequestHandler):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to place bets."}, 403)
-                if body.get("legs"):
-                    bet = app.bets.place_parlay(me["name"], body.get("legs"), body.get("stake"), body.get("context") or {})
-                else:
-                    bet = app.bets.place(
-                        me["name"], body.get("market_id"), body.get("selection"),
-                        body.get("stake"), body.get("context") or {},
-                    )
+                bet = app.bets.place(
+                    me["name"], body.get("market_id"), body.get("selection"),
+                    body.get("stake"), body.get("context") or {},
+                )
                 return self._json({"bet": bet, "bettors": app.bets.leaderboard()}, 201)
             if path == "/api/bettors/reset":
                 if not auth.is_admin(self.headers.get("X-Admin-Password")):
