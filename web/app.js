@@ -6,7 +6,7 @@
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null,
-    bets: [], bettors: [], slip: [],
+    bets: [], bettors: [], slip: [], me: null,
     ctx: { map: '', agents: {} },
     bettor: localStorage.getItem('fs.bettor') || '',
     oddsFormat: localStorage.getItem('fs.oddsFormat') || 'american',
@@ -71,9 +71,11 @@
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadContent = async () => { state.content = await api('/api/content'); };
   const loadBets = async () => {
-    const [b, l] = await Promise.all([api('/api/bets?limit=200'), api('/api/bettors')]);
-    state.bets = b.bets; state.bettors = l.bettors;
+    const [b, l, m] = await Promise.all([api('/api/bets?limit=200'), api('/api/bettors'), api('/api/bettor/me')]);
+    state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null;
+    if (state.me) { state.bettor = state.me.name; localStorage.setItem('fs.bettor', state.bettor); }
   };
+  const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
   async function loadOdds() {
     const p = new URLSearchParams();
     if (state.ctx.map) p.set('map', state.ctx.map);
@@ -309,8 +311,14 @@
   }
 
   function slipHtml() {
-    const bettors = state.bettors || [];
-    const me = bettors.find((b) => b.name.toLowerCase() === state.bettor.toLowerCase());
+    const me = state.me;
+    const account = me
+      ? `<div class="account"><div>Betting as <b>${esc(me.name)}</b></div><div class="muted small">Balance ${fmt.credits(me.balance)} credits</div>` +
+        `<div class="btn-row"><button class="btn ghost small" id="bettor-signout">Sign out</button><button class="btn ghost small" id="bettor-password">Change password</button></div></div>`
+      : `<div class="account"><label>Name<input id="bettor-name" placeholder="Your name" value="${esc(state.bettor)}" autocomplete="username" maxlength="32"></label>` +
+        `<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>` +
+        `<div class="btn-row"><button class="btn small" id="bettor-signin">Sign in</button><button class="btn ghost small" id="bettor-register">Create account</button></div>` +
+        `<p class="muted small">Each bettor has a personal password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits.</p></div>`;
     const items = state.slip.map((x, i) =>
       `<div class="slip-item"><div><div class="slip-desc">${esc(x.desc)}</div><div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)} (${Number(x.decimal).toFixed(2)})</div></div>` +
       `<input type="number" min="1" step="1" value="${x.stake}" data-i="${i}" class="stake" aria-label="Stake">` +
@@ -318,10 +326,9 @@
       `<div class="muted small towin">To win ${fmt.credits(x.stake * (x.decimal - 1))}</div></div>`).join('');
     const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
     return `<h2>Bet slip</h2>
-      <label>Bettor<input list="bettor-list" id="bettor-name" placeholder="Your name" value="${esc(state.bettor)}" autocomplete="off"><datalist id="bettor-list">${bettors.map((b) => `<option value="${esc(b.name)}">`).join('')}</datalist></label>
-      <div class="muted small" style="margin:4px 0 8px">${me ? `Balance: ${fmt.credits(me.balance)} credits` : `New bettors start with ${fmt.credits(state.status.starting_balance)} credits.`}</div>
+      ${account}
       ${items || '<p class="muted">Tap any odds to add a pick.</p>'}
-      ${state.slip.length ? `<div class="slip-total">Total stake ${fmt.credits(total)}</div><button class="btn primary" id="place-bets">Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}</button><button class="btn ghost" id="clear-slip" style="width:100%;margin-top:6px">Clear slip</button>` : ''}`;
+      ${state.slip.length ? `<div class="slip-total">Total stake ${fmt.credits(total)}</div><button class="btn primary" id="place-bets" ${me ? '' : 'disabled title="Sign in first"'}>Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}</button><button class="btn ghost" id="clear-slip" style="width:100%;margin-top:6px">Clear slip</button>` : ''}`;
   }
 
   function betsSection() {
@@ -331,7 +338,10 @@
     const row = (b) =>
       `<tr><td>${esc(b.bettor)}</td><td>${esc(b.description)}</td><td class="num">${fmt.american(b.odds_decimal)}</td><td class="num">${fmt.credits(b.stake)}</td>` +
       `<td><span class="status ${b.status}">${b.status}</span>${b.note ? `<div class="muted small">${esc(b.note)}</div>` : ''}${b.actual_value != null && b.status !== 'pending' ? `<div class="muted small">actual ${fmt.n1(b.actual_value)}</div>` : ''}</td>` +
-      `<td class="num">${b.status === 'pending' ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>` : fmt.credits(b.payout || 0)}</td></tr>`;
+      `<td class="num">${b.status !== 'pending' ? fmt.credits(b.payout || 0)
+        : isMine(b) ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`
+        : (state.status.auth && state.status.auth.admin_required) ? `<button class="btn ghost small cancel-bet admin" data-id="${b.id}" title="Needs the admin password">Admin cancel</button>`
+        : ''}</td></tr>`;
     return `<section class="card"><h2>Open bets <span class="muted">(${pending.length})</span></h2>
         ${pending.length ? `<div class="table-wrap"><table class="compact">${head}<tbody>${pending.map(row).join('')}</tbody></table></div>` : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
         <p class="muted small">Balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>
@@ -382,13 +392,41 @@
     bindSlip();
   }
 
+  async function bettorSession(path) {
+    const name = ($('#bettor-name')?.value || '').trim();
+    const password = $('#bettor-pass')?.value || '';
+    if (!name) { toast('Enter your name', 'bad'); return; }
+    if (!password) { toast('Enter your betting password', 'bad'); return; }
+    try {
+      const r = await api(path, { method: 'POST', body: JSON.stringify({ name, password }) });
+      state.bettor = r.bettor.name;
+      localStorage.setItem('fs.bettor', state.bettor);
+      toast(path.endsWith('register') ? `Account created. Welcome, ${r.bettor.name}.` : `Signed in as ${r.bettor.name}`, 'good');
+      await loadBets();
+      draw();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  }
+
   function bindSlip() {
     const slip = $('#slip');
     if (!slip) return;
-    $('#bettor-name')?.addEventListener('change', (e) => {
-      state.bettor = e.target.value.trim();
-      localStorage.setItem('fs.bettor', state.bettor);
-      drawSlip();
+    $('#bettor-signin')?.addEventListener('click', () => bettorSession('/api/bettor/login'));
+    $('#bettor-register')?.addEventListener('click', () => bettorSession('/api/bettor/register'));
+    $('#bettor-pass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') bettorSession('/api/bettor/login'); });
+    $('#bettor-signout')?.addEventListener('click', async () => {
+      try { await api('/api/bettor/logout', { method: 'POST', body: '{}' }); } catch (e) { /* cookie is cleared anyway */ }
+      await loadBets();
+      draw();
+    });
+    $('#bettor-password')?.addEventListener('click', async () => {
+      const old = window.prompt('Current betting password');
+      if (old == null) return;
+      const nw = window.prompt('New betting password (4 to 64 characters)');
+      if (nw == null) return;
+      try { await api('/api/bettor/password', { method: 'POST', body: JSON.stringify({ old, new: nw }) }); toast('Password changed', 'good'); }
+      catch (e) { toast(e.message, 'bad'); }
     });
     $$('.stake', slip).forEach((inp) => inp.addEventListener('input', (e) => {
       const it = state.slip[Number(e.target.dataset.i)];
@@ -407,15 +445,12 @@
   }
 
   async function placeSlip() {
-    const name = ($('#bettor-name')?.value || state.bettor).trim();
-    if (!name) { toast('Enter a bettor name first', 'bad'); return; }
-    state.bettor = name;
-    localStorage.setItem('fs.bettor', name);
+    if (!state.me) { toast('Sign in as a bettor first', 'bad'); return; }
     const failures = [];
     const remaining = [];
     for (const it of state.slip) {
       try {
-        await api('/api/bets', { method: 'POST', body: JSON.stringify({ bettor: name, market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx }) });
+        await api('/api/bets', { method: 'POST', body: JSON.stringify({ market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx }) });
       } catch (e) {
         failures.push(`${it.desc}: ${e.message}`);
         remaining.push(it);
@@ -456,13 +491,13 @@
       kpi('Credits in circulation', fmt.credits(inPlay), `${fmt.credits(issued)} issued`),
       kpi('The house is', `<span class="${house > 0 ? 'up' : house < 0 ? 'down' : ''}">${fmt.signed(house, 0)}</span>`, house >= 0 ? 'ahead of the squad' : 'behind the squad'),
     ];
-    const me = state.bettor.toLowerCase();
+    const me = (state.me ? state.me.name : '').toLowerCase();
     const rows = bettors.map((b, i) => {
       const settled = b.won + b.lost;
       const bw = bestWin[b.name.toLowerCase()];
       const rank = i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1);
       return `<tr class="${b.name.toLowerCase() === me ? 'me' : ''}"><td class="rank">${rank}</td>` +
-        `<td><b>${esc(b.name)}</b>${bw ? `<div class="muted small">Best win +${fmt.credits(bw.net)} · ${esc(bw.desc)}</div>` : ''}</td>` +
+        `<td><b>${esc(b.name)}</b>${b.claimed === false ? ' <span class="muted small">unclaimed</span>' : ''}${bw ? `<div class="muted small">Best win +${fmt.credits(bw.net)} · ${esc(bw.desc)}</div>` : ''}</td>` +
         `<td class="num balance">${fmt.credits(b.balance)}</td>` +
         `<td class="bar-cell"><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((b.balance / maxBal) * 100)}%"></div></div></td>` +
         `<td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +
@@ -611,7 +646,13 @@
     $('#odds-format')?.addEventListener('change', (e) => { state.oddsFormat = e.target.value; localStorage.setItem('fs.oddsFormat', state.oddsFormat); draw(); });
     bindSlip();
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
-      try { await api('/api/bets/' + b.dataset.id, { method: 'DELETE' }); toast('Bet cancelled, stake refunded'); await loadBets(); draw(); }
+      const headers = {};
+      if (b.classList.contains('admin')) {
+        const pw = window.prompt('Admin password');
+        if (pw == null) return;
+        headers['X-Admin-Password'] = pw;
+      }
+      try { await api('/api/bets/' + b.dataset.id, { method: 'DELETE', headers }); toast('Bet cancelled, stake refunded'); await loadBets(); draw(); }
       catch (e) { toast(e.message, 'bad'); }
     }));
     $('#reset-bets')?.addEventListener('click', async () => {

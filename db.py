@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS bettors (
     name TEXT PRIMARY KEY,
     balance REAL NOT NULL,
-    created_at REAL
+    created_at REAL,
+    salt TEXT,
+    password_hash TEXT
 );
 CREATE TABLE IF NOT EXISTS bets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,6 +110,11 @@ class DB:
         with self.lock:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.executescript(SCHEMA)
+            # Migrations for databases created by earlier versions.
+            cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(bettors)").fetchall()}
+            for col in ("salt", "password_hash"):
+                if col not in cols:
+                    self.conn.execute(f"ALTER TABLE bettors ADD COLUMN {col} TEXT")
             self.conn.commit()
 
     # ---- low level -------------------------------------------------------
@@ -262,8 +269,16 @@ class DB:
     def get_bettor(self, name):
         return self.query_one("SELECT * FROM bettors WHERE lower(name)=lower(?)", (name,))
 
-    def create_bettor(self, name, balance):
-        self.execute("INSERT INTO bettors(name, balance, created_at) VALUES(?,?,?)", (name, balance, time.time()))
+    def create_bettor(self, name, balance, salt=None, password_hash=None):
+        self.execute(
+            "INSERT INTO bettors(name, balance, created_at, salt, password_hash) VALUES(?,?,?,?,?)",
+            (name, balance, time.time(), salt, password_hash),
+        )
+
+    def set_bettor_password(self, name, salt, password_hash):
+        self.execute(
+            "UPDATE bettors SET salt=?, password_hash=? WHERE lower(name)=lower(?)", (salt, password_hash, name)
+        )
 
     def adjust_balance(self, name, delta):
         self.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (delta, name))

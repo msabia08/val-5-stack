@@ -186,6 +186,11 @@ td.prop .odd { padding: 4px 7px; margin: 0 2px; }
 .top-fill { display: block; height: 100%; border-radius: 0 4px 4px 0; }
 
 .slip { position: sticky; top: 76px; }
+.account { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.account label { width: 100%; margin-bottom: 6px; }
+.account input { width: 100%; }
+.account .btn-row { margin-top: 4px; }
+.account p { margin-bottom: 0; }
 .slip label { width: 100%; }
 .slip input { width: 100%; }
 .slip-item { display: grid; grid-template-columns: 1fr 72px 30px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--grid); }

@@ -104,6 +104,31 @@ def main():
 
     tracker = Tracker(cfg, db, client, on_new_matches=on_new)
 
+    # Bettor accounts: register, wrong password, duplicate name, claim of a legacy name.
+    bets.register("Tester", "secret1")
+    db.create_bettor("Legacy", 900)  # pre-accounts row without a password
+    assert bets.leaderboard()[0]["claimed"] is True
+    for bad in (("Tester", "wrong"), ("Nobody", "secret1"), ("Legacy", "anything")):
+        try:
+            bets.authenticate(*bad)
+            raise AssertionError(f"authenticate should fail for {bad}")
+        except BetError:
+            pass
+    try:
+        bets.register("tester", "other")
+        raise AssertionError("duplicate name should be refused")
+    except BetError:
+        pass
+    assert bets.register("Legacy", "claimed")["balance"] == 900
+    assert bets.authenticate("legacy", "claimed")["name"] == "Legacy"
+    bets.change_password("Tester", "secret1", "secret2")
+    assert bets.authenticate("Tester", "secret2")
+    try:
+        bets.place("Ghost", "team:win", "win", 10, {})
+        raise AssertionError("unknown bettor should not be able to bet")
+    except BetError:
+        pass
+
     # No games yet -> odds not ready, bets refused.
     assert engine.build(db)["ready"] is False
     try:
@@ -158,8 +183,17 @@ def main():
     except BetError:
         pass
     b3 = bets.place("Tester", "team:rounds", "over", 10, {})
-    bets.cancel(b3["id"])
+    for args in ({}, {"by": "Legacy"}, {"by": None}):
+        try:
+            bets.cancel(b3["id"], **args)
+            raise AssertionError(f"cancel should be refused for {args}")
+        except BetError:
+            pass
+    bets.cancel(b3["id"], by="tester")
     assert db.bet(b3["id"])["status"] == "cancelled" and db.get_bettor("Tester")["balance"] == 850
+    b4 = bets.place("Tester", "team:rounds", "under", 10, {})
+    bets.cancel(b4["id"], admin=True)
+    assert db.bet(b4["id"])["status"] == "cancelled" and db.get_bettor("Tester")["balance"] == 850
 
     # A new game arrives after the bets were placed -> settle.
     new_match = {"match_id": "m9", "map": "Haven", "mode": "competitive", "mode_label": "Competitive",
@@ -177,7 +211,7 @@ def main():
     expected = 850 + 100 * bet["odds_decimal"] + 50 * bet2["odds_decimal"]
     assert abs(bal - expected) < 0.05, (bal, expected)
     lb = bets.leaderboard()
-    assert lb[0]["name"] == "Tester" and lb[0]["won"] == 2 and lb[0]["cancelled"] == 1, lb
+    assert lb[0]["name"] == "Tester" and lb[0]["won"] == 2 and lb[0]["cancelled"] == 2, lb
 
     # Second sync: nothing new, no duplicates, no re-verification of rejected ids.
     calls_before = client.calls

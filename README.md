@@ -76,8 +76,13 @@ distribution at low weight and are flagged *low confidence*.
 
 ## Betting rules
 
-- Every bettor starts with `starting_balance` credits (default 1000). Just type
-  a name in the bet slip; new names are created on the spot.
+- Every bettor has their own account: pick a name and a personal betting
+  password in the bet slip (*Create account*). From then on only someone signed
+  in with that password can bet as that name or cancel its bets. Accounts
+  start with `starting_balance` credits (default 1000).
+- Forgot a password? With `admin_password` set, the commissioner can free the
+  name again via `POST /api/bettor/clear-password` with the `X-Admin-Password`
+  header, after which it can be re-claimed with a new password.
 - Bets are on the **next 5-stack game** that starts after the bet is placed, no
   matter which map ends up being played. Odds are locked when you place the bet.
 - Settlement happens automatically during the sync that records that game.
@@ -121,11 +126,12 @@ time you log in.
 
 - Everything except the login page needs the password cookie (30 days, HttpOnly).
 - Eight wrong passwords from one address lock it out for ten minutes.
-- `admin_password` (optional) is asked for on *Reset season*, so nobody wipes
-  the leaderboard by accident.
+- `admin_password` (optional) is asked for on *Reset season* and lets the
+  commissioner cancel anyone's bet or reset a bettor's password.
 - Keep `host` at `127.0.0.1`. The tunnel talks to the server locally and nothing
   is opened on your router.
-- Bettors are on the honour system: anyone with the password can bet as any name.
+- Bettors sign in with a personal password (hashed with PBKDF2), so the shared
+  site password only grants viewing; it cannot be used to bet as someone else.
 
 ## Configuration reference (`config.json`)
 

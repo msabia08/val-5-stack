@@ -20,7 +20,7 @@ import webbrowser
 from collections import defaultdict
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from bets import BetError, BetManager
 from db import DB
@@ -55,6 +55,9 @@ MIME = {
 }
 COOKIE = "fs_auth"
 CLEAR_COOKIE = f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+BETTOR_COOKIE = "fs_bettor"
+CLEAR_BETTOR_COOKIE = f"{BETTOR_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+THROTTLE_MSG = "Too many attempts. Try again in a few minutes."
 
 LOGIN_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -142,18 +145,27 @@ class Auth:
         morsel = jar.get(COOKIE)
         return bool(morsel) and hmac.compare_digest(morsel.value, self.token())
 
-    def check_password(self, ip, candidate):
+    # ---- brute-force throttle (8 failures -> 10 minute lockout per key) -----
+    def throttled(self, key):
         with self.lock:
-            count, until = self.failures.get(ip, (0, 0.0))
-            if until > time.time():
-                return False, "Too many attempts. Try again in a few minutes."
-        ok = hmac.compare_digest((candidate or "").strip(), self.password)
+            _, until = self.failures.get(key, (0, 0.0))
+            return until > time.time()
+
+    def record(self, key, ok):
         with self.lock:
             if ok:
-                self.failures.pop(ip, None)
-            else:
-                count += 1
-                self.failures[ip] = (count, time.time() + 600 if count >= 8 else 0.0)
+                self.failures.pop(key, None)
+                return
+            count, _ = self.failures.get(key, (0, 0.0))
+            count += 1
+            self.failures[key] = (count, time.time() + 600 if count >= 8 else 0.0)
+
+    def check_password(self, ip, candidate):
+        key = f"site|{ip}"
+        if self.throttled(key):
+            return False, THROTTLE_MSG
+        ok = hmac.compare_digest((candidate or "").strip(), self.password)
+        self.record(key, ok)
         if not ok:
             time.sleep(0.8)
         return ok, (None if ok else "Wrong password.")
@@ -162,6 +174,33 @@ class Auth:
         if not self.admin_password:
             return True
         return hmac.compare_digest((candidate or "").strip(), self.admin_password)
+
+    def is_configured_admin(self, candidate):
+        """Like is_admin, but False when no admin password is configured at all."""
+        return bool(self.admin_password) and self.is_admin(candidate)
+
+    # ---- bettor sessions (signed cookie, invalidated when the password changes) ----
+    def bettor_token(self, name, password_hash):
+        return hmac.new(self.secret, f"bettor|{name.lower()}|{password_hash}".encode(), hashlib.sha256).hexdigest()
+
+    def bettor_cookie(self, bettor, secure):
+        value = f"{quote(bettor['name'], safe='')}.{self.bettor_token(bettor['name'], bettor['password_hash'])}"
+        return f"{BETTOR_COOKIE}={value}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax" + ("; Secure" if secure else "")
+
+    def current_bettor(self, header, db):
+        jar = cookies.SimpleCookie()
+        try:
+            jar.load(header or "")
+        except cookies.CookieError:
+            return None
+        morsel = jar.get(BETTOR_COOKIE)
+        if not morsel or "." not in morsel.value:
+            return None
+        qname, token = morsel.value.rsplit(".", 1)
+        b = db.get_bettor(unquote(qname))
+        if not b or not b.get("password_hash"):
+            return None
+        return b if hmac.compare_digest(token, self.bettor_token(b["name"], b["password_hash"])) else None
 
 
 class App:
@@ -391,6 +430,9 @@ class Handler(BaseHTTPRequestHandler):
             )})
         if path == "/api/bettors":
             return self._json({"bettors": app.bets.leaderboard()})
+        if path == "/api/bettor/me":
+            me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
+            return self._json({"bettor": app.bets.public(me) if me else None})
         return self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
@@ -425,15 +467,47 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "busy": True}, 202)
                 app.tracker.request_sync(full=bool(body.get("full")))
                 return self._json({"ok": True, "started": True}, 202)
+            if path == "/api/bettor/register":
+                b = app.bets.register(body.get("name"), body.get("password"))
+                cookie = auth.bettor_cookie(b, self.is_https())
+                return self._json({"bettor": app.bets.public(b)}, 201, extra=[("Set-Cookie", cookie)])
+            if path == "/api/bettor/login":
+                name = (body.get("name") or "").strip()
+                key = f"bettor|{self.client_ip()}|{name.lower()}"
+                if auth.throttled(key):
+                    return self._json({"error": THROTTLE_MSG}, 429)
+                try:
+                    b = app.bets.authenticate(name, body.get("password"))
+                except BetError as e:
+                    auth.record(key, False)
+                    time.sleep(0.8)
+                    return self._json({"error": str(e)}, 403)
+                auth.record(key, True)
+                cookie = auth.bettor_cookie(b, self.is_https())
+                return self._json({"bettor": app.bets.public(b)}, 200, extra=[("Set-Cookie", cookie)])
+            if path == "/api/bettor/logout":
+                return self._json({"ok": True}, extra=[("Set-Cookie", CLEAR_BETTOR_COOKIE)])
+            if path == "/api/bettor/password":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor first."}, 403)
+                b = app.bets.change_password(me["name"], body.get("old"), body.get("new"))
+                cookie = auth.bettor_cookie(b, self.is_https())
+                return self._json({"bettor": app.bets.public(b)}, extra=[("Set-Cookie", cookie)])
+            if path == "/api/bettor/clear-password":
+                if not auth.is_configured_admin(self.headers.get("X-Admin-Password")):
+                    return self._json({"error": "Set admin_password in config.json and enter it to reset a bettor."}, 403)
+                b = app.bets.clear_password(body.get("name"))
+                return self._json({"bettor": app.bets.public(b), "bettors": app.bets.leaderboard()})
             if path == "/api/bets":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to place bets."}, 403)
                 bet = app.bets.place(
-                    body.get("bettor"), body.get("market_id"), body.get("selection"),
+                    me["name"], body.get("market_id"), body.get("selection"),
                     body.get("stake"), body.get("context") or {},
                 )
                 return self._json({"bet": bet, "bettors": app.bets.leaderboard()}, 201)
-            if path == "/api/bettors":
-                b = app.bets.ensure_bettor(body.get("name"))
-                return self._json({"bettor": b, "bettors": app.bets.leaderboard()}, 201)
             if path == "/api/bettors/reset":
                 if not auth.is_admin(self.headers.get("X-Admin-Password")):
                     return self._json({"error": "Admin password required for that."}, 403)
@@ -452,7 +526,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.app.auth.enabled and not self._authed():
                 return self._json({"error": "Login required"}, 401)
             if path.startswith("/api/bets/"):
-                bet = self.app.bets.cancel(int(path.rsplit("/", 1)[1]))
+                auth = self.app.auth
+                me = auth.current_bettor(self.headers.get("Cookie"), self.app.db)
+                admin = auth.is_configured_admin(self.headers.get("X-Admin-Password"))
+                bet = self.app.bets.cancel(int(path.rsplit("/", 1)[1]), by=me["name"] if me else None, admin=admin)
                 return self._json({"bet": bet, "bettors": self.app.bets.leaderboard()})
             return self._json({"error": "Not found"}, 404)
         except BetError as e:

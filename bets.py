@@ -1,5 +1,8 @@
-"""Virtual-credit betting ledger: placement, cancellation, settlement, leaderboard."""
+"""Virtual-credit betting ledger: bettor accounts, placement, cancellation, settlement, leaderboard."""
+import hashlib
+import hmac
 import json
+import secrets
 import time
 
 from odds import find_market
@@ -8,6 +11,12 @@ from stats import player_metrics
 
 class BetError(Exception):
     pass
+
+
+def hash_password(password, salt=None):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 120_000).hex()
+    return salt, digest
 
 
 EMPTY_STATS = {
@@ -22,16 +31,63 @@ class BetManager:
         self.engine = engine
         self.starting = float(cfg.get("starting_balance", 1000))
 
-    # ---- bettors ---------------------------------------------------------
-    def ensure_bettor(self, name):
+    # ---- bettor accounts -------------------------------------------------
+    @staticmethod
+    def _valid_name(name):
         name = (name or "").strip()
         if not name or len(name) > 32:
             raise BetError("Bettor name must be 1-32 characters.")
+        return name
+
+    @staticmethod
+    def _valid_password(password):
+        password = password or ""
+        if len(password) < 4 or len(password) > 64:
+            raise BetError("Password must be 4 to 64 characters.")
+        return password
+
+    @staticmethod
+    def public(b):
+        return {"name": b["name"], "balance": round(b["balance"], 2)}
+
+    def register(self, name, password):
+        """Create a bettor, or claim a name that exists without a password yet."""
+        name = self._valid_name(name)
+        password = self._valid_password(password)
         b = self.db.get_bettor(name)
-        if not b:
-            self.db.create_bettor(name, self.starting)
-            b = self.db.get_bettor(name)
+        if b and b.get("password_hash"):
+            raise BetError("That name already has an account. Sign in with its password.")
+        salt, digest = hash_password(password)
+        if b:
+            self.db.set_bettor_password(b["name"], salt, digest)
+        else:
+            self.db.create_bettor(name, self.starting, salt, digest)
+        return self.db.get_bettor(name)
+
+    def authenticate(self, name, password):
+        name = self._valid_name(name)
+        b = self.db.get_bettor(name)
+        if not b or not b.get("password_hash"):
+            raise BetError("No account with that name yet. Create one first.")
+        _, digest = hash_password(password or "", b["salt"])
+        if not hmac.compare_digest(digest, b["password_hash"]):
+            raise BetError("Wrong password.")
         return b
+
+    def change_password(self, name, old, new):
+        b = self.authenticate(name, old)
+        new = self._valid_password(new)
+        salt, digest = hash_password(new)
+        self.db.set_bettor_password(b["name"], salt, digest)
+        return self.db.get_bettor(b["name"])
+
+    def clear_password(self, name):
+        """Admin: forget a bettor's password so the name can be claimed again."""
+        b = self.db.get_bettor(self._valid_name(name))
+        if not b:
+            raise BetError("Bettor not found.")
+        self.db.set_bettor_password(b["name"], None, None)
+        return self.db.get_bettor(b["name"])
 
     def reset(self):
         self.db.reset_betting(self.starting)
@@ -56,6 +112,7 @@ class BetManager:
             profit = b["balance"] + s["pending_stake"] - self.starting
             row = {
                 "name": b["name"],
+                "claimed": bool(b.get("password_hash")),
                 "balance": round(b["balance"], 2),
                 "profit": round(profit, 2),
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
@@ -74,7 +131,9 @@ class BetManager:
             raise BetError("Invalid stake.")
         if stake < 1:
             raise BetError("Minimum stake is 1 credit.")
-        bettor = self.ensure_bettor(bettor_name)
+        bettor = self.db.get_bettor(self._valid_name(bettor_name))
+        if not bettor:
+            raise BetError("Sign in as a bettor first.")
         if stake > bettor["balance"] + 1e-9:
             raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
         board = self.engine.build(self.db, context or {})
@@ -118,12 +177,14 @@ class BetManager:
             bet_id = self.db.insert_bet(bet)
         return self.db.bet(bet_id)
 
-    def cancel(self, bet_id):
+    def cancel(self, bet_id, by=None, admin=False):
         bet = self.db.bet(bet_id)
         if not bet:
             raise BetError("Bet not found.")
         if bet["status"] != "pending":
             raise BetError("Only pending bets can be cancelled.")
+        if not admin and (not by or bet["bettor"].lower() != by.lower()):
+            raise BetError("You can only cancel your own bets.")
         with self.db.lock:
             self.db.update_bet(
                 bet_id, status="cancelled", settled_ts=time.time(), payout=bet["stake"],
