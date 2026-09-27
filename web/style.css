@@ -89,6 +89,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 
 /* ---- layout --------------------------------------------------------- */
 .container { max-width: 1240px; margin: 0 auto; padding: 16px; }
+.container.wide { max-width: 1600px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .card.error { border-color: var(--bad); }
 .card.empty { text-align: center; padding: 40px 20px; }
@@ -176,15 +177,18 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .ctx-row label { min-width: 120px; }
 .odds-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 .odds-layout > * { min-width: 0; }
-.markets { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.markets { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
 .market { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--surface-2); }
 .sels { display: flex; gap: 8px; flex-wrap: wrap; }
+.markets .sels { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.markets .sels .odd { justify-content: space-between; min-width: 0; }
 .odd { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
 .odd b { font-variant-numeric: tabular-nums; }
 .odd:hover { border-color: var(--accent); }
 .odd.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .props th[scope="row"] { font-weight: 500; color: var(--text); font-size: 14px; white-space: normal; min-width: 150px; }
 td.prop { text-align: center; white-space: nowrap; }
+.props thead th:not(:first-child) { text-align: center; }
 td.prop .line { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 14px; margin-bottom: 4px; }
 td.prop .odd { padding: 4px 7px; margin: 0 2px; }
 .conf.low { color: var(--warn); }
@@ -213,6 +217,8 @@ td.prop .odd { padding: 4px 7px; margin: 0 2px; }
 .slip-mode { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; margin-bottom: 10px; }
 .mode-btn { flex: 1; background: transparent; border: 0; border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; }
 .mode-btn.on { background: var(--accent); color: #fff; }
+.top-toggle { margin-bottom: 6px; }
+.top-toggle .mode-btn { padding: 5px 6px; font-size: 13px; }
 .parlay-summary { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 8px 0; border-top: 1px dashed var(--border); margin-top: 4px; }
 .parlay-summary b { font-variant-numeric: tabular-nums; }
 
@@ -222,6 +228,12 @@ td.prop .odd { padding: 4px 7px; margin: 0 2px; }
 .bet-slip-card.me { border-color: var(--accent); }
 .bet-slip-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px dashed var(--border); font-size: 14px; }
 .bet-ticket { padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.settled-game { margin-bottom: 16px; }
+.settled-game:last-child { margin-bottom: 0; }
+.settled-game-head { display: flex; align-items: center; gap: 8px; padding: 6px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.settled-game-head .chip { margin-right: 0; }
+
 .bet-ticket:last-child { border-bottom: 0; }
 .bet-ticket-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .bet-desc { font-weight: 500; font-size: 13px; }

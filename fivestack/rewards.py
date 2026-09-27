@@ -54,13 +54,17 @@ class RewardManager:
     def enabled(self):
         return self.game > 0 or self.win > 0 or self.bonus_max > 0
 
-    def bettor_for(self, member):
-        """The member's bettor account, created unclaimed if missing. First match wins: `bettor` on the member in
-        config.json, then bettor_names.json keyed by nickname, then the nickname (or Riot name) itself."""
+    def account_name(self, member):
+        """The name of the member's bettor account. First match wins: `bettor` on the member in config.json, then
+        bettor_names.json keyed by nickname, then the nickname (or Riot name) itself."""
         nickname = member.get("nickname") or member["name"]
         name = (self.overrides.get((member["name"].lower(), member["tag"].lower()))
                 or self.names.get(nickname.lower()) or nickname)
-        name = name.strip()[:32]
+        return name.strip()[:32]
+
+    def bettor_for(self, member):
+        """The member's bettor account (see account_name), created unclaimed if missing."""
+        name = self.account_name(member)
         b = self.db.get_bettor(name)
         if not b:
             self.db.create_bettor(name, self.starting)

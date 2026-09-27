@@ -101,10 +101,27 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
 - **Player props (over/under):** kills, deaths, assists, ACS, ADR, headshot %.
   The line sits at the weighted median; the over/under probability comes from a
   Gaussian-kernel smoothed distribution of past games.
-- **"Who tops the scoreboard" markets:** top fragger, highest ACS, most
-  assists, most deaths, best headshot %. Probabilities come from a Monte Carlo
-  simulation that draws one game per player from their weighted history.
-- **Team markets:** match result and total rounds.
+- **"Who tops the scoreboard" markets:** six cards, each with a toggle for its
+  counter market at the bottom of the scoreboard:
+
+  | Top | Bottom |
+  |---|---|
+  | Top fragger (most kills) | Bottom fragger (fewest kills) |
+  | Highest ACS | Lowest ACS |
+  | Most assists | Fewest assists |
+  | Most deaths | Fewest deaths |
+  | Best HS % | Worst HS % |
+  | Popped off | Got diff'd |
+
+  "Popped off" / "Got diff'd" go to the player whose ACS is furthest above /
+  below *their own* average over their earlier 5-stack games, so anyone can win
+  them; they void if someone has no earlier games to compare against.
+  Probabilities come from a Monte Carlo simulation that draws one game per
+  player from their weighted history; each top market and its counter come from
+  the same simulated games. A tie at the top (or bottom) refunds the stake.
+- **Team markets:** match result, total rounds, and overtime (does the game go
+  past 12–12?). Overtime is rare, so its odds come from your history shrunk
+  toward a ~10% base rate, and surrendered games are left out of it.
 - **Surrendered games are partial data.** Their kills, deaths and assists are
   scaled up to a full-length game (the median length of your completed games,
   or 22 rounds until there are 5 of them), and the game counts only as much as
@@ -137,8 +154,9 @@ distribution at low weight and are flagged *low confidence*.
   usual. Every other bet settles only if it was **already decided** when the
   game stopped: an over on a counting stat (kills, deaths, assists, total
   rounds) that had already cleared its line wins, and the matching under
-  loses. Anything else is refunded, including per-round stats (ACS, ADR,
-  headshot %) and "tops the scoreboard" markets, which could still have
+  loses; an overtime bet settles only if the game had already reached 12–12.
+  Anything else is refunded, including per-round stats (ACS, ADR,
+  headshot %) and top/bottom-of-the-scoreboard markets, which could still have
   swung. When the full match record is available, its winner flag decides
   who won, even if the surrendering team was ahead on rounds. Parlay legs
   follow the same rule, leg by leg (see Parlays).
@@ -147,9 +165,13 @@ distribution at low weight and are flagged *low confidence*.
   carry over to the next game, and it pays no rewards.
 - The **Bettors** tab ranks everyone by balance, with profit against the
   starting bankroll, record, win rate, ROI, open stakes and recent results.
-- The Odds & Bets tab shows every bet as a **slip**, grouped card by card under
-  the bettor who placed it, so it's obvious at a glance who has what riding on
-  the next game.
+- The Odds & Bets tab shows every bet as a **slip**. Open bets are grouped card
+  by card under the bettor who placed it, with each card's bets and total
+  wagered in its corner, so it's obvious at a glance who has what riding on
+  the next game. Settled bets show the last 3 games, each headed by the result
+  and the squad's totals, with each player's bets on that game in their own
+  card (bets, wagered and net). Every bettor's colour is their squad member's
+  colour, and odds follow the American / decimal switch.
 
 ## Parlays
 

@@ -19,7 +19,7 @@ from fivestack.insights import AGENT_ROLE, build_insights  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
 from fivestack.odds import OddsEngine, partial_game  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
-from fivestack.stats import build_stats, deviation  # noqa: E402
+from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
 from fivestack.tracker import Tracker, parse_details  # noqa: E402
 
 MEMBERS = [f"P{i}#TAG" for i in range(1, 6)]
@@ -195,7 +195,16 @@ def main():
     board = engine.build(db, {"map": "Ascent", "agents": {"puuid-1": "Jett"}})
     assert board["ready"]
     assert len(board["player_props"]) == 5 * 6, len(board["player_props"])
-    assert len(board["top_markets"]) == 5 and len(board["team"]) == 2
+    assert [mk["market_id"] for mk in board["team"]] == ["team:win", "team:rounds", "team:ot"]
+    ot_market = board["team"][2]
+    assert ot_market["selections"][1]["prob"] > ot_market["selections"][0]["prob"]  # no game went to OT: "No" favoured
+    tops = {mk["market_id"]: mk for mk in board["top_markets"]}  # 6 "tops the scoreboard" markets, each with a counter
+    assert len(tops) == 12 and sum(mk["direction"] == "low" for mk in tops.values()) == 6, sorted(tops)
+    assert tops["top:kills"]["counter_id"] == "low:kills" and tops["low:kills"]["pair"] == "top:kills"
+    assert tops["low:kills"]["label"] == "Bottom fragger" and tops["low:acs"]["label"] == "Lowest ACS"
+    assert tops["top:acs_rel"]["label"] == "Popped off" and tops["low:acs_rel"]["label"] == "Got diff'd"
+    favourite = lambda mid: tops[mid]["selections"][0]["key"]  # noqa: E731
+    assert favourite("top:kills") == "puuid-5" and favourite("low:kills") == "puuid-1", (favourite("top:kills"), favourite("low:kills"))
     for mk in board["player_props"] + board["team"]:
         s = sum(x["prob"] for x in mk["selections"])
         assert 1.03 < s < 1.07, (mk["market_id"], s)
@@ -253,6 +262,15 @@ def main():
         {"market_id": "ou:kills:puuid-1", "selection": "under"},
     ], 20, {})
     assert db.get_bettor("Parlay")["balance"] == 960  # 1000 - 20 - 20
+    # Counter ("bottom of the scoreboard") markets remember their direction, as singles and as parlay legs.
+    bets.register("Counter", "secret2")
+    low_single = bets.place("Counter", "low:kills", "puuid-1", 10, {})
+    low_parlay = bets.place_parlay("Counter", [{"market_id": "low:acs_rel", "selection": "puuid-2"},
+                                              {"market_id": "team:win", "selection": "win"}], 10, {})
+    assert json.loads(low_single["context"])["direction"] == "low" and low_single["description"].startswith("Bottom fragger")
+    assert json.loads(low_parlay["context"])["legs"][0]["meta"] == {"stat": "acs_rel", "direction": "low"}
+    bets.cancel(low_single["id"], by="Counter")
+    bets.cancel(low_parlay["id"], by="Counter")
 
     # A new game arrives after the bets were placed -> settle.
     new_match = {"match_id": "m9", "map": "Haven", "mode": "competitive", "mode_label": "Competitive",
@@ -284,6 +302,26 @@ def main():
     assert tester_row["won"] == 2 and tester_row["cancelled"] == 2, tester_row
     parlay_row = next(r for r in lb if r["name"] == "Parlay")
     assert parlay_row["won"] == 1 and parlay_row["lost"] == 1, parlay_row
+
+    # --- bottom-of-the-scoreboard and relative-ACS settlement ---------------------------
+    def top_bet(sel, direction, metrics, stat="kills"):
+        ctx = {"stat": stat, **({"direction": direction} if direction else {})}
+        return bets._evaluate({"market_type": "top", "selection": sel, "line": None, "context": json.dumps(ctx)},
+                              {"mode": "competitive", "rounds_won": 13, "rounds_lost": 7}, metrics)
+    spread = {"a": {"kills": 5}, "b": {"kills": 9}, "c": {"kills": 12}}
+    assert top_bet("a", "low", spread)[0] == "won" and top_bet("c", "low", spread)[0] == "lost"
+    assert top_bet("c", None, spread)[0] == "won"  # bets from before counter markets existed are "top" bets
+    assert top_bet("a", "low", {"a": {"kills": 5}, "b": {"kills": 5}, "c": {"kills": 12}})[2].startswith("Tie at the bottom")
+    # Popped off / got diff'd: m9 ACS over each player's own ACS in their earlier 5-stack games (m1 and m3).
+    m9_start = db.match("m9")["started_ts"]
+    rel = {p["puuid"]: player_metrics(p, 20) for p in db.match_players("m9")}
+    bets._add_relative_acs(rel, m9_start)
+    own = {pu: aggregate([r for r in db.player_rows() if r["puuid"] == pu and r["started_ts"] < m9_start])["acs"] for pu in rel}
+    assert all(abs(rel[pu]["acs_rel"] - rel[pu]["acs"] / own[pu]) < 1e-9 for pu in rel)
+    assert top_bet("puuid-1", "high", rel, "acs_rel")[0] == "won"  # lowest earlier average, same ACS tonight
+    assert top_bet("puuid-5", "low", rel, "acs_rel")[0] == "won"  # highest earlier average
+    rel["new-player"] = {"acs": 300.0, "acs_rel": None}
+    assert top_bet("puuid-1", "high", rel, "acs_rel")[0] == "void"  # someone has nothing to compare against
 
     # --- visualizations datasets ------------------------------------------
     unroled = [a for a in KNOWN_AGENTS if a.lower() not in AGENT_ROLE]
@@ -402,6 +440,13 @@ def main():
                   ("team_ou", "under", 12.5, {}))[0] == "lost"  # 13 rounds already beat the under
     status, payout, _, note, _ = parlay(("ou", "over", 150.5, {"stat": "acs", "puuid": "puuid-1"}), ("top", "puuid-1", None, {"stat": "kills"}))
     assert status == "void" and payout == 10.0 and "surrender" in note, (status, payout, note)  # nothing decided: refunded
+    # Overtime: a completed game settles on whether it reached 12-12; a surrender only if it already had.
+    def ot_bet(sel, match):
+        return bets._evaluate({"market_type": "team_ot", "selection": sel, "line": None, "context": "{}"}, match, ff_metrics)[0]
+    assert ot_bet("yes", dict(ff, rounds_won=14, rounds_lost=12)) == "won" and ot_bet("no", dict(ff, rounds_won=14, rounds_lost=12)) == "lost"
+    assert ot_bet("no", dict(ff, rounds_won=13, rounds_lost=11)) == "won"
+    assert ot_bet("yes", ff) == "void" and ot_bet("no", ff) == "void"  # 9-4 surrender: undecided
+    assert ot_bet("yes", dict(ff, rounds_won=12, rounds_lost=12)) == "won"  # surrendered at 12-12: OT was reached
     done = dict(ff, rounds_won=13, rounds_lost=4)  # the same numbers in a completed game settle normally
     assert bets._evaluate({"market_type": "ou", "selection": "under", "line": 10.5,
                            "context": json.dumps({"stat": "kills", "puuid": "puuid-2"})}, done, ff_metrics)[0] == "won"

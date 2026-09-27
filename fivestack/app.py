@@ -91,7 +91,8 @@ class App:
 
     def status(self):
         members = [
-            {"puuid": m["puuid"], "name": m["name"], "tag": m["tag"], "nickname": m.get("nickname") or m["name"]}
+            {"puuid": m["puuid"], "name": m["name"], "tag": m["tag"], "nickname": m.get("nickname") or m["name"],
+             "bettor": self.rewards.account_name(m)}  # their betting account, so bettors share the member's colour
             for m in self.db.members()
         ]
         log = list(self.tunnel.logs)

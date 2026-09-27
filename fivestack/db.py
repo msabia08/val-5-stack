@@ -366,17 +366,20 @@ class DB:
         return cur.lastrowid
 
     def bets(self, status=None, bettor=None, limit=None):
-        sql = "SELECT * FROM bets"
+        """Bets newest first, each with the game it settled on (game_map, game_rounds_won, ...) when there is one."""
+        sql = """SELECT b.*, m.map AS game_map, m.mode_label AS game_mode, m.rounds_won AS game_rounds_won,
+                        m.rounds_lost AS game_rounds_lost, m.result AS game_result, m.started_ts AS game_started_ts
+                 FROM bets b LEFT JOIN matches m ON m.match_id = b.settled_match_id"""
         conds, params = [], []
         if status:
-            conds.append("status=?")
+            conds.append("b.status=?")
             params.append(status)
         if bettor:
-            conds.append("lower(bettor)=lower(?)")
+            conds.append("lower(b.bettor)=lower(?)")
             params.append(bettor)
         if conds:
             sql += " WHERE " + " AND ".join(conds)
-        sql += " ORDER BY placed_ts DESC"
+        sql += " ORDER BY b.placed_ts DESC"
         if limit:
             sql += f" LIMIT {int(limit)}"
         return self.query(sql, params)

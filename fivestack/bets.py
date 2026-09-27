@@ -5,9 +5,9 @@ import json
 import secrets
 import time
 
-from .gamestate import FORFEIT, ending
+from .gamestate import FORFEIT, ending, went_to_overtime
 from .odds import STAT_DEFS, find_market
-from .stats import player_metrics
+from .stats import aggregate, player_metrics
 
 # Stats that only ever go up during a game: an over that cleared the line before a surrender is already won.
 COUNTING_STATS = {d["key"] for d in STAT_DEFS if d["kind"] == "count"}
@@ -159,9 +159,12 @@ class BetManager:
             meta = {"stat": market["stat"], "puuid": market["puuid"]}
         elif mtype == "top":
             desc = f"{market['label']}: {sel['label']}"
-            meta = {"stat": market["stat"]}
+            meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
         elif mtype == "team_win":
             desc = sel["label"]
+            meta = {}
+        elif mtype == "team_ot":
+            desc = f"Overtime: {sel['label']}"
             meta = {}
         else:
             desc = f"Total rounds {sel['label']}"
@@ -225,9 +228,12 @@ class BetManager:
                 meta = {"stat": market["stat"], "puuid": market["puuid"]}
             elif mtype == "top":
                 desc = f"{market['label']}: {sel['label']}"
-                meta = {"stat": market["stat"]}
+                meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
             elif mtype == "team_win":
                 desc = sel["label"]
+                meta = {}
+            elif mtype == "team_ot":
+                desc = f"Overtime: {sel['label']}"
                 meta = {}
             else:
                 desc = f"Total rounds {sel['label']}"
@@ -284,6 +290,7 @@ class BetManager:
             return []
         rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
         metrics = {p["puuid"]: player_metrics(p, rounds) for p in players}
+        self._add_relative_acs(metrics, started)
         settled = []
         for b in pending:
             new_context = None
@@ -309,6 +316,16 @@ class BetManager:
                     self.db.adjust_balance(b["bettor"], payout)
             settled.append(self.db.bet(b["id"]))
         return settled
+
+    def _add_relative_acs(self, metrics, started):
+        """ACS as a multiple of each player's own average over their 5-stack games before this one."""
+        earlier = {}
+        for r in self.db.player_rows():
+            if (r.get("started_ts") or 0) < started:
+                earlier.setdefault(r["puuid"], []).append(r)
+        for puuid, m in metrics.items():
+            own = aggregate(earlier.get(puuid, [])).get("acs")
+            m["acs_rel"] = m["acs"] / own if own else None
 
     def _evaluate_parlay(self, b, match, metrics):
         """Every leg must win. A void leg is dropped (no action); if none are left, the whole parlay is void."""
@@ -377,15 +394,18 @@ class BetManager:
             return ("won" if won else "lost"), round(v, 2), None
         if t == "top":
             stat = meta.get("stat")
+            low = meta.get("direction") == "low"  # bets from before counter markets existed are all "high"
             vals = {p: m.get(stat) for p, m in metrics.items() if m.get(stat) is not None}
+            if stat == "acs_rel" and len(vals) < len(metrics):
+                return "void", None, "Not everyone has earlier 5-stack games to compare against"
             if len(vals) < 2:
                 return "void", None, "Not enough data to settle"
-            best = max(vals.values())
+            best = min(vals.values()) if low else max(vals.values())
             winners = [p for p, v in vals.items() if abs(v - best) < 1e-9]
             actual = vals.get(sel)
             actual = round(actual, 2) if actual is not None else None
             if len(winners) > 1:
-                return "void", actual, "Tie at the top: stakes refunded"
+                return "void", actual, f"Tie at the {'bottom' if low else 'top'}: stakes refunded"
             return ("won" if winners[0] == sel else "lost"), actual, None
         if t == "team_win":
             res = match.get("result")
@@ -400,11 +420,18 @@ class BetManager:
                 return "void", total, "Push: landed exactly on the line"
             won = total > line if sel == "over" else total < line
             return ("won" if won else "lost"), total, None
+        if t == "team_ot":
+            ot = went_to_overtime(match)
+            return ("won" if ot == (sel == "yes") else "lost"), (1 if ot else 0), None
         return "void", None, "Unknown market type"
 
     @staticmethod
     def _evaluate_forfeit(b, match, metrics, meta):
         t, sel, line = b["market_type"], b["selection"], b.get("line")
+        if t == "team_ot":  # overtime is decided only if the surrender came after 12-12
+            if went_to_overtime(match):
+                return ("won" if sel == "yes" else "lost"), 1, "Decided before the surrender"
+            return "void", None, EARLY_END
         if t == "team_ou":
             value = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
         elif t == "ou" and meta.get("stat") in COUNTING_STATS:
