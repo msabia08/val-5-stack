@@ -315,6 +315,12 @@
   }
 
   // ---- players ----------------------------------------------------------------
+  // Each player's card used to show a "Compared with their other games" table and a row of recent W/L chips (the
+  // same for everyone, since every tracked game is a 5-stack game). Both are switched off; set either to true to
+  // bring it back. The "5-stack vs. their other games" summary at the top of the tab is separate and always shown.
+  const PLAYER_CARD_OTHER_GAMES = false;
+  const PLAYER_CARD_FORM = false;
+
   function viewPlayers() {
     const st = state.stats, idx = memberIndex();
     if (!st.members.length) return emptyState();
@@ -339,11 +345,11 @@
             ${kpi('Headshot %', fmt.pct1(o.hs_pct))}
           </div>
           <div class="grid-2"><div><h3>By agent</h3>${breakdown(m.by_agent, 'agent')}</div><div><h3>By map</h3>${breakdown(m.by_map, 'map')}</div></div>
-          ${devBlock(m)}
+          ${PLAYER_CARD_OTHER_GAMES ? devBlock(m) : ''}
           <p class="muted small">Best game: ${bk ? `${bk.value} kills on ${esc(bk.map)} as ${esc(bk.agent)} (${fmt.date(bk.started_at)})` : '–'}${ba ? ` · Peak ACS ${fmt.n0(ba.value)} on ${esc(ba.map)}` : ''}</p>`
         : '<p class="muted">No 5-stack games recorded for this player yet.</p>';
       return `<section class="card player">
-        <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div><div class="form">${form}</div></header>
+        <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div>${PLAYER_CARD_FORM ? `<div class="form">${form}</div>` : ''}</header>
         ${body}</section>`;
     }).join('');
   }
