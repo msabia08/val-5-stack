@@ -46,9 +46,10 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   The **Matches** tab opens with a recap of the latest game (see below); click
   any game in the list, or use *Older* / *Newer*, to recap another.
 - **Overview:** the front page. Squad totals, the last game with its top three
-  highlights (linking to the full recap), your balance and the top bettors, who's
-  trending (each player's ACS and K/D over their last 5 games against the 10
-  before), and win rate by map.
+  highlights (linking to the full recap), your balance and the top bettors, the
+  standout bets of the last 5 games (biggest win and loss, longest odds won,
+  shortest odds lost), who's trending (each player's ACS and K/D over their last 5 games
+  against the 10 before, with an ACS sparkline), and win rate by map.
 - **Charts tab:** charts built from all of the above, grouped by the buttons at
   the top (All, Results, Players, Rounds). Each has a one-line takeaway and hover
   details:
@@ -62,11 +63,11 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   - aim profile: a figure per player, head / body / legs each showing the share of
     their hits, shaded against the squad (the highest share is the strongest blue)
   - who carries the damage: 100 bullets, one per 1% of all the squad's damage, a row per player
-  - team comps by role mix
+  - team comps by role mix, each shown as a lineup of role letters (D D C I S)
   - agent pool: each player's ACS on every agent they've played, by role
   - clutches (1vX attempts and wins) and multi-kills (3K, 4K, aces)
   - spike sites: post-plant win rate on attack and retake rate on defence,
-    per map and site
+    per map and site, one side at a time
 
   Clutches, multi-kills and spike sites use each game's round-by-round record
   (kills, round winners, plants). The tracker keeps a compact copy of it for
@@ -144,7 +145,7 @@ here too.)
   so a player's third game can't set a record.
 - **Scoreboard:** each player's line with ▲ / ▼ where a stat is well above or
   below their usual 5-stack game, plus damage share, first kills, big rounds
-  (aces, 4Ks, 3Ks, clutches) and rank. Hover a number for their usual and their
+  (aces, 4Ks, 3Ks, clutches). Hover a number for their usual and their
   forecast.
 - **Round by round:** every round won or lost, with spike plants, defuses, the
   first kill, multi-kills and clutches marked; hover for details.

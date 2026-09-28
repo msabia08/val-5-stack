@@ -137,7 +137,7 @@
     const cols = (a, b) => `<div class="viz-cols">${a}${b}</div>`;
     const pages = {
       all: () => kpis + formCard() + cols(damageCard(), aimCard()) + swingCard() + cols(timeCard(), sessionCard()) +
-        mapCard() + agentCard() + cols(clutchCard(), multiKillCard()) + compCard() + spikeCard(),
+        mapCard() + agentCard() + cols(clutchCard(), multiKillCard()) + cols(compCard(), spikeCard()),
       results: () => kpis + formCard() + cols(timeCard(), sessionCard()) + compCard(),  // how the squad does, and when
       players: () => cols(damageCard(), aimCard()) + swingCard() + mapCard() + agentCard(),  // each player's impact, maps, agents
       rounds: () => cols(clutchCard(), multiKillCard()) + spikeCard(),  // clutches, multi-kills, spike sites
@@ -157,7 +157,7 @@
     const take = `Last ${last.length}: <strong>${lw}–${ll}</strong> (${pct(lw / last.length)}) · all games ${rec(all)}`;
     const rows = g.slice().reverse().map((x) => [dateLong(x.ts), x.map || '', resultText(x), x.form == null ? '–' : pct(x.form)]);
     return card('form', 'Form over time', take,
-      legend([{ label: `Win rate, last ${w} games`, color: '--accent', kind: 'line' }, { label: 'Won by', color: '--div-pos' }, { label: 'Lost by', color: '--div-neg' }]) +
+      legend([{ label: `Win rate, last ${w} games`, color: '--accent', kind: 'line' }, { label: 'Won by', color: '--up' }, { label: 'Lost by', color: '--down' }]) +
       slot('form', 310), table(['Game', 'Map', 'Result', `Win rate, last ${w}`], rows));
   }
 
@@ -193,7 +193,7 @@
     const cw = Math.max(2, Math.min(24, band - 2));
     g.forEach((q, i) => {
       if (!q.margin) return;
-      const color = q.margin > 0 ? '--div-pos' : '--div-neg';
+      const color = q.margin > 0 ? '--up' : '--down';
       s += `<path style="fill:var(${color})" d="${colPath(x(i) - cw / 2, cw, mid2, y2(q.margin))}"/>`;
     });
     s += `<line class="viz-base" x1="${m.l}" x2="${W - m.r}" y1="${mid2}" y2="${mid2}"/>` +
@@ -230,7 +230,7 @@
       xs: g.map((_, i) => x(i)),
       tips: g.map((q) => ({
         t: dateLong(q.ts),
-        r: [[`on ${q.map || '?'}${q.mode_label ? ' · ' + q.mode_label : ''}`, resultText(q), q.margin > 0 ? '--div-pos' : q.margin < 0 ? '--div-neg' : null],
+        r: [[`on ${q.map || '?'}${q.mode_label ? ' · ' + q.mode_label : ''}`, resultText(q), q.margin > 0 ? '--up' : q.margin < 0 ? '--down' : null],
           [`win rate, last ${data.constants.form_window}`, q.form == null ? '–' : pct(q.form), '--accent'],
           ['of the night', `game ${q.game_in_session}`, null]],
       })),
@@ -534,15 +534,19 @@
     const rows = data.comps.slice(0, MAX_COMPS);
     const good = rows.filter((c) => c.games >= 3).sort((a, b) => b.win_rate - a.win_rate);
     const take = good.length ? `Best comp with 3+ games: <strong>${h.esc(good[0].label)}</strong> (${rec(good[0])})` : 'Play a comp 3+ times to rank it.';
-    return card('comps', 'Team comps by role', take, slot('comps', 30 + rows.length * 34) +
+    return card('comps', 'Team comps by role', take, slot('comps', 30 + rows.length * 42) +
       '<p class="muted small">D Duelist · C Controller · I Initiator · S Sentinel. Most-played first.</p>',
       table(['Comp', 'Games', 'Record', 'Win rate'], data.comps.map((c) => [c.label, String(c.games), rec(c), pct(c.win_rate)])));
   }
 
+  // A comp's roles as a lineup of letters: "2D 1C 1I 1S" -> D D C I S (U for an agent we can't place).
+  const lineup = (key) => [...key.matchAll(/(\d+)([A-Z])/g)].flatMap(([, n, r]) => Array(Number(n)).fill(r));
+  const CHIP = 18, CHIP_GAP = 3;
+
   function drawComps(el, W) {
     const rows = data.comps.slice(0, MAX_COMPS);
     if (!rows.length) { el.innerHTML = '<p class="muted">No games yet.</p>'; return; }
-    const m = { l: 104, r: 88, t: 6, b: 24 }, rh = 34, t = 16, pw = W - m.l - m.r, H = rows.length * rh;
+    const m = { l: 5 * (CHIP + CHIP_GAP) + 10, r: 86, t: 6, b: 24 }, rh = 42, t = 16, pw = W - m.l - m.r, H = rows.length * rh;
     const x = (v) => m.l + v * pw;
     let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="Win rate by team composition">`;
     [0, 0.5, 1].forEach((v) => {
@@ -553,7 +557,8 @@
       const cy = m.t + i * rh + rh / 2;
       s += `<g class="viz-row"${tip(c.label, [['win rate', pct(c.win_rate), '--accent'], ['record', rec(c), null]])}>` +
         `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
-        `<text class="viz-label viz-mono" x="0" y="${cy + 4}">${h.esc(c.key)}</text>` +
+        lineup(c.key).map((r, j) => `<rect class="role-chip" x="${j * (CHIP + CHIP_GAP)}" y="${cy - CHIP / 2}" width="${CHIP}" height="${CHIP}" rx="4"/>` +
+          `<text class="role-chip-t" x="${j * (CHIP + CHIP_GAP) + CHIP / 2}" y="${cy}" text-anchor="middle" dominant-baseline="central">${h.esc(r)}</text>`).join('') +
         (c.win_rate > 0 ? `<path style="fill:var(--accent)${c.games < 3 ? ';opacity:.45' : ''}" d="${barPath(x(0), x(c.win_rate), cy, t)}"/>` : '') +
         `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${pct(c.win_rate)} <tspan class="viz-sub">${rec(c)}</tspan></text></g>`;
     });
@@ -689,7 +694,7 @@
     const top = rows[0];
     const take = top.attempts ? `<strong>${h.esc(top.nickname)}</strong> wins the most: ${top.wins} of ${plural(top.attempts, 'clutch')} (${pct(top.wins / top.attempts)})` : 'No clutch situations yet.';
     return card('clutch', 'Clutches', take,
-      legend([{ label: 'Won', color: '--pair-hi' }, { label: 'Lost', color: '--pair-lo' }]) + slot('clutch', 16 + rows.length * 38) +
+      legend([{ label: 'Won', color: '--up' }, { label: 'Lost', color: '--down' }]) + slot('clutch', 16 + rows.length * 38) +
       '<p class="muted small">A clutch is any round where one of you is the last one standing against 1-5 enemies. Hover a bar for the 1vX breakdown.</p>' + roundsNote(),
       table(['Player', '1v1', '1v2', '1v3', '1v4', '1v5', 'Total'], rows.map((p) => [p.nickname, ...p.clutch.map((c) => `${c.wins}/${c.attempts}`), `${p.wins}/${p.attempts}`])));
   }
@@ -704,8 +709,8 @@
       s += `<g class="viz-row"${tip(`${p.nickname}: ${p.wins} of ${plural(p.attempts, 'clutch')}`, p.clutch.filter((c) => c.attempts).map((c) => [`1v${c.vs}`, `${c.wins}/${c.attempts}`, null]))}>` +
         `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
         `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/><text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>`;
-      if (p.wins) s += `<path style="fill:var(--pair-hi)" d="${barPath(x0, Math.max(x0 + 0.5, xw - (p.attempts > p.wins ? 2 : 0)), cy, t, p.attempts === p.wins)}"/>`;
-      if (p.attempts > p.wins) s += `<path style="fill:var(--pair-lo)" d="${barPath(xw, xa, cy, t)}"/>`;
+      if (p.wins) s += `<path style="fill:var(--up)" d="${barPath(x0, Math.max(x0 + 0.5, xw - (p.attempts > p.wins ? 2 : 0)), cy, t, p.attempts === p.wins)}"/>`;
+      if (p.attempts > p.wins) s += `<path style="fill:var(--down)" d="${barPath(xw, xa, cy, t)}"/>`;
       s += `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${p.wins}/${p.attempts}${p.attempts ? ` <tspan class="viz-sub">${pct(p.wins / p.attempts)}</tspan>` : ''}</text></g>`;
     });
     el.innerHTML = s + '</svg>';
@@ -748,6 +753,8 @@
   }
 
   // ---- spike sites -----------------------------------------------------------------------------
+  let spikeSide = 'att'; // the spike sites card's side: 'att' (after we plant) or 'def' (after they plant)
+
   function spikeCard() {
     const r = data.rounds;
     if (!r || !r.games) return '';
@@ -763,32 +770,33 @@
     const worstDef = cands.filter((c) => c.kind === 'def').sort((a, b) => a.rate - b.rate)[0];
     const take = [bestAtt ? `Best plant: <strong>${h.esc(bestAtt.map)} ${h.esc(bestAtt.site)}</strong> (${pct(bestAtt.rate)} won after planting, ${bestAtt.n} plants)` : '',
       worstDef ? `weakest retake: <strong>${h.esc(worstDef.map)} ${h.esc(worstDef.site)}</strong> (${pct(worstDef.rate)} won)` : ''].filter(Boolean).join(' · ') || 'Needs 5+ plants on a site to call it.';
-    const heat = (kind) => {
+    // One side at a time (spikeSide, flipped in place by the toggle): a row per map with a tile per site it has,
+    // so a map without a C site just has no C tile. Attack rows also show how often we plant.
+    const pane = (kind) => {
       const plantsKey = kind === 'att' ? 'att_plants' : 'def_plants', winsKey = kind === 'att' ? 'att_wins' : 'def_wins';
-      let t = `<div class="table-wrap"><table class="viz-heat"><thead><tr><th></th>${kind === 'att' ? '<th>Plant rate</th>' : ''}` +
-        sites.map((x) => `<th>${h.esc(x)}</th>`).join('') + '</tr></thead><tbody>';
-      maps.forEach((m) => {
-        t += `<tr><th scope="row">${h.esc(m.map)} <span class="muted small">${plural(m.games, 'game')}</span></th>`;
-        if (kind === 'att') t += `<td${tip(`${m.map}: attack rounds with a plant`, [['plants', `${m.attack_plants} of ${m.attack_rounds}`, null]])}>${m.attack_rounds ? pct(m.attack_plants / m.attack_rounds) : '–'}</td>`;
-        sites.forEach((x) => {
-          const v = m.sites[x];
-          if (!v || !v[plantsKey]) { t += '<td class="viz-empty"></td>'; return; }
-          const rate = v[winsKey] / v[plantsKey], n = v[plantsKey];
+      const rowsHtml = maps.map((m) => {
+        const tiles = Object.keys(m.sites).sort().filter((x) => m.sites[x][plantsKey]).map((x) => {
+          const v = m.sites[x], n = v[plantsKey], rate = v[winsKey] / n;
           const f = divFill((rate - 0.5) * 2 * (n / (n + 3)));
-          t += `<td style="background:${f.bg};color:${f.ink}"${tip(`${m.map} ${x} · ${kind === 'att' ? 'our plants' : 'enemy plants'}`,
+          return `<div class="spike-site" style="background:${f.bg};color:${f.ink}"${tip(`${m.map} ${x} · ${kind === 'att' ? 'our plants' : 'enemy plants'}`,
             [[kind === 'att' ? 'won after planting' : 'won (retake or hold)', pct(rate), null], ['record', `${v[winsKey]}–${n - v[winsKey]}`, null]])}>` +
-            `${pct(rate)}<div class="viz-cell-sub">${n} plant${n === 1 ? '' : 's'}</div></td>`;
-        });
-        t += '</tr>';
-      });
-      return t + '</tbody></table></div>';
+            `<span class="spike-letter">${h.esc(x)}</span>${pct(rate)}<div class="viz-cell-sub">${n} plant${n === 1 ? '' : 's'}</div></div>`;
+        }).join('');
+        const plant = kind === 'att' ? `<div class="spike-plant"${tip(`${m.map}: attack rounds with a plant`, [['plants', `${m.attack_plants} of ${m.attack_rounds}`, null]])}>` +
+          `${m.attack_rounds ? pct(m.attack_plants / m.attack_rounds) : '–'}<div class="viz-cell-sub">planted</div></div>` : '';
+        return `<div class="spike-row"><div class="spike-map">${h.esc(m.map)} <span class="muted small">${plural(m.games, 'game')}</span></div>${plant}` +
+          `<div class="spike-sites">${tiles || '<span class="muted small">no plants yet</span>'}</div></div>`;
+      }).join('');
+      return `<div class="spike-pane ${kind}" data-spike-pane="${kind}"${spikeSide === kind ? '' : ' hidden'}>${rowsHtml}</div>`;
     };
+    const toggle = `<div class="seg spike-toggle" role="tablist">${[['att', 'Attack: our plants'], ['def', 'Defence: their plants']].map(([k, l]) =>
+      `<button type="button" class="seg-btn spike-side ${spikeSide === k ? 'on' : ''}" data-side="${k}" role="tab" aria-selected="${spikeSide === k}">${l}</button>`).join('')}</div>`;
     const rows = [];
     maps.forEach((m) => Object.entries(m.sites).forEach(([x, v]) => rows.push([`${m.map} ${x}`, `${v.att_wins}–${v.att_plants - v.att_wins}`, `${v.def_wins}–${v.def_plants - v.def_wins}`])));
     return card('spikes', 'Spike sites', take,
-      `<div class="viz-cols viz-inner"><div><h3>On attack: after we plant</h3>${heat('att')}</div><div><h3>On defence: after they plant</h3>${heat('def')}</div></div>` +
+      toggle + pane('att') + pane('def') +
       '<div class="viz-scale"><span>Lose more</span><span class="viz-scale-bar"></span><span>Win more</span></div>' +
-      '<p class="muted small">Round win rate after the spike goes down, per site; sites with few plants are paler. Plant rate is the share of our attack rounds with a plant (regulation only).</p>' + roundsNote(),
+      '<p class="muted small">Round win rate after the spike goes down, per site; sites with few plants are paler. "Planted" is the share of our attack rounds with a plant (regulation only).</p>' + roundsNote(),
       table(['Map · site', 'After our plant (W–L)', 'After their plant (W–L)'], rows));
   }
 
@@ -1086,7 +1094,7 @@
       `<button type="button" class="seg-btn ${cls} ${String(v) === String(cls === 'tr-stat' ? pick.stat : pick.range) ? 'on' : ''}" data-v="${h.esc(v)}">${h.esc(label)}</button>`).join('')}</div>`;
     const players = members.map((m) => {
       const off = !!pick.hidden[m.puuid];
-      return `<button type="button" class="tr-player ${off ? 'off' : ''}" data-puuid="${h.esc(m.puuid)}" aria-pressed="${!off}" title="${off ? 'Show' : 'Hide'} ${h.esc(m.nickname)}">` +
+      return `<button type="button" class="tr-player ${off ? 'off' : ''}${m.puuid === pick.focus ? ' focus' : ''}" data-puuid="${h.esc(m.puuid)}" aria-pressed="${!off}" title="${off ? 'Show' : 'Hide'} ${h.esc(m.nickname)}">` +
         `<span class="viz-key line" style="background:var(--s${h.slot(m.puuid) || 1})"></span>${h.esc(m.nickname)}</button>`;
     }).join('');
     const label = TREND_STATS.find(([k]) => k === pick.stat)[1];
@@ -1100,15 +1108,17 @@
     const rows = ranked.map(({ m, avg, last }) => [m.nickname, ptVal(avg, pick.stat), ptVal(last, pick.stat)]);
     return card('trends', `Trends: ${label}`, take,
       `<div class="tr-controls">${seg('tr-stat', TREND_STATS)}${seg('tr-range', TREND_RANGES)}</div><div class="tr-legend">${players}</div>` + slot('trends', 290) +
-      `<p class="muted small">${pick.range === 'all' ? 'Every complete 5-stack game' : `The last ${games.length} complete 5-stack games`}, oldest to newest; each point is one game. Click a name to hide or show that player; hover for everyone's value at a game.</p>`,
+      `<p class="muted small">${pick.range === 'all' ? 'Every complete 5-stack game' : `The last ${games.length} complete 5-stack games`}, oldest to newest; each point is one game. The player picked above stands out; click a name to hide or show that player, and hover for everyone's value at a game.</p>`,
       table(['Player', `Average over ${span}`, 'Latest game'], rows));
   }
 
   function drawTrends(el, W) {
     const { tl, members, pick } = pt;
     const stat = pick.stat, win = trendWindow(tl, pick), games = win.games, G = games.length;
+    // The player picked in the detail above (pick.focus) is drawn bold and last, on top; the rest are faint.
     const lines = members.filter((m) => !pick.hidden[m.puuid] && tl.series[m.puuid])
-      .map((m) => ({ m, color: `--s${h.slot(m.puuid) || 1}`, vals: win.vals(m.puuid) }));
+      .map((m) => ({ m, color: `--s${h.slot(m.puuid) || 1}`, vals: win.vals(m.puuid), cls: m.puuid === pick.focus ? 'focus' : 'dim' }))
+      .sort((a, b) => (a.cls === 'focus') - (b.cls === 'focus'));
     const all = lines.flatMap((l) => l.vals).filter((v) => v != null);
     if (!all.length) { el.innerHTML = '<p class="muted">Pick at least one player.</p>'; return; }
     let lo = Math.min(...all), hi = Math.max(...all);
@@ -1129,11 +1139,12 @@
         d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
         pen = true; last = i;
       });
-      s += `<path class="viz-line" style="stroke:var(${l.color})" d="${d}"/>`;
+      s += `<g class="tr-line ${l.cls}"><path class="viz-line" style="stroke:var(${l.color})" d="${d}"/>`;
       if (G <= 15) { // few enough games to mark each one
         l.vals.forEach((v, i) => { if (v != null && i !== last) s += `<circle class="viz-dot" cx="${x(i)}" cy="${y(v)}" r="3" style="fill:var(${l.color})"/>`; });
       }
       if (last != null) s += `<circle class="viz-dot" cx="${x(last)}" cy="${y(l.vals[last])}" r="4" style="fill:var(${l.color})"/>`;
+      s += '</g>';
     });
     s += `<text class="viz-ax" x="${m.l}" y="${m.t + H + 18}">${h.esc(dateShort(games[0].ts))}</text>` +
       `<text class="viz-ax" x="${x(G - 1)}" y="${m.t + H + 18}" text-anchor="end">${h.esc(dateShort(games[G - 1].ts))}</text>` +
@@ -1253,6 +1264,15 @@
     }
     if (root.dataset.vizBound) return;
     root.dataset.vizBound = '1';
+    // The spike sites card's Attack / Defence toggle flips its panes in place (no redraw).
+    root.addEventListener('click', (e) => {
+      const b = e.target.closest?.('.spike-side');
+      if (!b) return;
+      spikeSide = b.dataset.side;
+      const c = b.closest('.viz-card');
+      c.querySelectorAll('.spike-side').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
+      c.querySelectorAll('[data-spike-pane]').forEach((p) => { p.hidden = p.dataset.spikePane !== spikeSide; });
+    });
     root.addEventListener('pointermove', (e) => {
       const hit = e.target.closest?.('.viz-hit');
       if (hit) return crossAt(hit, nearest(hit, e.clientX), e.clientX, e.clientY);

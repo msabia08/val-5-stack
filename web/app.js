@@ -198,9 +198,11 @@
   };
   // The Overview's extras: the latest game's recap and the bettors' leaderboard (kept apart from the Matches tab's recap).
   const loadOverview = async () => {
-    const [recap, lb] = await Promise.all([api('/api/recap').catch(() => null), api('/api/bettors').catch(() => null)]);
+    const [recap, lb, won, lost] = await Promise.all([api('/api/recap').catch(() => null), api('/api/bettors').catch(() => null),
+      api('/api/bets?status=won&limit=300').catch(() => null), api('/api/bets?status=lost&limit=300').catch(() => null)]);
     state.overviewRecap = recap;
     if (lb) state.bettors = lb.bettors;
+    state.overviewBets = [...(won ? won.bets : []), ...(lost ? lost.bets : [])];
   };
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadRecap = async () => { state.recap = await api('/api/recap' + (state.recapId ? '?match=' + encodeURIComponent(state.recapId) : '')); };
@@ -353,36 +355,68 @@
       ${cards ? `<div class="ov-hl">${cards}</div>` : '<p class="muted">Nothing out of the ordinary this game.</p>'}</section>`;
   }
 
-  // Your balance (when signed in) and the top 3 bettors.
+  // The Betting card, in three parts that share one look (tiles and rows): your balance, the leaderboard's top 3,
+  // and the standout bets settled on the last OV_BET_GAMES games.
+  const OV_BET_GAMES = 5;
   function overviewBetting() {
     const me = state.me, lb = state.bettors || [];
-    const rank = me ? lb.findIndex((b) => b.name.toLowerCase() === me.name.toLowerCase()) + 1 : 0;
-    const mine = me
-      ? `<div class="ov-me"><div class="muted small">Your balance</div><div><b>${fmt.credits(me.balance)}</b> credits` +
-        `${me.open_bets ? ` <span class="muted small">+${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}</span>` : ''}</div>` +
-        `${rank ? `<div class="muted small">${rank === 1 ? 'Leading' : `#${rank} of ${lb.length}`}</div>` : ''}</div>`
+    const who = (name) => `<span class="swatch s${bettorSlot(name)}"></span><b>${esc(name)}</b>`;
+    const balance = me
+      ? `<div class="ov-tile ov-balance"><div class="ov-tile-label">Your balance</div><div class="ov-tile-value">${fmt.credits(me.balance)} <span class="ov-unit">credits</span></div>` +
+        `<div class="ov-tile-sub">${me.open_bets ? `+${fmt.credits(me.open_stake)} riding on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : 'No open bets'}</div></div>`
       : '<p class="muted small">Sign in on <a href="#odds">Odds &amp; Bets</a> to bet and see your balance here.</p>';
-    const leaders = lb.slice(0, 3).map((b, i) => `<li><span class="ov-medal">${['🥇', '🥈', '🥉'][i]}</span><b>${esc(b.name)}</b>` +
-      `<span class="num">${fmt.credits(b.balance)}</span><span class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</span></li>`).join('');
-    return `<section class="card"><div class="section-head"><h2>Betting</h2><span class="small"><a href="#odds">Odds &amp; Bets ›</a> · <a href="#bettors">Bettors ›</a></span></div>
-      ${mine}${leaders ? `<h3>Top bettors</h3><ol class="ov-leaders">${leaders}</ol>` : '<p class="muted">No bettors yet.</p>'}</section>`;
+    const leaders = lb.slice(0, 3).map((b, i) =>
+      `<li class="${me && b.name.toLowerCase() === me.name.toLowerCase() ? 'me' : ''}"><span class="ov-medal">${['🥇', '🥈', '🥉'][i]}</span><span class="ov-name">${who(b.name)}</span>` +
+      `<span class="num">${fmt.credits(b.balance)}</span><span class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : 'muted'}">${fmt.signed(b.profit, 0)}</span></li>`).join('');
+    return `<section class="card ov-betting"><div class="section-head"><h2>Betting</h2><span class="small"><a href="#odds">Odds &amp; Bets ›</a> · <a href="#bettors">Bettors ›</a></span></div>
+      ${balance}
+      <h3 class="ov-sub">Leaderboard <span>credits · profit</span></h3>${leaders ? `<ol class="ov-leaders">${leaders}</ol>` : '<p class="muted small">No bettors yet.</p>'}
+      ${overviewStandouts(who)}</section>`;
+  }
+
+  // Biggest win (most profit), biggest loss (biggest stake lost), longest odds won and shortest odds lost among the
+  // bets settled on the last OV_BET_GAMES games, whoever placed them.
+  function overviewStandouts(who) {
+    const all = (state.overviewBets || []).filter((b) => b.settled_match_id);
+    const games = [...new Map(all.map((b) => [b.settled_match_id, b.game_started_ts || 0])).entries()]
+      .sort((x, y) => y[1] - x[1]).slice(0, OV_BET_GAMES).map(([id]) => id);
+    const bets = all.filter((b) => games.includes(b.settled_match_id));
+    const won = bets.filter((b) => b.status === 'won'), lost = bets.filter((b) => b.status === 'lost');
+    const top = (list, score) => list.reduce((best, b) => (!best || score(b) > score(best) ? b : best), null);
+    const what = (b) => (b.market_type === 'parlay' ? `${(b.description || '').split(' + ').length}-leg parlay` : b.description || '');
+    const odds = (b) => fmt.odds({ decimal: b.odds_decimal, american: fmt.american(b.odds_decimal) });
+    const tiles = [
+      ['Biggest win', top(won, (b) => (b.payout || 0) - b.stake), (b) => `+${fmt.credits((b.payout || 0) - b.stake)}`, 'up'],
+      ['Biggest loss', top(lost, (b) => b.stake), (b) => `−${fmt.credits(b.stake)}`, 'down'],
+      ['Longest odds won', top(won, (b) => b.odds_decimal), odds, 'up'],
+      ['Shortest odds lost', top(lost, (b) => -b.odds_decimal), odds, 'down'],
+    ].map(([label, b, value, cls]) => (b
+      ? `<div class="ov-tile"><div class="ov-tile-label">${label}</div><div class="ov-tile-value ${cls}">${value(b)}</div>` +
+        `<div class="ov-tile-sub" title="${esc(`${b.bettor}: ${what(b)}`)}">${who(b.bettor)} · ${esc(what(b))}</div></div>`
+      : `<div class="ov-tile empty"><div class="ov-tile-label">${label}</div><div class="ov-tile-value muted">–</div></div>`)).join('');
+    return `<h3 class="ov-sub">Last ${OV_BET_GAMES} games</h3>` +
+      (bets.length ? `<div class="ov-tiles">${tiles}</div>` : '<p class="muted small">No settled bets on the last few games.</p>');
   }
 
   // Each player's ACS and K/D over their last 5 games against the 10 before (the same trend as the Players tab).
   function overviewTrending(st, idx) {
+    // Each stat: the last TREND_RECENT games' average, and a coloured change against the TREND_BEFORE before them
+    // (grey when it's under TREND_MIN_CHANGE). The two averages are in the tooltip.
     const cell = (m, key, f) => {
       const tr = trend(m, key);
       if (!tr) return '<td class="num muted">–</td>';
-      const arrow = Math.abs(tr.rel) >= TREND_MIN_CHANGE ? `<span class="pc-arrow ${tr.rel > 0 ? 'up' : 'down'}">${tr.rel > 0 ? '▲' : '▼'}</span>` : '<span class="pc-arrow"></span>';
-      return `<td class="num" title="Last ${TREND_RECENT} games: ${f(tr.now)} vs ${f(tr.then)} in the ${TREND_BEFORE} before">${f(tr.now)}${arrow} <span class="muted small">vs ${f(tr.then)}</span></td>`;
+      const d = tr.now - tr.then, cls = Math.abs(tr.rel) < TREND_MIN_CHANGE ? 'flat' : d > 0 ? 'up' : 'down';
+      return `<td class="num" title="Last ${TREND_RECENT} games: ${f(tr.now)} vs ${f(tr.then)} in the ${TREND_BEFORE} before">` +
+        `<b>${f(tr.now)}</b><span class="trend-delta ${cls}">${cls === 'flat' ? '' : d > 0 ? '▲ ' : '▼ '}${d >= 0 ? '+' : '−'}${f(Math.abs(d))}</span></td>`;
     };
     const members = st.members.filter((m) => m.overall.games)
       .sort((a, b) => ((trend(b, 'acs') || { rel: -9 }).rel) - ((trend(a, 'acs') || { rel: -9 }).rel));
     const rows = members.map((m) => `<tr><th scope="row"><span class="swatch s${idx.get(m.puuid)?.slot || 1}"></span>${esc(m.nickname)}</th>` +
-      `${cell(m, 'acs', fmt.n0)}${cell(m, 'kd', fmt.n2)}</tr>`).join('');
+      `${cell(m, 'acs', fmt.n0)}${cell(m, 'kd', fmt.n2)}<td class="ov-spark">${sparkline(statSeries(m, 'acs'), { w: 110, h: 26 })}</td></tr>`).join('');
     return `<section class="card"><div class="section-head"><h2>Who's trending</h2><a class="small" href="#players">Players ›</a></div>
       <p class="muted small">Last ${TREND_RECENT} games against the ${TREND_BEFORE} before them, hottest first.</p>
-      <div class="table-wrap"><table class="compact"><thead><tr><th>Player</th><th class="num">ACS</th><th class="num">K/D</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+      <div class="table-wrap"><table class="ov-trending"><thead><tr><th>Player</th><th class="ov-h">ACS</th><th class="ov-h">K/D</th><th class="ov-h ov-spark">ACS, last ${fmt.n0(Math.max(...members.map((m) => m.form.length)))} games</th></tr></thead>` +
+      `<tbody>${rows}</tbody></table></div></section>`;
   }
 
   // ---- 5-stack vs. usual ----------------------------------------------------------
@@ -457,8 +491,9 @@
     const st = state.stats, idx = memberIndex();
     const members = st.members.filter((m) => m.overall.games);
     if (!members.length) return emptyState();
+    const focus = (members.find((m) => m.puuid === state.playerPick) || members[0]).puuid; // the detail's player
     return playersTable(members, idx) + playerDetail(members, idx) +
-      window.FiveViz.playerTrends(st.timeline, members, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot }, state.trends);
+      window.FiveViz.playerTrends(st.timeline, members, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot }, { ...state.trends, focus });
   }
 
   // One row per player: this 5-stack's numbers (the best in each column highlighted, and an arrow when the player's
@@ -649,6 +684,8 @@
 
 
   // ---- matches --------------------------------------------------------------------
+  const NIGHT_GAP_S = 3 * 3600; // a longer break between game starts begins a new night (insights.SESSION_GAP_S)
+  const NIGHTS_OPEN = 3; // the latest nights shown open on the Matches tab; older ones are folded
   function viewMatches() {
     const ms = state.matches, idx = memberIndex();
     if (!ms.length) return emptyState();
@@ -657,21 +694,44 @@
     const f = state.matchFilter;
     const maps = [...new Set(ms.map((m) => m.map).filter(Boolean))].sort();
     const modes = [...new Set(ms.map((m) => m.mode_label).filter(Boolean))].sort();
-    const list = ms.filter((m) => (!f.map || m.map === f.map) && (!f.result || m.result === f.result) && (!f.mode || m.mode_label === f.mode));
-    const rows = list.map((m) => {
+    const keep = (m) => (!f.map || m.map === f.map) && (!f.result || m.result === f.result) && (!f.mode || m.mode_label === f.mode);
+    // Nights: games newest first, a new night after a break of more than NIGHT_GAP_S between game starts (the Charts
+    // tab's "nights" use the same rule). Grouped before filtering, so a filter never splits a night.
+    const nights = [];
+    ms.forEach((m) => {
+      const cur = nights[nights.length - 1], prev = cur && cur[cur.length - 1];
+      if (prev && (prev.started_ts || 0) - (m.started_ts || 0) <= NIGHT_GAP_S) cur.push(m); else nights.push([m]);
+    });
+    const shownCount = nights.reduce((a, n) => a + n.filter(keep).length, 0);
+    const time = (m) => (m.started_ts ? new Date(m.started_ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+    const row = (m) => {
       const rounds = (m.rounds_won || 0) + (m.rounds_lost || 0) || 1;
       const top = m.players[0];
-      return `<tr class="match-row ${m.result}${m.match_id === shown ? ' on' : ''}" data-id="${esc(m.match_id)}"><td><span class="chip ${m.result}">${fmt.res(m.result)}</span></td>` +
-        `<td class="num"><b>${m.rounds_won}–${m.rounds_lost}</b>${m.ending === 'forfeit' ? ' <span class="tag ff" title="Ended early by a surrender">Surrendered</span>' : ''}</td><td>${esc(m.map)}</td><td class="muted">${esc(m.mode_label || '')}</td>` +
+      return `<tr class="match-row ${m.result}${m.match_id === shown ? ' on' : ''}" data-id="${esc(m.match_id)}" title="Open this game's recap">` +
+        `<td><span class="chip ${m.result}">${fmt.res(m.result)}</span> <b class="m-score">${m.rounds_won}–${m.rounds_lost}</b>` +
+        `${m.ending === 'forfeit' ? ' <span class="tag ff" title="Ended early by a surrender">FF</span>' : ''}</td><td>${esc(m.map)}</td><td class="muted">${esc(m.mode_label || '')}</td>` +
         `<td>${top ? `${esc(top.nickname || top.name)} · ${fmt.n0((top.score || 0) / rounds)} ACS · ${esc(top.agent || '')}` : ''}</td>` +
-        `<td class="muted small">${fmt.date(m.started_at)}</td><td class="muted small">${m.match_id === shown ? 'showing' : 'recap ›'}</td></tr>`;
+        `<td class="muted small">${time(m)}</td><td class="m-go">${m.match_id === shown ? 'showing' : '›'}</td></tr>`;
+    };
+    let open = 0;
+    const groups = nights.map((night) => {
+      const games = night.filter(keep);
+      if (!games.length) return '';
+      const first = night[night.length - 1], w = games.filter((m) => m.result === 'win').length, l = games.filter((m) => m.result === 'loss').length;
+      const date = first.started_ts ? new Date(first.started_ts * 1000).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+      const isOpen = open < NIGHTS_OPEN || games.some((m) => m.match_id === shown);
+      open += 1;
+      return `<details class="night"${isOpen ? ' open' : ''}><summary><span class="night-date">${esc(date)}</span>` +
+        `<span class="night-rec"><b class="up">${w}</b>–<b class="down">${l}</b></span><span class="muted small">${games.length} game${games.length === 1 ? '' : 's'}</span></summary>` +
+        `<div class="table-wrap"><table class="match-table"><colgroup><col class="c-res"><col class="c-map"><col class="c-mode"><col><col class="c-time"><col class="c-go"></colgroup>` +
+        `<tbody>${games.map(row).join('')}</tbody></table></div></details>`;
     }).join('');
     return recap + `<section class="card"><h2>All games</h2><div class="filters">
         <select id="f-map"><option value="">All maps</option>${maps.map((x) => `<option ${f.map === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
         <select id="f-result"><option value="">All results</option><option value="win" ${f.result === 'win' ? 'selected' : ''}>Wins</option><option value="loss" ${f.result === 'loss' ? 'selected' : ''}>Losses</option></select>
         <select id="f-mode"><option value="">All modes</option>${modes.map((x) => `<option ${f.mode === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-        <span class="muted small">${list.length} of ${ms.length} games · click a game for its recap</span></div>
-      <div class="table-wrap"><table><thead><tr><th></th><th class="num">Score</th><th>Map</th><th>Mode</th><th>Top performer</th><th>Date</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+        <span class="muted small">${shownCount} of ${ms.length} games · by night, newest first · click a game for its recap</span></div>
+      ${groups || '<p class="muted">No games match these filters.</p>'}</section>`;
   }
 
   // ---- setup -----------------------------------------------------------------------

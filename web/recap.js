@@ -17,7 +17,6 @@ window.FiveRecap = (() => {
     : ['acs', 'adr'].includes(key) ? Math.round(v).toLocaleString() : String(Math.round(v * 10) / 10));
   const signed = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v)).toLocaleString()}`;
   const swatch = (puuid) => (puuid ? `<span class="swatch s${h.slot(puuid) || 1}"></span>` : '');
-  const TONE_LABEL = { good: 'Nice', bad: 'Rough', odd: 'Odd', info: 'Note' };
   const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'}`;
 
   function header(r) {
@@ -46,7 +45,7 @@ window.FiveRecap = (() => {
     }
     const who = (x) => (x.puuid ? `${swatch(x.puuid)}${h.esc(x.nickname || '')}` : '<span class="muted">Squad</span>');
     const cards = hs.slice(0, r.top_cards).map((x) => `<div class="hl-card tone-${h.esc(x.tone)}">
-        <div class="hl-who">${who(x)}<span class="hl-tone">${TONE_LABEL[x.tone] || ''}</span></div>
+        <div class="hl-who">${who(x)}</div>
         <div class="hl-title">${h.esc(x.title)}</div>${x.detail ? `<div class="hl-detail">${h.esc(x.detail)}</div>` : ''}</div>`).join('');
     const rest = hs.slice(r.top_cards);
     const more = rest.length ? `<details class="hl-more"><summary>${plural(rest.length, 'more highlight')}</summary><ul>${rest.map((x) =>
@@ -57,7 +56,7 @@ window.FiveRecap = (() => {
   // A stat cell: this game's value, and an arrow when it's well above or below the player's usual game.
   function statCell(p, key, better = 1) {
     const v = p[key], u = p.usual && p.usual[key], fc = p.forecast && p.forecast[key];
-    let arrow = '';
+    let arrow = '<span class="recap-arrow"></span>'; // an empty slot keeps the numbers in line with the arrowed ones
     if (u != null && v != null && Math.abs(v - u) >= Math.max(0.15 * Math.abs(u), key === 'kd' ? 0.2 : 1)) {
       const good = (v > u) === (better > 0);
       arrow = `<span class="recap-arrow ${good ? 'up' : 'down'}">${v > u ? '▲' : '▼'}</span>`;
@@ -73,15 +72,14 @@ window.FiveRecap = (() => {
       const rd = p.rounds;
       const extras = rd ? [rd.k5 ? `${rd.k5 > 1 ? rd.k5 + '× ' : ''}ACE` : '', rd.k4 ? `${rd.k4 > 1 ? rd.k4 + '× ' : ''}4K` : '', rd.k3 ? `${rd.k3 > 1 ? rd.k3 + '× ' : ''}3K` : '',
         ...rd.clutches.map((c) => `1v${c.vs}`)].filter(Boolean) : [];
-      const rank = p.tier_name ? `${h.esc(p.tier_name)}${p.rank_change > 0 ? ' <span class="recap-arrow up">▲</span>' : p.rank_change < 0 ? ' <span class="recap-arrow down">▼</span>' : ''}` : '–';
-      return `<tr><th scope="row">${swatch(p.puuid)}${h.esc(p.nickname)}<div class="muted small">${h.esc(p.agent || '?')} · ${h.esc(p.role)}</div></th>` +
+      return `<tr><th scope="row">${swatch(p.puuid)}${h.esc(p.nickname)}<div class="muted small">${h.esc(p.agent || '?')}</div></th>` +
         statCell(p, 'kills') + statCell(p, 'deaths', -1) + statCell(p, 'assists') + statCell(p, 'kd') + statCell(p, 'acs') + statCell(p, 'adr') + statCell(p, 'hs_pct') +
         `<td class="num">${Math.round(p.damage_share * 100)}%</td><td class="num">${rd ? rd.fb : '–'}</td>` +
-        `<td>${extras.map((x) => `<span class="tag">${h.esc(x)}</span>`).join(' ')}</td><td>${rank}</td></tr>`;
+        `<td>${extras.map((x) => `<span class="tag">${h.esc(x)}</span>`).join(' ')}</td></tr>`;
     }).join('');
     return `<section class="card"><h2>Scoreboard</h2><div class="table-wrap"><table class="compact recap-board"><thead><tr><th>Player</th>` +
       '<th class="num">K</th><th class="num">D</th><th class="num">A</th><th class="num">K/D</th><th class="num">ACS</th><th class="num">ADR</th><th class="num">HS %</th>' +
-      '<th class="num" title="Share of the squad\'s damage">Dmg</th><th class="num" title="Rounds opened with the first kill">FB</th><th>Big rounds</th><th>Rank</th></tr></thead>' +
+      '<th class="num" title="Share of the squad\'s damage">Dmg</th><th class="num" title="Rounds opened with the first kill">FB</th><th>Big rounds</th></tr></thead>' +
       `<tbody>${rows}</tbody></table></div>${how('▲ / ▼ mark a stat well above or below the player\'s usual game.', 'Green is good; for deaths, fewer is good. Hover a number for their usual 5-stack game and the forecast from the Forecasts tab.')}</section>`;
   }
 
