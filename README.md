@@ -56,6 +56,14 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   - share of team damage, game by game
   - team comps by role mix
   - bettor profit over time
+  - agent pool: each player's ACS on every agent they've played, by role
+  - clutches (1vX attempts and wins) and multi-kills (3K, 4K, aces)
+  - spike sites: post-plant win rate on attack and retake rate on defence,
+    per map and site
+
+  Clutches, multi-kills and spike sites use each game's round-by-round record
+  (kills, round winners, plants). The tracker keeps a compact copy of it for
+  every 5-stack game; older games are filled in a few per sync.
 
   A "night" is a run of games with no break over 3 hours.
 
@@ -163,15 +171,17 @@ distribution at low weight and are flagged *low confidence*.
 - **Remakes.** A game that ends within the first 4 rounds is treated as a
   remake or an abandoned lobby, not a game: it isn't recorded, open bets
   carry over to the next game, and it pays no rewards.
-- The **Bettors** tab ranks everyone by balance, with profit against the
-  starting bankroll, record, win rate, ROI, open stakes and recent results.
-- The Odds & Bets tab shows every bet as a **slip**. Open bets are grouped card
-  by card under the bettor who placed it, with each card's bets and total
+- Bets are shown as **slips**. On the Odds & Bets tab, open bets are grouped
+  card by card under the bettor who placed it, with each card's bets and total
   wagered in its corner, so it's obvious at a glance who has what riding on
-  the next game. Settled bets show the last 3 games, each headed by the result
-  and the squad's totals, with each player's bets on that game in their own
-  card (bets, wagered and net). Every bettor's colour is their squad member's
-  colour, and odds follow the American / decimal switch.
+  the next game. Every bettor's colour is their squad member's colour, and odds
+  follow the American / decimal switch.
+- The **Bettors** tab ranks everyone by balance, with profit against the
+  starting bankroll, record, win rate, ROI and open stakes. Under the rankings,
+  a **betting report card** shows each bettor's ROI by market type, and how they
+  do betting on themselves vs on others. Below that, **settled bets** cover the
+  last 3 games, each headed by the result and the squad's totals, with each
+  player's bets on that game in their own card (bets, wagered and net).
 
 ## Parlays
 
@@ -194,8 +204,14 @@ there are 2+ picks.
   and a parlay where nothing was decided is refunded.
 - The **Open bets** / **Settled bets** slips show each leg of a parlay
   underneath the ticket, with a ✓ / ✗ / ↺ per leg once it settles.
-- *Reset season* on the Odds page puts everyone back to the starting balance
-  and clears all bets and game rewards.
+- *Reset season* (under the Bettors tab's rankings) ends the season. It asks
+  you to type `RESET` (and the admin password, if one is set), and says exactly
+  what will happen. The season's final standings, every bet and every game
+  reward are then saved under **Past seasons** on the Bettors tab, before
+  everyone goes back to the starting balance and bets and rewards are cleared.
+  Bets still open at that moment are closed. Nothing is lost: past seasons keep
+  their full history. Set `admin_password` so that only the commissioner can
+  end a season.
 
 ## Game rewards
 
@@ -322,6 +338,7 @@ fivestack/             the backend package
   db.py                SQLite schema and queries (data/tracker.db)
   stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
   insights.py          datasets for the Visualizations tab (sessions, comps, damage share, ...)
+  timeline.py          round-by-round records: clutches, multi-kills, spike sites
   odds.py              odds engine
   gamestate.py         how a game ended: complete, surrendered, or a remake
   bets.py              betting ledger and settlement
@@ -333,6 +350,9 @@ data/, tools/          created at runtime (database, cloudflared); not committed
 ```
 
 Run `python tests/selftest.py` to check the backend end-to-end without touching the API.
+
+[`docs/DATA.md`](docs/DATA.md) lists every piece of data available: what the HenrikDev API returns (with field
+structures from real responses), what the tracker stores, and what the website's `/api/*` endpoints serve.
 
 ## Notes and limits
 

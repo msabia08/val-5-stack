@@ -67,6 +67,8 @@ def seed(db, games=48, seed=7):
         _seed_bets(db, random.Random(seed + 2))
     if not db.rewards():
         _seed_rewards(db)
+    if not db.timelines():
+        _seed_timelines(db, random.Random(seed + 3))
 
 
 def _game_times(rng, games):
@@ -259,5 +261,49 @@ def _seed_bets(db, rng, games=10):
         for name in names:
             place(name, m["started_ts"])
         manager.settle_for_match(m, db.match_players(m["match_id"]))
+        db.execute("UPDATE bets SET settled_ts=? WHERE settled_match_id=?", (m["started_ts"] + 2700, m["match_id"]))  # as if settled after the game
     for name in names:  # open bets on the next game
         place(name, time.time())
+
+
+THREE_SITE_MAPS = {"Haven", "Lotus"}
+
+
+def _seed_timelines(db, rng):
+    """A plausible round-by-round record for every demo game, matching its final score (see timeline.py)."""
+    profile = {m[0]: m for m in MEMBERS}
+    for match in db.matches():
+        players = db.match_players(match["match_id"])
+        us = [p["puuid"] for p in players]
+        skill = {p["puuid"]: profile[p["name"]][4] if p.get("name") in profile else 1.0 for p in players}
+        them = [f"enemy-{match['match_id'][:6]}-{i}" for i in range(5)]
+        team_of = {p: "Blue" for p in us} | {p: "Red" for p in them}
+        rw, rl = match["rounds_won"] or 0, match["rounds_lost"] or 0
+        results = ["Blue"] * rw + ["Red"] * rl
+        last = results.pop(results.index("Blue" if rw > rl else "Red"))  # the deciding round goes to the winner
+        rng.shuffle(results)
+        results.append(last)
+        sites = ["A", "B", "C"] if match["map"] in THREE_SITE_MAPS else ["A", "B"]
+        blue_attacks_first = rng.random() < 0.5
+        rounds, kills = [], []
+        for i, winner in enumerate(results):
+            first_half = i < 12 or i >= 24
+            attackers = "Blue" if blue_attacks_first == first_half else "Red"
+            alive = {"Blue": list(us), "Red": list(them)}
+            loser = "Red" if winner == "Blue" else "Blue"
+            by_spike = rng.random() < 0.35  # otherwise the round ends in an elimination
+            stop_at = rng.randint(1, 3) if by_spike else 0  # a spike round ends with some of the losers alive
+            t = 0
+            while len(alive[loser]) > stop_at:
+                t += rng.randint(2000, 12000)
+                team = winner if rng.random() < 0.6 or len(alive[winner]) == 1 else loser  # the winners keep someone alive
+                other = loser if team == winner else winner
+                killer = rng.choices(alive[team], [skill.get(p, 1.0) for p in alive[team]])[0]
+                victim = rng.choice(alive[other])
+                alive[other].remove(victim)
+                kills.append({"r": i, "t": t, "killer": killer, "victim": victim, "weapon": rng.choice(["Vandal", "Phantom", "Operator", "Sheriff"])})
+            planted = attackers == winner and by_spike or rng.random() < 0.45
+            site = rng.choice(sites) if planted else None
+            rounds.append({"winner": winner, "site": site, "planter_team": attackers if planted else None,
+                           "defused": bool(planted and winner != attackers)})
+        db.save_timeline(match["match_id"], {"our_team": "Blue", "team_of": team_of, "rounds": rounds, "kills": kills})

@@ -24,6 +24,7 @@ from datetime import datetime
 
 from .gamestate import NO_CONTEST, ending
 from .henrik import HenrikError
+from .timeline import extract_timeline
 
 MODE_ALIASES = {
     "competitive": "competitive",
@@ -355,6 +356,7 @@ class Tracker:
                     parsed = parse_details(data, pset)
                     if parsed:
                         self.db.insert_match(*parsed)
+                        self.db.save_timeline(parsed[0]["match_id"], extract_timeline(data, pset))
                         new_matches.append(parsed[0])
                         self.log(f"New 5-stack game (verified): {parsed[0]['map']} {parsed[0]['rounds_won']}-{parsed[0]['rounds_lost']}")
                     else:
@@ -373,7 +375,9 @@ class Tracker:
                             break
                         if ex.status == 404:
                             self.db.update_match(m["match_id"], details_fetched=1)
+                            self.db.save_timeline(m["match_id"], None)  # gone for good: don't ask again
                         continue
+                    self.db.save_timeline(m["match_id"], extract_timeline(data, pset))
                     parsed = parse_details(data, pset)
                     if parsed:
                         pm, players = parsed

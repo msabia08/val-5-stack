@@ -6,7 +6,7 @@
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null,
-    bets: [], bettors: [], rewards: [], slip: [], me: null,
+    bets: [], bettors: [], rewards: [], slip: [], me: null, seasons: null, resetOpen: false,
     ctx: { map: '', agents: {} },
     topDir: {}, // scoreboard card -> 'low' when flipped to its counter market (bottom of the scoreboard)
     bettor: localStorage.getItem('fs.bettor') || '',
@@ -86,6 +86,8 @@
   const loadStatus = async () => { state.status = await api('/api/status'); renderHeader(); };
   const loadStats = async () => { state.stats = await api('/api/stats'); };
   const loadInsights = async () => { state.insights = await api('/api/insights'); };
+  const loadBettingReport = async () => { state.bettingReport = await api('/api/betting-report'); };
+  const loadSeasons = async () => { state.seasons = await api('/api/seasons'); };
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadContent = async () => { state.content = await api('/api/content'); };
   const loadBets = async () => {
@@ -333,7 +335,7 @@
   // ---- visualizations (drawn by web/viz.js) ---------------------------------------
   function viewViz() {
     const idx = memberIndex();
-    const out = window.FiveViz.html(state.insights, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot });
+    const out = window.FiveViz.html(state.insights, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot });
     return out == null ? emptyState() : out;
   }
 
@@ -513,12 +515,16 @@
 
   function betsSection() {
     const pending = state.bets.filter((b) => b.status === 'pending');
-    const settled = state.bets.filter((b) => b.settled_match_id && b.status !== 'pending' && b.status !== 'cancelled');
     return `<section class="card"><div class="section-head"><h2>Open bets</h2>${pending.length ? `<span class="muted small">${betTotals(pending, false)}</span>` : ''}</div>
         ${pending.length ? bettorSlips(pending) : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
-        <p class="muted small">Balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>
-      <section class="card"><h2>Settled bets</h2>
-        ${settled.length ? gameSlips(settled) : '<p class="muted">Nothing settled yet.</p>'}</section>`;
+        <p class="muted small">Settled bets, balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>`;
+  }
+
+  // Bettors tab: the last few games' settled bets, grouped by game and then by bettor.
+  function settledSection() {
+    const settled = state.bets.filter((b) => b.settled_match_id && b.status !== 'pending' && b.status !== 'cancelled');
+    return `<section class="card"><h2>Settled bets</h2>
+        ${settled.length ? gameSlips(settled) : '<p class="muted">Nothing settled yet. Bets settle when the next 5-stack game is recorded.</p>'}</section>`;
   }
 
   // The last few games that had bets, newest first: a header per game, then each player's bets on it.
@@ -727,19 +733,50 @@
         `<td class="num">${b.roi != null ? fmt.signed(b.roi * 100, 0) + '%' : '–'}</td>` +
         `<td class="num">${b.pending}${b.pending_stake ? ` <span class="muted small">(${fmt.credits(b.pending_stake)})</span>` : ''}</td></tr>`;
     }).join('');
-    const recent = state.bets.filter((b) => ['won', 'lost', 'void'].includes(b.status)).slice(0, 12).map((b) => {
-      const net = (b.payout || 0) - b.stake;
-      return `<li class="recent-row bet"><span class="status ${b.status}">${b.status}</span>` +
-        `<span class="num ${net > 0 ? 'up' : net < 0 ? 'down' : ''}">${fmt.signed(net, 0)}</span>` +
-        `<span><b>${esc(b.bettor)}</b> · ${esc(b.description)}${b.note ? `<div class="muted small">${esc(b.note)}</div>` : ''}</span>` +
-        `<span class="muted small">${fmt.date(b.settled_ts ? b.settled_ts * 1000 : null)}</span></li>`;
-    }).join('');
     return `<section class="kpis">${kpis.join('')}</section>
       <section class="card"><h2>Rankings</h2><p class="muted small">Ordered by balance. Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).</p>
         <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
-        <div class="btn-row"><button class="btn ghost small" id="reset-bets">Reset season</button></div></section>
-      <section class="card"><h2>Recent results</h2>${recent ? `<ul class="recent">${recent}</ul>` : '<p class="muted">No settled bets yet. Bets settle when the next 5-stack game is recorded.</p>'}</section>
-      ${rewardsCard()}`;
+        ${resetPanel()}</section>
+      ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot }) : ''}
+      ${settledSection()}
+      ${rewardsCard()}
+      ${pastSeasonsCard()}`;
+  }
+
+  // Ending the season is typed-confirmation only, and says exactly what happens (the server checks too).
+  function resetPanel() {
+    if (!state.resetOpen) return '<div class="btn-row"><button class="btn ghost small" id="reset-bets">Reset season…</button></div>';
+    const cur = state.seasons?.current || {};
+    const start = fmt.credits(state.status.starting_balance || 1000);
+    const next = `Season ${(state.seasons?.seasons?.length || 0) + 1}`;
+    const admin = state.status.auth && state.status.auth.admin_required;
+    return `<div class="reset-panel" role="group" aria-labelledby="reset-title">
+      <h3 id="reset-title">End the season?</h3>
+      <p>This season's final standings, ${fmt.n0(cur.bets || 0)} bet${cur.bets === 1 ? '' : 's'} and ${fmt.n0(cur.rewards || 0)} game reward${cur.rewards === 1 ? '' : 's'} are saved as <b>${esc(next)}</b> under Past seasons.
+        Then every bettor goes back to ${start} credits, open bets are closed, and a new season starts. Accounts and passwords stay.</p>
+      <label><span>Type <b>RESET</b> to confirm</span><input id="reset-confirm-text" autocomplete="off" spellcheck="false"></label>
+      ${admin ? '<label><span>Admin password</span><input id="reset-admin" type="password" autocomplete="off"></label>' : ''}
+      <div class="btn-row"><button class="btn danger small" id="reset-go" disabled>End season</button><button class="btn ghost small" id="reset-cancel">Cancel</button></div>
+    </div>`;
+  }
+
+  function pastSeasonsCard() {
+    const seasons = state.seasons?.seasons || [];
+    if (!seasons.length) return '';
+    const rows = seasons.map((s) => {
+      const st = s.standings || [];
+      const champ = st[0];
+      const table = `<div class="table-wrap"><table class="compact"><thead><tr><th>#</th><th>Bettor</th><th class="num">Final credits</th>` +
+        '<th class="num">Betting profit</th><th class="num">Rewards</th><th class="num">W-L</th></tr></thead><tbody>' +
+        st.map((b, i) => `<tr><td>${i + 1}</td><td><span class="swatch s${bettorSlot(b.name)}"></span>${esc(b.name)}</td>` +
+          `<td class="num">${fmt.credits(b.balance)}</td><td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +
+          `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td><td class="num">${b.won}-${b.lost}</td></tr>`).join('') +
+        '</tbody></table></div>';
+      const dates = `${s.started_ts ? fmt.date(s.started_ts * 1000) : '?'} – ${fmt.date(s.ended_ts * 1000)}`;
+      return `<details class="season"><summary><b>${esc(s.name)}</b><span class="muted small">${esc(dates)}</span>` +
+        `${champ ? `<span>🏆 ${esc(champ.name)} · ${fmt.credits(champ.balance)}</span>` : ''}<span class="muted small right">${fmt.n0(s.bets)} bets</span></summary>${table}</details>`;
+    }).join('');
+    return `<section class="card"><h2>Past seasons</h2><p class="muted small">Every reset saves the season here. Click one for its final standings.</p>${rows}</section>`;
   }
 
   function rewardsCard() {
@@ -862,7 +899,7 @@
     }
     view.classList.toggle('wide', state.view === 'odds');
     bind();
-    if (state.view === 'viz' && view.querySelector('[data-chart]')) window.FiveViz.mount(view);
+    if ((state.view === 'viz' || state.view === 'bettors') && view.querySelector('[data-chart]')) window.FiveViz.mount(view);
   }
 
   async function render() {
@@ -873,7 +910,7 @@
         case 'overview': case 'players': await loadStats(); break;
         case 'viz': await loadInsights(); break;
         case 'odds': await Promise.all([loadOdds(), loadBets(), loadContent()]); break;
-        case 'bettors': await loadBets(); break;
+        case 'bettors': await Promise.all([loadBets(), loadBettingReport(), loadSeasons()]); break;
         case 'matches': await loadMatches(); break;
         default: await loadStatus();
       }
@@ -907,16 +944,26 @@
       try { await api('/api/bets/' + b.dataset.id, { method: 'DELETE', headers }); toast('Bet cancelled, stake refunded'); await loadBets(); draw(); }
       catch (e) { toast(e.message, 'bad'); }
     }));
-    $('#reset-bets')?.addEventListener('click', async () => {
-      if (!window.confirm('Reset every bettor to the starting balance and delete all bets?')) return;
+    $('#reset-bets')?.addEventListener('click', () => { state.resetOpen = true; draw(); $('#reset-confirm-text')?.focus(); });
+    $('#reset-cancel')?.addEventListener('click', () => { state.resetOpen = false; draw(); });
+    $('#reset-confirm-text')?.addEventListener('input', (e) => {
+      $('#reset-go').disabled = e.target.value.trim().toUpperCase() !== 'RESET';
+    });
+    $('#reset-go')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
       const headers = {};
-      if (state.status.auth && state.status.auth.admin_required) {
-        const pw = window.prompt('Admin password');
-        if (pw == null) return;
-        headers['X-Admin-Password'] = pw;
+      const pw = $('#reset-admin');
+      if (pw) headers['X-Admin-Password'] = pw.value;
+      try {
+        const r = await api('/api/bettors/reset', { method: 'POST', body: JSON.stringify({ confirm: $('#reset-confirm-text').value }), headers });
+        toast(`${r.season.name} saved to Past seasons. New season started.`, 'good');
+        state.resetOpen = false;
+        await Promise.all([loadBets(), loadBettingReport(), loadSeasons()]);
+        draw();
+      } catch (err) {
+        toast(err.message, 'bad');
+        e.currentTarget.disabled = false;
       }
-      try { await api('/api/bettors/reset', { method: 'POST', body: '{}', headers }); toast('Season reset'); await loadBets(); draw(); }
-      catch (e) { toast(e.message, 'bad'); }
     });
     $('#copy-url')?.addEventListener('click', async (e) => {
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
