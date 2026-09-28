@@ -203,6 +203,11 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   you bet needs between a 5% and a 90% chance: long shots top out around +1800,
   and near-certainties ("at least 5 kills") aren't offered. The card shows which
   numbers you can pick for each player and stat.
+- **🔥 Hot streaks:** a pick with a flickering flame border (player props, top /
+  bottom of the scoreboard, team markets) would have won each of the last 3 games
+  or more in a row at today's line. Hover it for the length of the run (counted back
+  up to 10 games). A refunded result, like a push or a surrender, is skipped.
+  It's only a label: the odds don't change.
 - **Exact numbers:** the same card's *exactly* option ("Loog gets exactly 25
   kills") on kills, deaths and assists. The chance is the share of that same
   distribution that rounds to exactly N, with the double house edge of the

@@ -479,8 +479,8 @@ class OddsEngine:
             "desc": "Does the 5-stack win?",
             "basis": {"games": len(matches), "win_rate": round(raw_wr, 3), "map_games": map_games},
             "selections": [
-                selection("win", "5-stack wins", p_win, two_way),
-                selection("loss", "5-stack loses", 1.0 - p_win, two_way),
+                selection("win", "Win", p_win, two_way),
+                selection("loss", "Loss", 1.0 - p_win, two_way),
             ],
         }]
         _, sigma = weighted_moments(pts_rounds)

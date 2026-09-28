@@ -83,7 +83,6 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
   75% { transform: rotate(-4deg) scale(1.1); }
   100% { transform: rotate(0deg) scale(1.08); }
 }
-@media (prefers-reduced-motion: reduce) { .logo:hover { animation: none; } }
 .sub { color: var(--muted); font-size: 12px; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tabs a { text-decoration: none; color: var(--text-2); padding: 7px 12px; border-radius: 8px; font-weight: 500; font-size: 14px; }
@@ -210,7 +209,6 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .odds-layout > * { min-width: 0; }
 .markets { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
 .market { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--surface-2); display: flex; flex-direction: column; }
-.market .market-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .market > .sels { margin-top: auto; }
 .markets .sels .odd span { white-space: nowrap; }
 .sels { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -227,6 +225,22 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .odd b { font-variant-numeric: tabular-nums; }
 .odd:hover { border-color: var(--accent); }
 .odd.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* A hot streak: a flame-coloured ring (the 1px gradient border plus a 1px inner ring) that flows around the
+   button, with flame tongues flickering up from its top edge. No size change, so rows stay aligned. */
+.odd.hot { border-color: transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(90deg, #ff2d00, #ff8a00, #ffd740, #ff6d00, #ff2d00) 0 0 / 200% 100% border-box;
+  animation: flame-flow 1.2s linear infinite, flame-flicker 1.3s ease-in-out infinite; }
+.odd.hot.on { background: linear-gradient(var(--accent), var(--accent)) padding-box,
+    linear-gradient(90deg, #ff2d00, #ff8a00, #ffd740, #ff6d00, #ff2d00) 0 0 / 200% 100% border-box; }
+@keyframes flame-flow { to { background-position: 0 0, 200% 0; } }
+@keyframes flame-flicker {
+  0%, 100% { box-shadow: inset 0 0 0 1px #ff8a00, 0 0 5px 1px rgba(255, 70, 0, .55), -4px -4px 8px -3px rgba(255, 150, 0, .7), 5px -6px 9px -4px rgba(255, 215, 64, .6); }
+  25% { box-shadow: inset 0 0 0 1px #ffab00, 0 0 7px 1px rgba(255, 60, 0, .65), -2px -7px 10px -4px rgba(255, 170, 0, .75), 6px -4px 8px -3px rgba(255, 225, 90, .5); }
+  50% { box-shadow: inset 0 0 0 1px #ff6d00, 0 0 4px 1px rgba(255, 80, 0, .5), -5px -5px 9px -4px rgba(255, 140, 0, .6), 3px -9px 11px -5px rgba(255, 215, 64, .75); }
+  75% { box-shadow: inset 0 0 0 1px #ffc400, 0 0 8px 2px rgba(255, 60, 0, .6), -3px -8px 10px -4px rgba(255, 160, 0, .7), 5px -5px 9px -4px rgba(255, 235, 110, .55); }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .props th[scope="row"] { font-weight: 500; color: var(--text); font-size: 14px; white-space: normal; min-width: 90px; }
 td.prop { text-align: center; white-space: nowrap; }
 .props thead th:not(:first-child) { text-align: center; }
@@ -240,6 +254,18 @@ td.prop .prop-pair .odd span { font-size: 12px; font-weight: 700; color: var(--m
 td.prop .prop-pair .odd:hover { background: var(--accent-soft); }
 td.prop .prop-pair .odd.on { background: var(--accent); color: #fff; }
 td.prop .prop-pair .odd.on span { color: #fff; }
+/* Inside the O | U pill only the hot half burns, like the other buttons: it rounds off and draws the same flowing
+   gradient ring (a masked ::before, since the halves have no border of their own) and the same flickering flames,
+   raised above its neighbour. The pill stops clipping so the flames can show. */
+td.prop .prop-pair.hot { overflow: visible; }
+td.prop .prop-pair .odd.hot { position: relative; z-index: 1; border-radius: 7px; background: var(--surface);
+  animation: flame-flicker 1.3s ease-in-out infinite; }
+td.prop .prop-pair .odd.hot::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(90deg, #ff2d00, #ff8a00, #ffd740, #ff6d00, #ff2d00) 0 0 / 200% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: flame-flow-ring 1.2s linear infinite; }
+@keyframes flame-flow-ring { to { background-position: 200% 0; } }
 .conf.low { color: var(--warn); }
 .conf.medium { color: var(--text-2); }
 .conf.high { color: var(--up); }
@@ -276,6 +302,7 @@ td.prop .prop-pair .odd.on span { color: #fff; }
 .mode-btn.on { background: var(--accent); color: #fff; }
 .top-toggle { margin-bottom: 6px; }
 .top-toggle .mode-btn { padding: 5px 6px; font-size: 13px; }
+.top-toggle .top-info { margin-left: 4px; font-size: 11px; font-weight: 400; opacity: .75; cursor: help; }
 .parlay-summary { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 8px 0; border-top: 1px dashed var(--border); margin-top: 4px; }
 .parlay-summary b { font-variant-numeric: tabular-nums; }
 
@@ -570,3 +597,9 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 .ov-medal { font-size: 16px; }
 @media (max-width: 860px) { .ov-grid { grid-template-columns: 1fr; } }
 .viz-genres { margin-bottom: 14px; }
+
+/* Reduced motion: no wiggling logo, and hot-streak borders stand still. Last in the file so it wins. */
+@media (prefers-reduced-motion: reduce) {
+  .logo:hover, .odd.hot, td.prop .prop-pair .odd.hot, td.prop .prop-pair .odd.hot::before { animation: none; }
+  .odd.hot { box-shadow: inset 0 0 0 1px #ff8a00; } /* a still flame border */
+}

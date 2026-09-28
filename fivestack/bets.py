@@ -14,6 +14,10 @@ COUNTING_STATS = {d["key"] for d in STAT_DEFS if d["kind"] == "count"}
 SCORE_MARKETS = {"team_score", "team_margin", "team_rw", "team_rl"}  # priced from odds.score_model
 # Note on a bet voided by a surrender. A void single is refunded; a void parlay leg is dropped from the parlay.
 EARLY_END = "Game ended early (surrender) before this was decided"
+# A pick on the board that would have won in each of the last STREAK_MIN games (at today's line) gets a flame;
+# streaks are counted back through at most STREAK_LOOKBACK games.
+STREAK_MIN = 3
+STREAK_LOOKBACK = 10
 
 
 class BetError(Exception):
@@ -171,7 +175,7 @@ class BetManager:
             desc = f"{market['label']}: {sel['label']}"
             meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
         elif mtype == "team_win":
-            desc = sel["label"]
+            desc = f"Match result: {sel['label']}"
             meta = {}
         elif mtype == "team_ot":
             desc = f"Overtime: {sel['label']}"
@@ -255,7 +259,7 @@ class BetManager:
                 desc = f"{market['label']}: {sel['label']}"
                 meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
             elif mtype == "team_win":
-                desc = sel["label"]
+                desc = f"Match result: {sel['label']}"
                 meta = {}
             elif mtype == "team_ot":
                 desc = f"Overtime: {sel['label']}"
@@ -348,15 +352,46 @@ class BetManager:
             settled.append(self.db.bet(b["id"]))
         return settled
 
-    def _add_relative_acs(self, metrics, started):
+    def _add_relative_acs(self, metrics, started, rows=None):
         """ACS as a multiple of each player's own average over their 5-stack games before this one."""
         earlier = {}
-        for r in self.db.player_rows():
+        for r in rows if rows is not None else self.db.player_rows():
             if (r.get("started_ts") or 0) < started:
                 earlier.setdefault(r["puuid"], []).append(r)
         for puuid, m in metrics.items():
             own = aggregate(earlier.get(puuid, [])).get("acs")
             m["acs_rel"] = m["acs"] / own if own else None
+
+    def mark_streaks(self, board):
+        """Give each selection on the board that would have won the last STREAK_MIN games or more in a row a
+        "streak" count. Each pick is settled like a bet placed at today's line on each recent game, newest first;
+        a void (a push, a surrender, a tie) neither counts nor breaks the run."""
+        if not board.get("ready"):
+            return board
+        rows = self.db.player_rows()
+        games = []
+        for match in self.db.matches(limit=STREAK_LOOKBACK):
+            rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
+            metrics = {p["puuid"]: player_metrics(p, rounds) for p in self.db.match_players(match["match_id"])}
+            self._add_relative_acs(metrics, match.get("started_ts") or 0, rows)
+            games.append((match, metrics))
+        for group in ("team", "player_props", "top_markets"):
+            for mk in board.get(group, []):
+                meta = json.dumps({"stat": mk.get("stat"), "puuid": mk.get("puuid"), "direction": mk.get("direction", "high")})
+                for s in mk["selections"]:
+                    bet = {"market_type": mk["type"], "selection": s["key"], "line": mk.get("line"), "context": meta}
+                    run = 0
+                    for match, metrics in games:
+                        status = self._evaluate(bet, match, metrics)[0]
+                        if status == "void":
+                            continue
+                        if status != "won":
+                            break
+                        run += 1
+                    if run >= STREAK_MIN:
+                        s["streak"] = run
+        board["streak_lookback"] = STREAK_LOOKBACK
+        return board
 
     def _evaluate_parlay(self, b, match, metrics):
         """Every leg must win. A void leg is dropped (no action); if none are left, the whole parlay is void."""

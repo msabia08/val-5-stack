@@ -333,7 +333,7 @@ class Handler(BaseHTTPRequestHandler):
                             k, v = part.split(":", 1)
                             ctx["agents"][k] = v
             if path == "/api/odds":
-                return self._json(app.engine.build(app.db, ctx))
+                return self._json(app.bets.mark_streaks(app.engine.build(app.db, ctx)))
             # A custom line's price and reasonable range: ?puuid=&stat=&line=24.5, or an exact number: &exact=25
             # (plus the same map / agents).
             try:

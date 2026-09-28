@@ -909,6 +909,30 @@ def score_markets(shared):
     shared.bets.cancel(bet["id"], by="Scorer")
 
 
+@section("streaks")
+def streaks(shared):
+    # A pick that would have won each of the last 3+ games, settled at today's line, carries a "streak" count.
+    from fivestack.bets import STREAK_LOOKBACK, STREAK_MIN
+    board = shared.bets.mark_streaks(shared.engine.build(shared.db))
+    assert board["streak_lookback"] == STREAK_LOOKBACK
+    wins = 0
+    for m in shared.db.matches(limit=STREAK_LOOKBACK):  # newest first; a draw neither counts nor breaks the run
+        if m["result"] == "draw":
+            continue
+        if m["result"] != "win":
+            break
+        wins += 1
+    sels = {mk["market_id"]: {s["key"]: s for s in mk["selections"]} for g in ("team", "player_props", "top_markets") for mk in board[g]}
+    assert sels["team:win"]["win"].get("streak", 0) == (wins if wins >= STREAK_MIN else 0), (sels["team:win"], wins)
+    assert "streak" not in sels["team:win"]["loss"] or wins == 0
+    hot = [s for picks in sels.values() for s in picks.values() if "streak" in s]
+    assert hot and all(STREAK_MIN <= s["streak"] <= STREAK_LOOKBACK for s in hot), hot
+    for mid, picks in sels.items():  # an over and its under can't both have won the same games
+        if mid.startswith("ou:"):
+            assert not ("streak" in picks["over"] and "streak" in picks["under"]), picks
+    assert shared.bets.mark_streaks({"ready": False}) == {"ready": False}
+
+
 @section("grace and cancel windows")
 def grace_and_cancel(shared):
     cfg, engine = shared.cfg, shared.engine

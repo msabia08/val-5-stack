@@ -472,10 +472,12 @@
   }
 
   // ---- odds & bets --------------------------------------------------------------
+  // A flaming border marks a pick that would have won each of the last 3+ games (s.streak, from BetManager.mark_streaks).
   function oddBtn(mk, s, label) {
     const on = state.slip.some((x) => x.market_id === mk.market_id && x.selection === s.key);
-    return `<button class="odd ${on ? 'on' : ''}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability">` +
-      `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b></button>`;
+    const hot = s.streak ? `Hit ${s.streak >= state.odds.streak_lookback ? `${s.streak}+` : s.streak} games in a row` : '';
+    return `<button class="odd ${on ? 'on' : ''}${hot ? ' hot' : ''}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability${hot ? ` · ${hot}` : ''}">` +
+      `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b>${hot ? `<span class="sr-only">, ${hot}</span>` : ''}</button>`;
   }
 
   function viewOdds() {
@@ -500,13 +502,13 @@
       return ctxBar + `<div class="card empty"><h2>No odds yet</h2><p>${esc(od.message)}</p></div>` + betsSection();
     }
     // Exact score spans the grid, its 12 scores in a compact grid of their own.
-    // One-line subtitles (the full text is in the tooltip) and buttons pinned to the bottom, so each row lines up.
+    // No subtitles (each card's details are in its title's tooltip) and buttons pinned to the bottom, so each row lines up.
     const team = od.team.map((mk) => {
       const btnLabel = (s) => (mk.type === 'team_margin' ? s.label.replace(/^Win by /, '') : s.label); // the slip still says "Win by 1–2"
       const sels = `<div class="sels ${mk.type}">${mk.selections.map((s) => oddBtn(mk, s, btnLabel(s))).join('')}</div>`;
       const sub = mk.desc + (mk.basis ? ` · ${fmt.pct(mk.basis.win_rate)} of ${mk.basis.games} won${mk.basis.map_games ? `, ${mk.basis.map_games} on this map` : ''}` : '') +
         (mk.mean != null ? ` · avg ${mk.mean}` : '');
-      return `<div class="market${mk.type === 'team_score' ? ' wide' : ''}"><h3>${esc(mk.label)}</h3><p class="muted small market-sub" title="${esc(sub)}">${esc(sub)}</p>${sels}</div>`;
+      return `<div class="market${mk.type === 'team_score' ? ' wide' : ''}"><h3 title="${esc(sub)}">${esc(mk.label)}</h3>${sels}</div>`; // details on hover
     }).join('');
     const props = new Map(od.player_props.map((p) => [p.market_id, p]));
     const propRows = od.members.map((m) => {
@@ -518,10 +520,12 @@
           const [o, u] = mk.selections;
           // The line as plain bold text, then over / under as one button split down the middle.
           return `<td class="prop" title="Line ${mk.line} · average ${mk.mean}"><div class="prop-cell"><span class="prop-line">${mk.line}</span>` +
-            `<div class="prop-pair">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
+            `<div class="prop-pair${o.streak || u.streak ? ' hot' : ''}">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
         }).join('') + '</tr>';
     }).join('');
-    // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle.
+    // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle. No subtitles, so every
+    // card is the same size: each button's meaning is its tooltip, and the stats whose names don't say it get an ⓘ.
+    const EXPLAIN_TOPS = ['acs_rel'];
     const byId = new Map(od.top_markets.map((mk) => [mk.market_id, mk]));
     const tops = od.top_markets.filter((mk) => mk.direction !== 'low').map((hi) => {
       const lo = byId.get(hi.counter_id);
@@ -529,9 +533,10 @@
       const mk = dir === 'low' ? lo : hi;
       const toggle = lo ? `<div class="slip-mode top-toggle" role="tablist" aria-label="${esc(hi.label)} or ${esc(lo.label)}">` +
         [['high', hi], ['low', lo]].map(([d, m]) =>
-          `<button type="button" class="mode-btn top-dir ${dir === d ? 'on' : ''}" data-pair="${esc(hi.pair)}" data-dir="${d}" role="tab" aria-selected="${dir === d}">${esc(m.label)}</button>`).join('') +
-        '</div>' : `<h3>${esc(mk.label)}</h3>`;
-      return `<div class="market">${toggle}<p class="muted small">${esc(mk.desc)}</p>` +
+          `<button type="button" class="mode-btn top-dir ${dir === d ? 'on' : ''}" data-pair="${esc(hi.pair)}" data-dir="${d}" role="tab" aria-selected="${dir === d}" title="${esc(m.desc)}">` +
+          `${esc(m.label)}${EXPLAIN_TOPS.includes(hi.stat) ? `<span class="top-info" aria-hidden="true">ⓘ</span><span class="sr-only">: ${esc(m.desc)}</span>` : ''}</button>`).join('') +
+        '</div>' : `<h3 title="${esc(mk.desc)}">${esc(mk.label)}</h3>`;
+      return `<div class="market">${toggle}` +
         mk.selections.map((s) => {
           const slot = idx.get(s.key)?.slot || 1;
           return `<div class="top-row"><span class="swatch s${slot}"></span><span>${esc(s.label)}</span>` +
