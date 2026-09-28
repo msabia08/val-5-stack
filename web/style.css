@@ -73,6 +73,17 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .brand { display: flex; align-items: center; gap: 10px; min-width: 200px; }
 .logo { display: block; width: 62px; height: 36px; object-fit: contain; flex: none; }  /* web/assets/onkey-logo.png: a 124 x 72 crop of onkey.png */
 .logo-greg { display: none; }  /* Greg Mode's logo: a 124 x 72 head-and-shoulders crop of greg.png (transparent) */
+/* Hovering the logo: a quick wiggle, then it stays a little bigger until the pointer leaves. */
+.logo { transform-origin: 50% 85%; transition: transform 0.2s ease; }
+.logo:hover { animation: logo-wiggle 0.6s ease-in-out forwards; }
+@keyframes logo-wiggle {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(-10deg) scale(1.12); }
+  50% { transform: rotate(8deg) scale(1.12); }
+  75% { transform: rotate(-4deg) scale(1.1); }
+  100% { transform: rotate(0deg) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) { .logo:hover { animation: none; } }
 .sub { color: var(--muted); font-size: 12px; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tabs a { text-decoration: none; color: var(--text-2); padding: 7px 12px; border-radius: 8px; font-weight: 500; font-size: 14px; }
@@ -489,11 +500,15 @@ tr.match-row.on td { background: var(--accent-soft); }
 .cl-offer > div { flex: 1 1 220px; }
 .cl-odds { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* ---- Greg Mode: the light theme over web/assets/greg.png, stretched to the window width and repeated down the page.
+/* ---- Greg Mode: the light theme over web/assets/greg.png, stretched to the window width and fixed in place.
    Every panel (cards, tiles, the top bar, slip, markets, buttons) is 50% see-through; tooltips and toasts stay solid
    so they're readable. ---- */
 :root[data-theme="greg"] { --surface: rgba(252, 252, 251, 0.5); --surface-2: rgba(240, 239, 236, 0.5); }
-:root[data-theme="greg"] body { background: #fff url("/assets/greg.png") center top / 100% auto repeat-y; }
+:root[data-theme="greg"] body { background: #fff; }
+/* Greg stays put while the page scrolls: a fixed layer behind everything (background-attachment: fixed is ignored on
+   iPhones and iPads, this isn't), stretched to the window width. */
+:root[data-theme="greg"] body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url("/assets/greg.png") center top / 100% auto no-repeat; }
 :root[data-theme="greg"] .viz-tip, :root[data-theme="greg"] .toast { background: #fcfcfb; }
 :root[data-theme="greg"] .logo-main { display: none; }
 :root[data-theme="greg"] .logo-greg { display: block; }
