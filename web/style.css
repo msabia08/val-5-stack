@@ -255,11 +255,11 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 }
 @keyframes frost-sweep { 0%, 55% { transform: translateX(0); } 100% { transform: translateX(440%); } }
 
-/* Confetti for a winning bet (see confetti() in app.js), and the balance ticker's flash. */
+/* Confetti for a winning bet (see confetti() in app.js), and the bet slip balance ticker's flash. */
 .confetti { position: fixed; width: 7px; height: 11px; margin: -5px 0 0 -3px; border-radius: 2px; pointer-events: none; z-index: 1000; }
 .confetti.round { width: 8px; height: 8px; border-radius: 50%; }
-#me-chip b.tick-up { animation: tick-up 1.4s ease-out; }
-#me-chip b.tick-down { animation: tick-down 1.4s ease-out; }
+.acct-balance b.tick-up { animation: tick-up 1.4s ease-out; }
+.acct-balance b.tick-down { animation: tick-down 1.4s ease-out; }
 @keyframes tick-up { from { color: var(--up); text-shadow: 0 0 10px var(--up); } }
 @keyframes tick-down { from { color: var(--down); text-shadow: 0 0 10px var(--down); } }
 
@@ -323,6 +323,8 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .odds-side #custom-line .ctx-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .odds-side #custom-line label, .odds-side #custom-line select, .odds-side #custom-line input { width: 100%; min-width: 0; }
 .odds-side #custom-line h2 { font-size: 16px; }
+.odds-side .my-bets h2 { font-size: 16px; }
+.odds-side .my-bets .bettor-slips { grid-template-columns: 1fr; }
 .account { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .account label { width: 100%; margin-bottom: 6px; }
 .account input { width: 100%; }
@@ -645,7 +647,7 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 /* Reduced motion: no wiggling logo, and hot-streak borders stand still. Last in the file so it wins. */
 @media (prefers-reduced-motion: reduce) {
   .logo:hover, .odd.hot, td.prop .prop-pair .odd.hot, td.prop .prop-pair .odd.hot::before, .odd.cold, td.prop .prop-pair .odd.cold::before,
-  #me-chip b.tick-up, #me-chip b.tick-down, .bet-ticket.just-placed { animation: none; }
+  .acct-balance b.tick-up, .acct-balance b.tick-down, .bet-ticket.just-placed { animation: none; }
   .odd.hot { box-shadow: inset 0 0 0 1px #ff8a00; } /* a still flame border */
   .odd.cold { box-shadow: inset 0 0 0 1px #81d4fa; } /* and a still frosty one */
   .odd.cold::after, .placed-stamp { display: none; }

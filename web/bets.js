@@ -89,7 +89,8 @@ window.FiveBets = (() => {
   }
 
   // ---- bet tickets (slip-style rendering, grouped by bettor) --------------------
-  function betTicket(b) {
+  // stamp: a ticket placed a moment ago lands with a "Placed" stamp (only in the sidebar's "Your open bets").
+  function betTicket(b, stamp = false) {
     const legs = b.market_type === 'parlay' ? (JSON.parse(b.context || '{}').legs || []) : null;
     const legIcon = { won: '✓', lost: '✗', void: '↺' };
     const legRows = legs ? legs.map((l) =>
@@ -100,7 +101,7 @@ window.FiveBets = (() => {
     const cancelBtn = isMine(b) && canCancel ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`
       : (state.status.auth && state.status.auth.admin_required) ? `<button class="btn ghost small cancel-bet admin" data-id="${b.id}" title="Needs the admin password">Admin cancel</button>`
       : '';
-    const fresh = justPlaced.has(b.id); // lands with a "PLACED" stamp right after placing
+    const fresh = stamp && justPlaced.has(b.id);
     return `<div class="bet-ticket ${b.status}${fresh ? ' just-placed' : ''}">${fresh ? '<span class="placed-stamp" aria-hidden="true">Placed</span>' : ''}
         <div class="bet-ticket-row">
           <div class="bet-desc">${legs ? `<span class="parlay-badge">Parlay ×${legs.length}</span>` : esc(b.description)}</div>
@@ -116,7 +117,7 @@ window.FiveBets = (() => {
       </div>`;
   }
 
-  function bettorSlips(bets, settled = false) {
+  function bettorSlips(bets, settled = false, stamp = false) {
     if (!bets.length) return '';
     const groups = new Map();
     bets.forEach((b) => {
@@ -131,7 +132,7 @@ window.FiveBets = (() => {
       const rows = groups.get(name);
       return `<div class="bet-slip-card ${isMine({ bettor: name }) ? 'me' : ''}">
         <div class="bet-slip-head"><span class="swatch s${bettorSlot(name)} lg"></span><b>${esc(name)}</b><span class="muted small right">${betTotals(rows, settled)}</span></div>
-        ${rows.map((b) => betTicket(b)).join('')}
+        ${rows.map((b) => betTicket(b, stamp)).join('')}
       </div>`;
     }).join('')}</div>`;
   }
@@ -153,6 +154,15 @@ window.FiveBets = (() => {
     return `<section class="card"><div class="section-head"><h2>Open bets</h2>${pending.length ? `<span class="muted small">${betTotals(pending, false)}</span>` : ''}</div>
         ${pending.length ? bettorSlips(pending) : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
         <p class="muted small">Settled bets, balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>`;
+  }
+
+  // The Odds & Bets sidebar's "Your open bets": the signed-in bettor's slip card from the open bets section, where a
+  // bet just placed lands with its stamp.
+  function myBetsCard() {
+    if (!state.me) return '';
+    const mine = state.bets.filter((b) => b.status === 'pending' && isMine(b));
+    return `<section class="card my-bets"><h2>Your open bets</h2>
+        ${mine.length ? bettorSlips(mine, false, true) : '<p class="muted small">Nothing open yet. Bets you place show up here.</p>'}</section>`;
   }
 
   // Settled bets per game, newest game first: Map(match_id -> bets).
@@ -617,5 +627,5 @@ window.FiveBets = (() => {
     });
   }
 
-  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard };
+  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard };
 })();

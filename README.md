@@ -210,12 +210,13 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   A roughly 50/50 pick (a 35–65% chance) that lost its last 3 or more instead
   gets a frosty border; long shots lose most games anyway, so they never do.
   These are only labels: the odds don't change.
-- **Celebrations:** a bet you win sets off confetti from your balance in the top
-  bar (gold, and more of it, for a long shot at +500 or longer), with a toast
-  saying what paid. Your browser remembers the last win it showed you, so a bet
-  that settles while the site is closed still gets its confetti next time you
-  open it. Your balance counts up or down when it changes, and a bet you place
-  lands with a "Placed" stamp.
+- **Celebrations:** a bet you win sets off confetti from your balance under the
+  bet slip (gold, and more of it, for a long shot at +500 or longer), with a
+  toast saying what paid. Your browser remembers the last win it showed you, so
+  a bet that settles while the site is closed, or while you're on another tab,
+  gets its confetti the next time you open Odds & Bets. The balance under the bet slip counts up or down when it changes,
+  and a bet you place lands with a "Placed" stamp in **Your open bets**, the box
+  under the custom line that lists just your own open bets.
 - **Exact numbers:** the same card's *exactly* option ("Loog gets exactly 25
   kills") on kills, deaths and assists. The chance is the share of that same
   distribution that rounds to exactly N, with the double house edge of the

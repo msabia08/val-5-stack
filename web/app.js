@@ -93,7 +93,7 @@
     try { state.me = (await api('/api/bettor/me')).bettor; } catch (e) { return; }
     renderMe();
   };
-  let shownBalance = null; // { name, balance } the chip last showed, for the balance ticker
+  let shownBalance = null; // { name, balance } last shown, for the bet slip's balance ticker
   function renderMe() {
     const chip = $('#me-chip'), me = state.me;
     chip.classList.toggle('hidden', !me);
@@ -102,8 +102,10 @@
       (me.open_stake ? `<span class="me-inplay">+${fmt.credits(me.open_stake)} in play</span>` : '');
     chip.title = `Betting as ${me.name}: ${fmt.credits(me.balance)} credits` +
       (me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : '') + '. Open Odds & Bets.';
+    // The balance under the bet slip (Odds & Bets only) counts to a new value; the chip just shows it.
     const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
-    if (was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(chip.querySelector('b'), was, me.balance);
+    const slipBalance = $('#slip .acct-balance b');
+    if (slipBalance && was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(slipBalance, was, me.balance);
     shownBalance = { name: me.name, balance: me.balance };
     celebrateWins(me);
   }
@@ -130,8 +132,9 @@
 
   // Confetti for wins settled since this browser last saw one (fs.seenWins.<name> holds the newest settled_ts
   // shown), so a game that settles while the site is closed still gets its confetti on the next visit or poll.
-  // The first visit on a device only sets the marker: old wins aren't celebrated. In a background tab it waits
-  // until the tab is visible again (browsers pause animations in hidden tabs).
+  // The first visit on a device only sets the marker: old wins aren't celebrated. The confetti comes out of the bet
+  // slip's balance, so it waits until you're on Odds & Bets (renderMe runs after every redraw), and in a background
+  // tab until the tab is visible again (browsers pause animations in hidden tabs).
   let celebrateLater = false;
   function celebrateWins(me) {
     const key = `fs.seenWins.${me.name.toLowerCase()}`, wins = me.recent_wins || [];
@@ -141,7 +144,8 @@
     const save = () => { try { localStorage.setItem(key, String(newest)); } catch (e) { /* storage blocked */ } };
     if (seen === null) { save(); return; }
     const fresh = wins.filter((w) => (w.settled_ts || 0) > Number(seen));
-    if (!fresh.length) return;
+    const origin = $('#slip .acct-balance b');
+    if (!fresh.length || !origin) return;
     if (document.hidden) {
       if (!celebrateLater) {
         celebrateLater = true;
@@ -160,12 +164,12 @@
     const total = fresh.reduce((a, w) => a + (w.payout || 0), 0);
     toast(`${longShot ? 'Long shot! ' : 'Winner! '}` + (fresh.length === 1 ? `${what(fresh[0])} paid ${fmt.credits(total)} credits`
       : `${fresh.length} bets paid ${fmt.credits(total)} credits`), 'good');
-    confetti($('#me-chip'), longShot);
+    confetti(origin, longShot);
   }
 
   const CONFETTI = ['#ff4d6d', '#ffd23f', '#3bceac', '#4f8cff', '#b86bff', '#ff8a00'];
   const GOLD = ['#ffd700', '#ffc107', '#ffe082', '#fff3c4', '#e6a800'];
-  // A burst of confetti from an element (the balance chip), falling under gravity and fading out.
+  // A burst of confetti from an element (the bet slip's balance), falling under gravity and fading out.
   function confetti(from, big) {
     if (!from || reducedMotion()) return;
     const r = from.getBoundingClientRect(), x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
@@ -203,7 +207,7 @@
   const loadRecap = async () => { state.recap = await api('/api/recap' + (state.recapId ? '?match=' + encodeURIComponent(state.recapId) : '')); };
   const loadContent = async () => { state.content = await api('/api/content'); };
   // The betting UI lives in web/bets.js (window.FiveBets); these names keep the call sites below unchanged.
-  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard } = window.FiveBets;
+  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard } = window.FiveBets;
   async function loadOdds() {
     const p = new URLSearchParams();
     if (state.ctx.map) p.set('map', state.ctx.map);
@@ -636,7 +640,7 @@
           <div class="table-wrap"><table class="props"><thead><tr><th>Player</th>${od.stat_defs.map((s) => `<th>${esc(s.label)}</th>`).join('')}</tr></thead><tbody>${propRows}</tbody></table></div></section>
         <section class="card"><h2>Top and bottom of the scoreboard</h2>${how('Pick who finishes first in a stat, or flip a card for who finishes last.', '"Popped off" and "Got diff\'d" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.')}<div class="markets">${tops}</div></section>
         ${betsSection()}
-      </div><aside class="odds-side"><div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}</aside></div>`;
+      </div><aside class="odds-side"><div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}${myBetsCard()}</aside></div>`;
   }
 
 
