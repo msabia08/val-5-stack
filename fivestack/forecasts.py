@@ -3,10 +3,15 @@
 Every complete 5-stack game is predicted from that player's own earlier 5-stack games only, weighted exactly like
 the odds (recency, same map, same agent: see OddsEngine.samples), so the page is an honest replay and also a check
 on the player-prop lines (kills, deaths and assists per game are exactly those lines; the per-round versions take
-game length out, since a 26-round game gives more kills than a 16-round one). Each prediction is a range meant to
-hold COVERAGE of games. One stat at a time (the page
-fetches the one it shows): results are grouped into map x role cells (agents inside each cell), with map and role
-totals, for the grid on the page.
+game length out, since a 26-round game gives more kills than a 16-round one).
+
+Each forecast (OddsEngine.stat_range) has a range from the smoothed distribution's percentiles that should hold
+COVERAGE of games (lopsided when the stat is), the typical game (its median, where a betting line sits) and the
+expected value (its mean). "Better / worse than forecast" compares the actual value with the range; the average
+difference uses the expected value, so a well-calibrated forecast averages out to zero even for skewed stats.
+
+One stat at a time (the page fetches the one it shows), with full detail for one player: results are grouped into
+map x role cells (agents inside each cell), with map and role totals, for the grid on the page.
 """
 from collections import defaultdict
 
@@ -37,31 +42,36 @@ def role_of(agent):
     return AGENT_ROLE.get((agent or "").lower(), "Unknown")
 
 
+def _forecastable(rows):
+    """Indexes of the rows (newest first) that get a forecast: complete games with MIN_PRIOR earlier ones."""
+    return [i for i, r in enumerate(rows) if len(rows) - i - 1 >= MIN_PRIOR and ending(r) == COMPLETE]
+
+
 def _forecast_games(rows, engine, full, key):
     """rows: one member's lines, newest first. Returns their forecast games for one stat, oldest first."""
-    games = []
-    for i, r in enumerate(rows):
+    games, dp, cap = [], DIGITS.get(key, 1), PCT_CAP.get(key)
+    for i in _forecastable(rows):
+        r = rows[i]
         prior = rows[i + 1:i + 1 + HISTORY]
-        if len(prior) < MIN_PRIOR or ending(r) != COMPLETE:  # a surrender's numbers aren't a full game's
-            continue
         samples = engine.samples(prior, full, r.get("map"), r.get("agent"), relative=False)
-        actual = player_metrics(r, (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0))
-        rng = engine.stat_range(samples, key, COVERAGE, STAT[key]["floor_h"])
-        if rng is None or actual.get(key) is None:
+        actual = player_metrics(r, (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)).get(key)
+        fc = engine.stat_range(samples, key, COVERAGE, STAT[key]["floor_h"])
+        if fc is None or actual is None:
             continue
-        lo, mid, hi = rng
-        dp = DIGITS.get(key, 1)
+        low, typical, high, expected = fc
+        if cap is not None:
+            high = min(high, cap)
         games.append({"match_id": r["match_id"], "ts": r.get("started_ts"), "map": r.get("map") or "Unknown",
                       "agent": r.get("agent"), "role": role_of(r.get("agent")), "result": r.get("result"),
-                      "rounds_won": r.get("rounds_won"), "rounds_lost": r.get("rounds_lost"),
-                      "prior": len(prior), "pred": [round(lo, dp), round(mid, dp), round(min(hi, PCT_CAP.get(key, hi)), dp)],
-                      "actual": round(actual[key], dp)})
+                      "rounds_won": r.get("rounds_won"), "rounds_lost": r.get("rounds_lost"), "prior": len(prior),
+                      "range": [round(low, dp), round(high, dp)], "typical": round(typical, dp),
+                      "expected": round(expected, dp), "actual": round(actual, dp)})
     games.reverse()
     return games
 
 
-def _place(value, lo, hi):
-    return "above" if value > hi else "below" if value < lo else "inside"
+def _place(g):
+    return "above" if g["actual"] > g["range"][1] else "below" if g["actual"] < g["range"][0] else "inside"
 
 
 def _cell(games, dp=1):
@@ -70,16 +80,17 @@ def _cell(games, dp=1):
         return None
     n = len(games)
     avg = lambda f: round(sum(f(g) for g in games) / n, dp)  # noqa: E731
-    places = [_place(g["actual"], g["pred"][0], g["pred"][2]) for g in games]
+    places = [_place(g) for g in games]
     agents = defaultdict(list)
     for g in games:
         agents[g["agent"] or "Unknown"].append(g)
     return {
-        "games": n, "lo": avg(lambda g: g["pred"][0]), "mid": avg(lambda g: g["pred"][1]), "hi": avg(lambda g: g["pred"][2]),
-        "actual": avg(lambda g: g["actual"]), "diff": avg(lambda g: g["actual"] - g["pred"][1]),
+        "games": n, "low": avg(lambda g: g["range"][0]), "high": avg(lambda g: g["range"][1]),
+        "typical": avg(lambda g: g["typical"]), "expected": avg(lambda g: g["expected"]),
+        "actual": avg(lambda g: g["actual"]), "diff": avg(lambda g: g["actual"] - g["expected"]),
         "above": places.count("above"), "inside": places.count("inside"), "below": places.count("below"),
         "agents": sorted(({"agent": a, "games": len(gs), "actual": round(sum(g["actual"] for g in gs) / len(gs), dp),
-                           "mid": round(sum(g["pred"][1] for g in gs) / len(gs), dp)} for a, gs in agents.items()),
+                           "expected": round(sum(g["expected"] for g in gs) / len(gs), dp)} for a, gs in agents.items()),
                          key=lambda x: -x["games"]),
     }
 
@@ -112,8 +123,8 @@ def _grid(games, key):
 
 
 def build_forecasts(db, engine, stat="acs", puuid=None):
-    """The Forecasts tab's data (/api/forecasts?stat=kills&player=<puuid>): every player's overall record against
-    the forecast for the picker, and the full detail (games, grid) for one player, the first by default."""
+    """The Forecasts tab's data (/api/forecasts?stat=kills&player=<puuid>): every player's count of forecast games
+    for the picker, and the full detail (games, grid) for one player, the first with forecasts by default."""
     if stat not in STAT:
         raise ValueError(f"unknown stat {stat!r}")
     members, matches = db.members(), db.matches()
@@ -123,19 +134,16 @@ def build_forecasts(db, engine, stat="acs", puuid=None):
            "min_cell": MIN_CELL, "players": [], "player": None}
     if not members or not matches:
         return out
-    full = full_game_rounds(matches)
     by_member = defaultdict(list)
     for r in db.player_rows():  # newest first
         by_member[r["puuid"]].append(r)
-    if not any(m["puuid"] == puuid for m in members):
-        puuid = members[0]["puuid"]
     for m in members:
         rows = by_member.get(m["puuid"], [])
-        games = _forecast_games(rows, engine, full, stat)
-        overall = _cell(games, DIGITS.get(stat, 1))
-        summary = {"puuid": m["puuid"], "nickname": m.get("nickname") or m["name"], "total_games": len(rows),
-                   "overall": overall and {k: v for k, v in overall.items() if k != "agents"}}
-        out["players"].append(summary)
-        if m["puuid"] == puuid:
-            out["player"] = {**summary, "games": games, **(_grid(games, stat) or {"cells": [], "best": None, "worst": None})}
+        out["players"].append({"puuid": m["puuid"], "nickname": m.get("nickname") or m["name"],
+                               "total_games": len(rows), "forecast_games": len(_forecastable(rows))})
+    picked = next((p for p in out["players"] if p["puuid"] == puuid), None) \
+        or next((p for p in out["players"] if p["forecast_games"]), out["players"][0])
+    games = _forecast_games(by_member.get(picked["puuid"], []), engine, full_game_rounds(matches), stat)
+    out["player"] = {**picked, "games": games,
+                     **(_grid(games, stat) or {"overall": None, "cells": [], "best": None, "worst": None})}
     return out

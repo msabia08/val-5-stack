@@ -17,7 +17,6 @@ import random
 import time
 from bisect import bisect_left
 from collections import defaultdict
-from statistics import NormalDist
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, full_game_rounds, rounds_to_win, went_to_overtime
 from .stats import aggregate, player_metrics
@@ -129,6 +128,19 @@ def kde_over(pts, line, h):
     return sum(w * (1.0 - phi((line - v) / h)) for w, v in pts) / tw
 
 
+def kde_quantile(pts, q, h, steps=24):
+    """The value with share q of the smoothed distribution (see kde_over) below it, found by bisection."""
+    tw = sum(w for w, _ in pts)
+    lo, hi = min(v for _, v in pts) - 6 * h, max(v for _, v in pts) + 6 * h
+    for _ in range(steps):
+        mid = (lo + hi) / 2
+        if sum(w * phi((mid - v) / h) for w, v in pts) / tw < q:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
 def eff_n(samples):
     tw = sum(w for w, _ in samples)
     sq = sum(w * w for w, _ in samples)
@@ -183,18 +195,19 @@ class OddsEngine:
 
     @staticmethod
     def stat_range(samples, key, coverage=0.8, floor_h=None):
-        """(low, expected, high) for one stat: the weighted average and the range that should hold `coverage` of
-        games. It uses the same smoothing as the over/under lines (bandwidth floor_h or 0.6 sigma), treating the
-        smoothed distribution as normal: its spread is sqrt(sigma^2 + h^2). floor_h defaults to the stat's own
-        (STAT_DEFS) and is needed for stats the odds don't price. None without data."""
+        """(low, typical, high, expected) for one stat, from the same smoothed distribution as the over/under lines
+        (bandwidth floor_h or 0.6 sigma). low / high are its percentiles around the middle `coverage` of games, so
+        the range is lopsided when the stat is (a long tail of big games); typical is its median, where the betting
+        line sits; expected is the weighted average. floor_h defaults to the stat's own (STAT_DEFS) and is needed for
+        stats the odds don't price. None without data."""
         pts = [(w, x[key]) for w, x in samples if x.get(key) is not None]
         if not pts or sum(w for w, _ in pts) <= 0:
             return None
         mean, sigma = weighted_moments(pts)
         h = max(FLOOR_H[key] if floor_h is None else floor_h, 0.6 * sigma)
-        z = NormalDist().inv_cdf(0.5 + coverage / 2)
-        half = z * math.sqrt(sigma * sigma + h * h)
-        return max(0.0, mean - half), mean, mean + half
+        tail = (1.0 - coverage) / 2
+        low, typical, high = (kde_quantile(pts, q, h) for q in (tail, 0.5, 1.0 - tail))
+        return max(0.0, low), max(0.0, typical), high, mean
 
     # ---- markets ---------------------------------------------------------
     def _choose_line(self, pts, median, h, kind):

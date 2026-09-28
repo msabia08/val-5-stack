@@ -107,13 +107,24 @@ their *earlier* 5-stack games, weighted exactly like the player-prop lines
 (recent games, and games on that map and agent, count more). The per-round
 versions take game length out: a 26-round overtime game gives more kills than a
 16-round stomp without anyone playing better.
-Each prediction is a range meant to hold about 80% of games, and the page puts
-it next to what actually happened:
+Each prediction has three parts, all from the same smoothed distribution the
+betting lines use:
+
+- a **range** that should hold about 80% of games. It's cut at that
+  distribution's 10th and 90th percentiles, so it's lopsided when the stat is: a
+  few big games stretch the top more than the bottom;
+- the **typical game** (the median, where a betting line sits), drawn as the tick
+  on each bar;
+- the **expected** value (the weighted average). "Average vs forecast" uses this,
+  because against the median everyone would seem to beat the forecast on
+  skewed stats like kills.
+
+The page puts each prediction next to what actually happened:
 
 - tiles for how often the player landed inside the range, beat it or fell short;
 - a **game-by-game strip** of forecast ranges with the real result as a dot;
 - a **map × role grid** (Duelist, Controller, Initiator, Sentinel) with the actual
-  average against the forecast in each cell, shaded by how far they beat or
+  average against the expected average in each cell, shaded by how far they beat or
   missed it; hover a cell for the range and each agent, click it to show just
   those games in the strip.
 

@@ -632,7 +632,7 @@ def forecasts(shared):
     for k in range(13):
         if k == 11:  # what the odds board said just before the last game, for P1 on Bind as Sova
             board = engine.build(fdb, {"map": "Bind", "agents": {"puuid-1": "Sova"}})
-            board_kills = next(mk for mk in board["player_props"] if mk["market_id"] == "ou:kills:puuid-1")["mean"]
+            board_kills = next(mk for mk in board["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
         bind = k % 2 == 1
         rw, rl = {9: (8, 4), 12: (16, 14)}.get(k, (13, 9))
         p1 = {"agent": "Sova" if bind else "Jett", "kills": {12: 27}.get(k, 10 if bind else 20), "deaths": {10: 25, 11: 5}.get(k, 15)}
@@ -647,21 +647,27 @@ def forecasts(shared):
     # From the 6th game on (5 earlier ones), surrender excluded, oldest first.
     assert [g["match_id"] for g in p["games"]] == ["f5", "f6", "f7", "f8", "f10", "f11", "f12"], p["games"]
     game = {g["match_id"]: g for g in p["games"]}
-    assert game["f11"]["pred"][1] == board_kills  # the forecast is exactly what the odds board showed before that game
-    f11, f10 = game["f11"]["pred"], game["f10"]["pred"]
-    assert f11[0] < 10 < f11[2] and f11[1] < 15 < f10[1]  # the map and agent pull it
-    assert game["f11"]["role"] == "Initiator" and game["f10"]["role"] == "Duelist"
+    f11, f10 = game["f11"], game["f10"]
+    # The forecast is what the odds board showed before that game: its average, and the typical game at its line.
+    assert f11["expected"] == board_kills["mean"] and abs(f11["typical"] - board_kills["line"]) <= 1, (f11, board_kills["line"])
+    assert f11["range"][0] < 10 < f11["range"][1] and f11["expected"] < 15 < f10["expected"]  # the map and agent pull it
+    assert f11["role"] == "Initiator" and f10["role"] == "Duelist"
     # The overtime game's 27 kills beat the per-game forecast only because it went long; per round it's a normal game.
-    assert game["f12"]["actual"] > game["f12"]["pred"][2], game["f12"]
+    assert game["f12"]["actual"] > game["f12"]["range"][1], game["f12"]
     kpr = {g["match_id"]: g for g in build_forecasts(fdb, engine, "kpr")["player"]["games"]}["f12"]
-    assert kpr["actual"] == 0.9 and kpr["pred"][0] <= 0.9 <= kpr["pred"][2], kpr
+    assert kpr["actual"] == 0.9 and kpr["range"][0] <= 0.9 <= kpr["range"][1], kpr
+    # A skewed stat gets a lopsided range: eight 10-kill games and two 30-kill games put the typical game below
+    # the average and stretch the top of the range further than the bottom.
+    low, typical, high, expected = OddsEngine.stat_range([(1.0, {"kills": v}) for v in [10] * 8 + [30] * 2], "kills")
+    assert typical < expected == 14.0 and high - typical > typical - low, (low, typical, high, expected)
     cells = {(c["map"], c["role"]): c for c in p["cells"]}
     assert cells[("Ascent", "Duelist")]["games"] == 4 and cells[("Bind", "Initiator")]["games"] == 3
     assert cells[("Ascent", None)]["games"] == 4 and cells[(None, "Duelist")]["games"] == 4
     assert all(c["above"] + c["inside"] + c["below"] == c["games"] for c in p["cells"])
     assert cells[("Bind", "Initiator")]["agents"] == [{"agent": "Sova", "games": 3, "actual": 10.0,
-                                                        "mid": cells[("Bind", "Initiator")]["mid"]}]
-    assert "agents" not in fk["players"][0]["overall"]  # the picker only gets each player's summary
+                                                        "expected": cells[("Bind", "Initiator")]["expected"]}]
+    assert all(c["low"] <= c["typical"] <= c["high"] for c in p["cells"])
+    assert [x["forecast_games"] for x in fk["players"]] == [7] * 5  # games 5-12 minus the surrender, for everyone
     # Deaths: fewer is better, so the Bind game with 5 deaths is where P1 beats the forecast, per game and per round.
     for key in ("deaths", "dpr"):
         fd = build_forecasts(fdb, engine, key)
