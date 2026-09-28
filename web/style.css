@@ -92,8 +92,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .me-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 12px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--text); text-decoration: none; font-size: 13px; white-space: nowrap; }
 .me-chip:hover { background: var(--accent); color: #fff; }
 .me-chip b { font-size: 15px; font-variant-numeric: tabular-nums; }
-.me-chip .me-name, .me-chip .me-unit, .me-chip .me-inplay { color: inherit; opacity: 0.8; }
-.me-chip .me-inplay { font-size: 12px; }
+.me-chip .me-name, .me-chip .me-unit { color: inherit; opacity: 0.8; }
 .status-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; }
 /* Top-right toolbar: balance, status, sync, log out and theme share one look (height, box, border, text), so they
    read as one group; hovering anything clickable tints it with the accent. */
@@ -108,7 +107,6 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .topbar .topbar-right > .btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }  /* the ⚙ button while on Setup */
 .topbar-right > .me-chip span { opacity: 1; }
 .topbar-right > .me-chip b { color: var(--text); font-size: 14px; }
-.topbar-right > .me-chip .me-inplay { font-size: 12px; color: var(--muted); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--good); }
 .dot.bad { background: var(--bad); }
@@ -583,7 +581,7 @@ tr.match-row.on td { background: var(--accent-soft); }
 :root[data-theme="greg"] .viz-tip, :root[data-theme="greg"] .toast { background: #fcfcfb; }
 :root[data-theme="greg"] .logo-main { display: none; }
 :root[data-theme="greg"] .logo-greg { display: block; }
-@media (max-width: 640px) { .me-chip .me-name, .me-chip .me-unit, .me-chip .me-inplay { display: none; } }
+@media (max-width: 640px) { .me-chip .me-name, .me-chip .me-unit { display: none; } }
 /* Greg Mode's click effect (app.js): a Greg pops up from the pointer, then falls off the screen spinning. */
 .greg-drop { position: fixed; z-index: 100; width: 48px; height: auto; margin: -43px 0 0 -24px; pointer-events: none; will-change: transform;
   animation: greg-fall 1.5s forwards; }

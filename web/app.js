@@ -98,10 +98,9 @@
     const chip = $('#me-chip'), me = state.me;
     chip.classList.toggle('hidden', !me);
     if (!me) return;
-    chip.innerHTML = `<span class="me-name">${esc(me.name)}</span><b>${fmt.credits(me.balance)}</b><span class="me-unit">credits</span>` +
-      (me.open_stake ? `<span class="me-inplay">+${fmt.credits(me.open_stake)} in play</span>` : '');
-    chip.title = `Betting as ${me.name}: ${fmt.credits(me.balance)} credits` +
-      (me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : '') + '. Open Odds & Bets.';
+    // Just the name and balance: what's riding on open bets shows under the bet slip.
+    chip.innerHTML = `<span class="me-name">${esc(me.name)}</span><b>${fmt.credits(me.balance)}</b><span class="me-unit">credits</span>`;
+    chip.title = `Betting as ${me.name}: ${fmt.credits(me.balance)} credits. Open Odds & Bets.`;
     // The balance under the bet slip (Odds & Bets only) counts to a new value; the chip just shows it.
     const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
     const slipBalance = $('#slip .acct-balance b');
