@@ -111,6 +111,8 @@ class App:
             "uptime_s": round(time.time() - self.started),
             "house_edge": self.engine.edge,
             "starting_balance": self.bets.starting,
+            "bet_grace_minutes": self.bets.grace_s / 60,
+            "bet_cancel_minutes": self.bets.cancel_s / 60,
             "game_reward": self.rewards.game,
             "win_reward": self.rewards.win,
             "performance_bonus_max": self.rewards.bonus_max,
@@ -263,7 +265,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/seasons":
             return self._json({"current": app.db.season_counts(), "seasons": app.db.seasons()})
         if path == "/api/betting-report":
-            return self._json(betting_report(app.db, {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()}))
+            return self._json(betting_report(app.db, {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()},
+                                             app.engine.edge))
         if path == "/api/content":
             return self._json(app.content())
         if path == "/api/matches":

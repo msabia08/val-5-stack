@@ -9,3 +9,6 @@ tools/
 __pycache__/
 *.pyc
 henrik_shapes.md
+
+# IDE settings
+.idea/

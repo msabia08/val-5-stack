@@ -770,8 +770,79 @@
       table(['Bettor · market', 'Bets', 'W–L', 'Wagered', 'ROI'], rows));
   }
 
+  // ---- odds accuracy: did picks win as often as the odds said? ----------------------------------------
+  const VERDICT = { about_right: 'About right', generous: 'Too generous', stingy: 'Too stingy' };
+  const FEW_IN_BIN = 5; // bins with fewer picks are drawn paler
+  const oneDp = (v) => (Math.round(v * 10) / 10).toLocaleString();
+
+  function accuracyCard() {
+    const a = data.betting && data.betting.accuracy;
+    if (!a || !a.picks) return '';
+    let take;
+    if (!a.verdict) {
+      take = `Needs at least ${a.min_picks} settled picks to judge (${a.picks} so far).`;
+    } else {
+      const verdict = { about_right: 'in line with the odds', generous: 'more than the odds said: they were too generous',
+        stingy: 'less than the odds said: they were too stingy' }[a.verdict];
+      const off = a.by_type.filter((t) => t.verdict && t.verdict !== 'about_right')
+        .map((t) => `${h.esc(t.label)} ${VERDICT[t.verdict].toLowerCase()}`);
+      take = `Picks won <strong>${a.won} of ${a.picks}</strong> against ${oneDp(a.expected)} expected, <strong>${verdict}</strong>` +
+        (off.length ? ` · ${off.join(' · ')}` : '');
+    }
+    const byType = `<div class="table-wrap"><table class="compact"><thead><tr><th>Market</th><th class="num">Picks</th>` +
+      '<th class="num">Won</th><th class="num">Odds expected</th><th>Verdict</th></tr></thead><tbody>' +
+      a.by_type.map((t) => `<tr><td>${h.esc(t.label)}</td><td class="num">${t.picks}</td><td class="num">${t.won}</td>` +
+        `<td class="num">${oneDp(t.expected)}</td><td>${t.verdict ? VERDICT[t.verdict] : `<span class="muted">Too few picks</span>`}</td></tr>`).join('') +
+      '</tbody></table></div>';
+    const rows = a.bins.filter((b) => b.picks).map((b) => [`${pct(b.lo)}–${pct(b.hi)}`, String(b.picks), pct(b.chance), `${b.won} (${pct(b.win_rate)})`,
+      `${pct(b.range[0])}–${pct(b.range[1])}`]);
+    return card('accuracy', 'Are the odds right?', take,
+      `<div class="viz-cols viz-accuracy"><div>${slot('accuracy', 250)}</div><div>${byType}</div></div>` +
+      '<p class="muted small">Each dot groups picks by the chance the odds gave them (before the house edge) and shows how often they actually won; ' +
+      'the bar is the likely range for that many picks. Dots on the diagonal mean the odds were right. Singles and parlay legs both count, ' +
+      'a pick several people bet in the same game counts once, and voids are left out. "Too generous" means those picks won more often than their price allowed.</p>',
+      table(['Odds gave', 'Picks', 'Average chance', 'Won', 'Likely range'], rows));
+  }
+
+  function drawAccuracy(el, W) {
+    const a = data.betting.accuracy;
+    const m = { l: 44, r: 16, t: 12, b: 34 };
+    const H = clamp(W - m.l - m.r, 180, 300), size = H; // square, so "the odds were right" is the 45° diagonal
+    const x = (v) => m.l + v * size, y = (v) => m.t + (1 - v) * H;
+    let s = `<svg class="viz-svg" width="${m.l + size + m.r}" height="${m.t + H + m.b}" role="img" aria-label="How often picks won against the chance the odds gave them">`;
+    [0, 0.25, 0.5, 0.75, 1].forEach((v) => {
+      s += `<line class="${v ? 'viz-grid' : 'viz-base'}" x1="${m.l}" x2="${x(1)}" y1="${y(v)}" y2="${y(v)}"/>` +
+        `<text class="viz-ax" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${pct(v)}</text>` +
+        `<text class="viz-ax" x="${x(v)}" y="${m.t + H + 16}" text-anchor="middle">${pct(v)}</text>`;
+    });
+    s += `<text class="viz-ax" x="${x(0.5)}" y="${m.t + H + 30}" text-anchor="middle">Chance the odds gave</text>` +
+      `<line class="viz-ref" x1="${x(0)}" y1="${y(0)}" x2="${x(1)}" y2="${y(1)}" stroke-dasharray="4 4"/>` +
+      `<text class="viz-sub" x="${x(0.03)}" y="${y(0.93)}">Won more often than the odds said</text>` +
+      `<text class="viz-sub" x="${x(0.97)}" y="${y(0.04)}" text-anchor="end">Won less often</text>`;
+    const shown = a.bins.filter((b) => b.picks);
+    const dots = shown.map((b) => ({ x: x(b.chance), y: y(b.win_rate) }));
+    const boxes = []; // placed labels; a label that would overlap a dot or another label is left to the tooltip
+    const hits = (bx) => boxes.concat(dots.map((d) => ({ x0: d.x - 7, x1: d.x + 7, y0: d.y - 7, y1: d.y + 7 })))
+      .some((o) => bx.x0 < o.x1 && o.x0 < bx.x1 && bx.y0 < o.y1 && o.y0 < bx.y1);
+    shown.forEach((b, i) => {
+      const cx = dots[i].x, cy = dots[i].y, faint = b.picks < FEW_IN_BIN ? ' style="opacity:.45"' : '';
+      const text = `${b.won}/${b.picks}`, tw = text.length * 7;
+      const place = [{ x0: cx + 10, anchor: 'start' }, { x0: cx - 10 - tw, anchor: 'end' }]
+        .map((p) => ({ ...p, x0: p.x0, x1: p.x0 + tw, y0: cy - 8, y1: cy + 6 })).find((bx) => !hits(bx));
+      if (place) boxes.push(place);
+      s += `<g class="viz-mark"${faint}${tip(`Odds gave ${pct(b.lo)}–${pct(b.hi)}`, [
+        ['average chance', pct(b.chance), null], ['actually won', `${pct(b.win_rate)} (${b.won} of ${b.picks})`, '--accent'],
+        ['likely range', `${pct(b.range[0])}–${pct(b.range[1])}`, null]])}>` +
+        `<line class="viz-connector" style="stroke:var(--accent);opacity:.5" x1="${cx}" x2="${cx}" y1="${y(b.range[0])}" y2="${y(b.range[1])}"/>` +
+        `<circle cx="${cx}" cy="${cy}" r="14" fill="transparent"/>` +
+        `<circle class="viz-dot" cx="${cx}" cy="${cy}" r="6" style="fill:var(--accent)"/>` +
+        (place ? `<text class="viz-label" x="${place.anchor === 'start' ? cx + 10 : cx - 10}" y="${cy + 4}" text-anchor="${place.anchor}">${text}</text>` : '') + '</g>';
+    });
+    el.innerHTML = s + '</svg>';
+  }
+
   // ---- mounting, tooltips, crosshair ----------------------------------------------------------
-  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll,
+  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll, accuracy: drawAccuracy,
     clutch: drawClutch, multi: drawMulti };
 
   function drawAll(root) {
@@ -898,12 +969,18 @@
   }
 
   // The betting report card lives on the Bettors page: same drawing code, its own data (/api/betting-report).
-  // The Bettors tab's betting cards: the report card and bettor profit over time (data from /api/betting-report).
+  // The Bettors tab's betting cards (data from /api/betting-report): the report card and bettor profit over time
+  // near the top, and the odds accuracy card at the bottom of the page.
   function bettingReport(report, helpers) {
     h = helpers;
     data = { ...(data || {}), betting: report, bankroll: report.bankroll || [] };
     return bettingCard() + bankrollCard();
   }
+  function oddsAccuracy(report, helpers) {
+    h = helpers;
+    data = { ...(data || {}), betting: report };
+    return accuracyCard();
+  }
 
-  window.FiveViz = { html, mount, hideTip, bettingReport };
+  window.FiveViz = { html, mount, hideTip, bettingReport, oddsAccuracy };
 })();

@@ -1,12 +1,17 @@
 """Offline self-test: detection, stats, odds, betting and settlement against a fake API.
 
     python tests/selftest.py
+
+Runs the @section checks below in order and prints "ok: <name>" for each; a failure prints "FAIL: <name>" and stops.
 """
 import json
 import os
+import re
 import sys
 import tempfile
 import time
+import traceback
+import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 
@@ -15,9 +20,9 @@ from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
-from fivestack.insights import AGENT_ROLE, betting_report, build_insights  # noqa: E402
+from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
-from fivestack.odds import OddsEngine, partial_game  # noqa: E402
+from fivestack.odds import OddsEngine, fair_chance, partial_game  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
 from fivestack.timeline import clutches_and_multikills, extract_timeline, spike_sites  # noqa: E402
@@ -94,7 +99,19 @@ class FakeClient:
         raise HenrikError(404, "Not found")
 
 
-def main():
+SECTIONS = []  # (name, check) in the order they run
+
+
+def section(name):
+    """Register a check. Checks run in definition order and share one `shared` namespace (database, bets placed so
+    far, ...), because later ones build on earlier ones: bets placed in "bets" are settled in "settlement"."""
+    def register(check):
+        SECTIONS.append((name, check))
+        return check
+    return register
+
+
+def setup():
     tmp = tempfile.mkdtemp()
     db = DB(os.path.join(tmp, "t.db"))
     cfg = {"region": "na", "members": MEMBERS, "modes": ["competitive", "unrated"], "fetch_match_details": True,
@@ -110,7 +127,12 @@ def main():
         return out
 
     tracker = Tracker(cfg, db, client, on_new_matches=on_new)
+    return types.SimpleNamespace(tmp=tmp, db=db, cfg=cfg, client=client, engine=engine, bets=bets, tracker=tracker)
 
+
+@section("accounts")
+def accounts(shared):
+    bets, db = shared.bets, shared.db
     # Bettor accounts: register, wrong password, duplicate name, claim of a legacy name.
     bets.register("Tester", "secret1")
     db.create_bettor("Legacy", 900)  # pre-accounts row without a password
@@ -136,16 +158,22 @@ def main():
     except BetError:
         pass
 
+
+@section("no games yet")
+def no_games_yet(shared):
     # No games yet -> odds not ready, bets refused.
-    assert engine.build(db)["ready"] is False
+    assert shared.engine.build(shared.db)["ready"] is False
     try:
-        bets.place("Tester", "team:win", "win", 10, {})
+        shared.bets.place("Tester", "team:win", "win", 10, {})
         raise AssertionError("bet should be refused before any game exists")
     except BetError:
         pass
 
-    # --- detection --------------------------------------------------------
-    res = tracker.sync(full=True)
+
+@section("detection")
+def detection(shared):
+    client, db = shared.client, shared.db
+    res = shared.first_sync = shared.tracker.sync(full=True)
     assert res["ok"], res
     assert res["new_matches"] == 2, res
     ids = {m["match_id"] for m in db.matches()}
@@ -160,14 +188,17 @@ def main():
     assert "m6" in rejected and not db.has_match("m6")  # a 2-1 remake is no contest: never recorded
     assert len(db.members()) == 5
 
-    # --- stats ------------------------------------------------------------
+
+@section("stats")
+def stats(shared):
+    db = shared.db
     st = build_stats(db)
     assert st["team"]["games"] == 2 and st["team"]["wins"] == 1 and st["team"]["losses"] == 1
     p1 = next(m for m in st["members"] if m["name"] == "P1")
     assert p1["overall"]["games"] == 2 and p1["by_map"][0]["games"] == 1
     assert p1["tier_name"] == "Diamond 3"
 
-    # --- 5-stack vs. other games ------------------------------------------
+    # 5-stack vs. other games.
     # Every counted-mode line is kept (m1, m2, m3, m5; not the deathmatch m4); only m2 and m5 are baseline.
     assert db.count_member_games() == 5 + 5 + 4 + 3, db.count_member_games()
     base = db.baseline_rows()
@@ -192,7 +223,10 @@ def main():
     assert d["standout"] in ("acs", "kpr", "dpr", "adr", "kd"), d["standout"]
     assert deviation([line(22, 12, 0)], []) is None
 
-    # --- odds -------------------------------------------------------------
+
+@section("odds")
+def odds(shared):
+    engine, db = shared.engine, shared.db
     board = engine.build(db, {"map": "Ascent", "agents": {"puuid-1": "Jett"}})
     assert board["ready"]
     assert len(board["player_props"]) == 5 * 6, len(board["player_props"])
@@ -214,10 +248,13 @@ def main():
         assert 1.0 < s < 1.25, (mk["market_id"], s)
     assert engine.build(db, {"map": "Ascent"})["top_markets"][0]["selections"] == board["top_markets"][0]["selections"] or True
 
-    # --- betting ----------------------------------------------------------
-    bet = bets.place("Tester", "team:win", "win", 100, {})
+
+@section("bets")
+def placing_bets(shared):
+    bets, db = shared.bets, shared.db
+    bet = shared.bet = bets.place("Tester", "team:win", "win", 100, {})
     assert bet["status"] == "pending" and db.get_bettor("Tester")["balance"] == 900
-    bet2 = bets.place("Tester", "ou:kills:puuid-1", "over", 50, {})
+    bet2 = shared.bet2 = bets.place("Tester", "ou:kills:puuid-1", "over", 50, {})
     assert bet2["line"] is not None
     try:
         bets.place("Tester", "team:win", "win", 5000, {})
@@ -237,7 +274,10 @@ def main():
     bets.cancel(b4["id"], admin=True)
     assert db.bet(b4["id"])["status"] == "cancelled" and db.get_bettor("Tester")["balance"] == 850
 
-    # --- parlays ------------------------------------------------------------
+
+@section("parlays")
+def parlays(shared):
+    bets, db = shared.bets, shared.db
     bets.register("Parlay", "secret1")
     try:
         bets.place_parlay("Parlay", [{"market_id": "team:win", "selection": "win"}], 10, {})
@@ -252,13 +292,13 @@ def main():
         raise AssertionError("a parlay cannot repeat the same market")
     except BetError:
         pass
-    parlay_win = bets.place_parlay("Parlay", [
+    parlay_win = shared.parlay_win = bets.place_parlay("Parlay", [
         {"market_id": "team:win", "selection": "win"},
         {"market_id": "ou:kills:puuid-1", "selection": "over"},
     ], 20, {})
     leg_odds = [l["odds_decimal"] for l in json.loads(parlay_win["context"])["legs"]]
     assert parlay_win["market_type"] == "parlay" and parlay_win["odds_decimal"] > max(leg_odds)
-    parlay_lose = bets.place_parlay("Parlay", [
+    shared.parlay_lose = bets.place_parlay("Parlay", [
         {"market_id": "team:win", "selection": "win"},
         {"market_id": "ou:kills:puuid-1", "selection": "under"},
     ], 20, {})
@@ -273,6 +313,11 @@ def main():
     bets.cancel(low_single["id"], by="Counter")
     bets.cancel(low_parlay["id"], by="Counter")
 
+
+@section("settlement")
+def settlement(shared):
+    bets, db = shared.bets, shared.db
+    bet, bet2, parlay_win, parlay_lose = shared.bet, shared.bet2, shared.parlay_win, shared.parlay_lose
     # A new game arrives after the bets were placed -> settle.
     new_match = {"match_id": "m9", "map": "Haven", "mode": "competitive", "mode_label": "Competitive",
                  "started_at": "2026-09-25T18:00:00Z", "started_ts": time.time() + 5, "season": "e11a2",
@@ -288,7 +333,7 @@ def main():
     won_ids = {b["id"] for b in settled if b["status"] == "won"}
     lost_ids = {b["id"] for b in settled if b["status"] == "lost"}
     assert {bet["id"], bet2["id"], parlay_win["id"]} == won_ids and lost_ids == {parlay_lose["id"]}, settled
-    bal = db.get_bettor("Tester")["balance"]
+    bal = shared.tester_balance = db.get_bettor("Tester")["balance"]
     expected = 850 + 100 * bet["odds_decimal"] + 50 * bet2["odds_decimal"]
     assert abs(bal - expected) < 0.05, (bal, expected)
     parlay_bal = db.get_bettor("Parlay")["balance"]
@@ -304,7 +349,11 @@ def main():
     parlay_row = next(r for r in lb if r["name"] == "Parlay")
     assert parlay_row["won"] == 1 and parlay_row["lost"] == 1, parlay_row
 
-    # --- bottom-of-the-scoreboard and relative-ACS settlement ---------------------------
+
+@section("scoreboard markets")
+def scoreboard_markets(shared):
+    bets, db = shared.bets, shared.db
+    # Bottom-of-the-scoreboard and relative-ACS settlement.
     def top_bet(sel, direction, metrics, stat="kills"):
         ctx = {"stat": stat, **({"direction": direction} if direction else {})}
         return bets._evaluate({"market_type": "top", "selection": sel, "line": None, "context": json.dumps(ctx)},
@@ -324,7 +373,10 @@ def main():
     rel["new-player"] = {"acs": 300.0, "acs_rel": None}
     assert top_bet("puuid-1", "high", rel, "acs_rel")[0] == "void"  # someone has nothing to compare against
 
-    # --- visualizations datasets ------------------------------------------
+
+@section("insights")
+def insights(shared):
+    db, bet, bet2 = shared.db, shared.bet, shared.bet2
     unroled = [a for a in KNOWN_AGENTS if a.lower() not in AGENT_ROLE]
     assert not unroled, f"add these agents to insights.ROLES: {unroled}"
     # Games: m1 (Ascent, W 13-9, all Jett), m3 (Bind, L 11-13, all Sova), m9 (Haven, W 13-7, all Jett), days apart.
@@ -337,7 +389,55 @@ def main():
     assert rep["by_type"]["Tester"]["ou"]["won"] == 1 and rep["by_type"]["Tester"]["team_win"]["won"] == 1, rep["by_type"]["Tester"]
     assert (rep["by_type"]["Parlay"]["parlay"]["won"], rep["by_type"]["Parlay"]["parlay"]["lost"]) == (1, 1)
     assert "Counter" not in rep["by_type"]  # only cancelled bets: nothing settled
+    # Odds accuracy: m9 has 3 distinct picks. "5-stack wins" was bet as a single and in both parlays but counts
+    # once; P1's kills over (single and parlay leg) won, the under (parlay leg) lost.
+    acc = rep["accuracy"]
+    assert (acc["picks"], acc["won"], acc["verdict"]) == (3, 2, None), acc  # too few picks for a verdict
+    win_chance = json.loads(bet["context"])["fair_prob"]  # new bets save the model's own chance
+    assert abs(win_chance - fair_chance(bet["odds_decimal"], "team_win", 0.05)) < 0.01  # and it matches the price
+    assert abs(acc["expected"] - (win_chance + 1)) < 1e-3, acc  # the over and the under add up to 1
+    assert [t["key"] for t in acc["by_type"]] == ["ou", "team_win"] and sum(b["picks"] for b in acc["bins"]) == 3
+    # Older bets without a saved chance fall back to the price: 20 even-money picks that won half the time are in
+    # line with the odds; 20 picks priced at 30% that won 15 times mean those odds were too generous.
+    adb = DB(os.path.join(shared.tmp, "accuracy.db"))
+    for i in range(40):
+        chance = 0.5 if i < 20 else 0.3
+        bid = adb.insert_bet({"bettor": "A", "market_id": "team:win", "market_type": "team_win", "description": "x",
+                              "selection": "win", "selection_label": "x", "line": None,
+                              "odds_decimal": round(1 / (chance * 1.05), 2), "stake": 1.0, "placed_ts": 0,
+                              "context": "{}", "status": "won" if (i % 2 if i < 20 else i < 35) else "lost"})
+        adb.execute("UPDATE bets SET settled_match_id=? WHERE id=?", (f"g{i}", bid))
+    old = odds_accuracy(adb, 0.05)
+    assert (old["picks"], old["won"], old["verdict"]) == (40, 25, "generous"), old
+    assert [(b["picks"], b["won"]) for b in old["bins"]] == [(0, 0), (20, 15), (20, 10), (0, 0), (0, 0)], old["bins"]
+    even = old["bins"][2]
+    assert abs(even["chance"] - 0.5) < 0.01 and even["range"][0] < 0.5 < even["range"][1], even
+    assert old["bins"][1]["range"][0] > 0.3  # won far more often than the 30% the odds gave
+    assert old["by_type"][0]["verdict"] == "generous"
+    assert [g["match_id"] for g in ins["games"]] == ["m1", "m3", "m9"], ins["games"]
+    assert [g["margin"] for g in ins["games"]] == [4, -2, 6] and all(g["form"] is None for g in ins["games"])
+    assert [g["session"] for g in ins["games"]] == [1, 2, 3] and ins["moments"]["sessions"] == 3
+    mo = ins["moments"]
+    assert (mo["close"]["wins"], mo["close"]["losses"]) == (0, 1) and (mo["blowout"]["wins"], mo["blowout"]["losses"]) == (1, 0), mo
+    assert mo["after_win"]["games"] == 0 and mo["after_loss"]["games"] == 0  # momentum only counts within a night
+    assert ins["session_games"][0]["games"] == 3 and ins["session_games"][0]["wins"] == 2
+    assert [(c["key"], c["games"], c["wins"]) for c in ins["comps"]] == [("5D", 2, 2), ("5I", 1, 0)], ins["comps"]
+    m9 = ins["games"][2]
+    assert abs(sum(m9["damage_share"].values()) - 1) < 1e-9 and abs(m9["damage_share"]["puuid-2"] - 0.2) < 1e-9
+    ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
+    assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
+    assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
+    assert "bankroll" not in ins  # the profit chart lives on the Bettors tab now
+    ins["bankroll"] = betting_report(db)["bankroll"]
+    assert len(ins["bankroll"]) == 2, ins["bankroll"]  # cancelled bets are left out; Tester and Parlay both settled
+    roll = next(r for r in ins["bankroll"] if r["name"] == "Tester")
+    assert len(roll["points"]) == 2, roll
+    assert abs(roll["points"][-1]["profit"] - (100 * (bet["odds_decimal"] - 1) + 50 * (bet2["odds_decimal"] - 1))) < 0.05, roll
 
+
+@section("timelines")
+def timelines(shared):
+    db = shared.db
     # Round timelines: a v4-shaped record -> compact timeline -> clutches, multi-kills and spike sites.
     us, them = [f"u{i}" for i in range(1, 6)], [f"e{i}" for i in range(1, 6)]
     kill = lambda r, t, a, b: {"round": r, "time_in_round_in_ms": t, "killer": {"puuid": a}, "victim": {"puuid": b}, "weapon": {"name": "Vandal"}}  # noqa: E731
@@ -365,27 +465,12 @@ def main():
     (row,) = db.timelines()
     assert row["match_id"] == "m1" and row["map"] == "Ascent" and row["data"]["our_team"] == "Blue"
     assert build_insights(db)["rounds"]["games"] == 1
-    assert [g["match_id"] for g in ins["games"]] == ["m1", "m3", "m9"], ins["games"]
-    assert [g["margin"] for g in ins["games"]] == [4, -2, 6] and all(g["form"] is None for g in ins["games"])
-    assert [g["session"] for g in ins["games"]] == [1, 2, 3] and ins["moments"]["sessions"] == 3
-    mo = ins["moments"]
-    assert (mo["close"]["wins"], mo["close"]["losses"]) == (0, 1) and (mo["blowout"]["wins"], mo["blowout"]["losses"]) == (1, 0), mo
-    assert mo["after_win"]["games"] == 0 and mo["after_loss"]["games"] == 0  # momentum only counts within a night
-    assert ins["session_games"][0]["games"] == 3 and ins["session_games"][0]["wins"] == 2
-    assert [(c["key"], c["games"], c["wins"]) for c in ins["comps"]] == [("5D", 2, 2), ("5I", 1, 0)], ins["comps"]
-    m9 = ins["games"][2]
-    assert abs(sum(m9["damage_share"].values()) - 1) < 1e-9 and abs(m9["damage_share"]["puuid-2"] - 0.2) < 1e-9
-    ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
-    assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
-    assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
-    assert "bankroll" not in ins  # the profit chart lives on the Bettors tab now
-    ins["bankroll"] = betting_report(db)["bankroll"]
-    assert len(ins["bankroll"]) == 2, ins["bankroll"]  # cancelled bets are left out; Tester and Parlay both settled
-    roll = next(r for r in ins["bankroll"] if r["name"] == "Tester")
-    assert len(roll["points"]) == 2, roll
-    assert abs(roll["points"][-1]["profit"] - (100 * (bet["odds_decimal"] - 1) + 50 * (bet2["odds_decimal"] - 1))) < 0.05, roll
 
-    # --- game rewards: 250 per game + up to 250 for beating your own baseline ---
+
+@section("rewards")
+def rewards(shared):
+    cfg, db, bets = shared.cfg, shared.db, shared.bets
+    # Game rewards: 250 per game + up to 250 for beating your own baseline.
     assert beat_share(250, [100, 150, 200, 250, 300, 350]) == 3.5 / 6 and beat_share(9, [1, 2]) == 1.0 and beat_share(5, []) is None
     db.set_meta("rewards_since", db.match("m9")["started_ts"] - 60)  # rewards switched on after m1 / m3 were played
     rm = RewardManager({**cfg, "members": [{"riot_id": "P1#TAG", "bettor": "Tester"}] + MEMBERS[1:]}, db)
@@ -428,6 +513,11 @@ def main():
     win_rm = RewardManager({**cfg, "win_reward": 100}, db)  # optional extra for wins
     assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 350
     assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 250
+
+
+@section("seasons")
+def seasons(shared):
+    db, bets = shared.db, shared.bets
     # Resetting the season archives it first: final standings, every bet and every reward.
     before = {"bets": len(db.bets()), "rewards": len(db.rewards()), "open": sum(b["status"] == "pending" for b in db.bets()),
               "standings": {r["name"]: r for r in bets.leaderboard()}}
@@ -444,9 +534,13 @@ def main():
     assert db.season_counts() == {"started_ts": season["ended_ts"], "bets": 0, "rewards": 0, "bettors": db.season_counts()["bettors"]}
     assert bets.reset()["name"] == "Season 2" and [x["name"] for x in db.seasons()] == ["Season 2", "Season 1"]
 
-    # --- forfeits (surrenders) and no-contest games -------------------------------
+
+@section("forfeits")
+def forfeits(shared):
+    bets = shared.bets
+    # Forfeits (surrenders) and no-contest games.
     comp = lambda rw, rl, mode="competitive": {"mode": mode, "rounds_won": rw, "rounds_lost": rl}  # noqa: E731
-    assert [ending(comp(*x)) for x in [(13, 9), (14, 12), (9, 4), (4, 9), (2, 1), (3, 1)]] ==         [COMPLETE, COMPLETE, FORFEIT, FORFEIT, NO_CONTEST, NO_CONTEST]
+    assert [ending(comp(*x)) for x in [(13, 9), (14, 12), (9, 4), (4, 9), (2, 1), (3, 1)]] == [COMPLETE, COMPLETE, FORFEIT, FORFEIT, NO_CONTEST, NO_CONTEST]
     assert ending(comp(5, 3, "swiftplay")) == COMPLETE and ending(comp(4, 3, "swiftplay")) == FORFEIT
     assert ending({"rounds_won": None, "rounds_lost": None}) == COMPLETE
     assert full_game_rounds([comp(13, 9)] * 4) == 22.0  # too few games: default
@@ -503,11 +597,14 @@ def main():
     assert bets._evaluate({"market_type": "ou", "selection": "under", "line": 10.5,
                            "context": json.dumps({"stat": "kills", "puuid": "puuid-2"})}, done, ff_metrics)[0] == "won"
 
+
+@section("forfeit odds")
+def forfeit_odds(shared):
     # Odds: a forfeit is scaled to a full-length game at reduced weight, and kept out of the rounds market.
     scaled, share = partial_game({"kills": 10, "deaths": 6, "assists": 2, "acs": 250.0}, 11, 22.0)
     assert share == 0.5 and scaled["kills"] == 20 and scaled["deaths"] == 12 and scaled["acs"] == 250.0
     assert partial_game({"kills": 10}, 24, 22.0) == ({"kills": 10}, 1.0)
-    odb = DB(os.path.join(tmp, "odds.db"))
+    odb = DB(os.path.join(shared.tmp, "odds.db"))
     for i, pu in enumerate(PUUIDS.values()):
         odb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
     for k in range(7):  # six full 13-11 games (24 rounds, 20 kills each) and one 8-4 surrender with 10 kills
@@ -516,15 +613,50 @@ def main():
                           "rounds_won": rw, "rounds_lost": rl, "result": "win"},
                          [{"puuid": pu, "agent": "Jett", "kills": 10 if k == 3 else 20, "deaths": 15, "assists": 4,
                            "score": 4800, "damage_dealt": 3000, "headshots": 5, "bodyshots": 20, "legshots": 1} for pu in PUUIDS.values()])
-    ob = OddsEngine(cfg).build(odb)
+    ob = OddsEngine(shared.cfg).build(odb)
     assert ob["partial_games"] == {"forfeits": 1, "full_game_rounds": 24.0}, ob["partial_games"]
     kills = next(mk for mk in ob["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
     assert kills["mean"] == 20.0 and kills["line"] > 19, kills  # 10 kills in half a game counts as 20, not 10
     assert next(mk for mk in ob["team"] if mk["market_id"] == "team:rounds")["mean"] == 24.0  # the 12-round total is left out
 
+
+@section("grace and cancel windows")
+def grace_and_cancel(shared):
+    cfg, engine = shared.cfg, shared.engine
+    # Grace period: a bet placed while loading in (1 minute after the game's start time) is for that game; one placed
+    # 10 minutes in waits for the next game. With the grace set to 0 the old rule applies.
+    gdb = DB(os.path.join(shared.tmp, "grace.db"))
+    gdb.execute("INSERT INTO bettors(name, balance, created_at) VALUES('G', 1000, 0)")
+    game = {"match_id": "g1", "mode": "competitive", "started_ts": 10_000.0, "rounds_won": 13, "rounds_lost": 5, "result": "win"}
+    for offset in (-300, 60, 600):
+        gdb.insert_bet({"bettor": "G", "market_id": "team:win", "market_type": "team_win", "description": "5-stack wins",
+                        "selection": "win", "selection_label": "5-stack wins", "line": None, "odds_decimal": 2.0, "stake": 10.0,
+                        "placed_ts": game["started_ts"] + offset, "context": "{}", "status": "pending"})
+    settled = BetManager(cfg, gdb, engine).settle_for_match(game, [])
+    assert sorted(b["placed_ts"] - game["started_ts"] for b in settled) == [-300, 60], settled
+    assert [b["placed_ts"] - game["started_ts"] for b in gdb.pending_bets()] == [600]  # carries over to the next game
+    assert BetManager({**cfg, "bet_grace_minutes": 0}, gdb, engine).grace_s == 0
+    # Cancelling: a bettor has 1 minute after placing a bet; the admin can cancel any open bet.
+    gm = BetManager(cfg, gdb, engine)
+    late = gdb.pending_bets()[0]  # placed long ago
+    try:
+        gm.cancel(late["id"], by="G")
+        raise AssertionError("a bet older than a minute can't be cancelled by its bettor")
+    except BetError as e:
+        assert "within 1 minute" in str(e), e
+    fresh = gdb.insert_bet({**{k: late[k] for k in ("bettor", "market_id", "market_type", "description", "selection",
+                                                     "selection_label", "line", "odds_decimal", "stake", "context")},
+                            "placed_ts": time.time() - 30, "status": "pending"})
+    assert gm.cancel(fresh, by="g")["status"] == "cancelled"  # 30 seconds old: still allowed
+    assert gm.cancel(late["id"], admin=True)["status"] == "cancelled"
+
+
+@section("resync")
+def resync(shared):
+    client, tracker, db = shared.client, shared.tracker, shared.db
     # Second sync: nothing new, no duplicates, no re-verification of rejected ids.
     calls_before = client.calls
-    res2 = tracker.sync()
+    res2 = shared.second_sync = tracker.sync()
     assert res2["ok"] and res2["new_matches"] == 0, res2
     # 5 stored-match calls, plus one full-record fetch each for m9 and m10 (inserted by hand above, so no round
     # timeline yet; the fake API 404s them, which is remembered). The next sync is back to just the 5.
@@ -539,8 +671,35 @@ def main():
     assert tracker.sync()["full"] is True and db.get_meta("history_backfilled") is True
     assert tracker.sync()["full"] is False and db.count_matches() == 4
 
+
+@section("config docs")
+def config_docs(shared):
+    # Every setting in config.example.json is documented in the README's configuration table.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "config.example.json"), encoding="utf-8") as f:
+        example_keys = set(json.load(f))
+    with open(os.path.join(root, "README.md"), encoding="utf-8") as f:
+        first_cells = re.findall(r"^\| ([^|]+) \|", f.read(), re.M)  # rows like "| `host` / `port` | ... |"
+    documented = {key for cell in first_cells for key in re.findall(r"`([a-z_]+)`", cell)}
+    undocumented = sorted(example_keys - documented)
+    assert not undocumented, f"add these config.example.json keys to the README's configuration table: {undocumented}"
+
+
+def main():
+    shared = setup()
+    for name, check in SECTIONS:
+        try:
+            check(shared)
+        except Exception:
+            sys.stdout.flush()
+            traceback.print_exc()
+            print(f"FAIL: {name}", file=sys.stderr)
+            sys.exit(1)
+        print(f"ok: {name}")
+    bet2 = shared.bet2
     print("selftest OK")
-    print(json.dumps({"first_sync": res, "second_sync": res2, "tester_balance": round(bal, 2),
+    print(json.dumps({"first_sync": shared.first_sync, "second_sync": shared.second_sync,
+                      "tester_balance": round(shared.tester_balance, 2),
                       "sample_line": {"market": bet2["market_id"], "line": bet2["line"], "odds": bet2["odds_decimal"]}},
                      indent=1))
 

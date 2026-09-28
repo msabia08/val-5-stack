@@ -151,10 +151,17 @@ distribution at low weight and are flagged *low confidence*.
   header, after which it can be re-claimed with a new password.
 - Bets are on the **next 5-stack game** that starts after the bet is placed, no
   matter which map ends up being played. Odds are locked when you place the bet.
+  Riot's start time is when the match launches, so a bet placed within
+  `bet_grace_minutes` (default 2) of a game starting, e.g. while loading in or
+  during round 1, still counts for that game. Later bets carry over to the
+  following game.
 - Settlement happens automatically during the sync that records that game.
   Landing exactly on a line, a tie for a "tops the scoreboard" market, or a draw
   for the match-result market refunds the stake (void).
-- Pending bets can be cancelled for a full refund until the game is recorded.
+- A bet can be cancelled for a full refund only within `bet_cancel_minutes`
+  (default 1) of placing it, enough to fix a misclick but not to back out of a
+  game that's going badly. The commissioner can still cancel any open bet with
+  the admin password.
 - **Surrenders (forfeits).** A game that ends before either team reaches the
   rounds needed to win (13 in competitive, unrated and premier) was
   surrendered. The **match result stands** and match-result bets settle as
@@ -181,7 +188,11 @@ distribution at low weight and are flagged *low confidence*.
   do betting on themselves vs on others, followed by each bettor's **profit over
   time**. Below that, **settled bets** cover the
   last 3 games, each headed by the result and the squad's totals, with each
-  player's bets on that game in their own card (bets, wagered and net).
+  player's bets on that game in their own card (bets, wagered and net). At the
+  bottom of the page, **Are the odds right?** checks the odds against results:
+  picks are grouped by the chance the odds gave them, and each group shows how
+  often it actually won, overall and per market type ("about right", "too
+  generous" or "too stingy", once there are at least 10 settled picks).
 
 ## Parlays
 
@@ -289,6 +300,7 @@ time you log in.
 | --- | --- | --- |
 | `api_key` | – | HenrikDev key. Can also be given as the `HENRIK_API_KEY` environment variable. |
 | `region` | `na` | Riot affinity of the squad: `na`, `eu`, `ap`, `kr`, `latam`, `br`. |
+| `platform` | `pc` | Game platform (`pc` or `console`) for the HenrikDev endpoints that take one. Reserved: nothing uses it yet. |
 | `members` | – | List of `"Name#TAG"` strings or `{ "riot_id": "Name#TAG", "nickname": "Matt", "bettor": "Matty" }` objects. `bettor` (optional) is the betting account that receives this member's game rewards; it defaults to the nickname. |
 | `modes` | competitive, unrated, premier | Modes that count. Empty list = every mode. |
 | `poll_interval_minutes` | 10 | How often to check for new games. |
@@ -307,6 +319,8 @@ time you log in.
 | `map_weight_boost` / `agent_weight_boost` | 2.5 / 2.0 | Extra weight for games matching the chosen map / agent. |
 | `simulations` | 4000 | Monte Carlo draws for the "tops the scoreboard" markets. |
 | `starting_balance` | 1000 | Credits for a new bettor. |
+| `bet_grace_minutes` | 2 | A bet placed this soon after a game starts still counts for that game. `0` means only bets placed before the start. |
+| `bet_cancel_minutes` | 1 | How long after placing a bet its bettor can still cancel it. The admin can cancel open bets any time. |
 | `game_reward` | 250 | Credits each member earns per 5-stack game, win or loss. `0` turns it off. |
 | `win_reward` | 0 | Extra credits each member earns on top for a win. |
 | `performance_bonus_max` | 250 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
@@ -344,12 +358,15 @@ fivestack/             the backend package
   bets.py              betting ledger and settlement
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
-web/                   index.html, app.js, viz.js (charts), style.css (no build step)
+web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), style.css (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```
 
 Run `python tests/selftest.py` to check the backend end-to-end without touching the API.
+GitHub runs it automatically (on Python 3.10 and 3.12, plus a JavaScript syntax
+check) for every pull request and every push to `main`
+(`.github/workflows/selftest.yml`).
 
 [`docs/DATA.md`](docs/DATA.md) lists every piece of data available: what the HenrikDev API returns (with field
 structures from real responses), what the tracker stores, and what the website's `/api/*` endpoints serve.

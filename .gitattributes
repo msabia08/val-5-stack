@@ -1,0 +1,4 @@
+# Line endings: LF everywhere (in git and in working copies, whatever core.autocrlf says),
+# except Windows batch files, which cmd.exe expects in CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf

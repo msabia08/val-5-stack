@@ -372,3 +372,4 @@ line.viz-grid { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdge
 .viz-tip-key { flex: 0 0 12px; height: 2px; border-radius: 1px; }
 .viz-tip-key.none { background: transparent; }
 @media (max-width: 860px) { .viz-cols { grid-template-columns: 1fr; } }
+@media (min-width: 861px) { .viz-accuracy { grid-template-columns: minmax(0, 360px) 1fr; align-items: start; } }
