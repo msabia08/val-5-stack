@@ -155,7 +155,7 @@ class BetManager:
             raise BetError("Sign in as a bettor first.")
         if stake > bettor["balance"] + 1e-9:
             raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
-        alt = parse_alt(market_id)  # a custom line ("Loog gets 25+ kills") is priced on the spot
+        alt = parse_alt(market_id)  # a custom line ("Loog gets 25+ kills") or exact number is priced on the spot
         board = self.engine.build(self.db, context or {}, alts=[alt] if alt else None)
         if not board.get("ready"):
             raise BetError(board.get("message", "Odds are not available yet."))
@@ -164,7 +164,7 @@ class BetManager:
             raise BetError(self._unavailable(board, market_id, sel_key) or "That market is no longer available. Refresh the odds board.")
 
         mtype = market["type"]
-        if mtype == "ou":
+        if mtype in ("ou", "exact"):
             desc = f"{market['member']} {market['stat_label']} {sel['label']}"
             meta = {"stat": market["stat"], "puuid": market["puuid"], **({"custom": True} if market.get("custom") else {})}
         elif mtype == "top":
@@ -248,7 +248,7 @@ class BetManager:
             if not market or not sel:
                 raise BetError(self._unavailable(board, market_id, sel_key) or "One of the legs is no longer available. Refresh the odds board.")
             mtype = market["type"]
-            if mtype == "ou":
+            if mtype in ("ou", "exact"):
                 desc = f"{market['member']} {market['stat_label']} {sel['label']}"
                 meta = {"stat": market["stat"], "puuid": market["puuid"], **({"custom": True} if market.get("custom") else {})}
             elif mtype == "top":
@@ -454,6 +454,14 @@ class BetManager:
         if t == "team_ot":
             ot = went_to_overtime(match)
             return ("won" if ot == (sel == "yes") else "lost"), (1 if ot else 0), None
+        if t == "exact":  # an exact number on a counting stat
+            m = metrics.get(meta.get("puuid"))
+            if not m:
+                return "void", None, "Player was not in this game"
+            v = m.get(meta.get("stat"))
+            if v is None:
+                return "void", None, "Stat unavailable for this game"
+            return ("won" if abs(v - line) < 1e-9 else "lost"), v, None
         if t in SCORE_MARKETS:
             rw, rl = match.get("rounds_won") or 0, match.get("rounds_lost") or 0
             if rounds_to_win(match.get("mode")) != DEFAULT_ROUNDS_TO_WIN:
@@ -480,7 +488,7 @@ class BetManager:
             value = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
         elif t in ("team_rw", "team_rl"):  # rounds won / lost so far only ever go up
             value = match.get("rounds_won" if t == "team_rw" else "rounds_lost") or 0
-        elif t == "ou" and meta.get("stat") in COUNTING_STATS:
+        elif t in ("ou", "exact") and meta.get("stat") in COUNTING_STATS:  # an exact number already passed is lost
             m = metrics.get(meta.get("puuid"))
             if not m:
                 return "void", None, "Player was not in this game"

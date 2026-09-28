@@ -223,23 +223,27 @@ window.FiveBets = (() => {
   }
 
   // ---- custom lines ("I think Loog gets 25 kills") -------------------------------------------------------------
-  // state.custom: { puuid, stat, side ('over' = at least N, 'under' = at most N), n, quote }. The quote comes from
-  // /api/odds/custom, priced like the board's lines; lines too far from a player's usual game aren't offered.
+  // state.custom: { puuid, stat, side ('over' = at least N, 'under' = at most N, 'exact' = exactly N), n, quote }. The
+  // quote comes from /api/odds/custom, priced like the board's lines; lines too far from a player's usual game aren't
+  // offered. Exact numbers are for the counting stats (kills, deaths, assists) only.
+  const SIDES = { over: ['At least', 'at_least'], under: ['At most', 'at_most'], exact: ['Exactly', 'exactly'] };
+  const isCount = (stat) => ((state.odds && state.odds.stat_defs) || []).some((s) => s.key === stat && s.count);
   const custom = () => (state.custom ||= { puuid: '', stat: 'kills', side: 'over', n: '', quote: null, error: '' });
-  const customLine = (c) => (c.n === '' ? null : c.side === 'over' ? Number(c.n) - 0.5 : Number(c.n) + 0.5);
+  const customLine = (c) => (c.n === '' || c.side === 'exact' ? null : c.side === 'over' ? Number(c.n) - 0.5 : Number(c.n) + 0.5);
   let quoteTimer = 0, quoteSeq = 0;
 
   function customLineCard() {
     const c = custom(), members = state.status.members || [], stats = (state.odds && state.odds.stat_defs) || [];
     if (!members.length || !stats.length) return '';
     if (!c.puuid) c.puuid = members[0].puuid;
-    const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
+    if (c.side === 'exact' && !isCount(c.stat)) c.side = 'over';
+    const opt = (v, label, on, off) => `<option value="${esc(v)}"${on ? ' selected' : ''}${off ? ' disabled' : ''}>${esc(label)}</option>`;
     return `<section class="card" id="custom-line"><h2>Custom line</h2>
-      <p class="muted small">Think someone's going big (or bad)? Name your own number. It's priced from the same model as the board, and a line too far from a player's usual game isn't offered.</p>
+      <p class="muted small">Think someone's going big (or bad)? Name your own number: at least, at most, or exactly (kills, deaths and assists). It's priced from the same model as the board, and a number too far from a player's usual game isn't offered.</p>
       <div class="ctx-row">
         <label>Player<select id="cl-player">${members.map((m) => opt(m.puuid, m.nickname, m.puuid === c.puuid)).join('')}</select></label>
         <label>Stat<select id="cl-stat">${stats.map((s) => opt(s.key, s.label, s.key === c.stat)).join('')}</select></label>
-        <label>Side<select id="cl-side">${opt('over', 'At least', c.side === 'over')}${opt('under', 'At most', c.side === 'under')}</select></label>
+        <label>Side<select id="cl-side">${Object.entries(SIDES).map(([k, [label]]) => opt(k, label, c.side === k, k === 'exact' && !isCount(c.stat))).join('')}</select></label>
         <label>Number<input id="cl-n" type="number" min="0" step="1" inputmode="numeric" value="${esc(c.n)}" placeholder="${esc(c.quote ? Math.round(c.quote.typical) : '')}"></label>
       </div><div id="cl-quote" class="cl-quote" aria-live="polite">${customQuoteHtml()}</div></section>`;
   }
@@ -248,22 +252,28 @@ window.FiveBets = (() => {
     const c = custom(), q = c.quote;
     if (c.error) return `<p class="down small">${esc(c.error)}</p>`;
     if (!q) return '<p class="muted small">Loading…</p>';
-    const [lo, hi] = q.limits[c.side === 'over' ? 'at_least' : 'at_most'];
-    const range = lo <= hi ? `${c.side === 'over' ? 'at least' : 'at most'} ${lo} to ${hi}` : 'none right now';
+    const [word, limitKey] = SIDES[c.side];
+    const [lo, hi] = (q.limits && q.limits[limitKey]) || [1, 0];
+    const range = lo <= hi ? `${word.toLowerCase()} ${lo} to ${hi}` : 'none right now';
     const hint = `<p class="muted small">${esc(q.member)} usually gets about ${esc(String(Math.round(q.typical)))} ${esc(q.stat_label.toLowerCase())}. Numbers you can pick: ${esc(range)}.</p>`;
     if (c.n === '') return hint;
     const sel = (q.selections || []).find((s) => s.key === c.side);
     if (!sel || !sel.available) return `<p class="down small">${esc((sel && sel.reason) || q.reason || 'Not available.')}</p>${hint}`;
-    const what = `${q.member}: ${c.side === 'over' ? 'at least' : 'at most'} ${c.n} ${q.stat_label.toLowerCase()}`;
-    return `<div class="cl-offer"><div><b>${esc(what)}</b><div class="muted small">${Math.round(sel.fair_prob * 100)}% chance before the house edge · settles like ${c.side === 'over' ? 'an over' : 'an under'} ${esc(String(q.line))}</div></div>` +
+    const what = `${q.member}: ${word.toLowerCase()} ${c.n} ${q.stat_label.toLowerCase()}`;
+    const settles = c.side === 'exact' ? `wins only on exactly ${c.n}` : `settles like ${c.side === 'over' ? 'an over' : 'an under'} ${q.line}`;
+    return `<div class="cl-offer"><div><b>${esc(what)}</b><div class="muted small">${Math.round(sel.fair_prob * 100)}% chance before the house edge · ${esc(settles)}</div></div>` +
       `<span class="cl-odds">${fmt.odds(sel)}</span><button type="button" class="btn small" id="cl-add">Add to slip</button></div>${hint}`;
   }
 
   async function fetchCustomQuote() {
     const c = custom(), seq = ++quoteSeq;
     const std = ((state.odds && state.odds.player_props) || []).find((mk) => mk.market_id === `ou:${c.stat}:${c.puuid}`);
-    const line = customLine(c) ?? (std ? std.line : 0.5); // before a number is typed, ask about the board's line for the range
-    const p = new URLSearchParams({ puuid: c.puuid, stat: c.stat, line: String(line) });
+    const p = new URLSearchParams({ puuid: c.puuid, stat: c.stat });
+    if (c.side === 'exact') {
+      p.set('exact', c.n !== '' ? c.n : String(Math.round(std ? std.line : 1))); // before a number is typed: for the range
+    } else {
+      p.set('line', String(customLine(c) ?? (std ? std.line : 0.5)));
+    }
     if (state.ctx.map) p.set('map', state.ctx.map);
     if (Object.keys(state.ctx.agents).length) p.set('agents', JSON.stringify(state.ctx.agents));
     try {
@@ -286,7 +296,7 @@ window.FiveBets = (() => {
       const sel = q && (q.selections || []).find((s) => s.key === c.side && s.available);
       if (!sel || c.n === '') return;
       state.slip = state.slip.filter((x) => x.market_id !== q.market_id);
-      state.slip.push({ market_id: q.market_id, selection: c.side, selLabel: `${c.side === 'over' ? 'At least' : 'At most'} ${c.n}`,
+      state.slip.push({ market_id: q.market_id, selection: c.side, selLabel: `${SIDES[c.side][0]} ${c.n}`,
         desc: `${q.member} ${q.stat_label} · custom`, american: sel.american, decimal: sel.decimal, line: q.line, stake: state.stake });
       drawSlip();
       toast('Custom line added to the slip');
@@ -304,7 +314,13 @@ window.FiveBets = (() => {
       quoteTimer = setTimeout(fetchCustomQuote, delay);
     };
     $('#cl-player', view).addEventListener('change', (e) => { c.puuid = e.target.value; requote(0); });
-    $('#cl-stat', view).addEventListener('change', (e) => { c.stat = e.target.value; requote(0); });
+    $('#cl-stat', view).addEventListener('change', (e) => {
+      c.stat = e.target.value;
+      const side = $('#cl-side', view), exact = side.querySelector('option[value="exact"]');
+      exact.disabled = !isCount(c.stat); // exact numbers are for kills, deaths and assists
+      if (exact.disabled && c.side === 'exact') { c.side = 'over'; side.value = 'over'; }
+      requote(0);
+    });
     $('#cl-side', view).addEventListener('change', (e) => { c.side = e.target.value; requote(0); });
     $('#cl-n', view).addEventListener('input', (e) => {
       const v = e.target.value.trim();

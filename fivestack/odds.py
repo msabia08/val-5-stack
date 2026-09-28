@@ -38,6 +38,8 @@ STAT_BY_KEY = {d["key"]: d for d in STAT_DEFS}
 # around +1800 and near-certainties (stake 50 to win 1) aren't offered.
 ALT_MIN_CHANCE = 0.05
 ALT_MAX_CHANCE = 0.90
+# Exact numbers ("exactly 25 kills") on the counting stats: always long shots, so the floor is lower (about +4700).
+EXACT_MIN_CHANCE = 0.02
 FLOOR_H["acs_rel"] = 0.06  # ACS as a multiple of the player's own average
 COUNT_KEYS = [d["key"] for d in STAT_DEFS if d["kind"] == "count"]
 
@@ -98,7 +100,7 @@ def selection(key, label, fair, overround):
     }
 
 
-MULTI_WAY = {"top", "team_score", "team_margin"}  # many selections: these carry double the house edge
+MULTI_WAY = {"top", "team_score", "team_margin", "exact"}  # many possible outcomes: these carry double the house edge
 
 
 def market_overround(market_type, edge):
@@ -369,6 +371,36 @@ class OddsEngine:
         return {**mk, "available": any(s["available"] for s in sels), "selections": sels,
                 "reason": None if any(s["available"] for s in sels) else sels[0].get("reason")}
 
+    def exact_market(self, member, samples, sd, n):
+        """An exact number on a counting stat ("Loog gets exactly 25 kills"): the share of the smoothed distribution
+        between n - 0.5 and n + 0.5, priced with the multi-way edge. Offered ("available") when that chance is at
+        least EXACT_MIN_CHANCE; "limits" has the numbers that qualify."""
+        pts = [(w, x[sd["key"]]) for w, x in samples if x.get(sd["key"]) is not None]
+        if not pts:
+            return None
+        mean, sigma = weighted_moments(pts)
+        h = max(sd["floor_h"], 0.6 * sigma)
+        chance = lambda k: kde_over(pts, k - 0.5, h) - kde_over(pts, k + 0.5, h)  # noqa: E731
+        mk = {"market_id": exact_market_id(sd["key"], member["puuid"], n), "type": "exact", "custom": True,
+              "stat": sd["key"], "stat_label": sd["label"], "puuid": member["puuid"], "member": member["nickname"],
+              "label": f"{member['nickname']} {sd['label']}", "line": n, "mean": round(mean, 1),
+              "typical": round(kde_quantile(pts, 0.5, h), 1)}
+        if sd["kind"] != "count":
+            return {**mk, "available": False, "limits": {"exactly": [1, 0]},
+                    "reason": "Exact numbers are only for kills, deaths and assists."}
+        top = int(max(v for _, v in pts) + 6 * h) + 1
+        allowed = [k for k in range(0, top) if chance(k) >= EXACT_MIN_CHANCE]
+        mk["limits"] = {"exactly": [min(allowed), max(allowed)] if allowed else [1, 0]}
+        if not math.isfinite(n) or n < 0 or n != int(n):
+            return {**mk, "available": False, "reason": "Exact numbers are whole numbers."}
+        p = chance(int(n))
+        sel = selection("exact", f"Exactly {n:g}", p, market_overround("exact", self.edge))
+        sel["available"] = p >= EXACT_MIN_CHANCE
+        if not sel["available"]:
+            sel["reason"] = (f"Exactly {n:g} is too unlikely for {member['nickname']} (usually about {mk['typical']:.0f} "
+                             f"{sd['label'].lower()}), so the odds would be silly.")
+        return {**mk, "available": sel["available"], "selections": [sel], "reason": sel.get("reason")}
+
     def top_market(self, members, member_samples, td, rng):
         """The "tops the scoreboard" market for td and its counter ("bottoms"), from the same simulated games."""
         prep = []
@@ -576,8 +608,12 @@ class OddsEngine:
                 if mk:
                     props.append(mk)
         by_puuid = {m["puuid"]: m for m in members}
-        custom = [self.alt_market(by_puuid[pu], member_samples[pu], STAT_BY_KEY[st], line)
-                  for st, pu, line in (alts or []) if pu in by_puuid and st in STAT_BY_KEY]
+        custom = []
+        for alt in alts or []:  # (stat, puuid, line) for a custom line, (stat, puuid, n, "exact") for an exact number
+            st, pu, value, kind = (*alt, "line")[:4]
+            if pu in by_puuid and st in STAT_BY_KEY:
+                market = self.exact_market if kind == "exact" else self.alt_market
+                custom.append(market(by_puuid[pu], member_samples[pu], STAT_BY_KEY[st], value))
         tops = []
         for td in TOP_DEFS:
             pair = self.top_market(members, member_samples, td, rng)
@@ -601,7 +637,7 @@ class OddsEngine:
             "player_props": props,
             "top_markets": tops,
             "custom": [mk for mk in custom if mk],
-            "stat_defs": [{"key": d["key"], "label": d["label"]} for d in STAT_DEFS],
+            "stat_defs": [{"key": d["key"], "label": d["label"], "count": d["kind"] == "count"} for d in STAT_DEFS],
         }
 
 
@@ -609,20 +645,26 @@ def alt_market_id(stat, puuid, line):
     return f"alt:{stat}:{puuid}:{line:g}"
 
 
+def exact_market_id(stat, puuid, n):
+    return f"exact:{stat}:{puuid}:{n:g}"
+
+
 def parse_alt(market_id):
-    """(stat, puuid, line) from a custom-line market id, or None if it isn't one (or is malformed)."""
+    """(stat, puuid, value, kind) from a custom-line ("alt:...", kind "line") or exact-number ("exact:...", kind
+    "exact") market id, or None if it isn't one (or is malformed)."""
     parts = (market_id or "").split(":")
-    if len(parts) != 4 or parts[0] != "alt" or parts[1] not in STAT_BY_KEY:
+    if len(parts) != 4 or parts[0] not in ("alt", "exact") or parts[1] not in STAT_BY_KEY:
         return None
     try:
-        line = float(parts[3])
+        value = float(parts[3])
     except ValueError:
         return None
-    return (parts[1], parts[2], line) if math.isfinite(line) else None
+    return (parts[1], parts[2], value, "exact" if parts[0] == "exact" else "line") if math.isfinite(value) else None
 
 
 def alt_family(market_id):
-    """Custom lines on a player and stat count as the same market as the board's line on it (for parlays)."""
+    """Custom lines and exact numbers on a player and stat count as the same market as the board's line on it
+    (for parlays)."""
     alt = parse_alt(market_id)
     return f"ou:{alt[0]}:{alt[1]}" if alt else market_id
 

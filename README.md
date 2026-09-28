@@ -198,6 +198,14 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   you bet needs between a 5% and a 90% chance: long shots top out around +1800,
   and near-certainties ("at least 5 kills") aren't offered. The card shows which
   numbers you can pick for each player and stat.
+- **Exact numbers:** the same card's *exactly* option ("Loog gets exactly 25
+  kills") on kills, deaths and assists. The chance is the share of that same
+  distribution that rounds to exactly N, with the double house edge of the
+  many-outcome markets; it wins only if the final number matches. Exact numbers
+  are always long shots, so they need at least a 2% chance (odds up to about
+  +4700). On a surrender, an exact number the player had already passed loses and
+  anything else is refunded. In a parlay it counts as the same market as the
+  player's line on that stat.
 - **"Who tops the scoreboard" markets:** six cards, each with a toggle for its
   counter market at the bottom of the scoreboard:
 

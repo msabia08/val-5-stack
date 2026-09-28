@@ -823,10 +823,35 @@ def custom_lines(shared):
     parlay = cbets.place_parlay("Cus", [{"market_id": "alt:kills:puuid-1:21.5", "selection": "over"},
                                         {"market_id": "alt:deaths:puuid-2:15.5", "selection": "under"}], 10, {})
     assert [leg["line"] for leg in json.loads(parlay["context"])["legs"]] == [21.5, 15.5]
+    # Exact numbers: the smoothed distribution's share at exactly N, on the counting stats only.
+    exact = engine.build(cdb, {}, alts=[("kills", "puuid-1", n, "exact") for n in range(60)])["custom"]
+    assert abs(sum(x["fair_prob"] for mk in exact for x in mk["selections"]) - 1) < 0.01  # the chances cover everything
+    by_n = {mk["line"]: mk for mk in exact}
+    assert by_n[19]["available"] and by_n[19]["type"] == "exact" and not by_n[45]["available"] and "too unlikely" in by_n[45]["reason"]
+    lo, hi = by_n[19]["limits"]["exactly"]
+    assert lo < 19 < hi and all(by_n[n]["available"] == (lo <= n <= hi) for n in range(60)), (lo, hi)
+    odd = engine.build(cdb, {}, alts=[("acs", "puuid-1", 200, "exact"), ("kills", "puuid-1", 19.5, "exact")])["custom"]
+    assert "only for kills, deaths and assists" in odd[0]["reason"] and "whole numbers" in odd[1]["reason"]
+    hit = cbets.place("Cus", "exact:kills:puuid-1:25", "exact", 5, {})
+    miss = cbets.place("Cus", "exact:kills:puuid-1:21", "exact", 5, {})
+    assert hit["market_type"] == "exact" and hit["description"] == "P1 Kills Exactly 25" and json.loads(hit["context"])["custom"]
+    assert abs(fair_chance(hit["odds_decimal"], "exact", 0.05) - by_n[25]["selections"][0]["fair_prob"]) < 0.01  # double edge
+    try:
+        cbets.place_parlay("Cus", [{"market_id": "exact:kills:puuid-1:20", "selection": "exact"},
+                                   {"market_id": "alt:kills:puuid-1:21.5", "selection": "over"}], 5, {})
+        raise AssertionError("an exact number and a line on the same player and stat can't share a parlay")
+    except BetError as e:
+        assert "one line per player and stat" in str(e), e
+    # A surrender settles an exact number only if it was already passed (lost); otherwise it's refunded.
+    ev = lambda n, kills: cbets._evaluate({"market_type": "exact", "selection": "exact", "line": n,  # noqa: E731
+                                           "context": json.dumps({"stat": "kills", "puuid": "p"})},
+                                          {"mode": "competitive", "rounds_won": 9, "rounds_lost": 4, "result": "win"}, {"p": {"kills": kills}})[0]
+    assert ev(10, 12) == "lost" and ev(15, 12) == "void"
     # They settle like any over / under: P1 gets 25 kills, P2 dies 14 times.
     play(10, 25, time.time() + 5)  # starts after the bets were placed
     settled = {b["id"]: b for b in cbets.settle_for_match(cdb.match("c10"), cdb.match_players("c10"))}
     assert settled[single["id"]]["status"] == "won" and settled[parlay["id"]]["status"] == "won", settled
+    assert settled[hit["id"]]["status"] == "won" and settled[miss["id"]]["status"] == "lost"  # exactly 25, not 21
 
 
 @section("score markets")
