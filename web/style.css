@@ -40,7 +40,7 @@
     --axis: #c3c2b7; --div-pos: #2a78d6; --div-neg: #e34948; --div-mid: #f0efec; --aim-1: #1c5cab; --aim-2: #3987e5; --aim-3: #86b6ef; --pair-lo: #86b6ef; --pair-hi: #1c5cab;
   }
 }
-:root[data-theme="light"] {
+:root[data-theme="light"], :root[data-theme="greg"] {
   color-scheme: light;
   --bg: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec; --border: rgba(11, 11, 11, 0.10);
   --text: #0b0b0b; --text-2: #52514e; --muted: #898781; --grid: #e1e0d9;
@@ -466,3 +466,10 @@ tr.match-row.on td { background: var(--accent-soft); }
 .cl-offer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
 .cl-offer > div { flex: 1 1 220px; }
 .cl-odds { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---- Greg Mode: the light theme over web/assets/greg.png, stretched to the window width and repeated down the page.
+   Every panel (cards, tiles, the top bar, slip, markets, buttons) is 50% see-through; tooltips and toasts stay solid
+   so they're readable. ---- */
+:root[data-theme="greg"] { --surface: rgba(252, 252, 251, 0.5); --surface-2: rgba(240, 239, 236, 0.5); }
+:root[data-theme="greg"] body { background: #fff url("/assets/greg.png") center top / 100% auto repeat-y; }
+:root[data-theme="greg"] .viz-tip, :root[data-theme="greg"] .toast { background: #fcfcfb; }

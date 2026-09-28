@@ -465,7 +465,8 @@ fivestack/             the backend package
   bets.py              betting ledger and settlement
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
-web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), recap.js (match recap), style.css (no build step)
+web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), recap.js (match recap), style.css,
+                       assets/greg.png (Greg Mode background) (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```

@@ -616,13 +616,20 @@
 
   async function init() {
     window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast });
+    // Themes cycle dark -> light -> Greg Mode (the light colours over web/assets/greg.png) -> dark.
+    const THEMES = { dark: 'Dark', light: 'Light', greg: 'Greg Mode' };
+    const themeBtn = $('#theme-btn');
+    const showTheme = (t) => { themeBtn.title = `Theme: ${THEMES[t]} (click for ${THEMES[t === 'dark' ? 'light' : t === 'light' ? 'greg' : 'dark']})`; };
     const saved = new URLSearchParams(location.search).get('theme') || localStorage.getItem('fs.theme');
-    if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
-    $('#theme-btn').addEventListener('click', () => {
-      const cur = document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-      const next = cur === 'dark' ? 'light' : 'dark';
+    if (THEMES[saved]) document.documentElement.dataset.theme = saved;
+    const current = () => document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    showTheme(current());
+    themeBtn.addEventListener('click', () => {
+      const cur = current();
+      const next = cur === 'dark' ? 'light' : cur === 'light' ? 'greg' : 'dark';
       document.documentElement.dataset.theme = next;
       localStorage.setItem('fs.theme', next);
+      showTheme(next);
     });
     $('#sync-btn').addEventListener('click', () => sync(false));
     window.addEventListener('hashchange', route);
