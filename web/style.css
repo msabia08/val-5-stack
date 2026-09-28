@@ -261,6 +261,8 @@ details.season { border-top: 1px solid var(--grid); padding: 8px 0; }
 details.season summary { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: 14px; }
 details.season[open] summary { margin-bottom: 8px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.settled-pick { max-width: 100%; }
+.settled-pick select { max-width: 100%; min-width: 0; }
 .settled-game { margin-bottom: 16px; }
 .settled-game:last-child { margin-bottom: 0; }
 .settled-game-head { display: flex; align-items: center; gap: 8px; padding: 6px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 14px; }

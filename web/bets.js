@@ -123,7 +123,9 @@ window.FiveBets = (() => {
     }).join('')}</div>`;
   }
 
-  const SETTLED_GAMES = 3; // settled bets are shown for this many most recent games
+  // Settled bets show this many games at once, starting from the game picked in the card's dropdown (the most recent
+  // by default) and going back. It was 3 before the dropdown existed; set it back to 3 to show three games again.
+  const SETTLED_GAMES = 1;
 
   const signedCredits = (v) => `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt.credits(Math.abs(v))}</span>`;
   // "6 bets · 155 wagered", plus the net result once the bets have settled (payouts minus stakes).
@@ -140,25 +142,40 @@ window.FiveBets = (() => {
         <p class="muted small">Settled bets, balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>`;
   }
 
-  // Bettors tab: the last few games' settled bets, grouped by game and then by bettor.
-  function settledSection() {
-    const settled = state.bets.filter((b) => b.settled_match_id && b.status !== 'pending' && b.status !== 'cancelled');
-    return `<section class="card"><h2>Settled bets</h2>
-        ${settled.length ? gameSlips(settled) : '<p class="muted">Nothing settled yet. Bets settle when the next 5-stack game is recorded.</p>'}</section>`;
-  }
-
-  // The last few games that had bets, newest first: a header per game, then each player's bets on it.
-  function gameSlips(bets) {
+  // Settled bets per game, newest game first: Map(match_id -> bets).
+  function settledGames() {
     const groups = new Map();
-    bets.forEach((b) => {
+    state.bets.filter((b) => b.settled_match_id && b.status !== 'pending' && b.status !== 'cancelled').forEach((b) => {
       if (!groups.has(b.settled_match_id)) groups.set(b.settled_match_id, []);
       groups.get(b.settled_match_id).push(b);
     });
-    const keys = [...groups.keys()]
-      .sort((a, b) => (groups.get(b)[0].game_started_ts || 0) - (groups.get(a)[0].game_started_ts || 0))
-      .slice(0, SETTLED_GAMES);
-    return keys.map((key) => {
-      const rows = groups.get(key), g = rows[0];
+    return new Map([...groups].sort(([, a], [, b]) => (b[0].game_started_ts || 0) - (a[0].game_started_ts || 0)));
+  }
+
+  // Bettors tab: settled bets for the game picked in the dropdown (state.settledGame; '' = the most recent), grouped
+  // by bettor. The dropdown lists every game with settled bets among the bets loaded.
+  function settledSection() {
+    const groups = settledGames();
+    if (!groups.size) {
+      return '<section class="card"><h2>Settled bets</h2><p class="muted">Nothing settled yet. Bets settle when the next 5-stack game is recorded.</p></section>';
+    }
+    const keys = [...groups.keys()];
+    const picked = keys.includes(state.settledGame) ? state.settledGame : keys[0];
+    const label = (rows) => {
+      const g = rows[0];
+      return `${fmt.date(g.game_started_ts ? g.game_started_ts * 1000 : null)} · ${g.game_map || 'Unknown map'} · ` +
+        `${fmt.res(g.game_result)} ${g.game_rounds_won ?? '?'}–${g.game_rounds_lost ?? '?'} · ${rows.length} bet${rows.length === 1 ? '' : 's'}`;
+    };
+    const options = keys.map((k, i) => `<option value="${esc(i ? k : '')}"${k === picked ? ' selected' : ''}>${esc((i ? '' : 'Latest: ') + label(groups.get(k)))}</option>`).join('');
+    return `<section class="card"><div class="section-head"><h2>Settled bets</h2>
+        <label class="settled-pick muted small">Game <select id="settled-game">${options}</select></label></div>
+        ${gameSlips(keys.slice(keys.indexOf(picked), keys.indexOf(picked) + SETTLED_GAMES).map((k) => groups.get(k)))}</section>`;
+  }
+
+  // One block per game: a header with the result and the squad's totals, then each player's bets on it.
+  function gameSlips(games) {
+    return games.map((rows) => {
+      const g = rows[0];
       return `<div class="settled-game">
         <div class="settled-game-head"><span class="chip ${esc(g.game_result || '')}">${fmt.res(g.game_result)}</span>` +
           `<b>${g.game_rounds_won ?? '?'}–${g.game_rounds_lost ?? '?'}</b><span>${esc(g.game_map || 'Unknown map')}</span>` +
@@ -519,6 +536,7 @@ window.FiveBets = (() => {
   // Everything betting-related that needs wiring after a page is drawn (called from app.js's bind()).
   function bind(view) {
     $$('button.odd', view).forEach((b) => b.addEventListener('click', () => toggleSlip(b.dataset.m, b.dataset.s)));
+    $('#settled-game', view)?.addEventListener('change', (e) => { state.settledGame = e.target.value; draw(); });
     bindSlip();
     bindCustom(view);
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {

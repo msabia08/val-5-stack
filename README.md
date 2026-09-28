@@ -290,9 +290,10 @@ distribution at low weight and are flagged *low confidence*.
   starting bankroll, record, win rate, ROI and open stakes. Under the rankings,
   a **betting report card** shows each bettor's ROI by market type, and how they
   do betting on themselves vs on others, followed by each bettor's **profit over
-  time**. Below that, **settled bets** cover the
-  last 3 games, each headed by the result and the squad's totals, with each
-  player's bets on that game in their own card (bets, wagered and net). At the
+  time**. Below that, **settled bets** show one game at a time: the most recent
+  by default, or any earlier game picked from the dropdown. The game is headed by
+  the result and the squad's totals, with each player's bets on it in their own
+  card (bets, wagered and net). At the
   bottom of the page, **Are the odds right?** checks the odds against results:
   picks are grouped by the chance the odds gave them, and each group shows how
   often it actually won, overall and per market type ("about right", "too
