@@ -100,7 +100,8 @@ window.FiveBets = (() => {
     const cancelBtn = isMine(b) && canCancel ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`
       : (state.status.auth && state.status.auth.admin_required) ? `<button class="btn ghost small cancel-bet admin" data-id="${b.id}" title="Needs the admin password">Admin cancel</button>`
       : '';
-    return `<div class="bet-ticket ${b.status}">
+    const fresh = justPlaced.has(b.id); // lands with a "PLACED" stamp right after placing
+    return `<div class="bet-ticket ${b.status}${fresh ? ' just-placed' : ''}">${fresh ? '<span class="placed-stamp" aria-hidden="true">Placed</span>' : ''}
         <div class="bet-ticket-row">
           <div class="bet-desc">${legs ? `<span class="parlay-badge">Parlay ×${legs.length}</span>` : esc(b.description)}</div>
           <span class="status ${b.status}">${b.status}</span>
@@ -416,16 +417,24 @@ window.FiveBets = (() => {
     $('#place-bets')?.addEventListener('click', placeSlip);
   }
 
+  // Bets placed in the last moment or two, whose tickets land with a stamp (cleared once it has played).
+  const justPlaced = new Set();
+  function stampPlaced(ids) {
+    ids.forEach((id) => justPlaced.add(id));
+    setTimeout(() => ids.forEach((id) => justPlaced.delete(id)), 1800);
+  }
+
   async function placeSlip() {
     if (!state.me) { toast('Sign in as a bettor first', 'bad'); return; }
     if (state.slip.length >= 2 && state.slipMode === 'parlay') {
       const stake = Number($('#parlay-stake')?.value) || state.stake;
       try {
-        await api('/api/bets', {
+        const res = await api('/api/bets', {
           method: 'POST',
           body: JSON.stringify({ legs: state.slip.map((x) => ({ market_id: x.market_id, selection: x.selection })), stake, context: state.ctx }),
         });
         state.slip = [];
+        stampPlaced([res.bet.id]);
         toast('Parlay placed. It settles after the next 5-stack game.', 'good');
       } catch (e) {
         toast(e.message, 'bad');
@@ -436,15 +445,18 @@ window.FiveBets = (() => {
     }
     const failures = [];
     const remaining = [];
+    const placed = [];
     for (const it of state.slip) {
       try {
-        await api('/api/bets', { method: 'POST', body: JSON.stringify({ market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx }) });
+        const res = await api('/api/bets', { method: 'POST', body: JSON.stringify({ market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx }) });
+        placed.push(res.bet.id);
       } catch (e) {
         failures.push(`${it.desc}: ${e.message}`);
         remaining.push(it);
       }
     }
     state.slip = remaining;
+    stampPlaced(placed);
     if (failures.length) toast(failures.join(' · '), 'bad');
     else toast('Bets placed. They settle after the next 5-stack game.', 'good');
     await loadBets();

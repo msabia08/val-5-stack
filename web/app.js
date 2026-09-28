@@ -93,6 +93,7 @@
     try { state.me = (await api('/api/bettor/me')).bettor; } catch (e) { return; }
     renderMe();
   };
+  let shownBalance = null; // { name, balance } the chip last showed, for the balance ticker
   function renderMe() {
     const chip = $('#me-chip'), me = state.me;
     chip.classList.toggle('hidden', !me);
@@ -101,6 +102,88 @@
       (me.open_stake ? `<span class="me-inplay">+${fmt.credits(me.open_stake)} in play</span>` : '');
     chip.title = `Betting as ${me.name}: ${fmt.credits(me.balance)} credits` +
       (me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : '') + '. Open Odds & Bets.';
+    const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
+    if (was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(chip.querySelector('b'), was, me.balance);
+    shownBalance = { name: me.name, balance: me.balance };
+    celebrateWins(me);
+  }
+
+  // ---- little celebrations ----------------------------------------------------------
+  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const LONG_SHOT_DECIMAL = 6; // +500 or longer: gold confetti, and more of it
+
+  // Count a balance from its old value to the new one, flashing green (up) or red (down).
+  function tickBalance(el, from, to) {
+    el.classList.remove('tick-up', 'tick-down');
+    void el.offsetWidth; // restart the flash
+    el.classList.add(to > from ? 'tick-up' : 'tick-down');
+    if (reducedMotion() || document.hidden) return; // a hidden tab pauses the frames: just show the new balance
+    const t0 = performance.now(), dur = 900;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur), eased = 1 - (1 - k) ** 3;
+      el.textContent = fmt.credits(from + (to - from) * eased);
+      if (k < 1 && el.isConnected) requestAnimationFrame(step);
+    };
+    el.textContent = fmt.credits(from);
+    requestAnimationFrame(step);
+  }
+
+  // Confetti for wins settled since this browser last saw one (fs.seenWins.<name> holds the newest settled_ts
+  // shown), so a game that settles while the site is closed still gets its confetti on the next visit or poll.
+  // The first visit on a device only sets the marker: old wins aren't celebrated. In a background tab it waits
+  // until the tab is visible again (browsers pause animations in hidden tabs).
+  let celebrateLater = false;
+  function celebrateWins(me) {
+    const key = `fs.seenWins.${me.name.toLowerCase()}`, wins = me.recent_wins || [];
+    const newest = wins.reduce((a, w) => Math.max(a, w.settled_ts || 0), 0);
+    let seen = null;
+    try { seen = localStorage.getItem(key); } catch (e) { return; } // no storage: no way to tell what's new
+    const save = () => { try { localStorage.setItem(key, String(newest)); } catch (e) { /* storage blocked */ } };
+    if (seen === null) { save(); return; }
+    const fresh = wins.filter((w) => (w.settled_ts || 0) > Number(seen));
+    if (!fresh.length) return;
+    if (document.hidden) {
+      if (!celebrateLater) {
+        celebrateLater = true;
+        document.addEventListener('visibilitychange', function shown() {
+          if (document.hidden) return;
+          document.removeEventListener('visibilitychange', shown);
+          celebrateLater = false;
+          if (state.me) celebrateWins(state.me);
+        });
+      }
+      return;
+    }
+    save();
+    const longShot = fresh.some((w) => w.odds_decimal >= LONG_SHOT_DECIMAL);
+    const what = (w) => (w.market_type === 'parlay' ? `Your ${(w.description || '').split(' + ').length}-leg parlay` : `“${w.description}”`);
+    const total = fresh.reduce((a, w) => a + (w.payout || 0), 0);
+    toast(`${longShot ? 'Long shot! ' : 'Winner! '}` + (fresh.length === 1 ? `${what(fresh[0])} paid ${fmt.credits(total)} credits`
+      : `${fresh.length} bets paid ${fmt.credits(total)} credits`), 'good');
+    confetti($('#me-chip'), longShot);
+  }
+
+  const CONFETTI = ['#ff4d6d', '#ffd23f', '#3bceac', '#4f8cff', '#b86bff', '#ff8a00'];
+  const GOLD = ['#ffd700', '#ffc107', '#ffe082', '#fff3c4', '#e6a800'];
+  // A burst of confetti from an element (the balance chip), falling under gravity and fading out.
+  function confetti(from, big) {
+    if (!from || reducedMotion()) return;
+    const r = from.getBoundingClientRect(), x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+    const n = big ? 160 : 80, colors = big ? GOLD : CONFETTI;
+    for (let i = 0; i < n; i++) {
+      const p = document.createElement('span');
+      p.className = `confetti${i % 3 === 0 ? ' round' : ''}`;
+      p.style.cssText = `left:${x0}px;top:${y0}px;background:${colors[i % colors.length]}`;
+      document.body.appendChild(p);
+      const ang = Math.PI * (0.05 + Math.random() * 0.9), speed = (big ? 420 : 320) * (0.35 + Math.random());
+      const vx = Math.cos(ang) * speed, vy = Math.sin(ang) * speed * 0.5 - 160, T = 1.6 + Math.random() * 0.9, spin = (Math.random() - 0.5) * 1440;
+      const frames = [0, 0.25, 0.5, 0.75, 1].map((k) => {
+        const t = k * T;
+        return { transform: `translate(${vx * t}px, ${vy * t + 450 * t * t}px) rotate(${spin * k}deg)`, opacity: k === 1 ? 0 : 1 };
+      });
+      p.animate(frames, { duration: T * 1000, easing: 'linear' }).onfinish = () => p.remove();
+      setTimeout(() => p.remove(), 4000); // in case the animation never finishes
+    }
   }
   const loadStats = async () => { state.stats = await api('/api/stats'); };
   const loadInsights = async () => { state.insights = await api('/api/insights'); };
@@ -472,12 +555,15 @@
   }
 
   // ---- odds & bets --------------------------------------------------------------
-  // A flaming border marks a pick that would have won each of the last 3+ games (s.streak, from BetManager.mark_streaks).
+  // A flaming border marks a pick that would have won each of the last 3+ games (s.streak), a frosty one a pick that
+  // usually hits but has missed its last 3+ (s.cold); both from BetManager.mark_streaks.
   function oddBtn(mk, s, label) {
     const on = state.slip.some((x) => x.market_id === mk.market_id && x.selection === s.key);
-    const hot = s.streak ? `Hit ${s.streak >= state.odds.streak_lookback ? `${s.streak}+` : s.streak} games in a row` : '';
-    return `<button class="odd ${on ? 'on' : ''}${hot ? ' hot' : ''}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability${hot ? ` · ${hot}` : ''}">` +
-      `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b>${hot ? `<span class="sr-only">, ${hot}</span>` : ''}</button>`;
+    const runOf = (n) => (n >= state.odds.streak_lookback ? `${n}+` : n);
+    const note = s.streak ? `Hit ${runOf(s.streak)} games in a row` : s.cold ? `Missed ${runOf(s.cold)} games in a row` : '';
+    const cls = s.streak ? ' hot' : s.cold ? ' cold' : '';
+    return `<button class="odd ${on ? 'on' : ''}${cls}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability${note ? ` · ${note}` : ''}">` +
+      `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b>${note ? `<span class="sr-only">, ${note}</span>` : ''}</button>`;
   }
 
   function viewOdds() {
@@ -520,7 +606,7 @@
           const [o, u] = mk.selections;
           // The line as plain bold text, then over / under as one button split down the middle.
           return `<td class="prop" title="Line ${mk.line} · average ${mk.mean}"><div class="prop-cell"><span class="prop-line">${mk.line}</span>` +
-            `<div class="prop-pair${o.streak || u.streak ? ' hot' : ''}">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
+            `<div class="prop-pair${o.streak || u.streak || o.cold || u.cold ? ' lit' : ''}">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
         }).join('') + '</tr>';
     }).join('');
     // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle. No subtitles, so every

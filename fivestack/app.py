@@ -362,8 +362,11 @@ class Handler(BaseHTTPRequestHandler):
             if not me:
                 return self._json({"bettor": None})
             pending = app.db.bets(status="pending", bettor=me["name"])
+            # The latest wins, newest settled first: the page celebrates the ones settled since it last looked.
+            won = sorted(app.db.bets(status="won", bettor=me["name"], limit=200), key=lambda b: b.get("settled_ts") or 0, reverse=True)
+            wins = [{k: b.get(k) for k in ("id", "description", "market_type", "stake", "odds_decimal", "payout", "settled_ts")} for b in won[:20]]
             return self._json({"bettor": {**app.bets.public(me), "open_bets": len(pending),
-                                          "open_stake": round(sum(b["stake"] for b in pending), 2)}})
+                                          "open_stake": round(sum(b["stake"] for b in pending), 2), "recent_wins": wins}})
         return self._json({"error": "Not found"}, 404)
 
     def do_POST(self):

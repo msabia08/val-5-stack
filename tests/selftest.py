@@ -912,7 +912,7 @@ def score_markets(shared):
 @section("streaks")
 def streaks(shared):
     # A pick that would have won each of the last 3+ games, settled at today's line, carries a "streak" count.
-    from fivestack.bets import STREAK_LOOKBACK, STREAK_MIN
+    from fivestack.bets import COLD_CHANCE, STREAK_LOOKBACK, STREAK_MIN
     board = shared.bets.mark_streaks(shared.engine.build(shared.db))
     assert board["streak_lookback"] == STREAK_LOOKBACK
     wins = 0
@@ -930,6 +930,18 @@ def streaks(shared):
     for mid, picks in sels.items():  # an over and its under can't both have won the same games
         if mid.startswith("ou:"):
             assert not ("streak" in picks["over"] and "streak" in picks["under"]), picks
+    # Cold: a roughly 50/50 pick that missed the last 3+ games (long shots never are).
+    cold = [s for picks in sels.values() for s in picks.values() if "cold" in s]
+    assert all("streak" not in s and s["cold"] >= STREAK_MIN and COLD_CHANCE[0] <= s["fair_prob"] <= COLD_CHANCE[1] for s in cold), cold
+    # Priced at 50%, every pick that lost its last 3+ games is cold, e.g. the other side of a winning streak.
+    even = shared.engine.build(shared.db)
+    for g in ("team", "player_props", "top_markets"):
+        for mk in even[g]:
+            for s in mk["selections"]:
+                s["fair_prob"] = 0.5
+    even = {mk["market_id"]: {s["key"]: s for s in mk["selections"]} for mk in shared.bets.mark_streaks(even)["team"]}
+    assert even["team:win"]["loss"].get("cold", 0) == (wins if wins >= STREAK_MIN else 0), (even["team:win"], wins)
+    assert wins < STREAK_MIN or "cold" in even["team:win"]["loss"]
     assert shared.bets.mark_streaks({"ready": False}) == {"ready": False}
 
 

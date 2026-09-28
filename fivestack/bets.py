@@ -18,6 +18,9 @@ EARLY_END = "Game ended early (surrender) before this was decided"
 # streaks are counted back through at most STREAK_LOOKBACK games.
 STREAK_MIN = 3
 STREAK_LOOKBACK = 10
+# A pick is "cold" when it lost the last STREAK_MIN+ games and it's a roughly 50/50 pick (its fair chance in this
+# range): long shots lose most games anyway, so a run of misses says nothing about them.
+COLD_CHANCE = (0.35, 0.65)
 
 
 class BetError(Exception):
@@ -364,8 +367,9 @@ class BetManager:
 
     def mark_streaks(self, board):
         """Give each selection on the board that would have won the last STREAK_MIN games or more in a row a
-        "streak" count. Each pick is settled like a bet placed at today's line on each recent game, newest first;
-        a void (a push, a surrender, a tie) neither counts nor breaks the run."""
+        "streak" count, and a roughly 50/50 pick (COLD_CHANCE) that lost them a "cold" count. Each pick is settled
+        like a bet placed at today's line on each recent game, newest first; a void (a push, a surrender, a tie)
+        neither counts nor breaks the run. In a 50/50 two-way market a hot side usually means a cold other side."""
         if not board.get("ready"):
             return board
         rows = self.db.player_rows()
@@ -380,16 +384,18 @@ class BetManager:
                 meta = json.dumps({"stat": mk.get("stat"), "puuid": mk.get("puuid"), "direction": mk.get("direction", "high")})
                 for s in mk["selections"]:
                     bet = {"market_type": mk["type"], "selection": s["key"], "line": mk.get("line"), "context": meta}
-                    run = 0
+                    won = lost = 0
                     for match, metrics in games:
                         status = self._evaluate(bet, match, metrics)[0]
                         if status == "void":
                             continue
-                        if status != "won":
+                        if (status == "won" and lost) or (status != "won" and won):
                             break
-                        run += 1
-                    if run >= STREAK_MIN:
-                        s["streak"] = run
+                        won, lost = won + (status == "won"), lost + (status != "won")
+                    if won >= STREAK_MIN:
+                        s["streak"] = won
+                    elif lost >= STREAK_MIN and COLD_CHANCE[0] <= s["fair_prob"] <= COLD_CHANCE[1]:
+                        s["cold"] = lost
         board["streak_lookback"] = STREAK_LOOKBACK
         return board
 
