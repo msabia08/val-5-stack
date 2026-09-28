@@ -52,7 +52,7 @@ LOGIN_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>5-Stack Tracker · Log in</title><link rel="stylesheet" href="/style.css"></head>
 <body><main class="container login"><form method="post" action="/login" class="card">
-<div class="brand"><span class="logo" aria-hidden="true">5S</span><div><h1>5-Stack Tracker</h1><div class="sub">Enter the squad password</div></div></div>
+<div class="brand"><img class="logo" src="/assets/onkey-logo.png" alt="" width="62" height="36"><div><h1>5-Stack Tracker</h1><div class="sub">Enter the squad password</div></div></div>
 {error}
 <label>Password<input type="password" name="password" autofocus autocomplete="current-password" required></label>
 <button class="btn primary" type="submit">Log in</button>
@@ -242,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._login_page() if auth.enabled else self._redirect("/")
             if path == "/logout":
                 return self._redirect("/login" if auth.enabled else "/", cookie=CLEAR_COOKIE)
-            if path == "/style.css":
+            if path == "/style.css" or path.startswith("/assets/"):  # the login page uses these too
                 return self._static(path)
             if auth.enabled and not self._authed():
                 if path.startswith("/api/"):
@@ -333,7 +333,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"rewards": app.db.rewards(int(qs.get("limit") or 40))})
         if path == "/api/bettor/me":
             me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
-            return self._json({"bettor": app.bets.public(me) if me else None})
+            if not me:
+                return self._json({"bettor": None})
+            pending = app.db.bets(status="pending", bettor=me["name"])
+            return self._json({"bettor": {**app.bets.public(me), "open_bets": len(pending),
+                                          "open_stake": round(sum(b["stake"] for b in pending), 2)}})
         return self._json({"error": "Not found"}, 404)
 
     def do_POST(self):

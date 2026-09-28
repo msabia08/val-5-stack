@@ -24,10 +24,18 @@ window.FiveBets = (() => {
   const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
 
   // ---- bet slip and tickets -----------------------------------------------------
+  // What the slip's stake leaves you with, or how far over your balance it goes.
+  function afterStake(total) {
+    if (!state.me) return '';
+    const left = state.me.balance - total;
+    return left >= 0 ? `Leaves you ${fmt.credits(left)} credits` : `<span class="down">${fmt.credits(-left)} more than you have</span>`;
+  }
+
   function slipHtml() {
     const me = state.me;
     const account = me
-      ? `<div class="account"><div>Betting as <b>${esc(me.name)}</b></div><div class="muted small">Balance ${fmt.credits(me.balance)} credits</div>` +
+      ? `<div class="account"><div>Betting as <b>${esc(me.name)}</b></div><div class="acct-balance"><b>${fmt.credits(me.balance)}</b> credits</div>` +
+        (me.open_bets ? `<div class="muted small">+${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}</div>` : '') +
         `<div class="btn-row"><button class="btn ghost small" id="bettor-signout">Sign out</button><button class="btn ghost small" id="bettor-password">Change password</button></div></div>`
       : `<div class="account"><label>Name<input id="bettor-name" placeholder="Your name" value="${esc(state.bettor)}" autocomplete="username" maxlength="32"></label>` +
         `<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>` +
@@ -56,6 +64,7 @@ window.FiveBets = (() => {
         <div class="parlay-summary"><span>${state.slip.length}-leg parlay</span><b>${fmt.odds(combined)}</b></div>
         <label>Stake<input type="number" min="1" step="1" value="${stake}" id="parlay-stake" aria-label="Parlay stake"></label>
         <div class="muted small parlay-towin">To win ${fmt.credits(stake * (combinedDecimal - 1))}</div>
+        <div class="small slip-after">${afterStake(stake)}</div>
         <p class="muted small">All ${state.slip.length} legs must win. If one is voided (a push), the payout uses the odds of the legs that stood.</p>`;
       placeLabel = 'Place parlay';
     } else {
@@ -65,7 +74,7 @@ window.FiveBets = (() => {
         `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button>` +
         `<div class="muted small towin">To win ${fmt.credits(x.stake * (x.decimal - 1))}</div></div>`).join('');
       const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
-      body = `${items}<div class="slip-total">Total stake ${fmt.credits(total)}</div>`;
+      body = `${items}<div class="slip-total">Total stake ${fmt.credits(total)}</div><div class="small slip-after">${afterStake(total)}</div>`;
       placeLabel = `Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}`;
     }
     return `<h2>Bet slip</h2>
@@ -382,8 +391,11 @@ window.FiveBets = (() => {
       localStorage.setItem('fs.stake', String(state.stake));
       const tw = e.target.parentElement.querySelector('.towin');
       if (tw) tw.textContent = `To win ${fmt.credits(it.stake * (it.decimal - 1))}`;
+      const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
       const tot = $('.slip-total', slip);
-      if (tot) tot.textContent = `Total stake ${fmt.credits(state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0))}`;
+      if (tot) tot.textContent = `Total stake ${fmt.credits(total)}`;
+      const after = $('.slip-after', slip);
+      if (after) after.innerHTML = afterStake(total);
     }));
     $('#parlay-stake')?.addEventListener('input', (e) => {
       const stake = Math.max(0, Number(e.target.value) || 0);
@@ -392,6 +404,8 @@ window.FiveBets = (() => {
       const combinedDecimal = state.slip.reduce((a, x) => a * Number(x.decimal), 1);
       const tw = $('.parlay-towin', slip);
       if (tw) tw.textContent = `To win ${fmt.credits(stake * (combinedDecimal - 1))}`;
+      const after = $('.slip-after', slip);
+      if (after) after.innerHTML = afterStake(stake);
     });
     $$('.mode-btn', slip).forEach((b) => b.addEventListener('click', () => { state.slipMode = b.dataset.mode; drawSlip(); }));
     $$('.rm', slip).forEach((b) => b.addEventListener('click', () => { state.slip.splice(Number(b.dataset.i), 1); drawSlip(); syncOddButtons(); }));

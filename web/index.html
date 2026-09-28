@@ -11,7 +11,8 @@
 <body>
 <header class="topbar">
   <div class="brand">
-    <span class="logo" aria-hidden="true">5S</span>
+    <img class="logo logo-main" src="/assets/onkey-logo.png" alt="" width="62" height="36">
+    <img class="logo logo-greg" src="/assets/greg-logo.png" alt="" width="62" height="36">
     <div>
       <h1>5-Stack Tracker</h1>
       <div class="sub" id="team-record">Loading…</div>
@@ -28,8 +29,9 @@
     <a href="#setup" data-view="setup">Setup</a>
   </nav>
   <div class="topbar-right">
+    <a id="me-chip" class="me-chip hidden" href="#odds"></a>
     <div class="status-pill" id="status-pill"><span class="dot"></span>Connecting…</div>
-    <button id="sync-btn" class="btn" disabled>Sync now</button>
+    <button id="sync-btn" class="btn" disabled><span aria-hidden="true">⟳</span>Sync now</button>
     <a id="logout-btn" class="btn ghost hidden" href="/logout">Log out</a>
     <button id="theme-btn" class="btn ghost icon" title="Switch theme: dark, light, Greg Mode" aria-label="Switch theme">◐</button>
   </div>

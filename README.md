@@ -474,7 +474,8 @@ fivestack/             the backend package
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
 web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), recap.js (match recap), style.css,
-                       assets/greg.png (Greg Mode background) (no build step)
+                       assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
+                       onkey.png, the logo's full-size original) (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```

@@ -295,7 +295,7 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 | `GET /api/bets?status=&bettor=&limit=` | Bets newest first, with the game each settled on (`game_map`, `game_rounds_won`, ...) |
 | `GET /api/bettors` | Leaderboard: balance, betting-only profit, rewards, record, ROI, open stakes |
 | `GET /api/rewards?limit=` | Recent game rewards |
-| `GET /api/bettor/me` | The signed-in bettor, if any |
+| `GET /api/bettor/me` | The signed-in bettor, if any: `name`, `balance`, `open_bets` and `open_stake` (for the top-bar balance chip and the bet slip) |
 | `POST /api/bettor/register`, `/login`, `/logout`, `/password` | Bettor accounts |
 | `POST /api/bettor/clear-password` | Admin: free a bettor name |
 | `POST /api/bets` | Place a single (`market_id`, `selection`, `stake`) or a parlay (`legs`, `stake`) |

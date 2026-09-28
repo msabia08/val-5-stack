@@ -85,6 +85,20 @@
     return data;
   }
   const loadStatus = async () => { state.status = await api('/api/status'); renderHeader(); };
+  // The signed-in bettor (balance and open bets) for the top-bar chip; bets.js's loadBets refreshes it too.
+  const loadMe = async () => {
+    try { state.me = (await api('/api/bettor/me')).bettor; } catch (e) { return; }
+    renderMe();
+  };
+  function renderMe() {
+    const chip = $('#me-chip'), me = state.me;
+    chip.classList.toggle('hidden', !me);
+    if (!me) return;
+    chip.innerHTML = `<span class="me-name">${esc(me.name)}</span><b>${fmt.credits(me.balance)}</b><span class="me-unit">credits</span>` +
+      (me.open_stake ? `<span class="me-inplay">+${fmt.credits(me.open_stake)} in play</span>` : '');
+    chip.title = `Betting as ${me.name}: ${fmt.credits(me.balance)} credits` +
+      (me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : '') + '. Open Odds & Bets.';
+  }
   const loadStats = async () => { state.stats = await api('/api/stats'); };
   const loadInsights = async () => { state.insights = await api('/api/insights'); };
   const loadForecasts = async () => {
@@ -520,6 +534,7 @@
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
     view.classList.toggle('wide', state.view === 'odds');
+    renderMe();
     bind();
     if (['viz', 'bettors', 'forecasts', 'matches'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
   }
@@ -634,7 +649,7 @@
     $('#sync-btn').addEventListener('click', () => sync(false));
     window.addEventListener('hashchange', route);
     try {
-      await Promise.all([loadStatus(), loadContent()]);
+      await Promise.all([loadStatus(), loadContent(), loadMe()]);
     } catch (e) {
       $('#view').innerHTML = `<div class="card error"><h2>Could not reach the server</h2><p>${esc(e.message)}</p></div>`;
       return;
@@ -644,6 +659,7 @@
     setInterval(async () => {
       const prevGames = state.status?.games, wasSyncing = state.status?.tracker?.syncing;
       try { await loadStatus(); } catch (e) { return; }
+      loadMe(); // bets settle when games arrive, so the balance chip keeps up
       const nowSyncing = state.status.tracker?.syncing;
       if (nowSyncing && !wasSyncing) pollUntilIdle();
       else if (state.status.games !== prevGames) render();
