@@ -13,12 +13,10 @@
     { label: 'Morning', sub: '6–12', test: (h) => h >= 6 && h < 12 },
     { label: 'Afternoon', sub: '12–5', test: (h) => h >= 12 && h < 17 },
     { label: 'Evening', sub: '5–9', test: (h) => h >= 17 && h < 21 },
-    { label: 'Night', sub: '9–12', test: (h) => h >= 21 },
-    { label: 'After midnight', sub: '12–6', test: (h) => h < 6 },
+    { label: 'Night', sub: '9 pm–6 am', test: (h) => h >= 21 || h < 6 },
   ];
   const DAMAGE_GAMES = 20;
   const MAX_COMPS = 8;
-  const SLOTS = 8;
 
   let data = null;
   let h = null; // helpers from app.js: esc, fmt, slot(puuid)
@@ -78,9 +76,10 @@
   }
 
   // Diverging fill: t in [-1, 1] -> blue (positive) / red (negative) mixed into the neutral midpoint.
-  function divFill(t) {
+  // money = true colours gains green and losses red, like profit elsewhere on the site.
+  function divFill(t, money = false) {
     const p = Math.round(clamp(Math.abs(t), 0, 1) * 100);
-    const pole = t >= 0 ? 'var(--div-pos)' : 'var(--div-neg)';
+    const pole = t >= 0 ? (money ? 'var(--up)' : 'var(--div-pos)') : (money ? 'var(--down)' : 'var(--div-neg)');
     return { bg: `color-mix(in oklab, ${pole} ${p}%, var(--div-mid))`, ink: p > 55 ? '#fff' : 'var(--text)' };
   }
 
@@ -99,16 +98,9 @@
     `<span class="viz-legend-item"><span class="viz-key ${it.kind || 'rect'}" style="background:var(${it.color})"></span>${h.esc(it.label)}</span>`).join('')}</div>`;
 
   // Bettor colors follow the person: a bettor who is also a squad member keeps that member's color.
+  // A bettor is colored like the squad member whose account it is (the page's bettorSlot helper).
   function bettorColors() {
-    const byNick = new Map(data.members.map((m) => [m.nickname.toLowerCase(), memberSlot(m.puuid)]));
-    const used = new Set(byNick.values());
-    const free = Array.from({ length: SLOTS }, (_, i) => i + 1).filter((s) => !used.has(s));
-    const out = new Map();
-    data.bankroll.forEach((b) => {
-      const s = byNick.get(b.name.toLowerCase()) || free.shift();
-      out.set(b.name, s ? `--s${s}` : '--muted'); // past eight colors, the rest share the muted gray
-    });
-    return out;
+    return new Map(data.bankroll.map((b) => [b.name, `--s${h.bettorSlot(b.name)}`]));
   }
 
   // ---- page -------------------------------------------------------------------------
@@ -136,9 +128,12 @@
       formCard() +
       `<div class="viz-cols">${timeCard()}${sessionCard()}</div>` +
       mapCard() +
-      `<div class="viz-cols">${swingCard()}${aimCard()}</div>` +
+      agentCard() +
+      swingCard() +
+      `<div class="viz-cols">${clutchCard()}${multiKillCard()}</div>` +
+      spikeCard() +
       damageCard() +
-      `<div class="viz-cols">${compCard()}${bankrollCard()}</div>`;
+      `<div class="viz-cols">${aimCard()}${compCard()}</div>`;
   }
 
   // ---- 1. form over time + round margins ------------------------------------------------
@@ -570,8 +565,214 @@
     };
   }
 
+  // ---- agent pool: who's best on what -------------------------------------------------------
+  function agentCard() {
+    const ps = data.players.filter((p) => p.games);
+    const byAgent = new Map();
+    ps.forEach((p) => p.agents.forEach((a) => {
+      if (!byAgent.has(a.agent)) byAgent.set(a.agent, { agent: a.agent, role: a.role, games: 0 });
+      byAgent.get(a.agent).games += a.games;
+    }));
+    const roleOrder = Object.keys(data.roles || {}).concat(['Unknown']);
+    const agents = [...byAgent.values()].sort((a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || b.games - a.games);
+    if (!agents.length) return '';
+    let best = null;
+    ps.forEach((p) => p.agents.forEach((a) => {
+      if (a.games >= 3 && a.vs_avg != null && (!best || a.vs_avg > best.a.vs_avg)) best = { p, a };
+    }));
+    const flex = ps.slice().sort((a, b) => b.agents.length - a.agents.length)[0];
+    const take = (best ? `Best fit: <strong>${h.esc(best.p.nickname)} on ${h.esc(best.a.agent)}</strong> (${signedPct(best.a.vs_avg)} ACS vs their average, ${plural(best.a.games, 'game')}) · ` : '') +
+      `most flexible: <strong>${h.esc(flex.nickname)}</strong> (${plural(flex.agents.length, 'agent')})`;
+    let grid = '<div class="table-wrap"><table class="viz-heat"><thead><tr><th></th>' +
+      ps.map((p) => `<th><span class="swatch s${memberSlot(p.puuid)}"></span>${h.esc(p.nickname)}<div class="muted small">avg ${n0(p.acs)}</div></th>`).join('') + '</tr></thead><tbody>';
+    let role = null;
+    agents.forEach((ag) => {
+      if (ag.role !== role) {
+        role = ag.role;
+        grid += `<tr><th scope="rowgroup" colspan="${ps.length + 1}" class="viz-group">${h.esc(role)}s</th></tr>`;
+      }
+      grid += `<tr><th scope="row">${h.esc(ag.agent)}</th>`;
+      ps.forEach((p) => {
+        const a = p.agents.find((x) => x.agent === ag.agent);
+        if (!a) { grid += '<td class="viz-empty"></td>'; return; }
+        const colored = a.games >= 2 && a.vs_avg != null;
+        const f = divFill(colored ? clamp(a.vs_avg / 0.2, -1, 1) : 0);
+        grid += `<td${colored ? '' : ' class="viz-thin"'} style="background:${colored ? f.bg : 'transparent'};color:${colored ? f.ink : 'var(--muted)'}"` +
+          `${tip(`${p.nickname} on ${ag.agent}`, [['ACS', n0(a.acs), null], ['vs own average', signedPct(a.vs_avg), null], ['record', `${a.wins}–${a.games - a.wins}`, null], ['games', String(a.games), null]])}>` +
+          `${n0(a.acs)}<div class="viz-cell-sub">${a.games}g</div></td>`;
+      });
+      grid += '</tr>';
+    });
+    grid += '</tbody></table></div>';
+    const rows = [];
+    ps.forEach((p) => p.agents.forEach((a) => rows.push([`${p.nickname} · ${a.agent}`, String(a.games), pct(a.win_rate), n0(a.acs), signedPct(a.vs_avg)])));
+    return card('agents', "Agent pool: who's best on what", take, grid +
+      '<div class="viz-scale"><span>Below own average</span><span class="viz-scale-bar"></span><span>Above own average</span></div>' +
+      "<p class=\"muted small\">ACS on each agent, colored against the player's own average (full color at ±20%); the small number is games played. Single games are left uncolored.</p>",
+      table(['Player · agent', 'Games', 'Win rate', 'ACS', 'vs own average'], rows));
+  }
+
+  // ---- clutches and multi-kills (round timelines) ---------------------------------------------
+  function roundsNote() {
+    const r = data.rounds;
+    if (!r || r.games >= r.total_games) return '';
+    return `<p class="muted small">Round data for ${r.games} of ${plural(r.total_games, 'game')}; older games are filled in a few per sync.</p>`;
+  }
+  const clutchTotals = (p) => p.clutch.reduce((a, c) => ({ attempts: a.attempts + c.attempts, wins: a.wins + c.wins }), { attempts: 0, wins: 0 });
+  const clutchRows = () => data.rounds.players.map((p) => ({ ...p, ...clutchTotals(p) })).sort((a, b) => b.wins - a.wins || a.attempts - b.attempts);
+
+  function clutchCard() {
+    const r = data.rounds;
+    if (!r || !r.games) return card('clutch', 'Clutches', '', '<p class="muted">No round data yet. It fills in as games sync.</p>');
+    const rows = clutchRows();
+    const top = rows[0];
+    const take = top.attempts ? `<strong>${h.esc(top.nickname)}</strong> wins the most: ${top.wins} of ${plural(top.attempts, 'clutch')} (${pct(top.wins / top.attempts)})` : 'No clutch situations yet.';
+    return card('clutch', 'Clutches', take,
+      legend([{ label: 'Won', color: '--pair-hi' }, { label: 'Lost', color: '--pair-lo' }]) + slot('clutch', 16 + rows.length * 38) +
+      '<p class="muted small">A clutch is any round where one of you is the last one standing against 1-5 enemies. Hover a bar for the 1vX breakdown.</p>' + roundsNote(),
+      table(['Player', '1v1', '1v2', '1v3', '1v4', '1v5', 'Total'], rows.map((p) => [p.nickname, ...p.clutch.map((c) => `${c.wins}/${c.attempts}`), `${p.wins}/${p.attempts}`])));
+  }
+
+  function drawClutch(el, W) {
+    const rows = clutchRows();
+    const m = { l: 110, r: 96, t: 8, b: 8 }, rh = 38, t = 18, pw = W - m.l - m.r;
+    const maxA = Math.max(1, ...rows.map((p) => p.attempts));
+    let s = `<svg class="viz-svg" width="${W}" height="${m.t + rows.length * rh + m.b}" role="img" aria-label="Clutches won and lost per player">`;
+    rows.forEach((p, i) => {
+      const cy = m.t + i * rh + rh / 2, x0 = m.l, xw = x0 + (p.wins / maxA) * pw, xa = x0 + (p.attempts / maxA) * pw;
+      s += `<g class="viz-row"${tip(`${p.nickname}: ${p.wins} of ${plural(p.attempts, 'clutch')}`, p.clutch.filter((c) => c.attempts).map((c) => [`1v${c.vs}`, `${c.wins}/${c.attempts}`, null]))}>` +
+        `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
+        `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/><text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>`;
+      if (p.wins) s += `<path style="fill:var(--pair-hi)" d="${barPath(x0, Math.max(x0 + 0.5, xw - (p.attempts > p.wins ? 2 : 0)), cy, t, p.attempts === p.wins)}"/>`;
+      if (p.attempts > p.wins) s += `<path style="fill:var(--pair-lo)" d="${barPath(xw, xa, cy, t)}"/>`;
+      s += `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${p.wins}/${p.attempts}${p.attempts ? ` <tspan class="viz-sub">${pct(p.wins / p.attempts)}</tspan>` : ''}</text></g>`;
+    });
+    el.innerHTML = s + '</svg>';
+  }
+
+  const MULTI = [['k3', '3K', '--aim-3'], ['k4', '4K', '--aim-2'], ['k5', 'Ace', '--aim-1']];
+  const multiRows = () => data.rounds.players.slice().sort((a, b) => (b.k5 - a.k5) || (b.k4 - a.k4) || (b.k3 - a.k3));
+
+  function multiKillCard() {
+    const r = data.rounds;
+    if (!r || !r.games) return card('multi', 'Multi-kills', '', '<p class="muted">No round data yet. It fills in as games sync.</p>');
+    const rows = multiRows();
+    const take = rows[0].k5 ? `Most aces: <strong>${h.esc(rows[0].nickname)}</strong> (${rows[0].k5})` : 'No aces yet.';
+    return card('multi', 'Multi-kills', take, legend(MULTI.map(([, label, color]) => ({ label, color }))) + slot('multi', 16 + rows.length * 38) +
+      '<p class="muted small">Rounds where a player got 3, 4 or all 5 kills.</p>' + roundsNote(),
+      table(['Player', '3K', '4K', 'Aces', 'Per 100 rounds'], rows.map((p) => [p.nickname, String(p.k3), String(p.k4), String(p.k5),
+        p.rounds ? ((p.k3 + p.k4 + p.k5) / p.rounds * 100).toFixed(1) : '–'])));
+  }
+
+  function drawMulti(el, W) {
+    const rows = multiRows();
+    const m = { l: 110, r: 60, t: 8, b: 8 }, rh = 38, t = 18, pw = W - m.l - m.r;
+    const maxT = Math.max(1, ...rows.map((p) => p.k3 + p.k4 + p.k5));
+    let s = `<svg class="viz-svg" width="${W}" height="${m.t + rows.length * rh + m.b}" role="img" aria-label="3K, 4K and ace rounds per player">`;
+    rows.forEach((p, i) => {
+      const cy = m.t + i * rh + rh / 2, total = p.k3 + p.k4 + p.k5;
+      s += `<g class="viz-row"${tip(p.nickname, MULTI.map(([k, label, color]) => [label, String(p[k]), color]))}>` +
+        `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
+        `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/><text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>`;
+      let x = m.l;
+      const segs = MULTI.filter(([k]) => p[k]);
+      segs.forEach(([k, , color], j) => {
+        const w = (p[k] / maxT) * pw, last = j === segs.length - 1;
+        s += `<path style="fill:var(${color})" d="${barPath(x, x + Math.max(0.5, w - (last ? 0 : 2)), cy, t, last)}"/>`;
+        x += w;
+      });
+      s += `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${total}</text></g>`;
+    });
+    el.innerHTML = s + '</svg>';
+  }
+
+  // ---- spike sites -----------------------------------------------------------------------------
+  function spikeCard() {
+    const r = data.rounds;
+    if (!r || !r.games) return '';
+    const maps = r.spikes.filter((m) => Object.keys(m.sites).length);
+    if (!maps.length) return '';
+    const sites = [...new Set(maps.flatMap((m) => Object.keys(m.sites)))].sort();
+    const cands = [];
+    maps.forEach((m) => Object.entries(m.sites).forEach(([site, v]) => {
+      if (v.att_plants >= 5) cands.push({ kind: 'att', map: m.map, site, rate: v.att_wins / v.att_plants, n: v.att_plants });
+      if (v.def_plants >= 5) cands.push({ kind: 'def', map: m.map, site, rate: v.def_wins / v.def_plants, n: v.def_plants });
+    }));
+    const bestAtt = cands.filter((c) => c.kind === 'att').sort((a, b) => b.rate - a.rate)[0];
+    const worstDef = cands.filter((c) => c.kind === 'def').sort((a, b) => a.rate - b.rate)[0];
+    const take = [bestAtt ? `Best plant: <strong>${h.esc(bestAtt.map)} ${h.esc(bestAtt.site)}</strong> (${pct(bestAtt.rate)} won after planting, ${bestAtt.n} plants)` : '',
+      worstDef ? `weakest retake: <strong>${h.esc(worstDef.map)} ${h.esc(worstDef.site)}</strong> (${pct(worstDef.rate)} won)` : ''].filter(Boolean).join(' · ') || 'Needs 5+ plants on a site to call it.';
+    const heat = (kind) => {
+      const plantsKey = kind === 'att' ? 'att_plants' : 'def_plants', winsKey = kind === 'att' ? 'att_wins' : 'def_wins';
+      let t = `<div class="table-wrap"><table class="viz-heat"><thead><tr><th></th>${kind === 'att' ? '<th>Plant rate</th>' : ''}` +
+        sites.map((x) => `<th>${h.esc(x)}</th>`).join('') + '</tr></thead><tbody>';
+      maps.forEach((m) => {
+        t += `<tr><th scope="row">${h.esc(m.map)} <span class="muted small">${plural(m.games, 'game')}</span></th>`;
+        if (kind === 'att') t += `<td${tip(`${m.map}: attack rounds with a plant`, [['plants', `${m.attack_plants} of ${m.attack_rounds}`, null]])}>${m.attack_rounds ? pct(m.attack_plants / m.attack_rounds) : '–'}</td>`;
+        sites.forEach((x) => {
+          const v = m.sites[x];
+          if (!v || !v[plantsKey]) { t += '<td class="viz-empty"></td>'; return; }
+          const rate = v[winsKey] / v[plantsKey], n = v[plantsKey];
+          const f = divFill((rate - 0.5) * 2 * (n / (n + 3)));
+          t += `<td style="background:${f.bg};color:${f.ink}"${tip(`${m.map} ${x} · ${kind === 'att' ? 'our plants' : 'enemy plants'}`,
+            [[kind === 'att' ? 'won after planting' : 'won (retake or hold)', pct(rate), null], ['record', `${v[winsKey]}–${n - v[winsKey]}`, null]])}>` +
+            `${pct(rate)}<div class="viz-cell-sub">${n} plant${n === 1 ? '' : 's'}</div></td>`;
+        });
+        t += '</tr>';
+      });
+      return t + '</tbody></table></div>';
+    };
+    const rows = [];
+    maps.forEach((m) => Object.entries(m.sites).forEach(([x, v]) => rows.push([`${m.map} ${x}`, `${v.att_wins}–${v.att_plants - v.att_wins}`, `${v.def_wins}–${v.def_plants - v.def_wins}`])));
+    return card('spikes', 'Spike sites', take,
+      `<div class="viz-cols viz-inner"><div><h3>On attack: after we plant</h3>${heat('att')}</div><div><h3>On defence: after they plant</h3>${heat('def')}</div></div>` +
+      '<div class="viz-scale"><span>Lose more</span><span class="viz-scale-bar"></span><span>Win more</span></div>' +
+      '<p class="muted small">Round win rate after the spike goes down, per site; sites with few plants are paler. Plant rate is the share of our attack rounds with a plant (regulation only).</p>' + roundsNote(),
+      table(['Map · site', 'After our plant (W–L)', 'After their plant (W–L)'], rows));
+  }
+
+  // ---- betting report card -----------------------------------------------------------------------
+  function bettingCard() {
+    const b = data.betting;
+    if (!b || !b.settled) return '';
+    const cats = b.categories.filter((c) => b.bettors.some((n) => b.by_type[n][c.key]));
+    const selfBy = new Map(b.self.map((x) => [x.bettor, x]));
+    const cell = (rec, label, cls = '') => {
+      if (!rec || !rec.bets) return `<td class="viz-empty ${cls}"></td>`;
+      const f = divFill(rec.roi == null ? 0 : clamp(rec.roi / 0.5, -1, 1) * (rec.bets / (rec.bets + 3)), true);
+      return `<td class="${cls}" style="background:${f.bg};color:${f.ink}"${tip(label, [['ROI', rec.roi == null ? '–' : signedPct(rec.roi), null], ['record', `${rec.won}–${rec.lost}`, null],
+        ['wagered', n0(rec.staked), null], ['net', `${rec.net >= 0 ? '+' : '−'}${n0(Math.abs(rec.net))}`, null]])}>` +
+        `${rec.roi == null ? '–' : signedPct(rec.roi)}<div class="viz-cell-sub">${rec.won}–${rec.lost}</div></td>`;
+    };
+    let grid = `<div class="table-wrap"><table class="viz-heat"><thead><tr><th></th>${cats.map((c) => `<th>${h.esc(c.label)}</th>`).join('')}` +
+      '<th class="viz-split">On yourself</th><th>On others</th></tr></thead><tbody>';
+    b.bettors.forEach((n) => {
+      const sb = selfBy.get(n);
+      grid += `<tr><th scope="row"><span class="swatch s${h.bettorSlot(n)}"></span>${h.esc(n)}</th>` +
+        cats.map((c) => cell(b.by_type[n][c.key], `${n} · ${c.label}`)).join('') +
+        cell(sb && sb.own, `${n} betting on themselves`, 'viz-split') + cell(sb && sb.others, `${n} betting on others`) + '</tr>';
+    });
+    grid += '</tbody></table></div>';
+    const catLabel = new Map(b.categories.map((c) => [c.key, c.label]));
+    let best = null;
+    b.bettors.forEach((n) => Object.entries(b.by_type[n]).forEach(([k, rec]) => {
+      if (rec.bets >= 5 && rec.roi != null && (!best || rec.roi > best.rec.roi)) best = { n, k, rec };
+    }));
+    const selves = b.self.filter((x) => x.own.bets >= 3 && x.others.bets >= 3);
+    const loyal = selves.sort((x, y) => (y.own.roi - y.others.roi) - (x.own.roi - x.others.roi))[0];
+    const take = [best ? `Sharpest: <strong>${h.esc(best.n)} on ${h.esc(catLabel.get(best.k))}</strong> (${signedPct(best.rec.roi)} ROI over ${plural(best.rec.bets, 'bet')})` : '',
+      loyal ? `<strong>${h.esc(loyal.bettor)}</strong> does best betting on themselves (${signedPct(loyal.own.roi)} vs ${signedPct(loyal.others.roi)} on others)` : ''].filter(Boolean).join(' · ') || 'Needs a few settled bets per market.';
+    const rows = [];
+    b.bettors.forEach((n) => Object.entries(b.by_type[n]).forEach(([k, rec]) => rows.push([`${n} · ${catLabel.get(k)}`, String(rec.bets), `${rec.won}–${rec.lost}`, n0(rec.staked), rec.roi == null ? '–' : signedPct(rec.roi)])));
+    return card('betting', 'Betting report card', take,
+      grid + '<div class="viz-scale"><span>Losing money</span><span class="viz-scale-bar money"></span><span>Making money</span></div>' +
+      '<p class="muted small">Return on investment for settled bets, by market type; the small numbers are won–lost. "On yourself" counts your player props and scoreboard picks on your own player. Cells with few bets are paler.</p>',
+      table(['Bettor · market', 'Bets', 'W–L', 'Wagered', 'ROI'], rows));
+  }
+
   // ---- mounting, tooltips, crosshair ----------------------------------------------------------
-  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll };
+  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll,
+    clutch: drawClutch, multi: drawMulti };
 
   function drawAll(root) {
     root.querySelectorAll('[data-chart]').forEach((el) => {
@@ -696,5 +897,13 @@
     });
   }
 
-  window.FiveViz = { html, mount, hideTip };
+  // The betting report card lives on the Bettors page: same drawing code, its own data (/api/betting-report).
+  // The Bettors tab's betting cards: the report card and bettor profit over time (data from /api/betting-report).
+  function bettingReport(report, helpers) {
+    h = helpers;
+    data = { ...(data || {}), betting: report, bankroll: report.bankroll || [] };
+    return bettingCard() + bankrollCard();
+  }
+
+  window.FiveViz = { html, mount, hideTip, bettingReport };
 })();

@@ -96,7 +96,9 @@ class BetManager:
         return self.db.get_bettor(b["name"])
 
     def reset(self):
-        self.db.reset_betting(self.starting)
+        """End the season: its standings, bets and game rewards are archived (see db.archive_and_reset), then every
+        balance goes back to the starting amount. Returns the archived season."""
+        return self.db.archive_and_reset(self.starting, self.leaderboard())
 
     def leaderboard(self):
         per = {}

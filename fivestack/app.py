@@ -23,7 +23,7 @@ from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, 
 from .db import DB
 from .gamestate import ending
 from .henrik import HenrikClient
-from .insights import build_insights
+from .insights import betting_report, build_insights
 from .odds import OddsEngine
 from .rewards import RewardManager
 from .stats import build_stats
@@ -260,6 +260,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(build_stats(app.db))
         if path == "/api/insights":
             return self._json(build_insights(app.db))
+        if path == "/api/seasons":
+            return self._json({"current": app.db.season_counts(), "seasons": app.db.seasons()})
+        if path == "/api/betting-report":
+            return self._json(betting_report(app.db, {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()}))
         if path == "/api/content":
             return self._json(app.content())
         if path == "/api/matches":
@@ -382,8 +386,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/bettors/reset":
                 if not auth.is_admin(self.headers.get("X-Admin-Password")):
                     return self._json({"error": "Admin password required for that."}, 403)
-                app.bets.reset()
-                return self._json({"ok": True, "bettors": app.bets.leaderboard()})
+                if str(body.get("confirm") or "").strip().upper() != "RESET":
+                    return self._json({"error": "Type RESET to confirm ending the season."}, 400)
+                season = app.bets.reset()
+                return self._json({"ok": True, "season": season, "bettors": app.bets.leaderboard()})
             return self._json({"error": "Not found"}, 404)
         except BetError as e:
             return self._json({"error": str(e)}, 400)

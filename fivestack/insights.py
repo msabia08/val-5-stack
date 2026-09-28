@@ -3,9 +3,11 @@
 Everything is time-zone independent; the day-of-week x time-of-day heatmap is binned in the browser
 from each game's timestamp so it uses the viewer's local time.
 """
+import json
 from collections import Counter, defaultdict
 
 from .stats import aggregate, safe_div
+from .timeline import clutches_and_multikills, spike_sites
 
 ROLES = {
     "Duelist": ["Iso", "Jett", "Neon", "Phoenix", "Raze", "Reyna", "Waylay", "Yoru"],
@@ -39,6 +41,7 @@ def _record(games):
 
 
 def build_insights(db):
+    """All Visualizations-tab datasets."""
     members = db.members()
     order = [m["puuid"] for m in members]
     matches = sorted(db.matches(), key=lambda m: m.get("started_ts") or 0)
@@ -132,6 +135,7 @@ def build_insights(db):
             "acs_loss": losses.get("acs"), "games_loss": losses["games"],
             "aim": {"head": head, "body": body, "leg": leg,
                     "head_pct": safe_div(head, shots), "body_pct": safe_div(body, shots), "leg_pct": safe_div(leg, shots)},
+            "agents": _agent_pool(rows, overall.get("acs")),
         })
 
     comps = defaultdict(list)
@@ -150,9 +154,95 @@ def build_insights(db):
         "maps": [{"map": name, "games": map_games[name]} for name in maps],
         "players": players,
         "comps": comp_rows,
-        "bankroll": _bankroll(db),
+        "rounds": _round_insights(db, members, len(matches)),
+        "roles": {role: agents for role, agents in ROLES.items()},
         "constants": {"form_window": FORM_WINDOW, "session_gap_h": SESSION_GAP_S / 3600},
     }
+
+
+def _agent_pool(rows, overall_acs):
+    """One member's record on each agent they've played in the stack, most-played first."""
+    by_agent = defaultdict(list)
+    for r in rows:
+        if r.get("agent"):
+            by_agent[r["agent"]].append(r)
+    out = []
+    for agent, ar in by_agent.items():
+        agg = aggregate(ar)
+        out.append({"agent": agent, "role": AGENT_ROLE.get(agent.lower(), "Unknown"), "games": agg["games"],
+                    "wins": agg["wins"], "win_rate": agg["win_rate"], "acs": agg.get("acs"),
+                    "vs_avg": (agg["acs"] / overall_acs - 1) if overall_acs and agg.get("acs") else None})
+    return sorted(out, key=lambda a: (-a["games"], a["agent"]))
+
+
+# Betting report card: market types grouped the way bettors think about them.
+BET_CATEGORIES = [("ou", "Player props"), ("top", "Scoreboard"), ("team_win", "Match result"),
+                  ("team_ou", "Total rounds"), ("team_ot", "Overtime"), ("parlay", "Parlays")]
+
+
+def _bet_record(bets):
+    won = sum(1 for b in bets if b["status"] == "won")
+    lost = sum(1 for b in bets if b["status"] == "lost")
+    staked = sum(b["stake"] for b in bets)
+    returned = sum(b.get("payout") or 0 for b in bets)
+    return {"bets": len(bets), "won": won, "lost": lost, "staked": staked, "returned": returned,
+            "net": returned - staked, "roi": (returned - staked) / staked if staked else None,
+            "hit_rate": won / (won + lost) if won + lost else None}
+
+
+def betting_report(db, bettor_of=None):
+    """The Bettors page's report card: settled bets per bettor by market type, and betting on yourself vs others.
+    bettor_of maps a member's puuid to their bettor account (defaults to the nickname)."""
+    members, bettor_of = db.members(), bettor_of or {}
+    settled = [b for b in db.bets() if b["status"] in ("won", "lost", "void")]
+    account = {(bettor_of.get(m["puuid"]) or m.get("nickname") or m["name"]).lower(): m["puuid"] for m in members}
+    order = [(bettor_of.get(m["puuid"]) or m.get("nickname") or m["name"]) for m in members]
+    names = sorted({b["bettor"] for b in settled},
+                   key=lambda n: (order.index(n) if n in order else len(order), n.lower()))
+    labels = dict(BET_CATEGORIES)
+    by_type = {}
+    for name in names:
+        mine = [b for b in settled if b["bettor"] == name]
+        by_type[name] = {cat: _bet_record([b for b in mine if b["market_type"] == cat])
+                         for cat, _ in BET_CATEGORIES if any(b["market_type"] == cat for b in mine)}
+
+    def on_self(b, puuid):
+        meta = json.loads(b.get("context") or "{}")
+        if b["market_type"] == "ou":
+            return meta.get("puuid") == puuid
+        if b["market_type"] == "top":
+            return b["selection"] == puuid
+        return None  # team markets and parlays are about everyone
+    self_bets = []
+    for name in names:
+        puuid = account.get(name.lower())
+        if not puuid:
+            continue
+        mine = [b for b in settled if b["bettor"] == name]
+        own = [b for b in mine if on_self(b, puuid) is True]
+        others = [b for b in mine if on_self(b, puuid) is False]
+        self_bets.append({"bettor": name, "puuid": puuid, "own": _bet_record(own), "others": _bet_record(others)})
+
+    return {"bettors": names, "categories": [{"key": k, "label": labels[k]} for k, _ in BET_CATEGORIES],
+            "by_type": by_type, "self": self_bets, "settled": len(settled), "bankroll": _bankroll(db)}
+
+
+def _round_insights(db, members, total_games):
+    """Clutches, multi-kills and spike sites from the stored round timelines (see timeline.py)."""
+    rows = db.timelines()
+    puuids = [m["puuid"] for m in members]
+    per = clutches_and_multikills([r["data"] for r in rows], puuids)
+    by_map = defaultdict(list)
+    for r in rows:
+        by_map[r["map"] or "Unknown"].append(r["data"])
+    players = [{"puuid": m["puuid"], "nickname": m.get("nickname") or m["name"],
+                "clutch": [{"vs": n, "attempts": per[m["puuid"]]["clutch"][n][0], "wins": per[m["puuid"]]["clutch"][n][1]}
+                           for n in range(1, 6)],
+                "k3": per[m["puuid"]]["k3"], "k4": per[m["puuid"]]["k4"], "k5": per[m["puuid"]]["k5"],
+                "rounds": per[m["puuid"]]["rounds"]} for m in members]
+    spikes = spike_sites(by_map)
+    return {"games": len(rows), "total_games": total_games, "players": players,
+            "spikes": [{"map": k, **v} for k, v in sorted(spikes.items(), key=lambda kv: -kv[1]["games"])]}
 
 
 def _bankroll(db):

@@ -106,6 +106,55 @@ CREATE TABLE IF NOT EXISTS bets (
     actual_value REAL,
     note TEXT
 );
+-- Past betting seasons. A reset archives the season here (final standings, every bet and reward) before clearing it.
+CREATE TABLE IF NOT EXISTS seasons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    started_ts REAL,
+    ended_ts REAL NOT NULL,
+    standings TEXT,
+    bets INTEGER,
+    rewards INTEGER
+);
+CREATE TABLE IF NOT EXISTS archived_bets (
+    season_id INTEGER NOT NULL,
+    id INTEGER,
+    bettor TEXT,
+    market_id TEXT,
+    market_type TEXT,
+    description TEXT,
+    selection TEXT,
+    selection_label TEXT,
+    line REAL,
+    odds_decimal REAL,
+    stake REAL,
+    placed_ts REAL,
+    context TEXT,
+    status TEXT,
+    settled_match_id TEXT,
+    settled_ts REAL,
+    payout REAL,
+    actual_value REAL,
+    note TEXT
+);
+CREATE TABLE IF NOT EXISTS archived_rewards (
+    season_id INTEGER NOT NULL,
+    match_id TEXT,
+    puuid TEXT,
+    bettor TEXT,
+    base REAL,
+    bonus REAL,
+    acs REAL,
+    beat_share REAL,
+    baseline_games INTEGER,
+    created_ts REAL
+);
+-- Compact round-by-round record of a 5-stack game (see timeline.py); data is JSON, NULL if the record had none.
+CREATE TABLE IF NOT EXISTS match_timelines (
+    match_id TEXT PRIMARY KEY,
+    data TEXT,
+    fetched_ts REAL
+);
 -- Credits paid to a squad member's bettor account for a 5-stack game: win reward + performance bonus.
 CREATE TABLE IF NOT EXISTS rewards (
     match_id TEXT NOT NULL,
@@ -135,6 +184,11 @@ MEMBER_GAME_FIELDS = [
     "rounds_lost", "result", "agent", "score", "kills", "deaths", "assists", "headshots",
     "bodyshots", "legshots", "damage_dealt", "damage_received",
 ]
+ARCHIVED_BET_COLUMNS = [
+    "id", "bettor", "market_id", "market_type", "description", "selection", "selection_label", "line", "odds_decimal",
+    "stake", "placed_ts", "context", "status", "settled_match_id", "settled_ts", "payout", "actual_value", "note",
+]
+ARCHIVED_REWARD_COLUMNS = ["match_id", "puuid", "bettor", "base", "bonus", "acs", "beat_share", "baseline_games", "created_ts"]
 BET_FIELDS = [
     "bettor", "market_id", "market_type", "description", "selection", "selection_label",
     "line", "odds_decimal", "stake", "placed_ts", "context", "status",
@@ -313,9 +367,25 @@ class DB:
         )
 
     def matches_needing_details(self, limit):
+        """Games whose full record hasn't been fetched yet, or has but without keeping its round timeline."""
         return self.query(
-            "SELECT * FROM matches WHERE details_fetched=0 ORDER BY started_ts DESC LIMIT ?", (int(limit),)
+            """SELECT * FROM matches
+               WHERE details_fetched=0 OR match_id NOT IN (SELECT match_id FROM match_timelines)
+               ORDER BY started_ts DESC LIMIT ?""", (int(limit),)
         )
+
+    def save_timeline(self, match_id, timeline):
+        self.execute("INSERT OR REPLACE INTO match_timelines(match_id, data, fetched_ts) VALUES(?,?,?)",
+                     (match_id, json.dumps(timeline) if timeline else None, time.time()))
+
+    def timelines(self):
+        """Every stored timeline with its game's map and result, newest game first."""
+        rows = self.query(
+            """SELECT t.match_id, t.data, m.map, m.result, m.started_ts FROM match_timelines t
+               JOIN matches m USING(match_id) WHERE t.data IS NOT NULL ORDER BY m.started_ts DESC""")
+        for r in rows:
+            r["data"] = json.loads(r["data"])
+        return rows
 
     # ---- meta ------------------------------------------------------------
     def get_meta(self, key, default=None):
@@ -351,12 +421,59 @@ class DB:
     def adjust_balance(self, name, delta):
         self.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (delta, name))
 
-    def reset_betting(self, balance):
+    def season_counts(self):
+        """The current (unarchived) season: when it started and how much it holds."""
+        bets = self.query_one("SELECT COUNT(*) AS n, MIN(placed_ts) AS first FROM bets")
+        rewards = self.query_one("SELECT COUNT(*) AS n FROM rewards")["n"]
+        started = self.get_meta("season_started") or bets["first"]
+        return {"started_ts": started, "bets": bets["n"], "rewards": rewards,
+                "bettors": self.query_one("SELECT COUNT(*) AS n FROM bettors")["n"]}
+
+    def archive_and_reset(self, balance, standings):
+        """End the season: archive its standings, bets and rewards, then clear them and reset every balance.
+        One transaction, so a failure part-way leaves everything as it was. Returns the new season row."""
+        now = time.time()
         with self.lock:
-            self.conn.execute("DELETE FROM bets")
-            self.conn.execute("DELETE FROM rewards")
-            self.conn.execute("UPDATE bettors SET balance=?", (balance,))
-            self.conn.commit()
+            counts = self.season_counts()
+            n = self.query_one("SELECT COUNT(*) AS n FROM seasons")["n"] + 1
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO seasons(name, started_ts, ended_ts, standings, bets, rewards) VALUES(?,?,?,?,?,?)",
+                    (f"Season {n}", counts["started_ts"], now, json.dumps(standings), counts["bets"], counts["rewards"]))
+                sid = cur.lastrowid
+                cols = ", ".join(ARCHIVED_BET_COLUMNS)
+                self.conn.execute(f"INSERT INTO archived_bets(season_id, {cols}) SELECT ?, {cols} FROM bets", (sid,))
+                # Bets still open when the season ended never settle; every balance is reset anyway.
+                self.conn.execute(
+                    "UPDATE archived_bets SET status='cancelled', note='Still open when the season was reset' "
+                    "WHERE season_id=? AND status='pending'", (sid,))
+                cols = ", ".join(ARCHIVED_REWARD_COLUMNS)
+                self.conn.execute(f"INSERT INTO archived_rewards(season_id, {cols}) SELECT ?, {cols} FROM rewards", (sid,))
+                self.conn.execute("DELETE FROM bets")
+                self.conn.execute("DELETE FROM rewards")
+                self.conn.execute("UPDATE bettors SET balance=?", (balance,))
+                self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('season_started', ?)", (json.dumps(now),))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+        return self.season(sid)
+
+    def seasons(self):
+        """Archived seasons, newest first, with their final standings."""
+        rows = self.query("SELECT * FROM seasons ORDER BY id DESC")
+        for r in rows:
+            r["standings"] = json.loads(r["standings"] or "[]")
+        return rows
+
+    def season(self, season_id):
+        r = self.query_one("SELECT * FROM seasons WHERE id=?", (season_id,))
+        if r:
+            r["standings"] = json.loads(r["standings"] or "[]")
+        return r
+
+    def archived_bets(self, season_id):
+        return self.query("SELECT * FROM archived_bets WHERE season_id=? ORDER BY placed_ts DESC", (season_id,))
 
     def insert_bet(self, bet):
         cur = self.execute(

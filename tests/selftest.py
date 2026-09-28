@@ -15,11 +15,12 @@ from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
-from fivestack.insights import AGENT_ROLE, build_insights  # noqa: E402
+from fivestack.insights import AGENT_ROLE, betting_report, build_insights  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
 from fivestack.odds import OddsEngine, partial_game  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
+from fivestack.timeline import clutches_and_multikills, extract_timeline, spike_sites  # noqa: E402
 from fivestack.tracker import Tracker, parse_details  # noqa: E402
 
 MEMBERS = [f"P{i}#TAG" for i in range(1, 6)]
@@ -328,6 +329,42 @@ def main():
     assert not unroled, f"add these agents to insights.ROLES: {unroled}"
     # Games: m1 (Ascent, W 13-9, all Jett), m3 (Bind, L 11-13, all Sova), m9 (Haven, W 13-7, all Jett), days apart.
     ins = build_insights(db)
+    # Agent pool: P1 played Jett in m1 and m9, Sova in m3.
+    ip1_agents = {a["agent"]: a for a in next(p for p in ins["players"] if p["puuid"] == "puuid-1")["agents"]}
+    assert ip1_agents["Jett"]["games"] == 2 and ip1_agents["Sova"]["games"] == 1 and ip1_agents["Sova"]["role"] == "Initiator"
+    # Betting report card: Tester won a player prop and a match-result single; Parlay went 1-1 on parlays.
+    rep = betting_report(db)
+    assert rep["by_type"]["Tester"]["ou"]["won"] == 1 and rep["by_type"]["Tester"]["team_win"]["won"] == 1, rep["by_type"]["Tester"]
+    assert (rep["by_type"]["Parlay"]["parlay"]["won"], rep["by_type"]["Parlay"]["parlay"]["lost"]) == (1, 1)
+    assert "Counter" not in rep["by_type"]  # only cancelled bets: nothing settled
+
+    # Round timelines: a v4-shaped record -> compact timeline -> clutches, multi-kills and spike sites.
+    us, them = [f"u{i}" for i in range(1, 6)], [f"e{i}" for i in range(1, 6)]
+    kill = lambda r, t, a, b: {"round": r, "time_in_round_in_ms": t, "killer": {"puuid": a}, "victim": {"puuid": b}, "weapon": {"name": "Vandal"}}  # noqa: E731
+    v4 = {"players": [{"puuid": p, "team_id": "Blue"} for p in us] + [{"puuid": p, "team_id": "Red"} for p in them],
+          "rounds": [{"winning_team": "Blue", "plant": {"site": "A", "player": {"team": "Red"}}, "defuse": {"player": {"team": "Blue"}}},
+                     {"winning_team": "Red", "plant": {"site": "B", "player": {"team": "Red"}}, "defuse": None}],
+          "kills": [kill(0, 1000, "e4", "u2"), kill(0, 2000, "e4", "u3"), kill(0, 3000, "e5", "u4"), kill(0, 4000, "e5", "u5")]  # u1 alone vs 5
+                   + [kill(0, 5000 + i, "u1", e) for i, e in enumerate(them)]  # ...and aces them
+                   + [kill(1, 1000 + i, "u2", e) for i, e in enumerate(them[:3])]  # u2 3K
+                   + [kill(1, 5000 + i, "e4", u) for i, u in enumerate(["u1", "u3", "u4", "u5"])]  # u2 alone vs e4, e5
+                   + [kill(1, 9000, "e5", "u2")]}
+    tl = extract_timeline(v4, set(us))
+    assert tl["our_team"] == "Blue" and len(tl["rounds"]) == 2 and len(tl["kills"]) == 17 and tl["rounds"][0]["defused"]
+    assert extract_timeline({"players": v4["players"]}, set(us)) is None  # no round data: nothing to keep
+    per = clutches_and_multikills([tl], us)
+    assert per["u1"]["clutch"][5] == [1, 1] and per["u1"]["k5"] == 1, per["u1"]  # 1v5 won, with an ace
+    assert per["u2"]["clutch"][2] == [1, 0] and per["u2"]["k3"] == 1, per["u2"]  # 1v2 lost, 3K
+    assert per["u3"]["rounds"] == 2 and sum(a for a, _ in per["u3"]["clutch"].values()) == 0
+    sites = spike_sites({"Ascent": [tl]})["Ascent"]
+    assert sites["sites"]["A"] == {"att_plants": 0, "att_wins": 0, "def_plants": 1, "def_wins": 1}  # enemy plant, we retook
+    assert sites["sites"]["B"]["def_plants"] == 1 and sites["sites"]["B"]["def_wins"] == 0
+    assert sites["attack_rounds"] == 0  # Red planted in rounds 1-2, so Red attacked the first half
+    db.save_timeline("m1", extract_timeline(v4 | {"players": [{"puuid": p, "team_id": "Blue"} for p in PUUIDS.values()] + v4["players"][5:]},
+                                            set(PUUIDS.values())))
+    (row,) = db.timelines()
+    assert row["match_id"] == "m1" and row["map"] == "Ascent" and row["data"]["our_team"] == "Blue"
+    assert build_insights(db)["rounds"]["games"] == 1
     assert [g["match_id"] for g in ins["games"]] == ["m1", "m3", "m9"], ins["games"]
     assert [g["margin"] for g in ins["games"]] == [4, -2, 6] and all(g["form"] is None for g in ins["games"])
     assert [g["session"] for g in ins["games"]] == [1, 2, 3] and ins["moments"]["sessions"] == 3
@@ -341,6 +378,8 @@ def main():
     ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
     assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
     assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
+    assert "bankroll" not in ins  # the profit chart lives on the Bettors tab now
+    ins["bankroll"] = betting_report(db)["bankroll"]
     assert len(ins["bankroll"]) == 2, ins["bankroll"]  # cancelled bets are left out; Tester and Parlay both settled
     roll = next(r for r in ins["bankroll"] if r["name"] == "Tester")
     assert len(roll["points"]) == 2, roll
@@ -389,8 +428,21 @@ def main():
     win_rm = RewardManager({**cfg, "win_reward": 100}, db)  # optional extra for wins
     assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 350
     assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 250
-    bets.reset()
-    assert db.rewards() == [] and db.reward_totals() == {} and db.get_bettor("P2")["balance"] == 1000
+    # Resetting the season archives it first: final standings, every bet and every reward.
+    before = {"bets": len(db.bets()), "rewards": len(db.rewards()), "open": sum(b["status"] == "pending" for b in db.bets()),
+              "standings": {r["name"]: r for r in bets.leaderboard()}}
+    assert db.season_counts()["bets"] == before["bets"] and db.seasons() == []
+    season = bets.reset()
+    assert db.rewards() == [] and db.reward_totals() == {} and db.get_bettor("P2")["balance"] == 1000 and db.bets() == []
+    assert season["name"] == "Season 1" and season["bets"] == before["bets"] and season["rewards"] == before["rewards"]
+    saved = {r["name"]: r for r in season["standings"]}
+    assert saved["Tester"]["balance"] == before["standings"]["Tester"]["balance"] and saved["P2"]["rewards"] == 750
+    archived = db.archived_bets(season["id"])
+    assert len(archived) == before["bets"] and not any(b["status"] == "pending" for b in archived)
+    assert sum(b["note"] == "Still open when the season was reset" for b in archived) == before["open"]
+    assert db.query_one("SELECT COUNT(*) AS n FROM archived_rewards WHERE season_id=?", (season["id"],))["n"] == before["rewards"]
+    assert db.season_counts() == {"started_ts": season["ended_ts"], "bets": 0, "rewards": 0, "bettors": db.season_counts()["bettors"]}
+    assert bets.reset()["name"] == "Season 2" and [x["name"] for x in db.seasons()] == ["Season 2", "Season 1"]
 
     # --- forfeits (surrenders) and no-contest games -------------------------------
     comp = lambda rw, rl, mode="competitive": {"mode": mode, "rounds_won": rw, "rounds_lost": rl}  # noqa: E731
@@ -474,7 +526,11 @@ def main():
     calls_before = client.calls
     res2 = tracker.sync()
     assert res2["ok"] and res2["new_matches"] == 0, res2
-    assert client.calls - calls_before == 5, client.calls - calls_before  # only the 5 stored-match calls
+    # 5 stored-match calls, plus one full-record fetch each for m9 and m10 (inserted by hand above, so no round
+    # timeline yet; the fake API 404s them, which is remembered). The next sync is back to just the 5.
+    assert client.calls - calls_before == 7, client.calls - calls_before
+    calls_before = client.calls
+    assert tracker.sync()["ok"] and client.calls - calls_before == 5, client.calls - calls_before
     assert db.count_matches() == 4  # m1, m3, m9 and the reward test's m10
     assert db.count_member_games() == 17  # re-fetched lines are not duplicated
 
