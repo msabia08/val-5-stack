@@ -283,8 +283,8 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 |---|---|
 | `GET /api/status` | Config state, squad members (with their bettor account), record, tracker and sync state, rate limit, reward settings, tunnel, log |
 | `GET /api/stats` | Players page data: per member overall, per agent, per map, form, best games, 5-stack vs other games |
-| `GET /api/insights` | Visualizations tab data: games, moments, sessions, maps, players (maps, aim, agents), comps, bankroll, round insights (clutches, multi-kills, spike sites) |
-| `GET /api/betting-report` | Bettors tab report card: ROI by market type per bettor, bets on yourself vs others |
+| `GET /api/insights` | Visualizations tab data: games, moments, sessions, maps, players (maps, aim, agents), comps, round insights (clutches, multi-kills, spike sites) |
+| `GET /api/betting-report` | Bettors tab betting cards: ROI by market type per bettor, bets on yourself vs others, and each bettor's profit over time (`bankroll`) |
 | `GET /api/content` | Known maps and agents, and which agents each member plays (for the odds context pickers) |
 | `GET /api/matches?limit=` | 5-stack games newest first, each with its players and `ending` (`complete`/`forfeit`) |
 | `GET /api/match/{id}` | One game with its players |

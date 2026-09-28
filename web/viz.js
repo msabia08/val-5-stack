@@ -129,11 +129,11 @@
       `<div class="viz-cols">${timeCard()}${sessionCard()}</div>` +
       mapCard() +
       agentCard() +
-      `<div class="viz-cols">${swingCard()}${aimCard()}</div>` +
+      swingCard() +
       `<div class="viz-cols">${clutchCard()}${multiKillCard()}</div>` +
       spikeCard() +
       damageCard() +
-      `<div class="viz-cols">${compCard()}${bankrollCard()}</div>`;
+      `<div class="viz-cols">${aimCard()}${compCard()}</div>`;
   }
 
   // ---- 1. form over time + round margins ------------------------------------------------
@@ -898,10 +898,11 @@
   }
 
   // The betting report card lives on the Bettors page: same drawing code, its own data (/api/betting-report).
+  // The Bettors tab's betting cards: the report card and bettor profit over time (data from /api/betting-report).
   function bettingReport(report, helpers) {
     h = helpers;
-    data = { ...(data || {}), betting: report };
-    return bettingCard();
+    data = { ...(data || {}), betting: report, bankroll: report.bankroll || [] };
+    return bettingCard() + bankrollCard();
   }
 
   window.FiveViz = { html, mount, hideTip, bettingReport };

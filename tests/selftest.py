@@ -378,6 +378,8 @@ def main():
     ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
     assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
     assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
+    assert "bankroll" not in ins  # the profit chart lives on the Bettors tab now
+    ins["bankroll"] = betting_report(db)["bankroll"]
     assert len(ins["bankroll"]) == 2, ins["bankroll"]  # cancelled bets are left out; Tester and Parlay both settled
     roll = next(r for r in ins["bankroll"] if r["name"] == "Tester")
     assert len(roll["points"]) == 2, roll

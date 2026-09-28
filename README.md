@@ -55,7 +55,6 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   - aim profile (head / body / legs)
   - share of team damage, game by game
   - team comps by role mix
-  - bettor profit over time
   - agent pool: each player's ACS on every agent they've played, by role
   - clutches (1vX attempts and wins) and multi-kills (3K, 4K, aces)
   - spike sites: post-plant win rate on attack and retake rate on defence,
@@ -179,7 +178,8 @@ distribution at low weight and are flagged *low confidence*.
 - The **Bettors** tab ranks everyone by balance, with profit against the
   starting bankroll, record, win rate, ROI and open stakes. Under the rankings,
   a **betting report card** shows each bettor's ROI by market type, and how they
-  do betting on themselves vs on others. Below that, **settled bets** cover the
+  do betting on themselves vs on others, followed by each bettor's **profit over
+  time**. Below that, **settled bets** cover the
   last 3 games, each headed by the result and the squad's totals, with each
   player's bets on that game in their own card (bets, wagered and net).
 

@@ -154,7 +154,6 @@ def build_insights(db):
         "maps": [{"map": name, "games": map_games[name]} for name in maps],
         "players": players,
         "comps": comp_rows,
-        "bankroll": _bankroll(db),
         "rounds": _round_insights(db, members, len(matches)),
         "roles": {role: agents for role, agents in ROLES.items()},
         "constants": {"form_window": FORM_WINDOW, "session_gap_h": SESSION_GAP_S / 3600},
@@ -225,7 +224,7 @@ def betting_report(db, bettor_of=None):
         self_bets.append({"bettor": name, "puuid": puuid, "own": _bet_record(own), "others": _bet_record(others)})
 
     return {"bettors": names, "categories": [{"key": k, "label": labels[k]} for k, _ in BET_CATEGORIES],
-            "by_type": by_type, "self": self_bets, "settled": len(settled)}
+            "by_type": by_type, "self": self_bets, "settled": len(settled), "bankroll": _bankroll(db)}
 
 
 def _round_insights(db, members, total_games):
