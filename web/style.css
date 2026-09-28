@@ -72,7 +72,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 200px; }
 .logo { display: block; width: 62px; height: 36px; object-fit: contain; flex: none; }  /* web/assets/onkey-logo.png: a 124 x 72 crop of onkey.png */
-.logo-greg { display: none; border-radius: 6px; }  /* Greg Mode's logo: a 124 x 72 head-and-shoulders crop of greg.png */
+.logo-greg { display: none; }  /* Greg Mode's logo: a 124 x 72 head-and-shoulders crop of greg.png (transparent) */
 .sub { color: var(--muted); font-size: 12px; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tabs a { text-decoration: none; color: var(--text-2); padding: 7px 12px; border-radius: 8px; font-weight: 500; font-size: 14px; }
@@ -498,3 +498,11 @@ tr.match-row.on td { background: var(--accent-soft); }
 :root[data-theme="greg"] .logo-main { display: none; }
 :root[data-theme="greg"] .logo-greg { display: block; }
 @media (max-width: 640px) { .me-chip .me-name, .me-chip .me-unit, .me-chip .me-inplay { display: none; } }
+/* Greg Mode's click effect (app.js): a Greg pops up from the pointer, then falls off the screen spinning. */
+.greg-drop { position: fixed; z-index: 100; width: 48px; height: auto; margin: -43px 0 0 -24px; pointer-events: none; will-change: transform;
+  animation: greg-fall 1.5s forwards; }
+@keyframes greg-fall {
+  0% { transform: translate(0, 0) rotate(0deg) scale(0.4); animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1); }
+  18% { transform: translate(calc(var(--drift) * 0.15), -70px) rotate(calc(var(--spin) * 0.12)) scale(1); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6); }
+  100% { transform: translate(var(--drift), 110vh) rotate(var(--spin)) scale(1); }
+}

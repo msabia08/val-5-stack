@@ -646,6 +646,21 @@
       localStorage.setItem('fs.theme', next);
       showTheme(next);
     });
+    // Greg Mode: every click drops a little Greg from the pointer (never blocks the click; off for reduced motion).
+    document.addEventListener('click', (e) => {
+      if (document.documentElement.dataset.theme !== 'greg' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (document.querySelectorAll('.greg-drop').length >= 25) return;
+      const greg = document.createElement('img');
+      greg.src = '/assets/greg-drop.png';
+      greg.alt = '';
+      greg.className = 'greg-drop';
+      greg.style.left = `${e.clientX}px`;
+      greg.style.top = `${e.clientY}px`;
+      greg.style.setProperty('--drift', `${Math.round((Math.random() - 0.5) * 220)}px`);
+      greg.style.setProperty('--spin', `${Math.round((Math.random() - 0.5) * 900)}deg`);
+      greg.addEventListener('animationend', () => greg.remove());
+      document.body.append(greg);
+    });
     $('#sync-btn').addEventListener('click', () => sync(false));
     window.addEventListener('hashchange', route);
     try {

@@ -13,6 +13,7 @@ import threading
 import time
 import traceback
 import webbrowser
+from email.utils import formatdate, parsedate_to_datetime
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -222,14 +223,39 @@ class Handler(BaseHTTPRequestHandler):
         if not full.startswith(os.path.normpath(WEB_DIR)) or not os.path.isfile(full):
             return self._json({"error": "Not found"}, 404)
         ext = os.path.splitext(full)[1].lower()
+        # Browsers keep a copy but check it on every load ("no-cache"); the ETag / Last-Modified let an unchanged file
+        # come back as a tiny 304 instead of the whole thing, while an edited file (new time or size) is sent again.
+        st = os.stat(full)
+        etag = f'"{st.st_mtime_ns:x}-{st.st_size:x}"'
+        validators = {"ETag": etag, "Last-Modified": formatdate(st.st_mtime, usegmt=True), "Cache-Control": "no-cache"}
+        if self._not_modified(etag, st.st_mtime):
+            self.send_response(304)
+            for k, v in validators.items():
+                self.send_header(k, v)
+            self.end_headers()
+            return
         with open(full, "rb") as f:
             data = f.read()
         self.send_response(200)
         self.send_header("Content-Type", MIME.get(ext, "application/octet-stream"))
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
+        for k, v in validators.items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
+
+    def _not_modified(self, etag, mtime):
+        """Whether the browser's cached copy (If-None-Match, else If-Modified-Since) is still the current file."""
+        tags = self.headers.get("If-None-Match")
+        if tags:
+            return tags.strip() == "*" or etag in [t.strip() for t in tags.split(",")]
+        since = self.headers.get("If-Modified-Since")
+        if since:
+            try:
+                return int(mtime) <= parsedate_to_datetime(since).timestamp()
+            except (TypeError, ValueError, IndexError, OverflowError):
+                return False
+        return False
 
     # ---- routing ---------------------------------------------------------
     def do_GET(self):
