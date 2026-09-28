@@ -521,3 +521,30 @@ tr.match-row.on td { background: var(--accent-soft); }
   18% { transform: translate(calc(var(--drift) * 0.15), -70px) rotate(calc(var(--spin) * 0.12)) scale(1); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6); }
   100% { transform: translate(var(--drift), 110vh) rotate(var(--spin)) scale(1); }
 }
+
+/* ---- Players tab: the squad comparison table and one player's detail ---- */
+.pl-table th.pl-group { text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; border-bottom: 0; padding-bottom: 0; }
+.pl-table .pl-split { border-left: 2px solid var(--border); }
+.pl-table tbody th[scope="row"] { font-weight: 600; white-space: nowrap; }
+tr.pl-row { cursor: pointer; }
+tr.pl-row:hover td, tr.pl-row:hover th { background: var(--surface-2); }
+tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
+.pl-table td.pc-best { font-weight: 700; color: var(--accent); }
+.pc-arrow { display: inline-block; width: 11px; text-align: right; font-size: 9px; vertical-align: 1px; }  /* always present, so numbers line up */
+.pc-arrow.up { color: var(--up); }
+.pc-arrow.down { color: var(--down); }
+.recap-link { color: var(--accent); text-decoration: none; white-space: nowrap; }
+.recap-link:hover { text-decoration: underline; }
+.pl-picker { margin-bottom: 14px; }
+.player-head .pl-links { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.tile.tile-link { color: inherit; text-decoration: none; display: block; }
+.tile.tile-link:hover { border-color: var(--accent); }
+.tile.tile-link .tile-sub { color: var(--accent); }
+.pl-tiles .tile .spark { display: block; margin-top: 6px; }
+.tile-range { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; }
+/* Players tab's trend chart: stat and smoothing pickers, and a legend whose names show / hide each line. */
+.tr-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
+.tr-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.tr-player { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
+.tr-player:hover { border-color: var(--accent); }
+.tr-player.off { opacity: 0.4; text-decoration: line-through; }

@@ -16,6 +16,8 @@
     slipMode: 'single',
     matchFilter: { map: '', result: '', mode: '' },
     recap: null, recapId: '', // Matches tab: the recap shown ('' = the latest game)
+    playerPick: '', // Players tab: the player in the detail ('' = the first)
+    trends: { stat: 'acs', range: 'all', hidden: {} }, // Players tab's trend chart: stat, every game or the last 10, players hidden
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -275,32 +277,6 @@
   }
   const devMetric = (dv, key) => dv?.metrics.find((x) => x.key === key);
 
-  function devSummary(st, idx) {
-    const withBase = st.members.filter((m) => m.deviation && m.overall.games);
-    if (!withBase.length) {
-      return `<section class="card"><h2>5-stack vs. their other games</h2>
-        <p class="muted">No non-5-stack games stored yet. Each member's other games in the tracked modes are collected on the next sync.</p></section>`;
-    }
-    const acsPct = (m) => devMetric(m.deviation, 'acs')?.pct ?? -Infinity;
-    const rows = withBase.slice().sort((a, b) => acsPct(b) - acsPct(a)).map((m) => {
-      const dv = m.deviation, slot = idx.get(m.puuid)?.slot || 1;
-      const acs = devMetric(dv, 'acs'), kd = devMetric(dv, 'kd'), wr = devMetric(dv, 'win_rate');
-      const so = dv.standout && devMetric(dv, dv.standout);
-      return `<tr><td><span class="swatch s${slot}"></span>${esc(m.nickname)}</td>` +
-        `<td class="num">${dv.stack_games} <span class="muted">/ ${dv.usual_games}</span></td>` +
-        `<td class="num">${acs ? `${fmt.n0(acs.stack)} <span class="muted">vs ${fmt.n0(acs.usual)}</span>` : '–'}</td>` +
-        `<td class="num">${acs ? devDiff(acs) : '–'}</td>` +
-        `<td class="num">${kd ? devDiff(kd) : '–'}</td>` +
-        `<td class="num">${wr ? devDiff(wr) : '–'}</td>` +
-        `<td>${acs ? devBadge(acs.verdict) : ''}</td>` +
-        `<td>${so ? `${esc(so.label)} ${devBadge(so.verdict)}` : '<span class="muted">–</span>'}</td></tr>`;
-    }).join('');
-    return `<section class="card"><h2>5-stack vs. their other games</h2>
-      <p class="muted small">Each player's 5-stack games compared with their games outside the stack (solo queue or smaller parties) in the tracked modes. "Better" or "worse" means the gap is about two standard errors or more; "slightly" means one to two; smaller gaps are within normal game-to-game variation.</p>
-      <div class="table-wrap"><table><thead><tr><th>Player</th><th class="num">Games stack / other</th><th class="num">ACS</th><th class="num">ACS change</th><th class="num">K/D change</th><th class="num">Win % change</th><th>ACS verdict</th><th>Biggest change</th></tr></thead><tbody>${rows}</tbody></table></div>
-    </section>`;
-  }
-
   function devBlock(m) {
     const dv = m.deviation;
     if (!dv) return '<h3>Compared with their other games</h3><p class="muted small">No non-5-stack games stored for this player yet.</p>';
@@ -315,43 +291,122 @@
   }
 
   // ---- players ----------------------------------------------------------------
-  // Each player's card used to show a "Compared with their other games" table and a row of recent W/L chips (the
-  // same for everyone, since every tracked game is a 5-stack game). Both are switched off; set either to true to
-  // bring it back. The "5-stack vs. their other games" summary at the top of the tab is separate and always shown.
+  // The tab is one comparison table (a row per player, with how their 5-stack games compare with their other games)
+  // and one player's detail below it, picked from the table or the buttons. Numbers that are the same for everyone
+  // (games, win rate, win rate by map: every tracked game has all five) live on the Overview tab instead.
+  // The detail used to show a "Compared with their other games" table and recent W/L chips; both are switched off,
+  // set either to true to bring it back.
   const PLAYER_CARD_OTHER_GAMES = false;
   const PLAYER_CARD_FORM = false;
+  // The major per-player stats: [label, key (per-game value in form / range), overall value, format, higher is better].
+  const PLAYER_COLS = [
+    ['ACS', 'acs', (m) => m.overall.acs, fmt.n0, true],
+    ['K/D', 'kd', (m) => m.overall.kd, fmt.n2, true],
+    ['Kills', 'kills', (m) => m.overall.avg_kills, fmt.n1, true],
+    ['Deaths', 'deaths', (m) => m.overall.avg_deaths, fmt.n1, false],
+    ['Assists', 'assists', (m) => m.overall.avg_assists, fmt.n1, true],
+    ['ADR', 'adr', (m) => m.overall.adr, fmt.n0, true],
+    ['HS %', 'hs_pct', (m) => m.overall.hs_pct, fmt.pct1, true],
+  ];
+  // Trends compare a player's last TREND_RECENT games with the TREND_BEFORE before them (the sparklines' numbers).
+  const TREND_RECENT = 5, TREND_BEFORE = 10, TREND_MIN_CHANGE = 0.05;
+  const gameStat = (f, key) => (key === 'kd' ? f.kills / Math.max(1, f.deaths) : f[key]);
+
+  // A player's per-game values for one stat, oldest first (the last 15 games).
+  const statSeries = (m, key) => m.form.slice().reverse().map((f) => gameStat(f, key));
+
+  function trend(m, key) {
+    const recent = m.form.slice(0, TREND_RECENT), before = m.form.slice(TREND_RECENT, TREND_RECENT + TREND_BEFORE);
+    if (recent.length < TREND_RECENT || before.length < TREND_RECENT) return null;
+    const mean = (games) => {
+      if (key === 'kd') return games.reduce((a, f) => a + f.kills, 0) / Math.max(1, games.reduce((a, f) => a + f.deaths, 0));
+      const vals = games.map((f) => f[key]).filter(isNum);
+      return vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null;
+    };
+    const now = mean(recent), then = mean(before);
+    if (!isNum(now) || !isNum(then) || !then) return null;
+    return { now, then, rel: (now - then) / Math.abs(then) };
+  }
 
   function viewPlayers() {
     const st = state.stats, idx = memberIndex();
-    if (!st.members.length) return emptyState();
-    const breakdown = (rows, key) => {
+    const members = st.members.filter((m) => m.overall.games);
+    if (!members.length) return emptyState();
+    return playersTable(members, idx) + playerDetail(members, idx) +
+      window.FiveViz.playerTrends(st.timeline, members, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot }, state.trends);
+  }
+
+  // One row per player: this 5-stack's numbers (the best in each column highlighted, and an arrow when the player's
+  // last 5 games are trending up or down), then how they compare with their games outside the stack.
+  function playersTable(members, idx) {
+    const pick = (members.find((m) => m.puuid === state.playerPick) || members[0]).puuid;
+    const best = PLAYER_COLS.map(([, , get, , up]) => (up ? Math.max : Math.min)(...members.map((m) => get(m) ?? (up ? -Infinity : Infinity))));
+    const rows = members.slice().sort((a, b) => (b.overall.acs || 0) - (a.overall.acs || 0)).map((m) => {
+      const slot = idx.get(m.puuid)?.slot || 1, dv = m.deviation;
+      const cells = PLAYER_COLS.map(([, key, get, f, up], i) => {
+        const v = get(m);
+        if (!isNum(v)) return '<td class="num">–<span class="pc-arrow"></span></td>';
+        const tr = trend(m, key);
+        let arrow = '<span class="pc-arrow"></span>', title = '';
+        if (tr) {
+          title = ` title="Last ${TREND_RECENT} games: ${f(tr.now)} vs ${f(tr.then)} in the ${TREND_BEFORE} before"`;
+          if (Math.abs(tr.rel) >= TREND_MIN_CHANGE) {
+            arrow = `<span class="pc-arrow ${(tr.rel > 0) === up ? 'up' : 'down'}">${tr.rel > 0 ? '▲' : '▼'}</span>`;
+          }
+        }
+        return `<td class="num${v === best[i] ? ' pc-best' : ''}"${title}>${f(v)}${arrow}</td>`;
+      }).join('');
+      const acs = devMetric(dv, 'acs'), kd = devMetric(dv, 'kd'), wr = devMetric(dv, 'win_rate');
+      const so = dv && dv.standout && devMetric(dv, dv.standout);
+      const vs = dv
+        ? `<td class="num pl-split" title="${dv.usual_games} other games">${acs ? devDiff(acs) : '–'}</td><td class="num">${kd ? devDiff(kd) : '–'}</td>` +
+          `<td class="num">${wr ? devDiff(wr) : '–'}</td><td>${so ? `${esc(so.label)} ${devBadge(so.verdict)}` : (acs ? devBadge(acs.verdict) : '<span class="muted">–</span>')}</td>`
+        : '<td class="pl-split muted" colspan="4">No other games stored yet</td>';
+      return `<tr class="pl-row${m.puuid === pick ? ' on' : ''}" data-puuid="${esc(m.puuid)}"><th scope="row"><span class="swatch s${slot}"></span>${esc(m.nickname)}</th>${cells}${vs}</tr>`;
+    }).join('');
+    return `<section class="card"><h2>Squad comparison</h2>
+      <p class="muted small">Per-game averages over the squad's ${fmt.n0(members[0].overall.games)} 5-stack games; the best in each column is highlighted. ▲ / ▼ mark a stat trending up or down: the player's last ${TREND_RECENT} games against the ${TREND_BEFORE} before them, 5% or more apart (green is good; for deaths, fewer is good). Hover a number for the two figures. <b>5-stack vs. their other games</b> compares each player's 5-stack games with their games outside the stack (solo queue or smaller parties): "better" or "worse" means the gap is about two standard errors or more, "slightly" one to two. Click a row for that player's detail.</p>
+      <div class="table-wrap"><table class="pl-table"><thead>
+        <tr><th></th><th colspan="${PLAYER_COLS.length}" class="pl-group">This 5-stack</th><th colspan="4" class="pl-group pl-split">5-stack vs. their other games</th></tr>
+        <tr><th>Player</th>${PLAYER_COLS.map(([label]) => `<th class="num">${label}</th>`).join('')}<th class="num pl-split">ACS</th><th class="num">K/D</th><th class="num">Win %</th><th>Biggest change</th></tr>
+      </thead><tbody>${rows}</tbody></table></div></section>`;
+  }
+
+  // One player's detail: a tile per major stat (average, sparkline, highest and lowest game), their best game, and
+  // their by-agent and by-map tables.
+  function playerDetail(members, idx) {
+    const m = members.find((x) => x.puuid === state.playerPick) || members[0];
+    const slot = idx.get(m.puuid)?.slot || 1, bk = m.best.kills;
+    const picker = `<div class="seg" role="tablist">${members.map((x) => `<button type="button" class="seg-btn pl-pick ${x.puuid === m.puuid ? 'on' : ''}" data-puuid="${esc(x.puuid)}" role="tab" aria-selected="${x.puuid === m.puuid}"><span class="swatch s${idx.get(x.puuid)?.slot || 1}"></span>${esc(x.nickname)}</button>`).join('')}</div>`;
+    const gameLink = (g, word, f) => `<a href="#matches" class="recap-link" data-recap-match="${esc(g.match_id)}" title="${esc(`${g.map || '?'} · ${g.agent || '?'} · ${fmt.date(g.started_at)}: open the recap`)}">${word} ${f(g.value)}</a>`;
+    const tiles = PLAYER_COLS.map(([label, key, get, f]) => {
+      const r = m.range && m.range[key];
+      const one = ['kills', 'deaths', 'assists'].includes(key) ? fmt.n0 : f; // a single game's count is a whole number
+      const range = r ? `<div class="tile-range">${gameLink(r.high, 'High', one)} · ${gameLink(r.low, 'Low', one)}</div>` : '';
+      return kpi(label, f(get(m)), '', sparkline(statSeries(m, key), { w: 110, h: 28 }) + range);
+    }).join('');
+    const table = (rows, key) => {
       if (!rows.length) return '<p class="muted">No games yet.</p>';
-      return `<div class="table-wrap"><table class="compact"><thead><tr><th>${key === 'agent' ? 'Agent' : 'Map'}</th><th class="num">Games</th><th class="num">Win %</th><th class="num">ACS</th><th class="num">K/D</th><th class="num">K / D / A</th><th class="num">ADR</th><th class="num">HS %</th></tr></thead><tbody>` +
-        rows.map((r) => `<tr><td>${esc(r[key])}</td><td class="num">${r.games}</td><td class="num">${fmt.pct(r.win_rate)}</td><td class="num">${fmt.n0(r.acs)}</td><td class="num">${fmt.n2(r.kd)}</td><td class="num">${fmt.n1(r.avg_kills)} / ${fmt.n1(r.avg_deaths)} / ${fmt.n1(r.avg_assists)}</td><td class="num">${fmt.n0(r.adr)}</td><td class="num">${fmt.pct1(r.hs_pct)}</td></tr>`).join('') +
+      const withWin = key === 'agent'; // win rate by map is the same for all five, so only agents show it
+      return `<div class="table-wrap"><table class="compact"><thead><tr><th>${key === 'agent' ? 'Agent' : 'Map'}</th><th class="num">Games</th>${withWin ? '<th class="num">Win %</th>' : ''}<th class="num">ACS</th><th class="num">K/D</th><th class="num">ADR</th><th class="num">HS %</th></tr></thead><tbody>` +
+        rows.slice().sort((a, b) => b.games - a.games).map((r) => `<tr><td>${esc(r[key])}</td><td class="num">${r.games}</td>${withWin ? `<td class="num">${fmt.pct(r.win_rate)}</td>` : ''}<td class="num">${fmt.n0(r.acs)}</td><td class="num">${fmt.n2(r.kd)}</td><td class="num">${fmt.n0(r.adr)}</td><td class="num">${fmt.pct1(r.hs_pct)}</td></tr>`).join('') +
         '</tbody></table></div>';
     };
-    return devSummary(st, idx) + st.members.map((m) => {
-      const o = m.overall, slot = idx.get(m.puuid)?.slot || 1;
-      const form = m.form.slice(0, 10).map((f) =>
-        `<span class="chip ${f.result}" title="${esc(f.map)} · ${esc(f.agent)} · ${f.kills}/${f.deaths}/${f.assists} · ACS ${f.acs}">${fmt.res(f.result)}</span>`).join('');
-      const bk = m.best.kills, ba = m.best.acs;
-      const body = o.games
-        ? `<div class="kpis small">
-            ${kpi('Games', o.games, `${o.wins}W · ${o.losses}L`)}
-            ${kpi('Win rate', fmt.pct(o.win_rate))}
-            ${kpi('ACS', fmt.n0(o.acs), 'per round', sparkline(m.form.slice().reverse().map((f) => f.acs), { w: 110, h: 28 }))}
-            ${kpi('K/D', fmt.n2(o.kd), `${fmt.n1(o.avg_kills)} kills · ${fmt.n1(o.avg_deaths)} deaths`)}
-            ${kpi('ADR', fmt.n0(o.adr), 'damage per round')}
-            ${kpi('Headshot %', fmt.pct1(o.hs_pct))}
-          </div>
-          <div class="grid-2"><div><h3>By agent</h3>${breakdown(m.by_agent, 'agent')}</div><div><h3>By map</h3>${breakdown(m.by_map, 'map')}</div></div>
-          ${PLAYER_CARD_OTHER_GAMES ? devBlock(m) : ''}
-          <p class="muted small">Best game: ${bk ? `${bk.value} kills on ${esc(bk.map)} as ${esc(bk.agent)} (${fmt.date(bk.started_at)})` : '–'}${ba ? ` · Peak ACS ${fmt.n0(ba.value)} on ${esc(ba.map)}` : ''}</p>`
-        : '<p class="muted">No 5-stack games recorded for this player yet.</p>';
-      return `<section class="card player">
-        <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div>${PLAYER_CARD_FORM ? `<div class="form">${form}</div>` : ''}</header>
-        ${body}</section>`;
-    }).join('');
+    const form = m.form.slice(0, 10).map((f) =>
+      `<span class="chip ${f.result}" title="${esc(f.map)} · ${esc(f.agent)} · ${f.kills}/${f.deaths}/${f.assists} · ACS ${f.acs}">${fmt.res(f.result)}</span>`).join('');
+    const bestTile = bk
+      ? `<a href="#matches" class="tile tile-link" data-recap-match="${esc(bk.match_id)}" title="Open this game's recap"><div class="tile-label">Best game</div><div class="tile-value">${fmt.n0(bk.value)} kills</div>` +
+        `<div class="tile-sub">${esc(bk.map || '?')} · ${esc(bk.agent || '?')} · ${fmt.date(bk.started_at)} · recap ›</div></a>`
+      : kpi('Best game', '–');
+    return `<section class="card player" id="player-detail">
+      <div class="pl-picker">${picker}</div>
+      <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div>` +
+        `${PLAYER_CARD_FORM ? `<div class="form">${form}</div>` : ''}<div class="pl-links"><a href="#forecasts" class="btn ghost small" data-forecast-player="${esc(m.puuid)}">${esc(m.nickname)}'s forecasts ›</a><a href="#viz" class="btn ghost small">Charts ›</a></div></header>
+      <p class="muted small">Per-game averages; the lines show the last ${m.form.length} games, and High / Low are their best and worst complete 5-stack games (click one for its recap).</p>
+      <div class="kpis small pl-tiles">${tiles}${bestTile}</div>
+      <div class="grid-2"><div><h3>By agent</h3>${table(m.by_agent, 'agent')}</div><div><h3>By map</h3>${table(m.by_map, 'map')}</div></div>
+      ${PLAYER_CARD_OTHER_GAMES ? devBlock(m) : ''}
+    </section>`;
   }
 
   // ---- visualizations (drawn by web/viz.js) ---------------------------------------
@@ -539,10 +594,10 @@
       console.error(e);
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
-    view.classList.toggle('wide', state.view === 'odds');
+    view.classList.toggle('wide', ['odds', 'players'].includes(state.view));
     renderMe();
     bind();
-    if (['viz', 'bettors', 'forecasts', 'matches'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
+    if (['viz', 'bettors', 'forecasts', 'matches', 'players'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
   }
 
   async function render() {
@@ -567,6 +622,16 @@
 
   function bind() {
     const view = $('#view');
+    // Players tab: pick a player (table row or button), jump to a recap or their forecasts.
+    const pickPlayer = (puuid) => { state.playerPick = puuid; draw(); $('#player-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    $$('.pl-row', view).forEach((r) => r.addEventListener('click', () => pickPlayer(r.dataset.puuid)));
+    $$('.pl-pick', view).forEach((b) => b.addEventListener('click', () => { state.playerPick = b.dataset.puuid; draw(); }));
+    $$('[data-recap-match]', view).forEach((a) => a.addEventListener('click', (e) => { e.stopPropagation(); state.recapId = a.dataset.recapMatch; }));
+    // Players tab's trend chart: stat, every game or the last 10, and showing / hiding players.
+    $$('.tr-stat', view).forEach((b) => b.addEventListener('click', () => { state.trends.stat = b.dataset.v; draw(); }));
+    $$('.tr-range', view).forEach((b) => b.addEventListener('click', () => { state.trends.range = b.dataset.v; draw(); }));
+    $$('.tr-player', view).forEach((b) => b.addEventListener('click', () => { const h = state.trends.hidden; h[b.dataset.puuid] = !h[b.dataset.puuid]; draw(); }));
+    $$('[data-forecast-player]', view).forEach((a) => a.addEventListener('click', () => { state.fc.player = a.dataset.forecastPlayer; state.fc.cell = ''; }));
     $$('.fc-player', view).forEach((b) => b.addEventListener('click', () => { state.fc.player = b.dataset.v; state.fc.cell = ''; refreshForecasts(); }));
     $$('.fc-stat', view).forEach((b) => b.addEventListener('click', () => { state.fc.stat = b.dataset.v; refreshForecasts(); }));
     $$('.fc-cell', view).forEach((td) => {

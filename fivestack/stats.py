@@ -3,6 +3,8 @@ import math
 import time
 from collections import defaultdict
 
+from .gamestate import COMPLETE, ending
+
 # Stats compared between a member's 5-stack games and their other games: key, label, +1 if higher is better.
 DEVIATION_METRICS = [
     ("acs", "ACS", 1),
@@ -119,6 +121,23 @@ def _best(rows, metric_key):
                 "result": r.get("result"),
             }
     return best
+
+
+RANGE_STATS = ("acs", "kd", "kills", "deaths", "assists", "adr", "hs_pct")
+
+
+def _ranges(rows):
+    """Each major stat's highest and lowest game, over complete games (a surrender's counts are partial)."""
+    out = {}
+    games = [(r, player_metrics(r, _rounds(r))) for r in rows if ending(r) == COMPLETE]
+    for key in RANGE_STATS:
+        vals = [(m[key], r) for r, m in games if m.get(key) is not None]
+        if not vals:
+            continue
+        ref = lambda v, r: {"value": round(v, 2), "match_id": r["match_id"], "map": r.get("map"),  # noqa: E731
+                            "agent": r.get("agent"), "started_at": r.get("started_at")}
+        out[key] = {"high": ref(*max(vals, key=lambda t: t[0])), "low": ref(*min(vals, key=lambda t: t[0]))}
+    return out
 
 
 def _streak(matches):
@@ -284,6 +303,20 @@ def team_stats(matches):
     }
 
 
+def _timeline(matches, by_member):
+    """Every complete 5-stack game, oldest first, and each member's per-game value of each major stat in that order
+    (None where they're missing), for the Players tab's trend chart. Surrenders are left out: their counts are partial."""
+    games = sorted((m for m in matches if ending(m) == COMPLETE), key=lambda m: m.get("started_ts") or 0)
+    series = {}
+    for puuid, rows in by_member.items():
+        mets = {r["match_id"]: player_metrics(r, _rounds(r)) for r in rows}
+        series[puuid] = {key: [round(mets[g["match_id"]][key], 2) if g["match_id"] in mets and mets[g["match_id"]].get(key) is not None
+                               else None for g in games] for key in RANGE_STATS}
+    return {"games": [{"match_id": g["match_id"], "ts": g.get("started_ts"), "map": g.get("map"), "result": g.get("result"),
+                       "score": [g.get("rounds_won"), g.get("rounds_lost")]} for g in games],
+            "series": series}
+
+
 def build_stats(db):
     members = db.members()
     rows = db.player_rows()
@@ -326,6 +359,7 @@ def build_stats(db):
             "by_agent": _group(mr, "agent"),
             "by_map": _group(mr, "map"),
             "form": form,
+            "range": _ranges(mr),
             "deviation": deviation(mr, baseline.get(m["puuid"], [])),
             "best": {
                 "kills": _best(mr, "kills"),
@@ -339,4 +373,5 @@ def build_stats(db):
         "generated_at": time.time(),
         "team": team_stats(matches),
         "members": out_members,
+        "timeline": _timeline(matches, by_member),
     }

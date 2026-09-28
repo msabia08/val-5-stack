@@ -199,6 +199,16 @@ def stats(shared):
     p1 = next(m for m in st["members"] if m["name"] == "P1")
     assert p1["overall"]["games"] == 2 and p1["by_map"][0]["games"] == 1
     assert p1["tier_name"] == "Diamond 3"
+    # Highest and lowest game for each major stat (both games are complete here).
+    p1_rows = [r for r in db.player_rows() if r["puuid"] == "puuid-1"]
+    assert set(p1["range"]) == {"acs", "kd", "kills", "deaths", "assists", "adr", "hs_pct"}, p1["range"]
+    assert p1["range"]["kills"]["high"]["value"] == max(r["kills"] for r in p1_rows)
+    assert p1["range"]["kills"]["low"]["value"] == min(r["kills"] for r in p1_rows)
+    assert {p1["range"]["acs"]["high"]["match_id"], p1["range"]["acs"]["low"]["match_id"]} <= {"m1", "m3"}
+    # The trend chart's data: every complete game oldest first, each member's values lined up with it.
+    tl = st["timeline"]
+    assert [g["match_id"] for g in tl["games"]] == ["m1", "m3"] and set(tl["series"]) == set(PUUIDS.values())
+    assert tl["series"]["puuid-1"]["kills"] == [next(r["kills"] for r in p1_rows if r["match_id"] == g) for g in ("m1", "m3")]
 
     # 5-stack vs. other games.
     # Every counted-mode line is kept (m1, m2, m3, m5; not the deathmatch m4); only m2 and m5 are baseline.

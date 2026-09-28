@@ -993,8 +993,105 @@
     };
   }
 
+  // ---- Players tab: everyone's trend in one stat, game by game (data: /api/stats "timeline") ----------------------
+  const TREND_STATS = [['acs', 'ACS'], ['kd', 'K/D'], ['kills', 'Kills'], ['deaths', 'Deaths'], ['assists', 'Assists'], ['adr', 'ADR'], ['hs_pct', 'HS %']];
+  const TREND_RANGES = [['all', 'Every game'], ['10', 'Last 10 games']];
+  let pt = null; // { tl, members, pick: { stat, range, hidden } }
+  const ptVal = (v, stat) => (v == null ? '–' : stat === 'hs_pct' ? `${oneDp(v)}%` : stat === 'kd' ? v.toFixed(2)
+    : ['acs', 'adr'].includes(stat) ? n0(v) : oneDp(v));
+
+  // The games shown (every complete game, or the last 10) and each player's values lined up with them.
+  function trendWindow(tl, pick) {
+    const from = pick.range === 'all' ? 0 : Math.max(0, tl.games.length - Number(pick.range));
+    return { games: tl.games.slice(from), vals: (puuid) => tl.series[puuid][pick.stat].slice(from), from };
+  }
+
+  // A player's average over the shown games (K/D pools their kills and deaths, like everywhere else).
+  function trendAverage(series, stat, from) {
+    if (stat === 'kd') {
+      const k = series.kills.slice(from).reduce((a, x) => a + (x || 0), 0), d = series.deaths.slice(from).reduce((a, x) => a + (x || 0), 0);
+      return k / Math.max(1, d);
+    }
+    const xs = series[stat].slice(from).filter((x) => x != null);
+    return xs.length ? xs.reduce((a, x) => a + x, 0) / xs.length : null;
+  }
+
+  function playerTrends(tl, members, helpers, pick) {
+    h = helpers;
+    pt = { tl, members, pick };
+    withYear = tl.games.some((g) => new Date(g.ts * 1000).getFullYear() !== new Date().getFullYear());
+    if (tl.games.length < 2) return card('trends', 'Trends', '', '<p class="muted">Trends appear after a couple of complete 5-stack games.</p>');
+    const seg = (cls, items) => `<div class="seg" role="tablist">${items.map(([v, label]) =>
+      `<button type="button" class="seg-btn ${cls} ${String(v) === String(cls === 'tr-stat' ? pick.stat : pick.range) ? 'on' : ''}" data-v="${h.esc(v)}">${h.esc(label)}</button>`).join('')}</div>`;
+    const players = members.map((m) => {
+      const off = !!pick.hidden[m.puuid];
+      return `<button type="button" class="tr-player ${off ? 'off' : ''}" data-puuid="${h.esc(m.puuid)}" aria-pressed="${!off}" title="${off ? 'Show' : 'Hide'} ${h.esc(m.nickname)}">` +
+        `<span class="viz-key line" style="background:var(--s${h.slot(m.puuid) || 1})"></span>${h.esc(m.nickname)}</button>`;
+    }).join('');
+    const label = TREND_STATS.find(([k]) => k === pick.stat)[1];
+    const lower = pick.stat === 'deaths';
+    const { games, from } = trendWindow(tl, pick);
+    const span = pick.range === 'all' ? `all ${games.length} games` : `the last ${games.length} games`;
+    const ranked = members.filter((m) => !pick.hidden[m.puuid] && tl.series[m.puuid])
+      .map((m) => ({ m, avg: trendAverage(tl.series[m.puuid], pick.stat, from), last: tl.series[m.puuid][pick.stat].slice(-1)[0] }))
+      .filter((x) => x.avg != null).sort((a, b) => (lower ? a.avg - b.avg : b.avg - a.avg));
+    const take = ranked.length ? `${lower ? 'Fewest deaths' : `Best ${h.esc(label)}`} over ${span}: <strong>${h.esc(ranked[0].m.nickname)}</strong> (${ptVal(ranked[0].avg, pick.stat)} a game)` : '';
+    const rows = ranked.map(({ m, avg, last }) => [m.nickname, ptVal(avg, pick.stat), ptVal(last, pick.stat)]);
+    return card('trends', `Trends: ${label}`, take,
+      `<div class="tr-controls">${seg('tr-stat', TREND_STATS)}${seg('tr-range', TREND_RANGES)}</div><div class="tr-legend">${players}</div>` + slot('trends', 290) +
+      `<p class="muted small">${pick.range === 'all' ? 'Every complete 5-stack game' : `The last ${games.length} complete 5-stack games`}, oldest to newest; each point is one game. Click a name to hide or show that player; hover for everyone's value at a game.</p>`,
+      table(['Player', `Average over ${span}`, 'Latest game'], rows));
+  }
+
+  function drawTrends(el, W) {
+    const { tl, members, pick } = pt;
+    const stat = pick.stat, win = trendWindow(tl, pick), games = win.games, G = games.length;
+    const lines = members.filter((m) => !pick.hidden[m.puuid] && tl.series[m.puuid])
+      .map((m) => ({ m, color: `--s${h.slot(m.puuid) || 1}`, vals: win.vals(m.puuid) }));
+    const all = lines.flatMap((l) => l.vals).filter((v) => v != null);
+    if (!all.length) { el.innerHTML = '<p class="muted">Pick at least one player.</p>'; return; }
+    let lo = Math.min(...all), hi = Math.max(...all);
+    const step = niceMax((hi - lo) / 4 || 1);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const m = { l: 48, r: 14, t: 10, b: 26 }, H = 250, pw = W - m.l - m.r;
+    const x = (i) => m.l + (G > 1 ? (i / (G - 1)) * pw : pw / 2);
+    const y = (v) => m.t + ((hi - v) / ((hi - lo) || 1)) * H;
+    let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="${h.esc(stat)} per game for each player">`;
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      s += `<line class="${v === lo ? 'viz-base' : 'viz-grid'}" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>` +
+        `<text class="viz-ax" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${ptVal(v, stat)}</text>`;
+    }
+    lines.forEach((l) => {
+      let d = '', pen = false, last = null;
+      l.vals.forEach((v, i) => {
+        if (v == null) { pen = false; return; }
+        d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+        pen = true; last = i;
+      });
+      s += `<path class="viz-line" style="stroke:var(${l.color})" d="${d}"/>`;
+      if (G <= 15) { // few enough games to mark each one
+        l.vals.forEach((v, i) => { if (v != null && i !== last) s += `<circle class="viz-dot" cx="${x(i)}" cy="${y(v)}" r="3" style="fill:var(${l.color})"/>`; });
+      }
+      if (last != null) s += `<circle class="viz-dot" cx="${x(last)}" cy="${y(l.vals[last])}" r="4" style="fill:var(${l.color})"/>`;
+    });
+    s += `<text class="viz-ax" x="${m.l}" y="${m.t + H + 18}">${h.esc(dateShort(games[0].ts))}</text>` +
+      `<text class="viz-ax" x="${x(G - 1)}" y="${m.t + H + 18}" text-anchor="end">${h.esc(dateShort(games[G - 1].ts))}</text>` +
+      `<line class="viz-cross" x1="0" x2="0" y1="${m.t}" y2="${m.t + H}" visibility="hidden"/>` +
+      `<rect class="viz-hit" data-cross="trends" x="${m.l}" y="0" width="${pw}" height="${m.t + H}" tabindex="0" aria-label="Each player's value game by game; use the arrow keys"/></svg>`;
+    el.innerHTML = s;
+    const lower = stat === 'deaths';
+    cross.trends = {
+      xs: games.map((_, i) => x(i)),
+      tips: games.map((g, i) => ({
+        t: `${dateLong(g.ts)} · ${g.map} · ${g.result === 'win' ? 'W' : g.result === 'loss' ? 'L' : 'D'} ${g.score[0]}–${g.score[1]}`,
+        r: lines.map((l) => [l.m.nickname, ptVal(l.vals[i], stat), l.color])
+          .sort((a, b) => { const va = parseFloat(a[1]), vb = parseFloat(b[1]); return (isNaN(va) ? 1 : isNaN(vb) ? -1 : lower ? va - vb : vb - va); }),
+      })),
+    };
+  }
+
   // ---- mounting, tooltips, crosshair ----------------------------------------------------------
-  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll, accuracy: drawAccuracy, forecast: drawForecast,
+  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll, accuracy: drawAccuracy, forecast: drawForecast, trends: drawTrends,
     clutch: drawClutch, multi: drawMulti };
 
   function drawAll(root) {
@@ -1142,5 +1239,5 @@
     return accuracyCard();
   }
 
-  window.FiveViz = { html, mount, hideTip, bettingReport, oddsAccuracy, forecasts };
+  window.FiveViz = { html, mount, hideTip, bettingReport, oddsAccuracy, forecasts, playerTrends };
 })();
