@@ -4,8 +4,10 @@ Everything is time-zone independent; the day-of-week x time-of-day heatmap is bi
 from each game's timestamp so it uses the viewer's local time.
 """
 import json
+import math
 from collections import Counter, defaultdict
 
+from .odds import fair_chance
 from .stats import aggregate, safe_div
 from .timeline import clutches_and_multikills, spike_sites
 
@@ -190,9 +192,10 @@ def _bet_record(bets):
             "hit_rate": won / (won + lost) if won + lost else None}
 
 
-def betting_report(db, bettor_of=None):
+def betting_report(db, bettor_of=None, edge=0.05):
     """The Bettors page's report card: settled bets per bettor by market type, and betting on yourself vs others.
-    bettor_of maps a member's puuid to their bettor account (defaults to the nickname)."""
+    bettor_of maps a member's puuid to their bettor account (defaults to the nickname). Also carries the odds
+    accuracy card's data (see odds_accuracy; edge is the configured house edge)."""
     members, bettor_of = db.members(), bettor_of or {}
     settled = [b for b in db.bets() if b["status"] in ("won", "lost", "void")]
     account = {(bettor_of.get(m["puuid"]) or m.get("nickname") or m["name"]).lower(): m["puuid"] for m in members}
@@ -224,7 +227,81 @@ def betting_report(db, bettor_of=None):
         self_bets.append({"bettor": name, "puuid": puuid, "own": _bet_record(own), "others": _bet_record(others)})
 
     return {"bettors": names, "categories": [{"key": k, "label": labels[k]} for k, _ in BET_CATEGORIES],
-            "by_type": by_type, "self": self_bets, "settled": len(settled), "bankroll": _bankroll(db)}
+            "by_type": by_type, "self": self_bets, "settled": len(settled), "bankroll": _bankroll(db),
+            "accuracy": odds_accuracy(db, edge)}
+
+
+ACCURACY_BINS = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.0)]  # by the odds' own chance
+ACCURACY_MIN_PICKS = 10  # fewer settled picks than this (overall, or in a market type) gets no verdict
+ACCURACY_Z = 2.0  # won this many standard deviations away from the odds' expectation -> not in line
+INTERVAL_Z = 1.645  # 90% range around each bin's win rate
+
+
+def _wilson(won, n, z=INTERVAL_Z):
+    """Range for a win rate from few picks (Wilson score interval): wide when n is small."""
+    if not n:
+        return None, None
+    p = won / n
+    centre = (p + z * z / (2 * n)) / (1 + z * z / n)
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    return max(0.0, centre - half), min(1.0, centre + half)
+
+
+def _verdict(picks):
+    """"about_right", "generous" (won more often than the odds said, so they paid too much) or "stingy", from how
+    many standard deviations the win count is from the odds' expectation; None with too few picks."""
+    if len(picks) < ACCURACY_MIN_PICKS:
+        return None
+    expected = sum(p for p, _ in picks)
+    spread = math.sqrt(sum(p * (1 - p) for p, _ in picks)) or 1.0
+    z = (sum(won for _, won in picks) - expected) / spread
+    return "about_right" if abs(z) < ACCURACY_Z else "generous" if z > 0 else "stingy"
+
+
+def odds_accuracy(db, edge):
+    """How well the odds predicted the picks people bet on: the model's own chance (before the house edge) for each
+    settled pick against whether it won. Singles and parlay legs both count; voids are left out. Several bets on the
+    same pick in the same game count once, so a popular pick doesn't outweigh the rest."""
+    picks = {}  # (game, market, selection, line) -> {"type", "chances", "won"}
+
+    def add(game, item, meta, result):
+        if result not in ("won", "lost"):
+            return
+        chance = item.get("fair_prob", meta.get("fair_prob"))
+        if chance is None:  # placed before bets saved it: take the house edge back out of the price
+            chance = fair_chance(item["odds_decimal"], item["market_type"], edge)
+        key = (game, item["market_id"], item["selection"], item.get("line"))
+        pick = picks.setdefault(key, {"type": item["market_type"], "chances": [], "won": result == "won"})
+        pick["chances"].append(chance)
+
+    for b in db.bets():
+        if b["status"] not in ("won", "lost", "void"):
+            continue
+        ctx = json.loads(b.get("context") or "{}")
+        if b["market_type"] == "parlay":
+            for leg in ctx.get("legs") or []:
+                add(b["settled_match_id"], leg, leg.get("meta") or {}, leg.get("result"))
+        else:
+            add(b["settled_match_id"], b, ctx, b["status"])
+
+    rows = [(p["type"], sum(p["chances"]) / len(p["chances"]), p["won"]) for p in picks.values()]
+
+    def summary(sel):
+        return {"picks": len(sel), "expected": sum(c for _, c, _ in sel), "won": sum(w for _, _, w in sel),
+                "verdict": _verdict([(c, w) for _, c, w in sel])}
+
+    bins = []
+    for lo, hi in ACCURACY_BINS:
+        sel = [r for r in rows if lo <= r[1] < hi or (hi == 1.0 and r[1] == 1.0)]
+        won = sum(w for _, _, w in sel)
+        low, high = _wilson(won, len(sel))
+        bins.append({"lo": lo, "hi": hi, "picks": len(sel), "won": won,
+                     "chance": sum(c for _, c, _ in sel) / len(sel) if sel else None,
+                     "win_rate": won / len(sel) if sel else None, "range": [low, high] if sel else None})
+    labels = dict(BET_CATEGORIES)
+    by_type = [{"key": k, "label": labels[k], **summary([r for r in rows if r[0] == k])}
+               for k, _ in BET_CATEGORIES if k != "parlay" and any(r[0] == k for r in rows)]
+    return {**summary(rows), "bins": bins, "by_type": by_type, "min_picks": ACCURACY_MIN_PICKS}
 
 
 def _round_insights(db, members, total_games):

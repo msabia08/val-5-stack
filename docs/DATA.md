@@ -254,7 +254,7 @@ an existing database without migration code (new tables are fine).
 | `member_games` | member's line in **any** stored game in a tracked mode | tracker | same stats as `match_players`, plus the game's `map`, `mode`, `started_ts`, rounds and `result`. Rows whose `match_id` isn't in `matches` are that member's non-5-stack baseline |
 | `match_timelines` | 5-stack game | tracker (from the v4 record) | `match_id`, `data` (JSON, see below; NULL if the record had no round data), `fetched_ts` |
 | `bettors` | betting account | sign-up, rewards, demo | `name`, `balance`, `created_at`, `salt`, `password_hash` (NULL = unclaimed) |
-| `bets` | bet (single or parlay) | bet slip, settlement | `bettor`, `market_id`, `market_type` (`ou`/`top`/`team_win`/`team_ou`/`team_ot`/`parlay`), `description`, `selection`, `line`, `odds_decimal`, `stake`, `placed_ts`, `context` (JSON: stat, player, direction, or a parlay's legs), `status` (`pending`/`won`/`lost`/`void`/`cancelled`), `settled_match_id`, `settled_ts`, `payout`, `actual_value`, `note` |
+| `bets` | bet (single or parlay) | bet slip, settlement | `bettor`, `market_id`, `market_type` (`ou`/`top`/`team_win`/`team_ou`/`team_ot`/`parlay`), `description`, `selection`, `line`, `odds_decimal`, `stake`, `placed_ts`, `context` (JSON: stat, player, direction, `fair_prob` (the model's chance before the house edge, on bets placed since the odds accuracy card), or a parlay's legs, each with its own `fair_prob`), `status` (`pending`/`won`/`lost`/`void`/`cancelled`), `settled_match_id`, `settled_ts`, `payout`, `actual_value`, `note` |
 | `rewards` | member per game | reward manager | `match_id`, `puuid`, `bettor`, `base`, `bonus`, `acs`, `beat_share`, `baseline_games`, `created_ts` |
 | `seasons` | ended betting season | season reset | `id`, `name` ('Season N'), `started_ts`, `ended_ts`, `standings` (JSON: the leaderboard at the end), `bets`, `rewards` (counts) |
 | `archived_bets` | bet from an ended season | season reset | `season_id` plus every `bets` column; bets still open at the reset are archived as `cancelled` |
@@ -284,7 +284,7 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 | `GET /api/status` | Config state, squad members (with their bettor account), record, tracker and sync state, rate limit, reward settings, tunnel, log |
 | `GET /api/stats` | Players page data: per member overall, per agent, per map, form, best games, 5-stack vs other games |
 | `GET /api/insights` | Visualizations tab data: games, moments, sessions, maps, players (maps, aim, agents), comps, round insights (clutches, multi-kills, spike sites) |
-| `GET /api/betting-report` | Bettors tab betting cards: ROI by market type per bettor, bets on yourself vs others, and each bettor's profit over time (`bankroll`) |
+| `GET /api/betting-report` | Bettors tab betting cards: ROI by market type per bettor, bets on yourself vs others, each bettor's profit over time (`bankroll`), and the odds accuracy card (`accuracy`: picks, won, expected wins and a verdict overall, per market type and per chance bin) |
 | `GET /api/content` | Known maps and agents, and which agents each member plays (for the odds context pickers) |
 | `GET /api/matches?limit=` | 5-stack games newest first, each with its players and `ending` (`complete`/`forfeit`) |
 | `GET /api/match/{id}` | One game with its players |

@@ -178,6 +178,7 @@ class BetManager:
             desc = f"Total rounds {sel['label']}"
             meta = {}
         meta["ctx"] = board.get("context")
+        meta["fair_prob"] = sel["fair_prob"]  # the model's own chance, for the odds accuracy card
 
         bet = {
             "bettor": bettor["name"],
@@ -250,7 +251,7 @@ class BetManager:
             built.append({
                 "market_id": market_id, "market_type": mtype, "description": desc,
                 "selection": sel_key, "selection_label": sel["label"], "line": market.get("line"),
-                "odds_decimal": sel["decimal"], "meta": meta,
+                "odds_decimal": sel["decimal"], "fair_prob": sel["fair_prob"], "meta": meta,
             })
         odds_decimal = round(odds_decimal, 2)
 

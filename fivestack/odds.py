@@ -90,6 +90,18 @@ def selection(key, label, fair, overround):
     }
 
 
+def market_overround(market_type, edge):
+    """How far a market's prices add up past 100%: "top"/"low" markets have one selection per player, so they
+    carry double the house edge."""
+    return 1.0 + edge * (2.0 if market_type == "top" else 1.0)
+
+
+def fair_chance(decimal, market_type, edge):
+    """The model's own chance behind a locked-in price, with the house edge taken back out. For bets placed before
+    `fair_prob` was saved on them; approximate, because prices are rounded to 2 decimals."""
+    return clamp(1.0 / decimal / market_overround(market_type, edge), 0.0, 1.0)
+
+
 def weighted_quantile(pts, q):
     """pts: list of (weight, value)."""
     s = sorted(pts, key=lambda t: t[1])
@@ -170,7 +182,7 @@ class OddsEngine:
         median = weighted_quantile(pts, 0.5)
         line = self._choose_line(pts, median, h, sd["kind"])
         p_over = clamp(kde_over(pts, line, h), 0.05, 0.95)
-        overround = 1.0 + self.edge
+        overround = market_overround("ou", self.edge)
         return {
             "market_id": f"ou:{sd['key']}:{member['puuid']}",
             "type": "ou",
@@ -220,7 +232,7 @@ class OddsEngine:
             highs[best] += 1
             lows[worst] += 1
         k = len(prep)
-        overround = 1.0 + self.edge * 2.0
+        overround = market_overround("top", self.edge)
 
         def market(counts, direction, market_id, label, desc, counter_id):
             sels = []
@@ -259,7 +271,7 @@ class OddsEngine:
         tw = sum(w for w, _ in pts_win)
         p_win = clamp((sum(w * v for w, v in pts_win) + 1.0) / (tw + 2.0), 0.1, 0.9)
         raw_wr = sum(1 for m in matches if m.get("result") == "win") / len(matches)
-        two_way = 1.0 + self.edge
+        two_way = market_overround("team_win", self.edge)
         markets = [{
             "market_id": "team:win",
             "type": "team_win",

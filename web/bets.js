@@ -349,14 +349,16 @@ window.FiveBets = (() => {
         `<td class="num">${b.roi != null ? fmt.signed(b.roi * 100, 0) + '%' : '–'}</td>` +
         `<td class="num">${b.pending}${b.pending_stake ? ` <span class="muted small">(${fmt.credits(b.pending_stake)})</span>` : ''}</td></tr>`;
     }).join('');
+    const vizHelpers = { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot };
     return `<section class="kpis">${kpis.join('')}</section>
       <section class="card"><h2>Rankings</h2><p class="muted small">Ordered by balance. Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).</p>
         <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
-      ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot }) : ''}
+      ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
       ${settledSection()}
       ${rewardsCard()}
-      ${pastSeasonsCard()}`;
+      ${pastSeasonsCard()}
+      ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}`;
   }
 
   // Ending the season is typed-confirmation only, and says exactly what happens (the server checks too).

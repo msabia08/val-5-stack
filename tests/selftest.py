@@ -20,9 +20,9 @@ from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
-from fivestack.insights import AGENT_ROLE, betting_report, build_insights  # noqa: E402
+from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
-from fivestack.odds import OddsEngine, partial_game  # noqa: E402
+from fivestack.odds import OddsEngine, fair_chance, partial_game  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
 from fivestack.timeline import clutches_and_multikills, extract_timeline, spike_sites  # noqa: E402
@@ -389,6 +389,31 @@ def insights(shared):
     assert rep["by_type"]["Tester"]["ou"]["won"] == 1 and rep["by_type"]["Tester"]["team_win"]["won"] == 1, rep["by_type"]["Tester"]
     assert (rep["by_type"]["Parlay"]["parlay"]["won"], rep["by_type"]["Parlay"]["parlay"]["lost"]) == (1, 1)
     assert "Counter" not in rep["by_type"]  # only cancelled bets: nothing settled
+    # Odds accuracy: m9 has 3 distinct picks. "5-stack wins" was bet as a single and in both parlays but counts
+    # once; P1's kills over (single and parlay leg) won, the under (parlay leg) lost.
+    acc = rep["accuracy"]
+    assert (acc["picks"], acc["won"], acc["verdict"]) == (3, 2, None), acc  # too few picks for a verdict
+    win_chance = json.loads(bet["context"])["fair_prob"]  # new bets save the model's own chance
+    assert abs(win_chance - fair_chance(bet["odds_decimal"], "team_win", 0.05)) < 0.01  # and it matches the price
+    assert abs(acc["expected"] - (win_chance + 1)) < 1e-3, acc  # the over and the under add up to 1
+    assert [t["key"] for t in acc["by_type"]] == ["ou", "team_win"] and sum(b["picks"] for b in acc["bins"]) == 3
+    # Older bets without a saved chance fall back to the price: 20 even-money picks that won half the time are in
+    # line with the odds; 20 picks priced at 30% that won 15 times mean those odds were too generous.
+    adb = DB(os.path.join(shared.tmp, "accuracy.db"))
+    for i in range(40):
+        chance = 0.5 if i < 20 else 0.3
+        bid = adb.insert_bet({"bettor": "A", "market_id": "team:win", "market_type": "team_win", "description": "x",
+                              "selection": "win", "selection_label": "x", "line": None,
+                              "odds_decimal": round(1 / (chance * 1.05), 2), "stake": 1.0, "placed_ts": 0,
+                              "context": "{}", "status": "won" if (i % 2 if i < 20 else i < 35) else "lost"})
+        adb.execute("UPDATE bets SET settled_match_id=? WHERE id=?", (f"g{i}", bid))
+    old = odds_accuracy(adb, 0.05)
+    assert (old["picks"], old["won"], old["verdict"]) == (40, 25, "generous"), old
+    assert [(b["picks"], b["won"]) for b in old["bins"]] == [(0, 0), (20, 15), (20, 10), (0, 0), (0, 0)], old["bins"]
+    even = old["bins"][2]
+    assert abs(even["chance"] - 0.5) < 0.01 and even["range"][0] < 0.5 < even["range"][1], even
+    assert old["bins"][1]["range"][0] > 0.3  # won far more often than the 30% the odds gave
+    assert old["by_type"][0]["verdict"] == "generous"
     assert [g["match_id"] for g in ins["games"]] == ["m1", "m3", "m9"], ins["games"]
     assert [g["margin"] for g in ins["games"]] == [4, -2, 6] and all(g["form"] is None for g in ins["games"])
     assert [g["session"] for g in ins["games"]] == [1, 2, 3] and ins["moments"]["sessions"] == 3

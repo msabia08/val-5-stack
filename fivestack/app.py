@@ -265,7 +265,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/seasons":
             return self._json({"current": app.db.season_counts(), "seasons": app.db.seasons()})
         if path == "/api/betting-report":
-            return self._json(betting_report(app.db, {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()}))
+            return self._json(betting_report(app.db, {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()},
+                                             app.engine.edge))
         if path == "/api/content":
             return self._json(app.content())
         if path == "/api/matches":
