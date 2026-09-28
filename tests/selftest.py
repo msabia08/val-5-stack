@@ -24,6 +24,7 @@ from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
 from fivestack.odds import OddsEngine, fair_chance, partial_game  # noqa: E402
+from fivestack.recap import build_recap  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
 from fivestack.timeline import clutches_and_multikills, extract_timeline, spike_sites  # noqa: E402
@@ -684,6 +685,81 @@ def forecasts(shared):
         pass
     few = build_forecasts(shared.db, shared.engine)  # the main test database has 4 games: too few to forecast
     assert few["player"]["overall"] is None and few["player"]["cells"] == [] and few["player"]["games"] == []
+
+
+@section("recap")
+def recap(shared):
+    # Twelve ordinary games, one a day, the last three lost; then a staged comeback win on Ascent. P1 normally gets
+    # 15-20 kills, P2 always plays Sova, P3 is always Gold 3.
+    rdb, engine = DB(os.path.join(shared.tmp, "recap.db")), OddsEngine(shared.cfg)
+    for i, pu in enumerate(PUUIDS.values()):
+        rdb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+
+    def game(mid, k, won, lines):
+        rdb.insert_match({"match_id": mid, "map": "Ascent", "mode": "competitive", "mode_label": "Competitive",
+                          "started_ts": 1000 + k * 86400, "rounds_won": 13 if won else 9, "rounds_lost": 9 if won else 13,
+                          "result": "win" if won else "loss"},
+                         [{"puuid": pu, "agent": "Jett", "kills": 16, "deaths": 15, "assists": 4, "score": 4800,
+                           "damage_dealt": 3000, "headshots": 5, "bodyshots": 20, "legshots": 1, "tier": 10, "tier_name": "Gold 3",
+                           **lines.get(pu, {})} for pu in PUUIDS.values()])
+    for k in range(12):
+        game(f"g{k}", k, k < 9, {"puuid-1": {"kills": 15 + k % 6}, "puuid-2": {"agent": "Sova"}})
+    game("final", 12, True, {"puuid-1": {"kills": 30}, "puuid-2": {"agent": "Clove"},
+                             "puuid-3": {"tier": 11, "tier_name": "Platinum 1"}})
+    rdb.execute("UPDATE matches SET rounds_won=13, rounds_lost=11 WHERE match_id='final'")
+    # The final's rounds: 0-8 down, then 13 of the last 16. Round 9: P1 aces. Round 10: P2 clutches a 1v3.
+    # Round 11: a knife kill by P4. Round 12: P5 kills teammate P3.
+    us, them = list(PUUIDS.values()), [f"e{i}" for i in range(1, 6)]
+    wins = [False] * 8 + [True, True, True, False] * 3 + [True] * 4
+    kill = lambda r, t, a, b, w="Vandal": {"r": r, "t": t, "killer": a, "victim": b, "weapon": w}  # noqa: E731
+    kills = [kill(8, 1000 + i, "puuid-1", e) for i, e in enumerate(them)]
+    kills += [kill(9, 1000, "puuid-2", "e1"), kill(9, 2000, "puuid-2", "e2")]
+    kills += [kill(9, 3000 + i, "e3", u) for i, u in enumerate(["puuid-1", "puuid-3", "puuid-4", "puuid-5"])]
+    kills += [kill(9, 9000, "puuid-2", "e3"), kill(10, 1000, "puuid-4", "e1", "Melee"), kill(11, 1000, "puuid-5", "puuid-3")]
+    rdb.save_timeline("final", {"our_team": "Blue", "team_of": {**{u: "Blue" for u in us}, **{e: "Red" for e in them}},
+                                "rounds": [{"winner": "Blue" if w else "Red", "site": None, "planter_team": None, "defused": False} for w in wins],
+                                "kills": kills})
+    # Bets settled on the final: an underdog match-result win, a long shot, a bet on yourself, a parlay.
+    for bettor, mtype, market, sel, odds, ctx in [
+            ("P4", "team_win", "team:win", "win", 3.0, {"fair_prob": 0.3}),
+            ("P5", "top", "top:kills", "puuid-1", 6.0, {"stat": "kills"}),
+            ("P1", "ou", "ou:kills:puuid-1", "over", 1.9, {"stat": "kills", "puuid": "puuid-1"}),
+            ("P2", "parlay", "parlay", "parlay", 3.6, {"legs": [{}, {}]})]:
+        bid = rdb.insert_bet({"bettor": bettor, "market_id": market, "market_type": mtype, "description": market, "selection": sel,
+                              "selection_label": sel, "line": None, "odds_decimal": odds, "stake": 10.0, "placed_ts": 0,
+                              "context": json.dumps(ctx), "status": "won"})
+        rdb.execute("UPDATE bets SET settled_match_id='final', payout=? WHERE id=?", (10.0 * odds, bid))
+
+    r = build_recap(rdb, engine)  # the latest game by default
+    assert r["match"]["match_id"] == "final" and r["match"]["number"] == 13 and r["match"]["older"] == "g11" and r["match"]["newer"] is None
+    hl = {(h["kind"], h["puuid"]): h for h in r["highlights"]}  # the first (highest-scoring) of each kind per player
+    titles = {h["title"] for h in r["highlights"]}
+    assert "Most kills in a 5-stack game: 30" in titles, titles
+    assert "Lowest ACS in a 5-stack game: 200" in titles  # 4800 score over 24 rounds; averages say highest / lowest
+    assert hl[("ace", "puuid-1")] and hl[("clutch", "puuid-2")]["title"] == "Won a 1v3 clutch"
+    assert {h["title"] for h in r["highlights"] if h["kind"] == "first"} == {"First 5-stack game on Clove", "First time playing Controller"}
+    assert hl[("rank", "puuid-3")]["title"] == "New peak rank: Platinum 1"
+    assert hl[("knife", "puuid-4")]["detail"] == "Round 11" and hl[("team_kill", "puuid-5")]["detail"] == "Round 12"
+    assert hl[("comeback", None)]["title"] == "Came back from 0–8 down"
+    assert hl[("streak", None)]["title"] == "Snapped a 3-game losing streak"
+    assert hl[("upset", None)]["detail"] == "The odds gave the squad 30%"
+    assert hl[("longshot", "puuid-5")]["title"] == "P5 hit a +500 long shot" and hl[("parlay", "puuid-2")]
+    assert hl[("self_bet", "puuid-1")]  # P1's over on their own kills; P5's pick on P1 isn't betting on yourself
+    assert ("self_bet", "puuid-5") not in hl
+    scores = [h["score"] for h in r["highlights"]]
+    assert scores == sorted(scores, reverse=True) and r["highlights"][0]["kind"] == "ace", r["highlights"][:3]
+    # Round by round, and the scoreboard against each player's usual game and forecast.
+    assert len(r["rounds"]) == 24 and r["rounds"][7]["score"] == [0, 8] and r["rounds"][8]["multi"] == {"puuid-1": 5}
+    assert r["rounds"][9]["clutch"] == {"puuid": "puuid-2", "vs": 3, "won": True}
+    board = {p["puuid"]: p for p in r["players"]}
+    assert board["puuid-1"]["kills"] == 30 and board["puuid-1"]["usual"]["kills"] == 17.5 and board["puuid-1"]["forecast"]["kills"]
+    assert board["puuid-3"]["rank_change"] == 1 and board["puuid-2"]["role"] == "Controller"
+    assert board["puuid-1"]["rounds"]["k5"] == 1 and board["puuid-2"]["rounds"]["clutches"] == [{"round": 10, "vs": 3, "won": True}]
+    assert r["betting"]["bets"] == 4 and r["betting"]["house"] == -(20 + 50 + 9 + 26)
+    # An older game only knows what came before it: game 6 has 5 earlier games, too few for records.
+    old = build_recap(rdb, engine, "g5")
+    assert old["match"]["number"] == 6 and not [h for h in old["highlights"] if h["kind"] in ("record", "near_record")]
+    assert build_recap(shared.db, shared.engine)["match"]["match_id"] and build_recap(DB(os.path.join(shared.tmp, "empty.db")), engine) is None
 
 
 @section("grace and cancel windows")

@@ -43,6 +43,8 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   from their games outside the stack (see below).
 - **Each match:** map, mode, score, date, each member's line, and (when the full
   match record is fetched) game length, ranks and whether all five shared a party.
+  The **Matches** tab opens with a recap of the latest game (see below); click
+  any game in the list, or use *Older* / *Newer*, to recap another.
 - **Visualizations tab:** charts built from all of the above. Each has a
   one-line takeaway, hover details and a table view:
   - record in close games vs. blowouts, win rate after a win vs. after a loss,
@@ -97,6 +99,51 @@ the player.
 A database created before this feature existed only holds 5-stack games; the
 first sync after upgrading fetches everyone's full history once to fill in the
 baseline.
+
+## Match recap
+
+The top of the **Matches** tab recaps one game: the latest by default, or any
+game you pick from the list below it. (The Overview's *Last game* tile links
+here too.)
+
+- **Header:** result, score, map, mode, date, length, which game of the night it
+  was and the night's record.
+- **Highlights:** everything noteworthy, ranked so the best 6 show as cards and
+  the rest sit under "more". Green is good, red is rough, purple is just odd:
+  - *Records and near-records* in a player's 5-stack history: most / fewest
+    kills, deaths, assists, highest / lowest ACS, ADR, HS%, K/D, ties, "2nd-best
+    ever", "best ACS in 23 games", best game on an agent or a map.
+  - *Firsts:* first game on an agent, first time playing a role, first ace.
+  - *Rank changes:* ranked up, dropped, new peak rank.
+  - *Milestones and streaks:* every 500 kills and 50 games per player, every 25
+    games as a squad, top-fragging several games in a row, win and loss streaks
+    (and snapping one), streaks on a map, first game or first win on a map.
+  - *Round by round:* aces, 4Ks, repeated 3Ks, clutches from 1v2 to 1v5,
+    comebacks and blown leads, shutouts and flawless halves, long round runs,
+    both pistol rounds, retakes, first-kill control, knife kills, team kills, lots
+    of Operator kills.
+  - *Stat lines:* a carry (a third or more of the squad's damage), more assists
+    than kills, no headshots or 40%+ headshots, 3+ K/D, barely dying, most kills
+    with the least damage (and the reverse), a dead-even scoreboard, all five
+    positive or negative.
+  - *Squad records:* biggest win, heaviest loss, most squad kills, longest game,
+    quickest win, overtime, surrenders.
+  - *Forecast and betting surprises:* a player well outside their forecast from
+    the Forecasts tab, winning as underdogs or losing as favourites, long shots,
+    parlays, big wins, betting on yourself and cashing it, the full performance
+    bonus.
+
+  Records only count against games *before* this one, so an old game shows what
+  was notable at the time. They need 10 earlier games, and 5 on an agent or map,
+  so a player's third game can't set a record.
+- **Scoreboard:** each player's line with ▲ / ▼ where a stat is well above or
+  below their usual 5-stack game, plus damage share, first kills, big rounds
+  (aces, 4Ks, 3Ks, clutches) and rank. Hover a number for their usual and their
+  forecast.
+- **Round by round:** every round won or lost, with spike plants, defuses, the
+  first kill, multi-kills and clutches marked; hover for details.
+- **Betting and rewards:** the bets settled on the game, who won and lost, the
+  house's take, the best bets, and the game rewards paid.
 
 ## Forecasts: predicted vs actual
 
@@ -386,13 +433,14 @@ fivestack/             the backend package
   stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
   insights.py          datasets for the Visualizations tab (sessions, comps, damage share, ...)
   forecasts.py         Forecasts tab: each game replayed against the odds engine's prediction
+  recap.py             Matches tab recap: scoreboard, round by round, betting and highlights
   timeline.py          round-by-round records: clutches, multi-kills, spike sites
   odds.py              odds engine
   gamestate.py         how a game ended: complete, surrendered, or a remake
   bets.py              betting ledger and settlement
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
-web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), style.css (no build step)
+web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), recap.js (match recap), style.css (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```

@@ -26,6 +26,7 @@ from .gamestate import ending
 from .henrik import HenrikClient
 from .insights import betting_report, build_insights
 from .odds import OddsEngine
+from .recap import build_recap
 from .rewards import RewardManager
 from .stats import build_stats
 from .tracker import Tracker
@@ -284,6 +285,9 @@ class Handler(BaseHTTPRequestHandler):
                 m["players"] = sorted(by.get(m["match_id"], []), key=lambda p: -(p.get("score") or 0))
                 m["ending"] = ending(m)
             return self._json({"matches": matches})
+        if path == "/api/recap":
+            bettor_of = {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()}
+            return self._json(build_recap(app.db, app.engine, qs.get("match") or None, bettor_of, app.rewards.bonus_max))
         if path.startswith("/api/match/"):
             mid = path.rsplit("/", 1)[1]
             m = app.db.match(mid)

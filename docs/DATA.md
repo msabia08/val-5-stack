@@ -289,6 +289,7 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 | `GET /api/content` | Known maps and agents, and which agents each member plays (for the odds context pickers) |
 | `GET /api/matches?limit=` | 5-stack games newest first, each with its players and `ending` (`complete`/`forfeit`) |
 | `GET /api/match/{id}` | One game with its players |
+| `GET /api/recap?match=<id>` | Matches tab recap for one game (the latest if `match` is missing or unknown; `null` with no games): `match` header (with `night_game`, `night_record`, `number`, `older` / `newer` ids), `players` (this game's line, `usual` from earlier complete games, `forecast` for kills / deaths / ACS, `rounds` totals), `rounds` (per round: `won`, running `score`, `side`, spike, `first_blood`, `multi`, `clutch`), `betting`, `rewards` and ranked `highlights` ({`score`, `kind`, `title`, `detail`, `puuid`, `tone`}) |
 | `GET /api/odds?map=&agents=` | The odds board: team markets, player props, top/bottom-of-scoreboard markets |
 | `GET /api/bets?status=&bettor=&limit=` | Bets newest first, with the game each settled on (`game_map`, `game_rounds_won`, ...) |
 | `GET /api/bettors` | Leaderboard: balance, betting-only profit, rewards, record, ROI, open stakes |

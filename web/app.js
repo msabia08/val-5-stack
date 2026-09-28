@@ -15,7 +15,7 @@
     stake: Number(localStorage.getItem('fs.stake') || 50) || 50,
     slipMode: 'single',
     matchFilter: { map: '', result: '', mode: '' },
-    expanded: new Set(),
+    recap: null, recapId: '', // Matches tab: the recap shown ('' = the latest game)
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -94,6 +94,7 @@
     state.fc.player = state.forecasts.player?.puuid || '';
   };
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
+  const loadRecap = async () => { state.recap = await api('/api/recap' + (state.recapId ? '?match=' + encodeURIComponent(state.recapId) : '')); };
   const loadContent = async () => { state.content = await api('/api/content'); };
   // The betting UI lives in web/bets.js (window.FiveBets); these names keep the call sites below unchanged.
   const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors } = window.FiveBets;
@@ -212,8 +213,8 @@
       kpi('Win rate', fmt.pct(team.win_rate), `${team.wins}W · ${team.losses}L${team.draws ? ' · ' + team.draws + 'D' : ''}`),
       kpi('Current streak', team.streak || '–', 'wins or losses in a row'),
       kpi('Avg round diff', fmt.signed(team.avg_round_diff), 'rounds per game'),
-      kpi('Last game', last ? `<span class="chip ${last.result}">${fmt.res(last.result)}</span> ${last.rounds_won}–${last.rounds_lost}` : '–',
-        last ? `${esc(last.map)} · ${fmt.date(last.started_at)}` : ''),
+      kpi('Last game', last ? `<a class="plain-link recap-latest" href="#matches"><span class="chip ${last.result}">${fmt.res(last.result)}</span> ${last.rounds_won}–${last.rounds_lost}</a>` : '–',
+        last ? `${esc(last.map)} · ${fmt.date(last.started_at)} · <a class="recap-latest" href="#matches">recap</a>` : ''),
     ];
     const mapChart = hbars(team.by_map.map((m) => ({
       label: m.map, value: m.win_rate, text: fmt.pct(m.win_rate), n: `${m.wins}-${m.losses}`,
@@ -345,6 +346,12 @@
     const idx = memberIndex();
     return window.FiveViz.forecasts(state.forecasts, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot }, state.fc);
   }
+  async function openRecap(id) {
+    if (!id) return;
+    state.recapId = id;
+    try { await loadRecap(); draw(); } catch (e) { toast(e.message, 'bad'); return; }
+    $('#recap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   async function refreshForecasts() {
     try { await loadForecasts(); draw(); } catch (e) { toast(e.message, 'bad'); }
   }
@@ -424,41 +431,28 @@
 
 
   // ---- matches --------------------------------------------------------------------
-  function matchDetail(m, idx) {
-    const rounds = (m.rounds_won || 0) + (m.rounds_lost || 0) || 1;
-    const rows = m.players.map((p) => {
-      const shots = (p.headshots || 0) + (p.bodyshots || 0) + (p.legshots || 0);
-      const slot = idx.get(p.puuid)?.slot || 1;
-      return `<tr><td><span class="swatch s${slot}"></span>${esc(p.nickname || p.name || String(p.puuid).slice(0, 8))}</td><td>${esc(p.agent || '')}</td>` +
-        `<td class="num">${fmt.n0((p.score || 0) / rounds)}</td><td class="num">${p.kills ?? '–'}</td><td class="num">${p.deaths ?? '–'}</td><td class="num">${p.assists ?? '–'}</td>` +
-        `<td class="num">${fmt.n0((p.damage_dealt || 0) / rounds)}</td><td class="num">${shots ? fmt.pct1(((p.headshots || 0) / shots) * 100) : '–'}</td><td class="muted small">${esc(p.tier_name || '')}</td></tr>`;
-    }).join('');
-    return `<table class="compact inner"><thead><tr><th>Player</th><th>Agent</th><th class="num">ACS</th><th class="num">K</th><th class="num">D</th><th class="num">A</th><th class="num">ADR</th><th class="num">HS %</th><th>Rank</th></tr></thead><tbody>${rows}</tbody></table>` +
-      `<div class="muted small">${m.game_length_ms ? `Game length ${Math.round(m.game_length_ms / 60000)} min · ` : ''}${m.party_verified === 1 ? 'All five in one party · ' : ''}${esc(m.season || '')}</div>`;
-  }
-
   function viewMatches() {
     const ms = state.matches, idx = memberIndex();
     if (!ms.length) return emptyState();
+    const shown = state.recap && state.recap.match.match_id;
+    const recap = window.FiveRecap.html(state.recap, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot });
     const f = state.matchFilter;
     const maps = [...new Set(ms.map((m) => m.map).filter(Boolean))].sort();
     const modes = [...new Set(ms.map((m) => m.mode_label).filter(Boolean))].sort();
     const list = ms.filter((m) => (!f.map || m.map === f.map) && (!f.result || m.result === f.result) && (!f.mode || m.mode_label === f.mode));
     const rows = list.map((m) => {
-      const open = state.expanded.has(m.match_id);
       const rounds = (m.rounds_won || 0) + (m.rounds_lost || 0) || 1;
       const top = m.players[0];
-      return `<tr class="match-row ${m.result}" data-id="${esc(m.match_id)}"><td><span class="chip ${m.result}">${fmt.res(m.result)}</span></td>` +
+      return `<tr class="match-row ${m.result}${m.match_id === shown ? ' on' : ''}" data-id="${esc(m.match_id)}"><td><span class="chip ${m.result}">${fmt.res(m.result)}</span></td>` +
         `<td class="num"><b>${m.rounds_won}–${m.rounds_lost}</b>${m.ending === 'forfeit' ? ' <span class="tag ff" title="Ended early by a surrender">Surrendered</span>' : ''}</td><td>${esc(m.map)}</td><td class="muted">${esc(m.mode_label || '')}</td>` +
         `<td>${top ? `${esc(top.nickname || top.name)} · ${fmt.n0((top.score || 0) / rounds)} ACS · ${esc(top.agent || '')}` : ''}</td>` +
-        `<td class="muted small">${fmt.date(m.started_at)}</td><td class="muted small">${open ? '▾' : '▸'}</td></tr>` +
-        (open ? `<tr class="detail"><td colspan="7">${matchDetail(m, idx)}</td></tr>` : '');
+        `<td class="muted small">${fmt.date(m.started_at)}</td><td class="muted small">${m.match_id === shown ? 'showing' : 'recap ›'}</td></tr>`;
     }).join('');
-    return `<section class="card"><div class="filters">
+    return recap + `<section class="card"><h2>All games</h2><div class="filters">
         <select id="f-map"><option value="">All maps</option>${maps.map((x) => `<option ${f.map === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
         <select id="f-result"><option value="">All results</option><option value="win" ${f.result === 'win' ? 'selected' : ''}>Wins</option><option value="loss" ${f.result === 'loss' ? 'selected' : ''}>Losses</option></select>
         <select id="f-mode"><option value="">All modes</option>${modes.map((x) => `<option ${f.mode === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-        <span class="muted small">${list.length} of ${ms.length} games · click a row for the scoreboard</span></div>
+        <span class="muted small">${list.length} of ${ms.length} games · click a game for its recap</span></div>
       <div class="table-wrap"><table><thead><tr><th></th><th class="num">Score</th><th>Map</th><th>Mode</th><th>Top performer</th><th>Date</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
@@ -519,7 +513,7 @@
     }
     view.classList.toggle('wide', state.view === 'odds');
     bind();
-    if (['viz', 'bettors', 'forecasts'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
+    if (['viz', 'bettors', 'forecasts', 'matches'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
   }
 
   async function render() {
@@ -532,7 +526,7 @@
         case 'viz': await loadInsights(); break;
         case 'odds': await Promise.all([loadOdds(), loadBets(), loadContent()]); break;
         case 'bettors': await Promise.all([loadBets(), loadBettingReport(), loadSeasons()]); break;
-        case 'matches': await loadMatches(); break;
+        case 'matches': await Promise.all([loadMatches(), loadRecap()]); break;
         default: await loadStatus();
       }
       draw();
@@ -571,11 +565,9 @@
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
       catch (err) { toast('Could not copy; select the link and copy it manually', 'bad'); }
     });
-    $$('tr.match-row', view).forEach((r) => r.addEventListener('click', () => {
-      const id = r.dataset.id;
-      if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
-      draw();
-    }));
+    $$('tr.match-row', view).forEach((r) => r.addEventListener('click', () => openRecap(r.dataset.id)));
+    $$('.recap-nav', view).forEach((b) => b.addEventListener('click', () => openRecap(b.dataset.recap)));
+    $$('.recap-latest', view).forEach((a) => a.addEventListener('click', () => { state.recapId = ''; })); // the Overview's "Last game" link
     ['map', 'result', 'mode'].forEach((k) => $('#f-' + k)?.addEventListener('change', (e) => { state.matchFilter[k] = e.target.value; draw(); }));
     $('#sync-now')?.addEventListener('click', () => sync(false));
     $('#sync-full')?.addEventListener('click', () => sync(true));

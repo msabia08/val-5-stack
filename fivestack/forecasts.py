@@ -47,25 +47,34 @@ def _forecastable(rows):
     return [i for i, r in enumerate(rows) if len(rows) - i - 1 >= MIN_PRIOR and ending(r) == COMPLETE]
 
 
+def forecast_one(row, earlier, engine, full, key):
+    """The forecast for one game (row) from the player's earlier 5-stack lines (newest first), rounded like the page
+    shows it: {"range": [low, high], "typical", "expected"}. None when there's no data for the stat."""
+    samples = engine.samples(earlier[:HISTORY], full, row.get("map"), row.get("agent"), relative=False)
+    fc = engine.stat_range(samples, key, COVERAGE, STAT[key]["floor_h"])
+    if fc is None:
+        return None
+    dp, cap = DIGITS.get(key, 1), PCT_CAP.get(key)
+    low, typical, high, expected = fc
+    if cap is not None:
+        high = min(high, cap)
+    return {"range": [round(low, dp), round(high, dp)], "typical": round(typical, dp), "expected": round(expected, dp)}
+
+
 def _forecast_games(rows, engine, full, key):
     """rows: one member's lines, newest first. Returns their forecast games for one stat, oldest first."""
-    games, dp, cap = [], DIGITS.get(key, 1), PCT_CAP.get(key)
+    games, dp = [], DIGITS.get(key, 1)
     for i in _forecastable(rows):
         r = rows[i]
         prior = rows[i + 1:i + 1 + HISTORY]
-        samples = engine.samples(prior, full, r.get("map"), r.get("agent"), relative=False)
         actual = player_metrics(r, (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)).get(key)
-        fc = engine.stat_range(samples, key, COVERAGE, STAT[key]["floor_h"])
+        fc = forecast_one(r, prior, engine, full, key)
         if fc is None or actual is None:
             continue
-        low, typical, high, expected = fc
-        if cap is not None:
-            high = min(high, cap)
         games.append({"match_id": r["match_id"], "ts": r.get("started_ts"), "map": r.get("map") or "Unknown",
                       "agent": r.get("agent"), "role": role_of(r.get("agent")), "result": r.get("result"),
                       "rounds_won": r.get("rounds_won"), "rounds_lost": r.get("rounds_lost"), "prior": len(prior),
-                      "range": [round(low, dp), round(high, dp)], "typical": round(typical, dp),
-                      "expected": round(expected, dp), "actual": round(actual, dp)})
+                      **fc, "actual": round(actual, dp)})
     games.reverse()
     return games
 
