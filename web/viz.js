@@ -52,7 +52,8 @@
   const memberSlot = (puuid) => h.slot(puuid) || 1;
   const nick = (puuid) => (data.members.find((m) => m.puuid === puuid) || {}).nickname || '?';
 
-  // A tooltip spec lives on the mark as JSON: { t: title, r: [[label, value, colorToken|null], ...] }.
+  // A tooltip spec lives on the mark as JSON: { t: title, r: [[label, value, colorToken|null], ...] }. A row that is a
+  // plain string is a short note line (a verdict, a section heading) instead.
   const tip = (title, rows) => ` data-tip="${h.esc(JSON.stringify({ t: title, r: rows }))}" tabindex="0"`;
 
   function niceMax(v) {
@@ -899,10 +900,12 @@
       if (!c) return `<td class="viz-empty ${cls}"></td>`;
       const half = Math.max(1e-9, (c.high - c.low) / 2);
       const f = divFill(clamp((sign * c.diff) / half, -1, 1) * (c.games / (c.games + 2)));
-      const rows = [['forecast range', `${fcVal(c.low)}–${fcVal(c.high)}`, null], ['typical game', fcVal(c.typical), null],
-        ['expected average', fcVal(c.expected), null], ['actual average', fcVal(c.actual), null],
-        ['above / inside / below', `${c.above} / ${c.inside} / ${c.below}`, null]]
-        .concat(c.agents.map((a) => [a.agent, `${fcVal(a.actual)} vs ${fcVal(a.expected)} · ${plural(a.games, 'game')}`, null]));
+      const better = sign > 0 ? c.above : c.below, worse = sign > 0 ? c.below : c.above;
+      const rows = [['actual average', fcVal(c.actual), null], ['expected', fcVal(c.expected), null],
+        ['typical game', fcVal(c.typical), null], ['forecast range', `${fcVal(c.low)}–${fcVal(c.high)}`, '--accent'],
+        ['inside the range', `${c.inside} of ${c.games}`, null], ['better / worse', `${better} / ${worse}`, null]]
+        .concat(c.agents.length ? ['By agent: actual vs expected'] : [])
+        .concat(c.agents.map((a) => [`${a.agent} · ${plural(a.games, 'game')}`, `${fcVal(a.actual)} vs ${fcVal(a.expected)}`, null]));
       const sel = fc.pick.cell === key ? ' fc-sel' : '';
       return `<td class="fc-cell ${cls}${sel}" data-cell="${h.esc(key)}" style="background:${f.bg};color:${f.ink}"${tip(`${fcWhere(c)} · ${plural(c.games, 'game')}`, rows)}>` +
         `${fcVal(c.actual)}<div class="viz-cell-sub">vs ${fcVal(c.expected)} · ${c.games}g</div></td>`;
@@ -982,11 +985,10 @@
       xs: games.map((_, i) => x(i)),
       tips: games.map((g) => ({
         t: `${dateLong(g.ts)} · ${g.map}`,
-        r: [['agent', `${g.agent || '?'} (${g.role})`, null], ['result', resultText(g), null],
+        r: [[label, fcVal(g.actual), fcPlace(g) === 'inside' ? '--text-2' : fcBetter(g) ? '--div-pos' : '--div-neg'],
+          fcPlace(g) === 'inside' ? 'Inside the forecast range' : fcBetter(g) ? 'Better than forecast' : 'Worse than forecast',
           ['forecast range', `${fcVal(g.range[0])}–${fcVal(g.range[1])}`, '--accent'], ['typical game', fcVal(g.typical), null],
-          ['expected', fcVal(g.expected), null],
-          [`actual ${label}`, `${fcVal(g.actual)} · ${fcPlace(g) === 'inside' ? 'inside the range' : `${fcBetter(g) ? 'better' : 'worse'} than forecast`}`,
-            fcPlace(g) === 'inside' ? '--text-2' : fcBetter(g) ? '--div-pos' : '--div-neg']],
+          ['expected', fcVal(g.expected), null], [g.role, g.agent || '?', null], ['result', resultText(g), null]],
       })),
     };
   }
@@ -1012,7 +1014,15 @@
     title.className = 'viz-tip-title';
     title.textContent = spec.t;
     tipEl.append(title);
-    (spec.r || []).forEach(([label, value, color]) => {
+    (spec.r || []).forEach((r) => {
+      if (typeof r === 'string') {
+        const note = document.createElement('div');
+        note.className = 'viz-tip-note';
+        note.textContent = r;
+        tipEl.append(note);
+        return;
+      }
+      const [label, value, color] = r;
       const row = document.createElement('div');
       row.className = 'viz-tip-row';
       const key = document.createElement('span');
