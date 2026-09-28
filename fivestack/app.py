@@ -13,6 +13,7 @@ import threading
 import time
 import traceback
 import webbrowser
+from email.utils import formatdate, parsedate_to_datetime
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -21,10 +22,12 @@ from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bets import BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
+from .forecasts import build_forecasts
 from .gamestate import ending
 from .henrik import HenrikClient
 from .insights import betting_report, build_insights
 from .odds import OddsEngine
+from .recap import build_recap
 from .rewards import RewardManager
 from .stats import build_stats
 from .tracker import Tracker
@@ -50,7 +53,7 @@ LOGIN_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>5-Stack Tracker · Log in</title><link rel="stylesheet" href="/style.css"></head>
 <body><main class="container login"><form method="post" action="/login" class="card">
-<div class="brand"><span class="logo" aria-hidden="true">5S</span><div><h1>5-Stack Tracker</h1><div class="sub">Enter the squad password</div></div></div>
+<div class="brand"><img class="logo" src="/assets/onkey-logo.png" alt="" width="62" height="36"><div><h1>5-Stack Tracker</h1><div class="sub">Enter the squad password</div></div></div>
 {error}
 <label>Password<input type="password" name="password" autofocus autocomplete="current-password" required></label>
 <button class="btn primary" type="submit">Log in</button>
@@ -220,14 +223,39 @@ class Handler(BaseHTTPRequestHandler):
         if not full.startswith(os.path.normpath(WEB_DIR)) or not os.path.isfile(full):
             return self._json({"error": "Not found"}, 404)
         ext = os.path.splitext(full)[1].lower()
+        # Browsers keep a copy but check it on every load ("no-cache"); the ETag / Last-Modified let an unchanged file
+        # come back as a tiny 304 instead of the whole thing, while an edited file (new time or size) is sent again.
+        st = os.stat(full)
+        etag = f'"{st.st_mtime_ns:x}-{st.st_size:x}"'
+        validators = {"ETag": etag, "Last-Modified": formatdate(st.st_mtime, usegmt=True), "Cache-Control": "no-cache"}
+        if self._not_modified(etag, st.st_mtime):
+            self.send_response(304)
+            for k, v in validators.items():
+                self.send_header(k, v)
+            self.end_headers()
+            return
         with open(full, "rb") as f:
             data = f.read()
         self.send_response(200)
         self.send_header("Content-Type", MIME.get(ext, "application/octet-stream"))
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
+        for k, v in validators.items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
+
+    def _not_modified(self, etag, mtime):
+        """Whether the browser's cached copy (If-None-Match, else If-Modified-Since) is still the current file."""
+        tags = self.headers.get("If-None-Match")
+        if tags:
+            return tags.strip() == "*" or etag in [t.strip() for t in tags.split(",")]
+        since = self.headers.get("If-Modified-Since")
+        if since:
+            try:
+                return int(mtime) <= parsedate_to_datetime(since).timestamp()
+            except (TypeError, ValueError, IndexError, OverflowError):
+                return False
+        return False
 
     # ---- routing ---------------------------------------------------------
     def do_GET(self):
@@ -240,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._login_page() if auth.enabled else self._redirect("/")
             if path == "/logout":
                 return self._redirect("/login" if auth.enabled else "/", cookie=CLEAR_COOKIE)
-            if path == "/style.css":
+            if path == "/style.css" or path.startswith("/assets/"):  # the login page uses these too
                 return self._static(path)
             if auth.enabled and not self._authed():
                 if path.startswith("/api/"):
@@ -262,6 +290,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(build_stats(app.db))
         if path == "/api/insights":
             return self._json(build_insights(app.db))
+        if path == "/api/forecasts":
+            try:
+                return self._json(build_forecasts(app.db, app.engine, qs.get("stat") or "acs", qs.get("player") or None))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/api/seasons":
             return self._json({"current": app.db.season_counts(), "seasons": app.db.seasons()})
         if path == "/api/betting-report":
@@ -278,6 +311,9 @@ class Handler(BaseHTTPRequestHandler):
                 m["players"] = sorted(by.get(m["match_id"], []), key=lambda p: -(p.get("score") or 0))
                 m["ending"] = ending(m)
             return self._json({"matches": matches})
+        if path == "/api/recap":
+            bettor_of = {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()}
+            return self._json(build_recap(app.db, app.engine, qs.get("match") or None, bettor_of, app.rewards.bonus_max))
         if path.startswith("/api/match/"):
             mid = path.rsplit("/", 1)[1]
             m = app.db.match(mid)
@@ -285,7 +321,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "Match not found"}, 404)
             m["players"] = app.db.match_players(mid)
             return self._json(m)
-        if path == "/api/odds":
+        if path in ("/api/odds", "/api/odds/custom"):
             ctx = {"map": qs.get("map") or None, "agents": {}}
             raw = qs.get("agents")
             if raw:
@@ -296,7 +332,23 @@ class Handler(BaseHTTPRequestHandler):
                         if ":" in part:
                             k, v = part.split(":", 1)
                             ctx["agents"][k] = v
-            return self._json(app.engine.build(app.db, ctx))
+            if path == "/api/odds":
+                return self._json(app.bets.mark_streaks(app.engine.build(app.db, ctx)))
+            # A custom line's price and reasonable range: ?puuid=&stat=&line=24.5, or an exact number: &exact=25
+            # (plus the same map / agents).
+            try:
+                if qs.get("exact") is not None:
+                    alt = (qs.get("stat") or "", qs.get("puuid") or "", float(qs.get("exact") or "nan"), "exact")
+                else:
+                    alt = (qs.get("stat") or "", qs.get("puuid") or "", float(qs.get("line") or "nan"))
+            except ValueError:
+                return self._json({"error": "line / exact must be a number"}, 400)
+            board = app.engine.build(app.db, ctx, alts=[alt])
+            if not board.get("ready"):
+                return self._json({"error": board.get("message", "Odds are not available yet.")}, 400)
+            if not board["custom"]:
+                return self._json({"error": "Unknown player or stat."}, 400)
+            return self._json({"market": board["custom"][0], "house_edge": board["house_edge"]})
         if path == "/api/bets":
             return self._json({"bets": app.db.bets(
                 status=qs.get("status") or None, bettor=qs.get("bettor") or None, limit=int(qs.get("limit") or 150)
@@ -307,7 +359,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"rewards": app.db.rewards(int(qs.get("limit") or 40))})
         if path == "/api/bettor/me":
             me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
-            return self._json({"bettor": app.bets.public(me) if me else None})
+            if not me:
+                return self._json({"bettor": None})
+            pending = app.db.bets(status="pending", bettor=me["name"])
+            # The latest wins, newest settled first: the page celebrates the ones settled since it last looked.
+            won = sorted(app.db.bets(status="won", bettor=me["name"], limit=200), key=lambda b: b.get("settled_ts") or 0, reverse=True)
+            wins = [{k: b.get(k) for k in ("id", "description", "market_type", "stake", "odds_decimal", "payout", "settled_ts")} for b in won[:20]]
+            return self._json({"bettor": {**app.bets.public(me), "open_bets": len(pending),
+                                          "open_stake": round(sum(b["stake"] for b in pending), 2), "recent_wins": wins}})
         return self._json({"error": "Not found"}, 404)
 
     def do_POST(self):

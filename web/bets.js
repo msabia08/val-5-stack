@@ -9,6 +9,9 @@ window.FiveBets = (() => {
 
   // Shared with app.js (set by init): the page state object and its helpers.
   let state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast;
+  // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
+  const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
+
   function init(ctx) {
     ({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast } = ctx);
   }
@@ -24,10 +27,18 @@ window.FiveBets = (() => {
   const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
 
   // ---- bet slip and tickets -----------------------------------------------------
+  // What the slip's stake leaves you with, or how far over your balance it goes.
+  function afterStake(total) {
+    if (!state.me) return '';
+    const left = state.me.balance - total;
+    return left >= 0 ? `Leaves you ${fmt.credits(left)} credits` : `<span class="down">${fmt.credits(-left)} more than you have</span>`;
+  }
+
   function slipHtml() {
     const me = state.me;
     const account = me
-      ? `<div class="account"><div>Betting as <b>${esc(me.name)}</b></div><div class="muted small">Balance ${fmt.credits(me.balance)} credits</div>` +
+      ? `<div class="account"><div>Betting as <b>${esc(me.name)}</b></div><div class="acct-balance"><b>${fmt.credits(me.balance)}</b> credits</div>` +
+        (me.open_bets ? `<div class="muted small">+${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}</div>` : '') +
         `<div class="btn-row"><button class="btn ghost small" id="bettor-signout">Sign out</button><button class="btn ghost small" id="bettor-password">Change password</button></div></div>`
       : `<div class="account"><label>Name<input id="bettor-name" placeholder="Your name" value="${esc(state.bettor)}" autocomplete="username" maxlength="32"></label>` +
         `<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>` +
@@ -56,6 +67,7 @@ window.FiveBets = (() => {
         <div class="parlay-summary"><span>${state.slip.length}-leg parlay</span><b>${fmt.odds(combined)}</b></div>
         <label>Stake<input type="number" min="1" step="1" value="${stake}" id="parlay-stake" aria-label="Parlay stake"></label>
         <div class="muted small parlay-towin">To win ${fmt.credits(stake * (combinedDecimal - 1))}</div>
+        <div class="small slip-after">${afterStake(stake)}</div>
         <p class="muted small">All ${state.slip.length} legs must win. If one is voided (a push), the payout uses the odds of the legs that stood.</p>`;
       placeLabel = 'Place parlay';
     } else {
@@ -65,7 +77,7 @@ window.FiveBets = (() => {
         `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button>` +
         `<div class="muted small towin">To win ${fmt.credits(x.stake * (x.decimal - 1))}</div></div>`).join('');
       const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
-      body = `${items}<div class="slip-total">Total stake ${fmt.credits(total)}</div>`;
+      body = `${items}<div class="slip-total">Total stake ${fmt.credits(total)}</div><div class="small slip-after">${afterStake(total)}</div>`;
       placeLabel = `Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}`;
     }
     return `<h2>Bet slip</h2>
@@ -77,7 +89,8 @@ window.FiveBets = (() => {
   }
 
   // ---- bet tickets (slip-style rendering, grouped by bettor) --------------------
-  function betTicket(b) {
+  // stamp: a ticket placed a moment ago lands with a "Placed" stamp (only in the sidebar's "Your open bets").
+  function betTicket(b, stamp = false) {
     const legs = b.market_type === 'parlay' ? (JSON.parse(b.context || '{}').legs || []) : null;
     const legIcon = { won: '✓', lost: '✗', void: '↺' };
     const legRows = legs ? legs.map((l) =>
@@ -88,7 +101,8 @@ window.FiveBets = (() => {
     const cancelBtn = isMine(b) && canCancel ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`
       : (state.status.auth && state.status.auth.admin_required) ? `<button class="btn ghost small cancel-bet admin" data-id="${b.id}" title="Needs the admin password">Admin cancel</button>`
       : '';
-    return `<div class="bet-ticket ${b.status}">
+    const fresh = stamp && justPlaced.has(b.id);
+    return `<div class="bet-ticket ${b.status}${fresh ? ' just-placed' : ''}">${fresh ? '<span class="placed-stamp" aria-hidden="true">Placed</span>' : ''}
         <div class="bet-ticket-row">
           <div class="bet-desc">${legs ? `<span class="parlay-badge">Parlay ×${legs.length}</span>` : esc(b.description)}</div>
           <span class="status ${b.status}">${b.status}</span>
@@ -103,7 +117,7 @@ window.FiveBets = (() => {
       </div>`;
   }
 
-  function bettorSlips(bets, settled = false) {
+  function bettorSlips(bets, settled = false, stamp = false) {
     if (!bets.length) return '';
     const groups = new Map();
     bets.forEach((b) => {
@@ -118,12 +132,14 @@ window.FiveBets = (() => {
       const rows = groups.get(name);
       return `<div class="bet-slip-card ${isMine({ bettor: name }) ? 'me' : ''}">
         <div class="bet-slip-head"><span class="swatch s${bettorSlot(name)} lg"></span><b>${esc(name)}</b><span class="muted small right">${betTotals(rows, settled)}</span></div>
-        ${rows.map((b) => betTicket(b)).join('')}
+        ${rows.map((b) => betTicket(b, stamp)).join('')}
       </div>`;
     }).join('')}</div>`;
   }
 
-  const SETTLED_GAMES = 3; // settled bets are shown for this many most recent games
+  // Settled bets show this many games at once, starting from the game picked in the card's dropdown (the most recent
+  // by default) and going back. It was 3 before the dropdown existed; set it back to 3 to show three games again.
+  const SETTLED_GAMES = 1;
 
   const signedCredits = (v) => `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt.credits(Math.abs(v))}</span>`;
   // "6 bets · 155 wagered", plus the net result once the bets have settled (payouts minus stakes).
@@ -140,25 +156,49 @@ window.FiveBets = (() => {
         <p class="muted small">Settled bets, balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>`;
   }
 
-  // Bettors tab: the last few games' settled bets, grouped by game and then by bettor.
-  function settledSection() {
-    const settled = state.bets.filter((b) => b.settled_match_id && b.status !== 'pending' && b.status !== 'cancelled');
-    return `<section class="card"><h2>Settled bets</h2>
-        ${settled.length ? gameSlips(settled) : '<p class="muted">Nothing settled yet. Bets settle when the next 5-stack game is recorded.</p>'}</section>`;
+  // The Odds & Bets sidebar's "Your open bets": the signed-in bettor's slip card from the open bets section, where a
+  // bet just placed lands with its stamp.
+  function myBetsCard() {
+    if (!state.me) return '';
+    const mine = state.bets.filter((b) => b.status === 'pending' && isMine(b));
+    return `<section class="card my-bets"><h2>Your open bets</h2>
+        ${mine.length ? bettorSlips(mine, false, true) : '<p class="muted small">Nothing open yet. Bets you place show up here.</p>'}</section>`;
   }
 
-  // The last few games that had bets, newest first: a header per game, then each player's bets on it.
-  function gameSlips(bets) {
+  // Settled bets per game, newest game first: Map(match_id -> bets).
+  function settledGames() {
     const groups = new Map();
-    bets.forEach((b) => {
+    state.bets.filter((b) => b.settled_match_id && b.status !== 'pending' && b.status !== 'cancelled').forEach((b) => {
       if (!groups.has(b.settled_match_id)) groups.set(b.settled_match_id, []);
       groups.get(b.settled_match_id).push(b);
     });
-    const keys = [...groups.keys()]
-      .sort((a, b) => (groups.get(b)[0].game_started_ts || 0) - (groups.get(a)[0].game_started_ts || 0))
-      .slice(0, SETTLED_GAMES);
-    return keys.map((key) => {
-      const rows = groups.get(key), g = rows[0];
+    return new Map([...groups].sort(([, a], [, b]) => (b[0].game_started_ts || 0) - (a[0].game_started_ts || 0)));
+  }
+
+  // Bettors tab: settled bets for the game picked in the dropdown (state.settledGame; '' = the most recent), grouped
+  // by bettor. The dropdown lists every game with settled bets among the bets loaded.
+  function settledSection() {
+    const groups = settledGames();
+    if (!groups.size) {
+      return '<section class="card"><h2>Settled bets</h2><p class="muted">Nothing settled yet. Bets settle when the next 5-stack game is recorded.</p></section>';
+    }
+    const keys = [...groups.keys()];
+    const picked = keys.includes(state.settledGame) ? state.settledGame : keys[0];
+    const label = (rows) => {
+      const g = rows[0];
+      return `${fmt.date(g.game_started_ts ? g.game_started_ts * 1000 : null)} · ${g.game_map || 'Unknown map'} · ` +
+        `${fmt.res(g.game_result)} ${g.game_rounds_won ?? '?'}–${g.game_rounds_lost ?? '?'} · ${rows.length} bet${rows.length === 1 ? '' : 's'}`;
+    };
+    const options = keys.map((k, i) => `<option value="${esc(i ? k : '')}"${k === picked ? ' selected' : ''}>${esc((i ? '' : 'Latest: ') + label(groups.get(k)))}</option>`).join('');
+    return `<section class="card"><div class="section-head"><h2>Settled bets</h2>
+        <label class="settled-pick muted small">Game <select id="settled-game">${options}</select></label></div>
+        ${gameSlips(keys.slice(keys.indexOf(picked), keys.indexOf(picked) + SETTLED_GAMES).map((k) => groups.get(k)))}</section>`;
+  }
+
+  // One block per game: a header with the result and the squad's totals, then each player's bets on it.
+  function gameSlips(games) {
+    return games.map((rows) => {
+      const g = rows[0];
       return `<div class="settled-game">
         <div class="settled-game-head"><span class="chip ${esc(g.game_result || '')}">${fmt.res(g.game_result)}</span>` +
           `<b>${g.game_rounds_won ?? '?'}–${g.game_rounds_lost ?? '?'}</b><span>${esc(g.game_map || 'Unknown map')}</span>` +
@@ -203,6 +243,115 @@ window.FiveBets = (() => {
       b.classList.toggle('on', on);
       b.setAttribute('aria-pressed', String(on));
     });
+  }
+
+  // ---- custom lines ("I think Loog gets 25 kills") -------------------------------------------------------------
+  // state.custom: { puuid, stat, side ('over' = at least N, 'under' = at most N, 'exact' = exactly N), n, quote }. The
+  // quote comes from /api/odds/custom, priced like the board's lines; lines too far from a player's usual game aren't
+  // offered. Exact numbers are for the counting stats (kills, deaths, assists) only.
+  const SIDES = { over: ['At least', 'at_least'], under: ['At most', 'at_most'], exact: ['Exactly', 'exactly'] };
+  const isCount = (stat) => ((state.odds && state.odds.stat_defs) || []).some((s) => s.key === stat && s.count);
+  const custom = () => (state.custom ||= { puuid: '', stat: 'kills', side: 'over', n: '', quote: null, error: '' });
+  const customLine = (c) => (c.n === '' || c.side === 'exact' ? null : c.side === 'over' ? Number(c.n) - 0.5 : Number(c.n) + 0.5);
+  let quoteTimer = 0, quoteSeq = 0;
+
+  function customLineCard() {
+    const c = custom(), members = state.status.members || [], stats = (state.odds && state.odds.stat_defs) || [];
+    if (!members.length || !stats.length) return '';
+    if (!c.puuid) c.puuid = members[0].puuid;
+    if (c.side === 'exact' && !isCount(c.stat)) c.side = 'over';
+    const opt = (v, label, on, off) => `<option value="${esc(v)}"${on ? ' selected' : ''}${off ? ' disabled' : ''}>${esc(label)}</option>`;
+    return `<section class="card" id="custom-line"><h2>Custom line</h2>
+      ${how('Name your own number: at least, at most, or exactly.', 'Think someone\'s going big (or bad)? Exactly works for kills, deaths and assists. It\'s priced from the same model as the board, and a number too far from a player\'s usual game isn\'t offered.')}
+      <div class="ctx-row">
+        <label>Player<select id="cl-player">${members.map((m) => opt(m.puuid, m.nickname, m.puuid === c.puuid)).join('')}</select></label>
+        <label>Stat<select id="cl-stat">${stats.map((s) => opt(s.key, s.label, s.key === c.stat)).join('')}</select></label>
+        <label>Side<select id="cl-side">${Object.entries(SIDES).map(([k, [label]]) => opt(k, label, c.side === k, k === 'exact' && !isCount(c.stat))).join('')}</select></label>
+        <label>Number<input id="cl-n" type="number" min="0" step="1" inputmode="numeric" value="${esc(c.n)}" placeholder="${esc(c.quote ? Math.round(c.quote.typical) : '')}"></label>
+      </div><div id="cl-quote" class="cl-quote" aria-live="polite">${customQuoteHtml()}</div></section>`;
+  }
+
+  function customQuoteHtml() {
+    const c = custom(), q = c.quote;
+    if (c.error) return `<p class="down small">${esc(c.error)}</p>`;
+    if (!q) return '<p class="muted small">Loading…</p>';
+    const [word, limitKey] = SIDES[c.side];
+    const [lo, hi] = (q.limits && q.limits[limitKey]) || [1, 0];
+    const range = lo <= hi ? `${word.toLowerCase()} ${lo} to ${hi}` : 'none right now';
+    const hint = `<p class="muted small">${esc(q.member)} usually gets about ${esc(String(Math.round(q.typical)))} ${esc(q.stat_label.toLowerCase())}. Numbers you can pick: ${esc(range)}.</p>`;
+    if (c.n === '') return hint;
+    const sel = (q.selections || []).find((s) => s.key === c.side);
+    if (!sel || !sel.available) return `<p class="down small">${esc((sel && sel.reason) || q.reason || 'Not available.')}</p>${hint}`;
+    const what = `${q.member}: ${word.toLowerCase()} ${c.n} ${q.stat_label.toLowerCase()}`;
+    const settles = c.side === 'exact' ? `wins only on exactly ${c.n}` : `settles like ${c.side === 'over' ? 'an over' : 'an under'} ${q.line}`;
+    return `<div class="cl-offer"><div><b>${esc(what)}</b><div class="muted small">${Math.round(sel.fair_prob * 100)}% chance before the house edge · ${esc(settles)}</div></div>` +
+      `<span class="cl-odds">${fmt.odds(sel)}</span><button type="button" class="btn small" id="cl-add">Add to slip</button></div>${hint}`;
+  }
+
+  async function fetchCustomQuote() {
+    const c = custom(), seq = ++quoteSeq;
+    const std = ((state.odds && state.odds.player_props) || []).find((mk) => mk.market_id === `ou:${c.stat}:${c.puuid}`);
+    const p = new URLSearchParams({ puuid: c.puuid, stat: c.stat });
+    if (c.side === 'exact') {
+      p.set('exact', c.n !== '' ? c.n : String(Math.round(std ? std.line : 1))); // before a number is typed: for the range
+    } else {
+      p.set('line', String(customLine(c) ?? (std ? std.line : 0.5)));
+    }
+    if (state.ctx.map) p.set('map', state.ctx.map);
+    if (Object.keys(state.ctx.agents).length) p.set('agents', JSON.stringify(state.ctx.agents));
+    try {
+      const res = await api('/api/odds/custom?' + p.toString());
+      if (seq !== quoteSeq) return; // a newer request is on its way
+      c.quote = res.market; c.error = '';
+    } catch (e) {
+      if (seq !== quoteSeq) return;
+      c.quote = null; c.error = e.message;
+    }
+    const box = $('#cl-quote');
+    if (box) { box.innerHTML = customQuoteHtml(); bindCustomAdd(); }
+    const n = $('#cl-n');
+    if (n && c.quote) n.placeholder = String(Math.round(c.quote.typical));
+  }
+
+  function bindCustomAdd() {
+    $('#cl-add')?.addEventListener('click', () => {
+      const c = custom(), q = c.quote;
+      const sel = q && (q.selections || []).find((s) => s.key === c.side && s.available);
+      if (!sel || c.n === '') return;
+      state.slip = state.slip.filter((x) => x.market_id !== q.market_id);
+      state.slip.push({ market_id: q.market_id, selection: c.side, selLabel: `${SIDES[c.side][0]} ${c.n}`,
+        desc: `${q.member} ${q.stat_label} · custom`, american: sel.american, decimal: sel.decimal, line: q.line, stake: state.stake });
+      drawSlip();
+      toast('Custom line added to the slip');
+    });
+  }
+
+  function bindCustom(view) {
+    if (!$('#custom-line', view)) return;
+    const c = custom();
+    const requote = (delay) => {
+      clearTimeout(quoteTimer);
+      quoteSeq++; // anything still on its way is now out of date
+      const box = $('#cl-quote');
+      if (box && c.quote) box.innerHTML = '<p class="muted small">Checking the odds…</p>';
+      quoteTimer = setTimeout(fetchCustomQuote, delay);
+    };
+    $('#cl-player', view).addEventListener('change', (e) => { c.puuid = e.target.value; requote(0); });
+    $('#cl-stat', view).addEventListener('change', (e) => {
+      c.stat = e.target.value;
+      const side = $('#cl-side', view), exact = side.querySelector('option[value="exact"]');
+      exact.disabled = !isCount(c.stat); // exact numbers are for kills, deaths and assists
+      if (exact.disabled && c.side === 'exact') { c.side = 'over'; side.value = 'over'; }
+      requote(0);
+    });
+    $('#cl-side', view).addEventListener('change', (e) => { c.side = e.target.value; requote(0); });
+    $('#cl-n', view).addEventListener('input', (e) => {
+      const v = e.target.value.trim();
+      c.n = /^\d{1,4}$/.test(v) ? String(Number(v)) : '';
+      requote(250);
+    });
+    bindCustomAdd();
+    requote(0); // the board (map / agents) may have changed since the last quote
   }
 
   function drawSlip() {
@@ -256,8 +405,11 @@ window.FiveBets = (() => {
       localStorage.setItem('fs.stake', String(state.stake));
       const tw = e.target.parentElement.querySelector('.towin');
       if (tw) tw.textContent = `To win ${fmt.credits(it.stake * (it.decimal - 1))}`;
+      const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
       const tot = $('.slip-total', slip);
-      if (tot) tot.textContent = `Total stake ${fmt.credits(state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0))}`;
+      if (tot) tot.textContent = `Total stake ${fmt.credits(total)}`;
+      const after = $('.slip-after', slip);
+      if (after) after.innerHTML = afterStake(total);
     }));
     $('#parlay-stake')?.addEventListener('input', (e) => {
       const stake = Math.max(0, Number(e.target.value) || 0);
@@ -266,6 +418,8 @@ window.FiveBets = (() => {
       const combinedDecimal = state.slip.reduce((a, x) => a * Number(x.decimal), 1);
       const tw = $('.parlay-towin', slip);
       if (tw) tw.textContent = `To win ${fmt.credits(stake * (combinedDecimal - 1))}`;
+      const after = $('.slip-after', slip);
+      if (after) after.innerHTML = afterStake(stake);
     });
     $$('.mode-btn', slip).forEach((b) => b.addEventListener('click', () => { state.slipMode = b.dataset.mode; drawSlip(); }));
     $$('.rm', slip).forEach((b) => b.addEventListener('click', () => { state.slip.splice(Number(b.dataset.i), 1); drawSlip(); syncOddButtons(); }));
@@ -273,16 +427,24 @@ window.FiveBets = (() => {
     $('#place-bets')?.addEventListener('click', placeSlip);
   }
 
+  // Bets placed in the last moment or two, whose tickets land with a stamp (cleared once it has played).
+  const justPlaced = new Set();
+  function stampPlaced(ids) {
+    ids.forEach((id) => justPlaced.add(id));
+    setTimeout(() => ids.forEach((id) => justPlaced.delete(id)), 1800);
+  }
+
   async function placeSlip() {
     if (!state.me) { toast('Sign in as a bettor first', 'bad'); return; }
     if (state.slip.length >= 2 && state.slipMode === 'parlay') {
       const stake = Number($('#parlay-stake')?.value) || state.stake;
       try {
-        await api('/api/bets', {
+        const res = await api('/api/bets', {
           method: 'POST',
           body: JSON.stringify({ legs: state.slip.map((x) => ({ market_id: x.market_id, selection: x.selection })), stake, context: state.ctx }),
         });
         state.slip = [];
+        stampPlaced([res.bet.id]);
         toast('Parlay placed. It settles after the next 5-stack game.', 'good');
       } catch (e) {
         toast(e.message, 'bad');
@@ -293,15 +455,18 @@ window.FiveBets = (() => {
     }
     const failures = [];
     const remaining = [];
+    const placed = [];
     for (const it of state.slip) {
       try {
-        await api('/api/bets', { method: 'POST', body: JSON.stringify({ market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx }) });
+        const res = await api('/api/bets', { method: 'POST', body: JSON.stringify({ market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx }) });
+        placed.push(res.bet.id);
       } catch (e) {
         failures.push(`${it.desc}: ${e.message}`);
         remaining.push(it);
       }
     }
     state.slip = remaining;
+    stampPlaced(placed);
     if (failures.length) toast(failures.join(' · '), 'bad');
     else toast('Bets placed. They settle after the next 5-stack game.', 'good');
     await loadBets();
@@ -351,7 +516,7 @@ window.FiveBets = (() => {
     }).join('');
     const vizHelpers = { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot };
     return `<section class="kpis">${kpis.join('')}</section>
-      <section class="card"><h2>Rankings</h2><p class="muted small">Ordered by balance. Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).</p>
+      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).`)}
         <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
@@ -418,7 +583,7 @@ window.FiveBets = (() => {
         `<span class="recent-score">${g.rounds_won ?? '?'}–${g.rounds_lost ?? '?'}</span><span>${esc(g.map || '')}</span>` +
         `<span class="rewards-list">${people}</span><span class="muted small">${fmt.date(g.started_ts ? g.started_ts * 1000 : null)}</span></li>`;
     }).join('');
-    return `<section class="card"><h2>Game rewards</h2><p class="muted small">${rule} Hover a name for the details.</p>` +
+    return `<section class="card"><h2>Game rewards</h2>${how(`${fmt.credits(game)} credits a game for everyone, plus a performance bonus of up to ${fmt.credits(bonus)}.`, `${rule} Hover a name for the details.`)}` +
       (games ? `<ul class="recent">${games}</ul>` : '<p class="muted">No rewards yet. They are paid when the next 5-stack game is recorded.</p>') + '</section>';
   }
 
@@ -426,7 +591,9 @@ window.FiveBets = (() => {
   // Everything betting-related that needs wiring after a page is drawn (called from app.js's bind()).
   function bind(view) {
     $$('button.odd', view).forEach((b) => b.addEventListener('click', () => toggleSlip(b.dataset.m, b.dataset.s)));
+    $('#settled-game', view)?.addEventListener('change', (e) => { state.settledGame = e.target.value; draw(); });
     bindSlip();
+    bindCustom(view);
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
       const headers = {};
       if (b.classList.contains('admin')) {
@@ -460,5 +627,5 @@ window.FiveBets = (() => {
     });
   }
 
-  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors };
+  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard };
 })();

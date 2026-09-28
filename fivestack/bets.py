@@ -5,14 +5,22 @@ import json
 import secrets
 import time
 
-from .gamestate import FORFEIT, ending, went_to_overtime
-from .odds import STAT_DEFS, find_market
+from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, rounds_to_win, went_to_overtime
+from .odds import STAT_DEFS, alt_family, find_market, margin_key, parse_alt, score_key
 from .stats import aggregate, player_metrics
 
 # Stats that only ever go up during a game: an over that cleared the line before a surrender is already won.
 COUNTING_STATS = {d["key"] for d in STAT_DEFS if d["kind"] == "count"}
+SCORE_MARKETS = {"team_score", "team_margin", "team_rw", "team_rl"}  # priced from odds.score_model
 # Note on a bet voided by a surrender. A void single is refunded; a void parlay leg is dropped from the parlay.
 EARLY_END = "Game ended early (surrender) before this was decided"
+# A pick on the board that would have won in each of the last STREAK_MIN games (at today's line) gets a flame;
+# streaks are counted back through at most STREAK_LOOKBACK games.
+STREAK_MIN = 3
+STREAK_LOOKBACK = 10
+# A pick is "cold" when it lost the last STREAK_MIN+ games and it's a roughly 50/50 pick (its fair chance in this
+# range): long shots lose most games anyway, so a run of misses says nothing about them.
+COLD_CHANCE = (0.35, 0.65)
 
 
 class BetError(Exception):
@@ -154,28 +162,32 @@ class BetManager:
             raise BetError("Sign in as a bettor first.")
         if stake > bettor["balance"] + 1e-9:
             raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
-        board = self.engine.build(self.db, context or {})
+        alt = parse_alt(market_id)  # a custom line ("Loog gets 25+ kills") or exact number is priced on the spot
+        board = self.engine.build(self.db, context or {}, alts=[alt] if alt else None)
         if not board.get("ready"):
             raise BetError(board.get("message", "Odds are not available yet."))
         market, sel = find_market(board, market_id, sel_key)
         if not market or not sel:
-            raise BetError("That market is no longer available. Refresh the odds board.")
+            raise BetError(self._unavailable(board, market_id, sel_key) or "That market is no longer available. Refresh the odds board.")
 
         mtype = market["type"]
-        if mtype == "ou":
+        if mtype in ("ou", "exact"):
             desc = f"{market['member']} {market['stat_label']} {sel['label']}"
-            meta = {"stat": market["stat"], "puuid": market["puuid"]}
+            meta = {"stat": market["stat"], "puuid": market["puuid"], **({"custom": True} if market.get("custom") else {})}
         elif mtype == "top":
             desc = f"{market['label']}: {sel['label']}"
             meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
         elif mtype == "team_win":
-            desc = sel["label"]
+            desc = f"Match result: {sel['label']}"
             meta = {}
         elif mtype == "team_ot":
             desc = f"Overtime: {sel['label']}"
             meta = {}
-        else:
+        elif mtype == "team_ou":
             desc = f"Total rounds {sel['label']}"
+            meta = {}
+        else:  # rounds won / lost, winning margin, exact score
+            desc = f"{market['label']}: {sel['label']}"
             meta = {}
         meta["ctx"] = board.get("context")
         meta["fair_prob"] = sel["fair_prob"]  # the model's own chance, for the odds accuracy card
@@ -199,6 +211,16 @@ class BetManager:
             bet_id = self.db.insert_bet(bet)
         return self.db.bet(bet_id)
 
+    @staticmethod
+    def _unavailable(board, market_id, sel_key):
+        """Why a custom line can't be bet on: not a whole-number line, too far from the player's usual numbers, or
+        so likely there's nothing to win."""
+        for mk in board.get("custom", []):
+            if mk["market_id"] == market_id:
+                sel = next((s for s in mk.get("selections", []) if s["key"] == sel_key), None)
+                return (sel or {}).get("reason") or mk.get("reason")
+        return None
+
     def place_parlay(self, bettor_name, legs, stake, context):
         """Combine 2+ selections (from different markets) into a single all-or-nothing bet."""
         try:
@@ -216,7 +238,8 @@ class BetManager:
             raise BetError("Sign in as a bettor first.")
         if stake > bettor["balance"] + 1e-9:
             raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
-        board = self.engine.build(self.db, context or {})
+        alts = [a for a in (parse_alt((leg or {}).get("market_id")) for leg in legs) if a]
+        board = self.engine.build(self.db, context or {}, alts=alts)
         if not board.get("ready"):
             raise BetError(board.get("message", "Odds are not available yet."))
 
@@ -225,27 +248,30 @@ class BetManager:
             market_id, sel_key = (leg or {}).get("market_id"), (leg or {}).get("selection")
             if not market_id or not sel_key:
                 raise BetError("Each parlay leg needs a market and a selection.")
-            if market_id in seen:
-                raise BetError("Each leg of a parlay must be a different market.")
-            seen.add(market_id)
+            if alt_family(market_id) in seen:  # a custom line counts as the same market as the board's line
+                raise BetError("Each leg of a parlay must be a different market (one line per player and stat).")
+            seen.add(alt_family(market_id))
             market, sel = find_market(board, market_id, sel_key)
             if not market or not sel:
-                raise BetError("One of the legs is no longer available. Refresh the odds board.")
+                raise BetError(self._unavailable(board, market_id, sel_key) or "One of the legs is no longer available. Refresh the odds board.")
             mtype = market["type"]
-            if mtype == "ou":
+            if mtype in ("ou", "exact"):
                 desc = f"{market['member']} {market['stat_label']} {sel['label']}"
-                meta = {"stat": market["stat"], "puuid": market["puuid"]}
+                meta = {"stat": market["stat"], "puuid": market["puuid"], **({"custom": True} if market.get("custom") else {})}
             elif mtype == "top":
                 desc = f"{market['label']}: {sel['label']}"
                 meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
             elif mtype == "team_win":
-                desc = sel["label"]
+                desc = f"Match result: {sel['label']}"
                 meta = {}
             elif mtype == "team_ot":
                 desc = f"Overtime: {sel['label']}"
                 meta = {}
-            else:
+            elif mtype == "team_ou":
                 desc = f"Total rounds {sel['label']}"
+                meta = {}
+            else:  # rounds won / lost, winning margin, exact score
+                desc = f"{market['label']}: {sel['label']}"
                 meta = {}
             odds_decimal *= sel["decimal"]
             built.append({
@@ -329,15 +355,49 @@ class BetManager:
             settled.append(self.db.bet(b["id"]))
         return settled
 
-    def _add_relative_acs(self, metrics, started):
+    def _add_relative_acs(self, metrics, started, rows=None):
         """ACS as a multiple of each player's own average over their 5-stack games before this one."""
         earlier = {}
-        for r in self.db.player_rows():
+        for r in rows if rows is not None else self.db.player_rows():
             if (r.get("started_ts") or 0) < started:
                 earlier.setdefault(r["puuid"], []).append(r)
         for puuid, m in metrics.items():
             own = aggregate(earlier.get(puuid, [])).get("acs")
             m["acs_rel"] = m["acs"] / own if own else None
+
+    def mark_streaks(self, board):
+        """Give each selection on the board that would have won the last STREAK_MIN games or more in a row a
+        "streak" count, and a roughly 50/50 pick (COLD_CHANCE) that lost them a "cold" count. Each pick is settled
+        like a bet placed at today's line on each recent game, newest first; a void (a push, a surrender, a tie)
+        neither counts nor breaks the run. In a 50/50 two-way market a hot side usually means a cold other side."""
+        if not board.get("ready"):
+            return board
+        rows = self.db.player_rows()
+        games = []
+        for match in self.db.matches(limit=STREAK_LOOKBACK):
+            rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
+            metrics = {p["puuid"]: player_metrics(p, rounds) for p in self.db.match_players(match["match_id"])}
+            self._add_relative_acs(metrics, match.get("started_ts") or 0, rows)
+            games.append((match, metrics))
+        for group in ("team", "player_props", "top_markets"):
+            for mk in board.get(group, []):
+                meta = json.dumps({"stat": mk.get("stat"), "puuid": mk.get("puuid"), "direction": mk.get("direction", "high")})
+                for s in mk["selections"]:
+                    bet = {"market_type": mk["type"], "selection": s["key"], "line": mk.get("line"), "context": meta}
+                    won = lost = 0
+                    for match, metrics in games:
+                        status = self._evaluate(bet, match, metrics)[0]
+                        if status == "void":
+                            continue
+                        if (status == "won" and lost) or (status != "won" and won):
+                            break
+                        won, lost = won + (status == "won"), lost + (status != "won")
+                    if won >= STREAK_MIN:
+                        s["streak"] = won
+                    elif lost >= STREAK_MIN and COLD_CHANCE[0] <= s["fair_prob"] <= COLD_CHANCE[1]:
+                        s["cold"] = lost
+        board["streak_lookback"] = STREAK_LOOKBACK
+        return board
 
     def _evaluate_parlay(self, b, match, metrics):
         """Every leg must win. A void leg is dropped (no action); if none are left, the whole parlay is void."""
@@ -435,6 +495,27 @@ class BetManager:
         if t == "team_ot":
             ot = went_to_overtime(match)
             return ("won" if ot == (sel == "yes") else "lost"), (1 if ot else 0), None
+        if t == "exact":  # an exact number on a counting stat
+            m = metrics.get(meta.get("puuid"))
+            if not m:
+                return "void", None, "Player was not in this game"
+            v = m.get(meta.get("stat"))
+            if v is None:
+                return "void", None, "Stat unavailable for this game"
+            return ("won" if abs(v - line) < 1e-9 else "lost"), v, None
+        if t in SCORE_MARKETS:
+            rw, rl = match.get("rounds_won") or 0, match.get("rounds_lost") or 0
+            if rounds_to_win(match.get("mode")) != DEFAULT_ROUNDS_TO_WIN:
+                return "void", None, "Not a first-to-13 game: score bets are refunded"
+            if match.get("result") == "draw":
+                return "void", None, "Game was a draw"
+            if t == "team_score":
+                return ("won" if score_key(match) == sel else "lost"), rw - rl, None
+            if t == "team_margin":
+                return ("won" if margin_key(match) == sel else "lost"), rw - rl, None
+            value = rw if t == "team_rw" else rl
+            won = value > line if sel == "over" else value < line
+            return ("won" if won else "lost"), value, None
         return "void", None, "Unknown market type"
 
     @staticmethod
@@ -446,7 +527,9 @@ class BetManager:
             return "void", None, EARLY_END
         if t == "team_ou":
             value = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
-        elif t == "ou" and meta.get("stat") in COUNTING_STATS:
+        elif t in ("team_rw", "team_rl"):  # rounds won / lost so far only ever go up
+            value = match.get("rounds_won" if t == "team_rw" else "rounds_lost") or 0
+        elif t in ("ou", "exact") and meta.get("stat") in COUNTING_STATS:  # an exact number already passed is lost
             m = metrics.get(meta.get("puuid"))
             if not m:
                 return "void", None, "Player was not in this game"

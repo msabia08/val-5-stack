@@ -43,8 +43,16 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   from their games outside the stack (see below).
 - **Each match:** map, mode, score, date, each member's line, and (when the full
   match record is fetched) game length, ranks and whether all five shared a party.
-- **Visualizations tab:** charts built from all of the above. Each has a
-  one-line takeaway, hover details and a table view:
+  The **Matches** tab opens with a recap of the latest game (see below); click
+  any game in the list, or use *Older* / *Newer*, to recap another.
+- **Overview:** the front page. Squad totals, the last game with its top three
+  highlights (linking to the full recap), your balance and the top bettors, the
+  standout bets of the last 5 games (biggest win and loss, longest odds won,
+  shortest odds lost), who's trending (each player's ACS and K/D over their last 5 games
+  against the 10 before, with an ACS sparkline), and win rate by map.
+- **Charts tab:** charts built from all of the above, grouped by the buttons at
+  the top (All, Results, Players, Rounds). Each has a one-line takeaway and hover
+  details:
   - record in close games vs. blowouts, win rate after a win vs. after a loss,
     and first game of the night vs. later games
   - form over time (rolling 10-game win rate plus every game's round margin)
@@ -52,13 +60,14 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   - whether the squad fades later in a night
   - each player's ACS on each map against their own average
   - who swings results (ACS in wins vs. losses)
-  - aim profile (head / body / legs)
-  - share of team damage, game by game
-  - team comps by role mix
+  - aim profile: a figure per player, head / body / legs each showing the share of
+    their hits, shaded against the squad (the highest share is the strongest blue)
+  - who carries the damage: 100 bullets, one per 1% of all the squad's damage, a row per player
+  - team comps by role mix, each shown as a lineup of role letters (D D C I S)
   - agent pool: each player's ACS on every agent they've played, by role
   - clutches (1vX attempts and wins) and multi-kills (3K, 4K, aces)
   - spike sites: post-plant win rate on attack and retake rate on defence,
-    per map and site
+    per map and site, one side at a time
 
   Clutches, multi-kills and spike sites use each game's round-by-round record
   (kills, round winners, plants). The tracker keeps a compact copy of it for
@@ -98,6 +107,84 @@ A database created before this feature existed only holds 5-stack games; the
 first sync after upgrading fetches everyone's full history once to fill in the
 baseline.
 
+## Match recap
+
+The top of the **Matches** tab recaps one game: the latest by default, or any
+game you pick from the list below it. (The Overview's *Last game* tile links
+here too.)
+
+- **Header:** result, score, map, mode, date, length, which game of the night it
+  was and the night's record.
+- **Highlights:** everything noteworthy, ranked so the best 6 show as cards and
+  the rest sit under "more". Green is good, red is rough, purple is just odd:
+  - *Records and near-records* in a player's 5-stack history: most / fewest
+    kills, deaths, assists, highest / lowest ACS, ADR, HS%, K/D, ties, "2nd-best
+    ever", "best ACS in 23 games", best game on an agent or a map.
+  - *Firsts:* first game on an agent, first time playing a role, first ace.
+  - *Rank changes:* ranked up, dropped, new peak rank.
+  - *Milestones and streaks:* every 500 kills and 50 games per player, every 25
+    games as a squad, top-fragging several games in a row, win and loss streaks
+    (and snapping one), streaks on a map, first game or first win on a map.
+  - *Round by round:* aces, 4Ks, repeated 3Ks, clutches from 1v2 to 1v5,
+    comebacks and blown leads, shutouts and flawless halves, long round runs,
+    both pistol rounds, retakes, first-kill control, knife kills, team kills, lots
+    of Operator kills.
+  - *Stat lines:* a carry (a third or more of the squad's damage), more assists
+    than kills, no headshots or 40%+ headshots, 3+ K/D, barely dying, most kills
+    with the least damage (and the reverse), a dead-even scoreboard, all five
+    positive or negative.
+  - *Squad records:* biggest win, heaviest loss, most squad kills, longest game,
+    quickest win, overtime, surrenders.
+  - *Forecast and betting surprises:* a player well outside their forecast from
+    the Forecasts tab, winning as underdogs or losing as favourites, long shots,
+    parlays, big wins, betting on yourself and cashing it, the full performance
+    bonus.
+
+  Records only count against games *before* this one, so an old game shows what
+  was notable at the time. They need 10 earlier games, and 5 on an agent or map,
+  so a player's third game can't set a record.
+- **Scoreboard:** each player's line with ▲ / ▼ where a stat is well above or
+  below their usual 5-stack game, plus damage share, first kills, big rounds
+  (aces, 4Ks, 3Ks, clutches). Hover a number for their usual and their
+  forecast.
+- **Round by round:** every round won or lost, with spike plants, defuses, the
+  first kill, multi-kills and clutches marked; hover for details.
+- **Betting and rewards:** the bets settled on the game, who won and lost, the
+  house's take, the best bets, and the game rewards paid.
+
+## Forecasts: predicted vs actual
+
+The **Forecasts** tab replays the odds engine over your history. For every
+5-stack game, it predicts each player's kills, deaths and assists (per game,
+which are the betting lines, and per round), ACS, ADR and headshot % using only
+their *earlier* 5-stack games, weighted exactly like the player-prop lines
+(recent games, and games on that map and agent, count more). The per-round
+versions take game length out: a 26-round overtime game gives more kills than a
+16-round stomp without anyone playing better.
+Each prediction has three parts, all from the same smoothed distribution the
+betting lines use:
+
+- a **range** that should hold about 80% of games. It's cut at that
+  distribution's 10th and 90th percentiles, so it's lopsided when the stat is: a
+  few big games stretch the top more than the bottom;
+- the **typical game** (the median, where a betting line sits), drawn as the tick
+  on each bar;
+- the **expected** value (the weighted average). "Average vs forecast" uses this,
+  because against the median everyone would seem to beat the forecast on
+  skewed stats like kills.
+
+The page puts each prediction next to what actually happened:
+
+- tiles for how often the player landed inside the range, beat it or fell short;
+- a **game-by-game strip** of forecast ranges with the real result as a dot;
+- a **map × role grid** (Duelist, Controller, Initiator, Sentinel) with the actual
+  average against the expected average in each cell, shaded by how far they beat or
+  missed it; hover a cell for the range and each agent, click it to show just
+  those games in the strip.
+
+A game gets a forecast once the player has 5 earlier 5-stack games; surrendered
+games aren't forecast. For deaths, fewer counts as beating the forecast.
+
 ## How the odds work
 
 For each player the history of 5-stack games is turned into a
@@ -108,6 +195,38 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
 - **Player props (over/under):** kills, deaths, assists, ACS, ADR, headshot %.
   The line sits at the weighted median; the over/under probability comes from a
   Gaussian-kernel smoothed distribution of past games.
+- **Custom lines:** "I think Loog gets 25 kills." Under the player props, pick a
+  player, a stat, *at least* or *at most*, and a whole number, and you get odds
+  for it: at least 25 is an over 24.5, at most 12 an under 12.5. It's priced from
+  the same smoothed distribution as the board's own lines, with the same house
+  edge, so a custom line at the board's number costs exactly what the board
+  charges. It settles like any over / under, and can be a single or a parlay leg
+  (one line per player and stat in a parlay). To keep it within reason, the side
+  you bet needs between a 5% and a 90% chance: long shots top out around +1800,
+  and near-certainties ("at least 5 kills") aren't offered. The card shows which
+  numbers you can pick for each player and stat.
+- **🔥 Hot streaks:** a pick with a flickering flame border (player props, top /
+  bottom of the scoreboard, team markets) would have won each of the last 3 games
+  or more in a row at today's line. Hover it for the length of the run (counted back
+  up to 10 games). A refunded result, like a push or a surrender, is skipped.
+  A roughly 50/50 pick (a 35–65% chance) that lost its last 3 or more instead
+  gets a frosty border; long shots lose most games anyway, so they never do.
+  These are only labels: the odds don't change.
+- **Celebrations:** a bet you win sets off confetti from your balance under the
+  bet slip (gold, and more of it, for a long shot at +500 or longer), with a
+  toast saying what paid. Your browser remembers the last win it showed you, so
+  a bet that settles while the site is closed, or while you're on another tab,
+  gets its confetti the next time you open Odds & Bets. The balance under the bet slip counts up or down when it changes,
+  and a bet you place lands with a "Placed" stamp in **Your open bets**, the box
+  under the custom line that lists just your own open bets.
+- **Exact numbers:** the same card's *exactly* option ("Loog gets exactly 25
+  kills") on kills, deaths and assists. The chance is the share of that same
+  distribution that rounds to exactly N, with the double house edge of the
+  many-outcome markets; it wins only if the final number matches. Exact numbers
+  are always long shots, so they need at least a 2% chance (odds up to about
+  +4700). On a surrender, an exact number the player had already passed loses and
+  anything else is refunded. In a parlay it counts as the same market as the
+  player's line on that stat.
 - **"Who tops the scoreboard" markets:** six cards, each with a toggle for its
   counter market at the bottom of the scoreboard:
 
@@ -129,6 +248,18 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
 - **Team markets:** match result, total rounds, and overtime (does the game go
   past 12–12?). Overtime is rare, so its odds come from your history shrunk
   toward a ~10% base rate, and surrendered games are left out of it.
+- **Score markets:** rounds won and rounds lost by the squad (over / under, with
+  overtime counting as 12+), **winning margin** (the squad wins by 1–2, 3–5 or
+  6+; overtime is 1–2), and the **exact score** of a squad win (13–0 to 13–11).
+  Margin and exact score are only offered on the squad winning: a loss loses
+  them, and so does an overtime win for exact score. They all come from one model of the final score:
+  each round is won with some chance, first to 13, and that chance varies from
+  game to game. The model is tuned so its chance of winning matches the match
+  result odds and its chance of reaching 12–12 matches the overtime odds as
+  closely as it can, so none of these markets contradict each other. Winning
+  margin and exact score have many picks each, so like the scoreboard markets
+  they carry double the house edge. They only settle on first-to-13 games (a
+  shorter mode refunds them).
 - **Surrendered games are partial data.** Their kills, deaths and assists are
   scaled up to a full-length game (the median length of your completed games,
   or 22 rounds until there are 5 of them), and the game counts only as much as
@@ -168,8 +299,10 @@ distribution at low weight and are flagged *low confidence*.
   usual. Every other bet settles only if it was **already decided** when the
   game stopped: an over on a counting stat (kills, deaths, assists, total
   rounds) that had already cleared its line wins, and the matching under
-  loses; an overtime bet settles only if the game had already reached 12–12.
-  Anything else is refunded, including per-round stats (ACS, ADR,
+  loses; an overtime bet settles only if the game had already reached 12–12;
+  rounds won / lost settle the same way as total rounds (an over already
+  cleared wins). Exact score and winning margin are refunded, since the final
+  score never happened. Anything else is refunded, including per-round stats (ACS, ADR,
   headshot %) and top/bottom-of-the-scoreboard markets, which could still have
   swung. When the full match record is available, its winner flag decides
   who won, even if the surrendering team was ahead on rounds. Parlay legs
@@ -186,9 +319,10 @@ distribution at low weight and are flagged *low confidence*.
   starting bankroll, record, win rate, ROI and open stakes. Under the rankings,
   a **betting report card** shows each bettor's ROI by market type, and how they
   do betting on themselves vs on others, followed by each bettor's **profit over
-  time**. Below that, **settled bets** cover the
-  last 3 games, each headed by the result and the squad's totals, with each
-  player's bets on that game in their own card (bets, wagered and net). At the
+  time**. Below that, **settled bets** show one game at a time: the most recent
+  by default, or any earlier game picked from the dropdown. The game is headed by
+  the result and the squad's totals, with each player's bets on it in their own
+  card (bets, wagered and net). At the
   bottom of the page, **Are the odds right?** checks the odds against results:
   picks are grouped by the chance the odds gave them, and each group shows how
   often it actually won, overall and per market type ("about right", "too
@@ -265,7 +399,7 @@ open it from anywhere while it keeps running on your PC.
    password the tunnel refuses to start.
 2. Run `run-online.bat` (or `python server.py --tunnel`). The first time,
    `cloudflared` is downloaded into `tools/` automatically.
-3. Open the Setup page. The public link is shown under *Online access* with a
+3. Open Setup (the ⚙ button, top right). The public link is shown under *Online access* with a
    Copy button, and it is printed in the console too.
 
 That is a *quick tunnel*: free, no account, HTTPS. The address is random and
@@ -334,7 +468,7 @@ A Basic key allows about 30 requests per minute, and HenrikDev also counts the
 Riot requests it makes in the background to fill its cache. A regular sync is
 one request per member plus a handful of match-detail fetches, spaced 1.5 s
 apart; the client reads the rate-limit headers and backs off automatically on
-`429`. If a sync fails you will see why on the Setup page and in the console.
+`429`. If a sync fails you will see why on the Setup page (⚙) and in the console.
 
 ## Project layout
 
@@ -351,14 +485,18 @@ fivestack/             the backend package
   henrik.py            HenrikDev API client
   db.py                SQLite schema and queries (data/tracker.db)
   stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
-  insights.py          datasets for the Visualizations tab (sessions, comps, damage share, ...)
+  insights.py          datasets for the Charts tab (sessions, comps, damage share, ...)
+  forecasts.py         Forecasts tab: each game replayed against the odds engine's prediction
+  recap.py             Matches tab recap: scoreboard, round by round, betting and highlights
   timeline.py          round-by-round records: clutches, multi-kills, spike sites
   odds.py              odds engine
   gamestate.py         how a game ended: complete, surrendered, or a remake
   bets.py              betting ledger and settlement
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
-web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), style.css (no build step)
+web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), recap.js (match recap), style.css,
+                       assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
+                       onkey.png, the logo's full-size original) (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```

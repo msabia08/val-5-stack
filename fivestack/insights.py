@@ -52,6 +52,7 @@ def build_insights(db):
         lines[p["match_id"]][p["puuid"]] = p
 
     games, session, prev_ts, in_session = [], 0, None, 0
+    dealt = defaultdict(float)  # each player's damage over every game so far, for the running share
     for i, m in enumerate(matches):
         ts = m.get("started_ts") or 0
         if prev_ts is None or ts - prev_ts > SESSION_GAP_S:
@@ -62,6 +63,9 @@ def build_insights(db):
         rw, rl = m.get("rounds_won") or 0, m.get("rounds_lost") or 0
         ps = [lines[m["match_id"]][pu] for pu in order if pu in lines[m["match_id"]]]
         total_dmg = sum(p.get("damage_dealt") or 0 for p in ps)
+        for p in ps:
+            dealt[p["puuid"]] += p.get("damage_dealt") or 0
+        dealt_total = sum(dealt.values())
         shape_key, shape_label = _role_shape(p.get("agent") for p in ps)
         window = matches[max(0, i + 1 - FORM_WINDOW): i + 1]
         games.append({
@@ -78,6 +82,8 @@ def build_insights(db):
             "game_in_session": in_session,
             "form": (sum(1 for w in window if w.get("result") == "win") / len(window)) if i + 1 >= FORM_MIN_GAMES else None,
             "damage_share": {p["puuid"]: safe_div(p.get("damage_dealt") or 0, total_dmg) for p in ps} if total_dmg else {},
+            # Each player's share of all the squad's damage from the first game through this one.
+            "damage_cum": {pu: safe_div(v, dealt_total) for pu, v in dealt.items()} if total_dmg else {},
             "comp": shape_key,
             "comp_label": shape_label,
         })
@@ -178,8 +184,10 @@ def _agent_pool(rows, overall_acs):
 
 
 # Betting report card: market types grouped the way bettors think about them.
-BET_CATEGORIES = [("ou", "Player props"), ("top", "Scoreboard"), ("team_win", "Match result"),
-                  ("team_ou", "Total rounds"), ("team_ot", "Overtime"), ("parlay", "Parlays")]
+BET_CATEGORIES = [("ou", "Player props"), ("exact", "Exact numbers"), ("top", "Scoreboard"), ("team_win", "Match result"),
+                  ("team_ou", "Total rounds"), ("team_rw", "Rounds won"), ("team_rl", "Rounds lost"),
+                  ("team_margin", "Winning margin"), ("team_score", "Exact score"), ("team_ot", "Overtime"),
+                  ("parlay", "Parlays")]
 
 
 def _bet_record(bets):

@@ -82,7 +82,7 @@ def clutches_and_multikills(timelines, member_puuids):
     return per
 
 
-def _first_half_attackers(tl):
+def first_half_attackers(tl):
     """The team attacking in rounds 1-12, read off the spike plants (only attackers plant)."""
     votes = Counter()
     for i, rnd in enumerate(tl["rounds"][:2 * HALF]):
@@ -105,7 +105,7 @@ def spike_sites(timelines_by_map):
         attack_rounds = attack_plants = 0
         for tl in tls:
             our = tl["our_team"]
-            first_att = _first_half_attackers(tl)
+            first_att = first_half_attackers(tl)
             for i, rnd in enumerate(tl["rounds"]):
                 won = rnd["winner"] == our
                 if first_att and i < 2 * HALF:

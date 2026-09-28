@@ -20,7 +20,7 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
   --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   --spark: #5a5a57;
-  --bar-track: #184f95;
+  --bar-track: #33332f;
   --bar-fill: #3987e5;
   --radius: 12px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -36,17 +36,17 @@
     --text: #0b0b0b; --text-2: #52514e; --muted: #898781; --grid: #e1e0d9;
     --accent: #2a78d6; --accent-soft: rgba(42, 120, 214, 0.12); --up: #006300; --down: #d03b3b;
     --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
-    --spark: #c3c2b7; --bar-track: #cde2fb; --bar-fill: #2a78d6; --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --spark: #c3c2b7; --bar-track: #e4e3dd; --bar-fill: #2a78d6; --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
     --axis: #c3c2b7; --div-pos: #2a78d6; --div-neg: #e34948; --div-mid: #f0efec; --aim-1: #1c5cab; --aim-2: #3987e5; --aim-3: #86b6ef; --pair-lo: #86b6ef; --pair-hi: #1c5cab;
   }
 }
-:root[data-theme="light"] {
+:root[data-theme="light"], :root[data-theme="greg"] {
   color-scheme: light;
   --bg: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec; --border: rgba(11, 11, 11, 0.10);
   --text: #0b0b0b; --text-2: #52514e; --muted: #898781; --grid: #e1e0d9;
   --accent: #2a78d6; --accent-soft: rgba(42, 120, 214, 0.12); --up: #006300; --down: #d03b3b;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
-  --spark: #c3c2b7; --bar-track: #cde2fb; --bar-fill: #2a78d6; --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --spark: #c3c2b7; --bar-track: #e4e3dd; --bar-fill: #2a78d6; --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   --axis: #c3c2b7; --div-pos: #2a78d6; --div-neg: #e34948; --div-mid: #f0efec; --aim-1: #1c5cab; --aim-2: #3987e5; --aim-3: #86b6ef; --pair-lo: #86b6ef; --pair-hi: #1c5cab;
 }
 
@@ -71,14 +71,42 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 /* ---- top bar -------------------------------------------------------- */
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 200px; }
-.logo { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; }
+.logo { display: block; width: 62px; height: 36px; object-fit: contain; flex: none; }  /* web/assets/onkey-logo.png: a 124 x 72 crop of onkey.png */
+.logo-greg { display: none; }  /* Greg Mode's logo: a 124 x 72 head-and-shoulders crop of greg.png (transparent) */
+/* Hovering the logo: a quick wiggle, then it stays a little bigger until the pointer leaves. */
+.logo { transform-origin: 50% 85%; transition: transform 0.2s ease; }
+.logo:hover { animation: logo-wiggle 0.6s ease-in-out forwards; }
+@keyframes logo-wiggle {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(-10deg) scale(1.12); }
+  50% { transform: rotate(8deg) scale(1.12); }
+  75% { transform: rotate(-4deg) scale(1.1); }
+  100% { transform: rotate(0deg) scale(1.08); }
+}
 .sub { color: var(--muted); font-size: 12px; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tabs a { text-decoration: none; color: var(--text-2); padding: 7px 12px; border-radius: 8px; font-weight: 500; font-size: 14px; }
 .tabs a:hover { background: var(--surface-2); color: var(--text); }
 .tabs a.active { background: var(--accent-soft); color: var(--text); }
 .topbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.me-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 12px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--text); text-decoration: none; font-size: 13px; white-space: nowrap; }
+.me-chip:hover { background: var(--accent); color: #fff; }
+.me-chip b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.me-chip .me-name, .me-chip .me-unit { color: inherit; opacity: 0.8; }
 .status-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; }
+/* Top-right toolbar: balance, status, sync, log out and theme share one look (height, box, border, text), so they
+   read as one group; hovering anything clickable tints it with the accent. */
+.topbar-right { gap: 8px; }
+.topbar .topbar-right > .me-chip, .topbar .topbar-right > .status-pill, .topbar .topbar-right > .btn {
+  height: 34px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text-2);
+  font: inherit; font-size: 13px; font-weight: 500; line-height: 1; text-decoration: none; white-space: nowrap; filter: none;
+}
+.topbar .topbar-right > .btn:not(:disabled):hover, .topbar .topbar-right > .me-chip:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.topbar .topbar-right > .btn.icon { width: 34px; padding: 0; justify-content: center; font-size: 15px; }
+.topbar .topbar-right > .btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }  /* the ⚙ button while on Setup */
+.topbar-right > .me-chip span { opacity: 1; }
+.topbar-right > .me-chip b { color: var(--text); font-size: 14px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--good); }
 .dot.bad { background: var(--bad); }
@@ -178,19 +206,108 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .odds-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 .odds-layout > * { min-width: 0; }
 .markets { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
-.market { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--surface-2); }
+.market { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--surface-2); display: flex; flex-direction: column; }
+.market > .sels { margin-top: auto; }
+.markets .sels .odd span { white-space: nowrap; }
 .sels { display: flex; gap: 8px; flex-wrap: wrap; }
 .markets .sels { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.market.wide { grid-column: 1 / -1; }
+.markets .sels.team_score { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
+.markets .sels.team_score .odd { flex-direction: column; justify-content: center; gap: 1px; padding: 5px 2px; white-space: nowrap; }
+.markets .sels.team_score .odd span { font-size: 12px; color: var(--text-2); }
+.markets .sels.team_score .odd.on span { color: #fff; }
+.markets .sels.team_score .odd b { font-size: 12px; }
+.markets .sels.team_margin { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .markets .sels .odd { justify-content: space-between; min-width: 0; }
 .odd { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
 .odd b { font-variant-numeric: tabular-nums; }
 .odd:hover { border-color: var(--accent); }
 .odd.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-.props th[scope="row"] { font-weight: 500; color: var(--text); font-size: 14px; white-space: normal; min-width: 150px; }
+/* A hot streak: a flame-coloured ring (the 1px gradient border plus a 1px inner ring) that flows around the
+   button, with flame tongues flickering up from its top edge. No size change, so rows stay aligned. */
+.odd.hot { border-color: transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(90deg, #ff2d00, #ff8a00, #ffd740, #ff6d00, #ff2d00) 0 0 / 200% 100% border-box;
+  animation: flame-flow 1.2s linear infinite, flame-flicker 1.3s ease-in-out infinite; }
+.odd.hot.on { background: linear-gradient(var(--accent), var(--accent)) padding-box,
+    linear-gradient(90deg, #ff2d00, #ff8a00, #ffd740, #ff6d00, #ff2d00) 0 0 / 200% 100% border-box; }
+@keyframes flame-flow { to { background-position: 0 0, 200% 0; } }
+@keyframes flame-flicker {
+  0%, 100% { box-shadow: inset 0 0 0 1px #ff8a00, 0 0 5px 1px rgba(255, 70, 0, .55), -4px -4px 8px -3px rgba(255, 150, 0, .7), 5px -6px 9px -4px rgba(255, 215, 64, .6); }
+  25% { box-shadow: inset 0 0 0 1px #ffab00, 0 0 7px 1px rgba(255, 60, 0, .65), -2px -7px 10px -4px rgba(255, 170, 0, .75), 6px -4px 8px -3px rgba(255, 225, 90, .5); }
+  50% { box-shadow: inset 0 0 0 1px #ff6d00, 0 0 4px 1px rgba(255, 80, 0, .5), -5px -5px 9px -4px rgba(255, 140, 0, .6), 3px -9px 11px -5px rgba(255, 215, 64, .75); }
+  75% { box-shadow: inset 0 0 0 1px #ffc400, 0 0 8px 2px rgba(255, 60, 0, .6), -3px -8px 10px -4px rgba(255, 160, 0, .7), 5px -5px 9px -4px rgba(255, 235, 110, .55); }
+}
+/* A cold streak: an icy ring that drifts slowly, a soft frosty glow and a glint of light sweeping across now and then. */
+.odd.cold { position: relative; overflow: hidden; border-color: transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(90deg, #4fc3f7, #e1f5fe, #81d4fa, #b3e5fc, #4fc3f7) 0 0 / 200% 100% border-box;
+  animation: flame-flow 4s linear infinite, frost 2.4s ease-in-out infinite alternate; }
+.odd.cold.on { background: linear-gradient(var(--accent), var(--accent)) padding-box,
+    linear-gradient(90deg, #4fc3f7, #e1f5fe, #81d4fa, #b3e5fc, #4fc3f7) 0 0 / 200% 100% border-box; }
+.odd.cold::after { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 50%; pointer-events: none;
+  background: linear-gradient(105deg, transparent, rgba(190, 235, 255, .45), transparent); animation: frost-sweep 3.6s ease-in-out infinite; }
+@keyframes frost {
+  from { box-shadow: inset 0 0 0 1px #81d4fa, 0 0 3px rgba(79, 195, 247, .35); }
+  to { box-shadow: inset 0 0 0 1px #e1f5fe, 0 0 8px 1px rgba(129, 212, 250, .6), inset 0 0 7px rgba(179, 229, 252, .3); }
+}
+@keyframes frost-sweep { 0%, 55% { transform: translateX(0); } 100% { transform: translateX(440%); } }
+
+/* Confetti for a winning bet (see confetti() in app.js), and the bet slip balance ticker's flash. */
+.confetti { position: fixed; width: 7px; height: 11px; margin: -5px 0 0 -3px; border-radius: 2px; pointer-events: none; z-index: 1000; }
+.confetti.round { width: 8px; height: 8px; border-radius: 50%; }
+.acct-balance b.tick-up { animation: tick-up 1.4s ease-out; }
+.acct-balance b.tick-down { animation: tick-down 1.4s ease-out; }
+@keyframes tick-up { from { color: var(--up); text-shadow: 0 0 10px var(--up); } }
+@keyframes tick-down { from { color: var(--down); text-shadow: 0 0 10px var(--down); } }
+
+/* A bet ticket just placed lands with a "PLACED" stamp that fades out. */
+.bet-ticket.just-placed { position: relative; animation: ticket-land .45s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes ticket-land { from { transform: scale(1.06); opacity: 0; } }
+.placed-stamp { position: absolute; top: 50%; left: 50%; z-index: 1; pointer-events: none; padding: 2px 10px; border: 3px solid var(--good); border-radius: 6px;
+  color: var(--good); font-size: 18px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; background: var(--surface);
+  opacity: 0; animation: stamp 1.7s ease-out forwards; }
+@keyframes stamp {
+  0% { transform: translate(-50%, -50%) rotate(-12deg) scale(2.2); opacity: 0; }
+  14% { transform: translate(-50%, -50%) rotate(-12deg) scale(1); opacity: .95; }
+  70% { transform: translate(-50%, -50%) rotate(-12deg) scale(1); opacity: .9; }
+  100% { transform: translate(-50%, -50%) rotate(-12deg) scale(1); opacity: 0; }
+}
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.props th[scope="row"] { font-weight: 500; color: var(--text); font-size: 14px; white-space: normal; min-width: 90px; }
 td.prop { text-align: center; white-space: nowrap; }
 .props thead th:not(:first-child) { text-align: center; }
-td.prop .line { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 14px; margin-bottom: 4px; }
-td.prop .odd { padding: 4px 7px; margin: 0 2px; }
+td.prop { padding-left: 4px; padding-right: 4px; }
+.prop-cell { display: inline-flex; align-items: center; gap: 6px; }
+.prop-line { font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+.prop-pair { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+td.prop .prop-pair .odd { border: 0; border-radius: 0; margin: 0; padding: 5px 7px; gap: 4px; background: transparent; font-size: 12px; }
+td.prop .prop-pair .odd + .odd { border-left: 1px solid var(--border); }
+td.prop .prop-pair .odd span { font-size: 12px; font-weight: 700; color: var(--muted); }
+td.prop .prop-pair .odd:hover { background: var(--accent-soft); }
+td.prop .prop-pair .odd.on { background: var(--accent); color: #fff; }
+td.prop .prop-pair .odd.on span { color: #fff; }
+/* Inside the O | U pill only the hot half burns, like the other buttons: it rounds off and draws the same flowing
+   gradient ring (a masked ::before, since the halves have no border of their own) and the same flickering flames,
+   raised above its neighbour. The pill stops clipping so the flames can show. */
+td.prop .prop-pair.lit { overflow: visible; }
+td.prop .prop-pair .odd.hot { position: relative; z-index: 1; border-radius: 7px; background: var(--surface);
+  animation: flame-flicker 1.3s ease-in-out infinite; }
+td.prop .prop-pair .odd.hot::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(90deg, #ff2d00, #ff8a00, #ffd740, #ff6d00, #ff2d00) 0 0 / 200% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: flame-flow-ring 1.2s linear infinite; }
+@keyframes flame-flow-ring { to { background-position: 200% 0; } }
+td.prop .prop-pair .odd.cold { z-index: 1; border-radius: 7px; background: var(--surface); }
+td.prop .prop-pair .odd.cold::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(90deg, #4fc3f7, #e1f5fe, #81d4fa, #b3e5fc, #4fc3f7) 0 0 / 200% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: flame-flow-ring 4s linear infinite; }
+td.prop .prop-pair .odd.cold:hover { background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--surface); }
+td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .conf.low { color: var(--warn); }
 .conf.medium { color: var(--text-2); }
 .conf.high { color: var(--up); }
@@ -198,12 +315,22 @@ td.prop .odd { padding: 4px 7px; margin: 0 2px; }
 .top-bar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
 .top-fill { display: block; height: 100%; border-radius: 0 4px 4px 0; }
 
-.slip { position: sticky; top: 76px; }
+/* The slip and the Custom line card share the side column, which stays in view and scrolls on its own if tall. */
+.odds-side { position: sticky; top: 76px; max-height: calc(100vh - 92px); overflow-y: auto; display: grid; gap: 12px; align-content: start; }
+.odds-side > .card { margin: 0; }
+.odds-side #custom-line .ctx-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.odds-side #custom-line label, .odds-side #custom-line select, .odds-side #custom-line input { width: 100%; min-width: 0; }
+.odds-side #custom-line h2 { font-size: 16px; }
+.odds-side .my-bets h2 { font-size: 16px; }
+.odds-side .my-bets .bettor-slips { grid-template-columns: 1fr; }
 .account { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .account label { width: 100%; margin-bottom: 6px; }
 .account input { width: 100%; }
 .account .btn-row { margin-top: 4px; }
 .account p { margin-bottom: 0; }
+.acct-balance { font-size: 13px; color: var(--text-2); margin: 2px 0; }
+.acct-balance b { font-size: 24px; color: var(--text); font-variant-numeric: tabular-nums; }
+.slip-after { color: var(--text-2); margin-top: 2px; }
 .slip label { width: 100%; }
 .slip input { width: 100%; }
 .slip-item { display: grid; grid-template-columns: 1fr 72px 30px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--grid); }
@@ -219,6 +346,7 @@ td.prop .odd { padding: 4px 7px; margin: 0 2px; }
 .mode-btn.on { background: var(--accent); color: #fff; }
 .top-toggle { margin-bottom: 6px; }
 .top-toggle .mode-btn { padding: 5px 6px; font-size: 13px; }
+.top-toggle .top-info { margin-left: 4px; font-size: 11px; font-weight: 400; opacity: .75; cursor: help; }
 .parlay-summary { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 8px 0; border-top: 1px dashed var(--border); margin-top: 4px; }
 .parlay-summary b { font-variant-numeric: tabular-nums; }
 
@@ -238,6 +366,8 @@ details.season { border-top: 1px solid var(--grid); padding: 8px 0; }
 details.season summary { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: 14px; }
 details.season[open] summary { margin-bottom: 8px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.settled-pick { max-width: 100%; }
+.settled-pick select { max-width: 100%; min-width: 0; }
 .settled-game { margin-bottom: 16px; }
 .settled-game:last-child { margin-bottom: 0; }
 .settled-game-head { display: flex; align-items: center; gap: 8px; padding: 6px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 14px; }
@@ -289,7 +419,7 @@ ol li { margin-bottom: 6px; }
 /* ---- responsive ------------------------------------------------------ */
 @media (max-width: 1000px) {
   .odds-layout { grid-template-columns: 1fr; }
-  .slip { position: static; }
+  .odds-side { position: static; max-height: none; overflow: visible; }
 }
 @media (max-width: 860px) {
   .grid-2 { grid-template-columns: 1fr; }
@@ -346,6 +476,75 @@ line.viz-grid { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdge
 .viz-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .viz-key.line { width: 14px; height: 2px; border-radius: 1px; }
 .viz-key.dot { border-radius: 50%; }
+.viz-key.range { width: 8px; height: 14px; border-radius: 3px; opacity: 0.35; }
+/* Aim profile figures: one blue, each part's fill-opacity set by its share of hits against the squad's range for that
+   part, with a faint outline so even the palest part keeps its shape. The shares print over the figure with a halo
+   in the card colour. */
+.aim-part { fill: var(--aim-2); stroke: var(--aim-2); stroke-opacity: .6; stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.aim-pct { fill: var(--text); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.aim-pct.head { font-size: 12px; }
+/* Who carries the damage: a row of bullets per player (the case a shade lighter than the tip; hovering a player's
+   row fades everyone else's). */
+.dmg-casing { fill-opacity: .7; }
+.dmg-belt .viz-row { transition: opacity .15s; }
+.dmg-belt:hover .viz-row:not(:hover) { opacity: .3; }
+/* Who swings results: a big W (ACS in wins) and L (in losses) per player, with the same letters in the legend. */
+.swing-mark { font-size: 18px; font-weight: 800; }
+.swing-mark.up, .swing-key.up { fill: var(--up); color: var(--up); }
+.swing-mark.down, .swing-key.down { fill: var(--down); color: var(--down); }
+.swing-key { font-size: 14px; font-weight: 800; line-height: 1; }
+/* Team comps: each comp as a lineup of role letters. */
+.role-chip { fill: var(--surface-2); stroke: var(--border); }
+.role-chip-t { fill: var(--text-2); font-size: 11px; font-weight: 700; }
+/* Spike sites: an Attack / Defence toggle, then a row per map with a tile per site. */
+.spike-toggle { margin: 2px 0 10px; }
+.spike-row { display: grid; grid-template-columns: minmax(96px, 1fr) 58px 230px; align-items: center; gap: 8px; padding: 3px 0; } /* room for A, B and C tiles, so every row lines up */
+.spike-pane.def .spike-row { grid-template-columns: minmax(96px, 1fr) 230px; }
+.spike-map { font-size: 13px; font-weight: 600; }
+.spike-plant { text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.spike-sites { display: flex; gap: 4px; }
+.spike-site { width: 74px; padding: 4px 6px; border-radius: 6px; font-size: 13px; text-align: center; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.spike-letter { margin-right: 5px; font-weight: 800; opacity: .75; }
+/* Players tab trends: the picked player's line stands out, the rest fade back. */
+.tr-line.dim { opacity: .25; }
+.tr-line.focus .viz-line { stroke-width: 3; }
+.tr-player.focus { font-weight: 700; }
+/* Matches: games grouped by night, each night folding away. */
+details.night { border-top: 1px solid var(--border); }
+details.night > summary { display: flex; align-items: baseline; gap: 12px; padding: 10px 2px; cursor: pointer; list-style: none; }
+details.night > summary::-webkit-details-marker { display: none; }
+details.night > summary::before { content: "▸"; color: var(--muted); display: inline-block; width: 10px; transition: transform .15s; }
+details.night[open] > summary::before { transform: rotate(90deg); }
+.night-date { font-weight: 600; min-width: 110px; }
+.night-rec { font-variant-numeric: tabular-nums; }
+table.match-table { table-layout: fixed; width: 100%; margin-bottom: 8px; }
+table.match-table td { padding: 6px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.match-table .c-res { width: 118px; } table.match-table .c-map { width: 90px; } table.match-table .c-mode { width: 108px; }
+table.match-table .c-time { width: 84px; } table.match-table .c-go { width: 64px; }
+.match-table .m-score { font-variant-numeric: tabular-nums; }
+.match-table .m-go { text-align: right; color: var(--muted); font-size: 12px; }
+@media (max-width: 640px) { table.match-table .c-mode { width: 0; } table.match-table td:nth-child(3) { display: none; } }
+/* Overview: who's trending, with a coloured change and an ACS sparkline per player. */
+table.ov-trending td, table.ov-trending th { padding: 7px 8px; }
+table.ov-trending td.num b { font-variant-numeric: tabular-nums; }
+.trend-delta { display: inline-block; min-width: 52px; margin-left: 8px; padding: 1px 6px; border-radius: 999px; font-size: 11.5px; text-align: center;
+  font-variant-numeric: tabular-nums; background: color-mix(in srgb, currentColor 13%, transparent); }
+.trend-delta.up { color: var(--up); } .trend-delta.down { color: var(--down); } .trend-delta.flat { color: var(--muted); }
+.ov-spark { text-align: right; }
+.ov-trending th.ov-h { text-align: center; }
+.ov-trending th.ov-spark { font-weight: 400; color: var(--muted); font-size: 12px; }
+.aim-scale { display: inline-block; width: 64px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--aim-2) 10%, transparent), var(--aim-2)); }
+.fc-pickers { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+.seg-btn { background: transparent; border: 0; border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; }
+.seg-btn .swatch { margin-right: 6px; }
+.seg-btn.on { background: var(--accent); color: #fff; }
+.seg-btn.on .swatch { box-shadow: 0 0 0 2px #fff; }
+.fc-group { display: flex; flex-direction: column; gap: 4px; }
+.fc-caption { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.seg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.viz-heat td.fc-cell { cursor: pointer; }
+.viz-heat td.fc-sel { outline: 2px solid var(--accent); outline-offset: -2px; }
 .viz-heat { border-collapse: separate; border-spacing: 2px; width: 100%; }
 .viz-heat th { font-size: 12px; font-weight: 500; color: var(--text-2); padding: 4px 6px; text-align: center; border: 0; white-space: nowrap; }
 .viz-heat th[scope="row"] { text-align: left; }
@@ -364,12 +563,159 @@ line.viz-grid { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdge
 .viz-table { margin-top: 8px; font-size: 13px; }
 .viz-table summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .viz-table[open] summary { margin-bottom: 6px; }
-.viz-tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); padding: 8px 10px; font-size: 12px; min-width: 140px; max-width: 280px; }
+.viz-tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); padding: 8px 10px; font-size: 12px; min-width: 140px; max-width: min(440px, calc(100vw - 16px)); }
 .viz-tip-title { color: var(--text-2); margin-bottom: 4px; }
 .viz-tip-row { display: flex; align-items: center; gap: 8px; line-height: 1.6; }
 .viz-tip-row strong { font-size: 13px; font-variant-numeric: tabular-nums; }
 .viz-tip-row span:last-child { color: var(--text-2); }
+.viz-tip-row strong, .viz-tip-row span { white-space: nowrap; } /* one line per row; the tooltip widens instead */
+@media (max-width: 480px) { .viz-tip-row strong, .viz-tip-row span { white-space: normal; } }
+.viz-tip-note { color: var(--muted); font-size: 11px; padding-left: 20px; margin: -2px 0 2px; }
 .viz-tip-key { flex: 0 0 12px; height: 2px; border-radius: 1px; }
 .viz-tip-key.none { background: transparent; }
 @media (max-width: 860px) { .viz-cols { grid-template-columns: 1fr; } }
 @media (min-width: 861px) { .viz-accuracy { grid-template-columns: minmax(0, 360px) 1fr; align-items: start; } }
+
+/* ---- match recap (Matches tab, web/recap.js) ---- */
+.recap-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.recap-score { font-size: 26px; font-variant-numeric: tabular-nums; }
+.recap-map { font-size: 18px; font-weight: 600; }
+.recap-navs { margin-left: auto; display: flex; gap: 6px; }
+.hl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.hl-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }  /* no coloured bar; the Nice / Rough / Odd label carries the tone */
+.hl-who { display: flex; align-items: center; font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+.hl-who .swatch { margin-right: 6px; }
+.hl-title { font-weight: 700; font-size: 15px; line-height: 1.3; }
+.hl-detail { color: var(--text-2); font-size: 13px; margin-top: 2px; }
+.hl-more { margin-top: 10px; font-size: 13px; }
+.hl-more summary { cursor: pointer; color: var(--text-2); }
+.hl-more ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; }
+.hl-more .swatch { margin-right: 4px; }
+.recap-arrow { display: inline-block; width: 12px; font-size: 9px; text-align: center; vertical-align: 1px; } /* a fixed slot, arrow or not */
+.recap-arrow.up { color: var(--up); }
+.recap-arrow.down { color: var(--down); }
+.recap-board td[data-tip] { cursor: default; }
+.rd-strip { display: flex; flex-wrap: wrap; gap: 4px; }
+.rd { position: relative; flex: 1 1 0; min-width: 30px; min-height: 52px; border-radius: 6px; padding: 4px 2px; text-align: center; background: var(--surface-2); border: 1px solid var(--border); outline: none; }
+.rd.won { background: color-mix(in oklab, var(--up) 22%, var(--surface-2)); }
+.rd.lost { background: color-mix(in oklab, var(--down) 18%, var(--surface-2)); }
+.rd:focus-visible { outline: 2px solid var(--accent); }
+.rd-gap { margin-left: 12px; }
+.rd-n { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rd-marks { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 3px; }
+.rd-mark { font-size: 10px; font-weight: 700; line-height: 1.2; padding: 0 3px; border-radius: 3px; }
+.rd-mark.us { color: var(--div-pos); }
+.rd-mark.them { color: var(--div-neg); }
+.rd-mark.def { color: var(--text-2); }
+.rd-mark.big { background: var(--accent); color: #fff; }
+.rd-fb { position: absolute; top: 4px; left: 4px; width: 6px; height: 6px; border-radius: 50%; }
+.rd-fb.ours { background: var(--div-pos); }
+.rd-fb.theirs { background: var(--div-neg); }
+.recap-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.recap-cols h3 { font-size: 14px; margin: 0 0 6px; }
+.recap-cols h3 + table, .recap-cols p + table { margin-bottom: 12px; }
+tr.match-row.on td { background: var(--accent-soft); }
+.recap-board .tag { background: var(--accent-soft); color: var(--text); }
+.plain-link { color: inherit; text-decoration: none; }
+@media (max-width: 760px) { .recap-cols { grid-template-columns: 1fr; } .recap-navs { margin-left: 0; } }
+
+/* ---- custom lines (Odds & Bets) ---- */
+.cl-quote { margin-top: 10px; }
+.cl-offer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+.cl-offer > div { flex: 1 1 220px; }
+.cl-odds { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---- Greg Mode: the light theme over web/assets/greg.png, stretched to the window width and fixed in place.
+   Every panel (cards, tiles, the top bar, slip, markets, buttons) is 50% see-through; tooltips and toasts stay solid
+   so they're readable. ---- */
+:root[data-theme="greg"] { --surface: rgba(252, 252, 251, 0.5); --surface-2: rgba(240, 239, 236, 0.5); }
+:root[data-theme="greg"] body { background: #fff; }
+/* Greg stays put while the page scrolls: a fixed layer behind everything (background-attachment: fixed is ignored on
+   iPhones and iPads, this isn't), stretched to the window width. */
+:root[data-theme="greg"] body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url("/assets/greg.png") center top / 100% auto no-repeat; }
+:root[data-theme="greg"] .viz-tip, :root[data-theme="greg"] .toast { background: #fcfcfb; }
+:root[data-theme="greg"] .logo-main { display: none; }
+:root[data-theme="greg"] .logo-greg { display: block; }
+@media (max-width: 640px) { .me-chip .me-name, .me-chip .me-unit { display: none; } }
+/* Greg Mode's click effect (app.js): a Greg pops up from the pointer, then falls off the screen spinning. */
+.greg-drop { position: fixed; z-index: 100; width: 48px; height: auto; margin: -43px 0 0 -24px; pointer-events: none; will-change: transform;
+  animation: greg-fall 1.5s forwards; }
+@keyframes greg-fall {
+  0% { transform: translate(0, 0) rotate(0deg) scale(0.4); animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1); }
+  18% { transform: translate(calc(var(--drift) * 0.15), -70px) rotate(calc(var(--spin) * 0.12)) scale(1); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6); }
+  100% { transform: translate(var(--drift), 110vh) rotate(var(--spin)) scale(1); }
+}
+
+/* ---- Players tab: the squad comparison table and one player's detail ---- */
+.pl-table th.pl-group { text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; border-bottom: 0; padding-bottom: 0; }
+.pl-table .pl-split { border-left: 2px solid var(--border); }
+.pl-table tbody th[scope="row"] { font-weight: 600; white-space: nowrap; }
+tr.pl-row { cursor: pointer; }
+tr.pl-row:hover td, tr.pl-row:hover th { background: var(--surface-2); }
+tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
+.pl-table td.pc-best { font-weight: 700; color: var(--accent); }
+.pc-arrow { display: inline-block; width: 11px; text-align: right; font-size: 9px; vertical-align: 1px; }  /* always present, so numbers line up */
+.pc-arrow.up { color: var(--up); }
+.pc-arrow.down { color: var(--down); }
+.recap-link { color: var(--accent); text-decoration: none; white-space: nowrap; }
+.recap-link:hover { text-decoration: underline; }
+.pl-picker { margin-bottom: 14px; }
+.player-head .pl-links { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.tile.tile-link { color: inherit; text-decoration: none; display: block; }
+.tile.tile-link:hover { border-color: var(--accent); }
+.tile.tile-link .tile-sub { color: var(--accent); }
+.pl-tiles .tile .spark { display: block; margin-top: 6px; }
+.tile-range { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; }
+/* Players tab's trend chart: stat and smoothing pickers, and a legend whose names show / hide each line. */
+.tr-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
+.tr-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.tr-player { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
+.tr-player:hover { border-color: var(--accent); }
+.tr-player.off { opacity: 0.4; text-decoration: line-through; }
+
+/* Folded explanations: a one-line summary, with "How this works" opening the rest. */
+.how { font-size: 12.5px; color: var(--muted); margin: 2px 0 10px; line-height: 1.5; }
+.how > summary { cursor: pointer; list-style: none; }
+.how > summary::-webkit-details-marker { display: none; }
+.how > summary::after { content: "How this works ▸"; margin-left: 8px; color: var(--accent); font-size: 12px; white-space: nowrap; }
+.how[open] > summary::after { content: "Hide ▴"; }
+.how-body { margin-top: 6px; color: var(--text-2); }
+.how-body p { margin: 0 0 6px; }
+
+/* ---- Overview: the front page ---- */
+.ov-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.ov-grid > .card { margin-bottom: 16px; }
+.ov-game { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 16px; }
+.ov-game b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.ov-hl { display: grid; gap: 8px; }
+/* Overview betting: tiles (your balance, the last games' standout bets) and leaderboard rows share one look. */
+.ov-betting .ov-sub { display: flex; justify-content: space-between; margin: 14px 0 6px; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.ov-betting .ov-sub span { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.ov-tile { min-width: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+.ov-tile-label { font-size: 12px; color: var(--muted); }
+.ov-tile-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.ov-balance .ov-tile-value { font-size: 26px; }
+.ov-unit { font-size: 14px; font-weight: 400; color: var(--text-2); }
+.ov-tile-sub { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-tile-sub .swatch { margin-right: 4px; }
+.ov-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ov-leaders { list-style: none; padding: 0; margin: 0; }
+.ov-leaders li { display: grid; grid-template-columns: 26px minmax(0, 1fr) 70px 60px; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.ov-leaders li:last-child { border-bottom: 0; }
+.ov-leaders li.me { background: var(--accent-soft); border-radius: 6px; }
+.ov-leaders .ov-name .swatch { margin-right: 6px; }
+.ov-leaders .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ov-medal { font-size: 16px; text-align: center; }
+@media (max-width: 860px) { .ov-grid { grid-template-columns: 1fr; } }
+.viz-genres { margin-bottom: 14px; }
+
+/* Reduced motion: no wiggling logo, and hot-streak borders stand still. Last in the file so it wins. */
+@media (prefers-reduced-motion: reduce) {
+  .logo:hover, .odd.hot, td.prop .prop-pair .odd.hot, td.prop .prop-pair .odd.hot::before, .odd.cold, td.prop .prop-pair .odd.cold::before,
+  .acct-balance b.tick-up, .acct-balance b.tick-down, .bet-ticket.just-placed { animation: none; }
+  .odd.hot { box-shadow: inset 0 0 0 1px #ff8a00; } /* a still flame border */
+  .odd.cold { box-shadow: inset 0 0 0 1px #81d4fa; } /* and a still frosty one */
+  .odd.cold::after, .placed-stamp { display: none; }
+}

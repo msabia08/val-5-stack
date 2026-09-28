@@ -13,10 +13,12 @@ down nor counts as much as a real game. They are left out of the total-rounds
 market altogether, and count normally toward the match-result market.
 """
 import math
+from functools import lru_cache
 import random
 import time
 from bisect import bisect_left
 from collections import defaultdict
+from statistics import NormalDist
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, full_game_rounds, rounds_to_win, went_to_overtime
 from .stats import aggregate, player_metrics
@@ -30,6 +32,14 @@ STAT_DEFS = [
     {"key": "hs_pct", "label": "Headshot %", "kind": "pct", "floor_h": 2.5},
 ]
 FLOOR_H = {d["key"]: d["floor_h"] for d in STAT_DEFS}
+STAT_BY_KEY = {d["key"]: d for d in STAT_DEFS}
+# Custom lines ("I think Loog gets 25 kills"): any .5 line on a player prop, priced from the same smoothed
+# distribution as the board's lines. The side you bet needs a fair chance between these, so long shots top out
+# around +1800 and near-certainties (stake 50 to win 1) aren't offered.
+ALT_MIN_CHANCE = 0.05
+ALT_MAX_CHANCE = 0.90
+# Exact numbers ("exactly 25 kills") on the counting stats: always long shots, so the floor is lower (about +4700).
+EXACT_MIN_CHANCE = 0.02
 FLOOR_H["acs_rel"] = 0.06  # ACS as a multiple of the player's own average
 COUNT_KEYS = [d["key"] for d in STAT_DEFS if d["kind"] == "count"]
 
@@ -90,10 +100,85 @@ def selection(key, label, fair, overround):
     }
 
 
+MULTI_WAY = {"top", "team_score", "team_margin", "exact"}  # many possible outcomes: these carry double the house edge
+
+
 def market_overround(market_type, edge):
-    """How far a market's prices add up past 100%: "top"/"low" markets have one selection per player, so they
-    carry double the house edge."""
-    return 1.0 + edge * (2.0 if market_type == "top" else 1.0)
+    """How far a market's prices add up past 100%: multi-way markets ("top"/"low" have one selection per player,
+    exact score and winning margin several each) carry double the house edge."""
+    return 1.0 + edge * (2.0 if market_type in MULTI_WAY else 1.0)
+
+
+# ---- final-score model ------------------------------------------------------------------------------------------
+# Exact score, winning margin and rounds won / lost come from one distribution of final scores: every round is won
+# with chance r, first to 13, and 12-12 goes to overtime (won by whoever takes two rounds in a row, chance
+# r^2 / (r^2 + (1-r)^2)). r itself varies from game to game (normal, standard deviation sd), because some nights
+# the squad is simply better or worse than usual. mu and sd are tuned so the model agrees with the match-result
+# and overtime markets, so no two markets on the board contradict each other.
+SCORE_Z = [NormalDist().inv_cdf((i + 0.5) / 9) for i in range(9)]  # equal-weight points of the r distribution
+SCORE_SD_MAX = 0.2
+MARGIN_BANDS = [("w1-2", "Win by 1–2", 1, 2), ("w3-5", "Win by 3–5", 3, 5), ("w6+", "Win by 6+", 6, 13),
+                ("l1-2", "Lose by 1–2", -2, -1), ("l3-5", "Lose by 3–5", -5, -3), ("l6+", "Lose by 6+", -13, -6)]
+
+
+def _score_dist(r):
+    """{(13, x) / (x, 13) for x < 12: chance, "ot-win" / "ot-loss": chance} for one round-win chance r."""
+    dist = {}
+    for x in range(12):
+        c = math.comb(12 + x, x)
+        dist[(13, x)] = c * r ** 13 * (1 - r) ** x
+        dist[(x, 13)] = c * (1 - r) ** 13 * r ** x
+    p_ot = math.comb(24, 12) * r ** 12 * (1 - r) ** 12
+    w_ot = r * r / (r * r + (1 - r) ** 2)
+    dist["ot-win"], dist["ot-loss"] = p_ot * w_ot, p_ot * (1 - w_ot)
+    return dist
+
+
+def _mixed_dist(mu, sd):
+    dists = [_score_dist(clamp(mu + sd * z, 0.03, 0.97)) for z in SCORE_Z]
+    return {k: sum(d[k] for d in dists) / len(dists) for k in dists[0]}
+
+
+def _p_win(dist):
+    return sum(p for k, p in dist.items() if k == "ot-win" or (isinstance(k, tuple) and k[0] == 13))
+
+
+@lru_cache(maxsize=256)
+def score_model(p_win, p_ot):
+    """(dist, mu, sd): the final-score distribution whose chance of winning is p_win and of reaching 12-12 is as
+    close to p_ot as the model allows. Cached: the inputs only change when a game is added or the map changes."""
+    best = None
+    for step in range(21):
+        sd = SCORE_SD_MAX * step / 20
+        lo, hi = 0.03, 0.97
+        for _ in range(40):  # the squad's win chance rises with mu
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if _p_win(_mixed_dist(mid, sd)) < p_win else (lo, mid)
+        dist = _mixed_dist((lo + hi) / 2, sd)
+        gap = abs(dist["ot-win"] + dist["ot-loss"] - p_ot)
+        if best is None or gap < best[0]:
+            best = (gap, dist, (lo + hi) / 2, sd)
+    return best[1], round(best[2], 4), round(best[3], 3)
+
+
+def score_key(match):
+    """The final score of a finished 13-round game as an exact-score key: "13-7", "9-13", or "ot-win" / "ot-loss"
+    (only squad wins in regulation are offered, so the others just lose)."""
+    if went_to_overtime(match):
+        return "ot-win" if match.get("result") == "win" else "ot-loss"
+    return f"{match.get('rounds_won') or 0}-{match.get('rounds_lost') or 0}"
+
+
+def margin_key(match):
+    diff = (match.get("rounds_won") or 0) - (match.get("rounds_lost") or 0)
+    return next((key for key, _, lo, hi in MARGIN_BANDS if lo <= diff <= hi), None)
+
+
+def _rounds_line(dist, side):
+    """The .5 line (4.5-11.5) on rounds won (side 0) or lost (side 1) closest to a 50/50 split, and P(over)."""
+    def p_over(line):
+        return sum(p for k, p in dist.items() if not isinstance(k, tuple) or k[side] > line)  # overtime: 12+ each
+    return min(((x + 0.5, p_over(x + 0.5)) for x in range(4, 12)), key=lambda lp: abs(lp[1] - 0.5))
 
 
 def fair_chance(decimal, market_type, edge):
@@ -126,6 +211,19 @@ def weighted_moments(pts):
 def kde_over(pts, line, h):
     tw = sum(w for w, _ in pts)
     return sum(w * (1.0 - phi((line - v) / h)) for w, v in pts) / tw
+
+
+def kde_quantile(pts, q, h, steps=24):
+    """The value with share q of the smoothed distribution (see kde_over) below it, found by bisection."""
+    tw = sum(w for w, _ in pts)
+    lo, hi = min(v for _, v in pts) - 6 * h, max(v for _, v in pts) + 6 * h
+    for _ in range(steps):
+        mid = (lo + hi) / 2
+        if sum(w * phi((mid - v) / h) for w, v in pts) / tw < q:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
 
 
 def eff_n(samples):
@@ -161,6 +259,40 @@ class OddsEngine:
                 w *= self.agent_boost
             ws.append(w)
         return ws
+
+    def samples(self, rows, full_rounds, ctx_map=None, ctx_agent=None, relative=True):
+        """(weight, per-game metrics) for one member's rows (newest first), as the odds use them: recency-weighted,
+        boosted for the chosen map and agent, with surrendered games scaled to a full game at reduced weight.
+        relative adds acs_rel (ACS over the player's own average) for the "popped off" markets."""
+        own_acs = aggregate(rows).get("acs") if relative else None
+        out = []
+        for w, r in zip(self._weights(rows, ctx_map, ctx_agent), rows):
+            rounds = (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)
+            metrics = player_metrics(r, rounds)
+            if relative:
+                metrics["acs_rel"] = metrics["acs"] / own_acs if own_acs else None
+            if ending(r) == FORFEIT:
+                game_full = full_rounds * rounds_to_win(r.get("mode")) / DEFAULT_ROUNDS_TO_WIN
+                metrics, share = partial_game(metrics, rounds, game_full)
+                w *= share
+            out.append((w, metrics))
+        return out
+
+    @staticmethod
+    def stat_range(samples, key, coverage=0.8, floor_h=None):
+        """(low, typical, high, expected) for one stat, from the same smoothed distribution as the over/under lines
+        (bandwidth floor_h or 0.6 sigma). low / high are its percentiles around the middle `coverage` of games, so
+        the range is lopsided when the stat is (a long tail of big games); typical is its median, where the betting
+        line sits; expected is the weighted average. floor_h defaults to the stat's own (STAT_DEFS) and is needed for
+        stats the odds don't price. None without data."""
+        pts = [(w, x[key]) for w, x in samples if x.get(key) is not None]
+        if not pts or sum(w for w, _ in pts) <= 0:
+            return None
+        mean, sigma = weighted_moments(pts)
+        h = max(FLOOR_H[key] if floor_h is None else floor_h, 0.6 * sigma)
+        tail = (1.0 - coverage) / 2
+        low, typical, high = (kde_quantile(pts, q, h) for q in (tail, 0.5, 1.0 - tail))
+        return max(0.0, low), max(0.0, typical), high, mean
 
     # ---- markets ---------------------------------------------------------
     def _choose_line(self, pts, median, h, kind):
@@ -200,6 +332,74 @@ class OddsEngine:
                 selection("under", f"Under {line:g}", 1.0 - p_over, overround),
             ],
         }
+
+    def alt_market(self, member, samples, sd, line):
+        """A custom over/under line on a player prop. Always returns the reasonable range for the stat ("limits":
+        the whole numbers you can pick for "at least N" (over N - 0.5) and "at most N" (under N + 0.5)). A side is
+        only offered ("available") when its fair chance is between ALT_MIN_CHANCE and ALT_MAX_CHANCE; otherwise it
+        carries a "reason". The market itself is unavailable, with a reason, when the line isn't a .5 line."""
+        pts = [(w, x[sd["key"]]) for w, x in samples if x.get(sd["key"]) is not None]
+        if not pts:
+            return None
+        mean, sigma = weighted_moments(pts)
+        h = max(sd["floor_h"], 0.6 * sigma)
+        q_min, q_safe, typical, q_unsafe, q_max = (kde_quantile(pts, q, h) for q in (
+            ALT_MIN_CHANCE, 1.0 - ALT_MAX_CHANCE, 0.5, ALT_MAX_CHANCE, 1.0 - ALT_MIN_CHANCE))
+        mk = {
+            "market_id": alt_market_id(sd["key"], member["puuid"], line), "type": "ou", "custom": True,
+            "stat": sd["key"], "stat_label": sd["label"], "puuid": member["puuid"], "member": member["nickname"],
+            "label": f"{member['nickname']} {sd['label']}", "line": line, "mean": round(mean, 1),
+            "typical": round(typical, 1),
+            "limits": {"at_least": [max(0, math.ceil(q_safe + 0.5)), math.floor(q_max + 0.5)],
+                       "at_most": [max(0, math.ceil(q_min - 0.5)), math.floor(q_unsafe - 0.5)]},
+        }
+        doubled = line * 2
+        if not math.isfinite(line) or abs(doubled - round(doubled)) > 1e-9 or round(doubled) % 2 == 0:
+            return {**mk, "available": False, "reason": "Custom lines are whole numbers: at least N or at most N."}
+        p_over = kde_over(pts, line, h)
+        overround = market_overround("ou", self.edge)
+        sels = []
+        for key, word, p in (("over", "Over", p_over), ("under", "Under", 1.0 - p_over)):
+            sel = selection(key, f"{word} {line:g}", p, overround)
+            sel["available"] = ALT_MIN_CHANCE <= p <= ALT_MAX_CHANCE
+            if p < ALT_MIN_CHANCE:
+                sel["reason"] = (f"That's too far from {member['nickname']}'s usual {sd['label'].lower()} (typically about "
+                                 f"{typical:.0f}), so the odds would be silly.")
+            elif p > ALT_MAX_CHANCE:
+                sel["reason"] = f"That's nearly certain ({p:.0%}), so there'd be almost nothing to win."
+            sels.append(sel)
+        return {**mk, "available": any(s["available"] for s in sels), "selections": sels,
+                "reason": None if any(s["available"] for s in sels) else sels[0].get("reason")}
+
+    def exact_market(self, member, samples, sd, n):
+        """An exact number on a counting stat ("Loog gets exactly 25 kills"): the share of the smoothed distribution
+        between n - 0.5 and n + 0.5, priced with the multi-way edge. Offered ("available") when that chance is at
+        least EXACT_MIN_CHANCE; "limits" has the numbers that qualify."""
+        pts = [(w, x[sd["key"]]) for w, x in samples if x.get(sd["key"]) is not None]
+        if not pts:
+            return None
+        mean, sigma = weighted_moments(pts)
+        h = max(sd["floor_h"], 0.6 * sigma)
+        chance = lambda k: kde_over(pts, k - 0.5, h) - kde_over(pts, k + 0.5, h)  # noqa: E731
+        mk = {"market_id": exact_market_id(sd["key"], member["puuid"], n), "type": "exact", "custom": True,
+              "stat": sd["key"], "stat_label": sd["label"], "puuid": member["puuid"], "member": member["nickname"],
+              "label": f"{member['nickname']} {sd['label']}", "line": n, "mean": round(mean, 1),
+              "typical": round(kde_quantile(pts, 0.5, h), 1)}
+        if sd["kind"] != "count":
+            return {**mk, "available": False, "limits": {"exactly": [1, 0]},
+                    "reason": "Exact numbers are only for kills, deaths and assists."}
+        top = int(max(v for _, v in pts) + 6 * h) + 1
+        allowed = [k for k in range(0, top) if chance(k) >= EXACT_MIN_CHANCE]
+        mk["limits"] = {"exactly": [min(allowed), max(allowed)] if allowed else [1, 0]}
+        if not math.isfinite(n) or n < 0 or n != int(n):
+            return {**mk, "available": False, "reason": "Exact numbers are whole numbers."}
+        p = chance(int(n))
+        sel = selection("exact", f"Exactly {n:g}", p, market_overround("exact", self.edge))
+        sel["available"] = p >= EXACT_MIN_CHANCE
+        if not sel["available"]:
+            sel["reason"] = (f"Exactly {n:g} is too unlikely for {member['nickname']} (usually about {mk['typical']:.0f} "
+                             f"{sd['label'].lower()}), so the odds would be silly.")
+        return {**mk, "available": sel["available"], "selections": [sel], "reason": sel.get("reason")}
 
     def top_market(self, members, member_samples, td, rng):
         """The "tops the scoreboard" market for td and its counter ("bottoms"), from the same simulated games."""
@@ -276,11 +476,11 @@ class OddsEngine:
             "market_id": "team:win",
             "type": "team_win",
             "label": "Match result",
-            "desc": "Does the 5-stack win the next game?",
+            "desc": "Does the 5-stack win?",
             "basis": {"games": len(matches), "win_rate": round(raw_wr, 3), "map_games": map_games},
             "selections": [
-                selection("win", "5-stack wins", p_win, two_way),
-                selection("loss", "5-stack loses", 1.0 - p_win, two_way),
+                selection("win", "Win", p_win, two_way),
+                selection("loss", "Loss", 1.0 - p_win, two_way),
             ],
         }]
         _, sigma = weighted_moments(pts_rounds)
@@ -292,7 +492,7 @@ class OddsEngine:
             "market_id": "team:rounds",
             "type": "team_ou",
             "label": "Total rounds",
-            "desc": "Rounds played in the next game (both teams combined)",
+            "desc": "Both teams combined",
             "line": line,
             "mean": round(sum(w * v for w, v in pts_rounds) / sum(w for w, _ in pts_rounds), 1),
             "selections": [
@@ -310,16 +510,46 @@ class OddsEngine:
             "market_id": "team:ot",
             "type": "team_ot",
             "label": "Overtime",
-            "desc": f"Does the next game go past 12–12? ({ot_games} of {len(matches)} games so far)",
+            "desc": f"Past 12–12? {ot_games} of {len(matches)} games so far",
             "selections": [
                 selection("yes", "Yes", p_ot, two_way),
                 selection("no", "No", 1.0 - p_ot, two_way),
             ],
         })
+        markets += self.score_markets(p_win, p_ot)
         return markets
 
+    def score_markets(self, p_win, p_ot):
+        """Rounds won, rounds lost, winning margin and exact score, all from score_model()."""
+        dist, mu, sd = score_model(round(p_win, 4), round(p_ot, 4))
+        two_way, multi = market_overround("team_rw", self.edge), market_overround("team_score", self.edge)
+        basis = {"round_win": mu, "spread": sd}
+        out = []
+        for side, key, mtype, label, desc in ((0, "team:rw", "team_rw", "Rounds won", "Rounds the 5-stack wins"),
+                                              (1, "team:rl", "team_rl", "Rounds lost", "Rounds the enemy wins")):
+            line, p_over = _rounds_line(dist, side)
+            out.append({"market_id": key, "type": mtype, "label": label, "desc": f"{desc} · OT counts as 12+",
+                        "line": line, "model": basis,
+                        "selections": [selection("over", f"Over {line:g}", p_over, two_way),
+                                       selection("under", f"Under {line:g}", 1.0 - p_over, two_way)]})
+        diff = {(k if isinstance(k, str) else f"{k[0]}-{k[1]}"): p for k, p in dist.items()}
+        margin = {key: sum(p for k, p in dist.items() if k != "ot-win" and k != "ot-loss" and lo <= k[0] - k[1] <= hi)
+                  + (dist["ot-win"] if key == "w1-2" else dist["ot-loss"] if key == "l1-2" else 0.0)
+                  for key, _, lo, hi in MARGIN_BANDS}
+        # Margin and exact score are only offered on the squad winning; if it loses (or, for exact score, wins in
+        # overtime), those bets simply lose.
+        out.append({"market_id": "team:margin", "type": "team_margin", "label": "Winning margin",
+                    "desc": "5-stack wins by… · OT counts as 1–2", "model": basis,
+                    "selections": [selection(key, lbl, margin[key], multi) for key, lbl, _, _ in MARGIN_BANDS if key.startswith("w")]})
+        out.append({"market_id": "team:score", "type": "team_score", "label": "Exact score",
+                    "desc": "The 5-stack wins the next game by exactly this score; a loss or an overtime win loses", "model": basis,
+                    "selections": [selection(f"13-{x}", f"13–{x}", diff[f"13-{x}"], multi) for x in range(12)]})
+        return out
+
     # ---- board -----------------------------------------------------------
-    def build(self, db, context=None):
+    def build(self, db, context=None, alts=None):
+        """The whole odds board for the next game. alts: custom lines to price as well, [(stat, puuid, line)];
+        they come back under "custom" (see alt_market)."""
         context = context or {}
         ctx_map = (context.get("map") or "").strip() or None
         ctx_agents = {k: v for k, v in (context.get("agents") or {}).items() if v}
@@ -342,19 +572,7 @@ class OddsEngine:
         pooled = []
         member_samples = {}
         for m in members:
-            mrows = by_member.get(m["puuid"], [])
-            ws = self._weights(mrows, ctx_map, ctx_agents.get(m["puuid"]))
-            own_acs = aggregate(mrows).get("acs")  # the player's average, for "popped off" / "got diff'd"
-            samples = []
-            for w, r in zip(ws, mrows):
-                rounds = (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)
-                metrics = player_metrics(r, rounds)
-                metrics["acs_rel"] = metrics["acs"] / own_acs if own_acs else None
-                if ending(r) == FORFEIT:
-                    game_full = full * rounds_to_win(r.get("mode")) / DEFAULT_ROUNDS_TO_WIN
-                    metrics, share = partial_game(metrics, rounds, game_full)
-                    w *= share
-                samples.append((w, metrics))
+            samples = self.samples(by_member.get(m["puuid"], []), full, ctx_map, ctx_agents.get(m["puuid"]))
             member_samples[m["puuid"]] = samples
             pooled.extend(samples)
 
@@ -389,6 +607,13 @@ class OddsEngine:
                 mk = self.ou_market(m, member_samples[m["puuid"]], sd)
                 if mk:
                     props.append(mk)
+        by_puuid = {m["puuid"]: m for m in members}
+        custom = []
+        for alt in alts or []:  # (stat, puuid, line) for a custom line, (stat, puuid, n, "exact") for an exact number
+            st, pu, value, kind = (*alt, "line")[:4]
+            if pu in by_puuid and st in STAT_BY_KEY:
+                market = self.exact_market if kind == "exact" else self.alt_market
+                custom.append(market(by_puuid[pu], member_samples[pu], STAT_BY_KEY[st], value))
         tops = []
         for td in TOP_DEFS:
             pair = self.top_market(members, member_samples, td, rng)
@@ -411,16 +636,45 @@ class OddsEngine:
             "team": self.team_markets(matches, ctx_map),
             "player_props": props,
             "top_markets": tops,
-            "stat_defs": [{"key": d["key"], "label": d["label"]} for d in STAT_DEFS],
+            "custom": [mk for mk in custom if mk],
+            "stat_defs": [{"key": d["key"], "label": d["label"], "count": d["kind"] == "count"} for d in STAT_DEFS],
         }
 
 
+def alt_market_id(stat, puuid, line):
+    return f"alt:{stat}:{puuid}:{line:g}"
+
+
+def exact_market_id(stat, puuid, n):
+    return f"exact:{stat}:{puuid}:{n:g}"
+
+
+def parse_alt(market_id):
+    """(stat, puuid, value, kind) from a custom-line ("alt:...", kind "line") or exact-number ("exact:...", kind
+    "exact") market id, or None if it isn't one (or is malformed)."""
+    parts = (market_id or "").split(":")
+    if len(parts) != 4 or parts[0] not in ("alt", "exact") or parts[1] not in STAT_BY_KEY:
+        return None
+    try:
+        value = float(parts[3])
+    except ValueError:
+        return None
+    return (parts[1], parts[2], value, "exact" if parts[0] == "exact" else "line") if math.isfinite(value) else None
+
+
+def alt_family(market_id):
+    """Custom lines and exact numbers on a player and stat count as the same market as the board's line on it
+    (for parlays)."""
+    alt = parse_alt(market_id)
+    return f"ou:{alt[0]}:{alt[1]}" if alt else market_id
+
+
 def find_market(board, market_id, sel_key):
-    for group in ("team", "player_props", "top_markets"):
+    for group in ("team", "player_props", "top_markets", "custom"):
         for mk in board.get(group, []):
-            if mk["market_id"] == market_id:
+            if mk["market_id"] == market_id and mk.get("available", True):
                 for s in mk["selections"]:
                     if s["key"] == sel_key:
-                        return mk, s
+                        return (mk, s) if s.get("available", True) else (mk, None)
                 return mk, None
     return None, None

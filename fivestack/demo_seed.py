@@ -219,8 +219,8 @@ def _seed_bets(db, rng, games=10):
                     "odds_decimal": round(rng.uniform(3.0, 6.5), 2), "meta": {"stat": key, "direction": "low" if low else "high"}}
         if roll < 0.95:
             win = rng.random() < 0.6
-            return {"market_id": "team:win", "market_type": "team_win", "description": "5-stack wins" if win else "5-stack loses",
-                    "selection": "win" if win else "loss", "selection_label": "5-stack wins" if win else "5-stack loses",
+            return {"market_id": "team:win", "market_type": "team_win", "description": f"Match result: {'Win' if win else 'Loss'}",
+                    "selection": "win" if win else "loss", "selection_label": "Win" if win else "Loss",
                     "line": None, "odds_decimal": round(rng.uniform(1.7, 2.3), 2), "meta": {}}
         side = rng.choice(["over", "under"])
         return {"market_id": "team:rounds", "market_type": "team_ou", "description": f"Total rounds {side.capitalize()} 22.5",

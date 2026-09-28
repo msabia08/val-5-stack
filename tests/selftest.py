@@ -19,10 +19,12 @@ from fivestack.app import KNOWN_AGENTS  # noqa: E402
 from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
+from fivestack.forecasts import build_forecasts  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
-from fivestack.odds import OddsEngine, fair_chance, partial_game  # noqa: E402
+from fivestack.odds import SCORE_SD_MAX, OddsEngine, fair_chance, partial_game, score_model  # noqa: E402
+from fivestack.recap import build_recap  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
 from fivestack.timeline import clutches_and_multikills, extract_timeline, spike_sites  # noqa: E402
@@ -197,6 +199,16 @@ def stats(shared):
     p1 = next(m for m in st["members"] if m["name"] == "P1")
     assert p1["overall"]["games"] == 2 and p1["by_map"][0]["games"] == 1
     assert p1["tier_name"] == "Diamond 3"
+    # Highest and lowest game for each major stat (both games are complete here).
+    p1_rows = [r for r in db.player_rows() if r["puuid"] == "puuid-1"]
+    assert set(p1["range"]) == {"acs", "kd", "kills", "deaths", "assists", "adr", "hs_pct"}, p1["range"]
+    assert p1["range"]["kills"]["high"]["value"] == max(r["kills"] for r in p1_rows)
+    assert p1["range"]["kills"]["low"]["value"] == min(r["kills"] for r in p1_rows)
+    assert {p1["range"]["acs"]["high"]["match_id"], p1["range"]["acs"]["low"]["match_id"]} <= {"m1", "m3"}
+    # The trend chart's data: every complete game oldest first, each member's values lined up with it.
+    tl = st["timeline"]
+    assert [g["match_id"] for g in tl["games"]] == ["m1", "m3"] and set(tl["series"]) == set(PUUIDS.values())
+    assert tl["series"]["puuid-1"]["kills"] == [next(r["kills"] for r in p1_rows if r["match_id"] == g) for g in ("m1", "m3")]
 
     # 5-stack vs. other games.
     # Every counted-mode line is kept (m1, m2, m3, m5; not the deathmatch m4); only m2 and m5 are baseline.
@@ -230,7 +242,8 @@ def odds(shared):
     board = engine.build(db, {"map": "Ascent", "agents": {"puuid-1": "Jett"}})
     assert board["ready"]
     assert len(board["player_props"]) == 5 * 6, len(board["player_props"])
-    assert [mk["market_id"] for mk in board["team"]] == ["team:win", "team:rounds", "team:ot"]
+    assert [mk["market_id"] for mk in board["team"]] == ["team:win", "team:rounds", "team:ot", "team:rw", "team:rl",
+                                                        "team:margin", "team:score"]
     ot_market = board["team"][2]
     assert ot_market["selections"][1]["prob"] > ot_market["selections"][0]["prob"]  # no game went to OT: "No" favoured
     tops = {mk["market_id"]: mk for mk in board["top_markets"]}  # 6 "tops the scoreboard" markets, each with a counter
@@ -240,7 +253,11 @@ def odds(shared):
     assert tops["top:acs_rel"]["label"] == "Popped off" and tops["low:acs_rel"]["label"] == "Got diff'd"
     favourite = lambda mid: tops[mid]["selections"][0]["key"]  # noqa: E731
     assert favourite("top:kills") == "puuid-5" and favourite("low:kills") == "puuid-1", (favourite("top:kills"), favourite("low:kills"))
-    for mk in board["player_props"] + board["team"]:
+    # Margin and exact score only offer squad wins, so their prices don't add up to a whole market: each pick just
+    # carries double the house edge.
+    partial = [mk for mk in board["team"] if mk["type"] in ("team_score", "team_margin")]
+    assert all(abs(x["prob"] - min(0.985, max(0.01, x["fair_prob"] * 1.1))) < 1e-3 for mk in partial for x in mk["selections"])
+    for mk in board["player_props"] + [mk for mk in board["team"] if mk not in partial]:
         s = sum(x["prob"] for x in mk["selections"])
         assert 1.03 < s < 1.07, (mk["market_id"], s)
     for mk in board["top_markets"]:
@@ -424,6 +441,15 @@ def insights(shared):
     assert [(c["key"], c["games"], c["wins"]) for c in ins["comps"]] == [("5D", 2, 2), ("5I", 1, 0)], ins["comps"]
     m9 = ins["games"][2]
     assert abs(sum(m9["damage_share"].values()) - 1) < 1e-9 and abs(m9["damage_share"]["puuid-2"] - 0.2) < 1e-9
+    # The running share: the first game's is its own split, and the last one's is every game's damage pooled.
+    first = ins["games"][0]
+    assert all(abs(first["damage_cum"][pu] - v) < 1e-9 for pu, v in first["damage_share"].items()), first
+    pooled = {}
+    for g in ins["games"]:
+        for p in db.match_players(g["match_id"]):
+            pooled[p["puuid"]] = pooled.get(p["puuid"], 0) + (p.get("damage_dealt") or 0)
+    assert abs(sum(m9["damage_cum"].values()) - 1) < 1e-9
+    assert all(abs(m9["damage_cum"][pu] - v / sum(pooled.values())) < 1e-9 for pu, v in pooled.items()), m9["damage_cum"]
     ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
     assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
     assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
@@ -618,6 +644,314 @@ def forfeit_odds(shared):
     kills = next(mk for mk in ob["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
     assert kills["mean"] == 20.0 and kills["line"] > 19, kills  # 10 kills in half a game counts as 20, not 10
     assert next(mk for mk in ob["team"] if mk["market_id"] == "team:rounds")["mean"] == 24.0  # the 12-round total is left out
+
+
+@section("forecasts")
+def forecasts(shared):
+    # Thirteen games: P1 plays Jett on Ascent (even games, 20 kills) and Sova on Bind (odd games, 10 kills); game 9 is
+    # a surrender. P1 has 15 deaths a game, except 25 in game 10 (Ascent) and 5 in game 11 (Bind). Game 12 is a 30-round
+    # overtime game on Ascent with the usual 0.9 kills per round, so 27 kills.
+    fdb, engine = DB(os.path.join(shared.tmp, "forecasts.db")), OddsEngine(shared.cfg)
+    for i, pu in enumerate(PUUIDS.values()):
+        fdb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+    for k in range(13):
+        if k == 11:  # what the odds board said just before the last game, for P1 on Bind as Sova
+            board = engine.build(fdb, {"map": "Bind", "agents": {"puuid-1": "Sova"}})
+            board_kills = next(mk for mk in board["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
+        bind = k % 2 == 1
+        rw, rl = {9: (8, 4), 12: (16, 14)}.get(k, (13, 9))
+        p1 = {"agent": "Sova" if bind else "Jett", "kills": {12: 27}.get(k, 10 if bind else 20), "deaths": {10: 25, 11: 5}.get(k, 15)}
+        fdb.insert_match({"match_id": f"f{k}", "map": "Bind" if bind else "Ascent", "mode": "competitive",
+                          "started_ts": 1000 + k, "rounds_won": rw, "rounds_lost": rl, "result": "win"},
+                         [{"puuid": pu, "agent": "Omen", "kills": 15, "deaths": 15, "assists": 4, "score": 4800,
+                           "damage_dealt": 3000, "headshots": 5, "bodyshots": 20, "legshots": 1,
+                           **(p1 if pu == "puuid-1" else {})} for pu in PUUIDS.values()])
+    fk = build_forecasts(fdb, engine, "kills")
+    p = fk["player"]
+    assert p["puuid"] == "puuid-1" and [x["nickname"] for x in fk["players"]] == ["P1", "P2", "P3", "P4", "P5"]
+    # From the 6th game on (5 earlier ones), surrender excluded, oldest first.
+    assert [g["match_id"] for g in p["games"]] == ["f5", "f6", "f7", "f8", "f10", "f11", "f12"], p["games"]
+    game = {g["match_id"]: g for g in p["games"]}
+    f11, f10 = game["f11"], game["f10"]
+    # The forecast is what the odds board showed before that game: its average, and the typical game at its line.
+    assert f11["expected"] == board_kills["mean"] and abs(f11["typical"] - board_kills["line"]) <= 1, (f11, board_kills["line"])
+    assert f11["range"][0] < 10 < f11["range"][1] and f11["expected"] < 15 < f10["expected"]  # the map and agent pull it
+    assert f11["role"] == "Initiator" and f10["role"] == "Duelist"
+    # The overtime game's 27 kills beat the per-game forecast only because it went long; per round it's a normal game.
+    assert game["f12"]["actual"] > game["f12"]["range"][1], game["f12"]
+    kpr = {g["match_id"]: g for g in build_forecasts(fdb, engine, "kpr")["player"]["games"]}["f12"]
+    assert kpr["actual"] == 0.9 and kpr["range"][0] <= 0.9 <= kpr["range"][1], kpr
+    # A skewed stat gets a lopsided range: eight 10-kill games and two 30-kill games put the typical game below
+    # the average and stretch the top of the range further than the bottom.
+    low, typical, high, expected = OddsEngine.stat_range([(1.0, {"kills": v}) for v in [10] * 8 + [30] * 2], "kills")
+    assert typical < expected == 14.0 and high - typical > typical - low, (low, typical, high, expected)
+    cells = {(c["map"], c["role"]): c for c in p["cells"]}
+    assert cells[("Ascent", "Duelist")]["games"] == 4 and cells[("Bind", "Initiator")]["games"] == 3
+    assert cells[("Ascent", None)]["games"] == 4 and cells[(None, "Duelist")]["games"] == 4
+    assert all(c["above"] + c["inside"] + c["below"] == c["games"] for c in p["cells"])
+    assert cells[("Bind", "Initiator")]["agents"] == [{"agent": "Sova", "games": 3, "actual": 10.0,
+                                                        "expected": cells[("Bind", "Initiator")]["expected"]}]
+    assert all(c["low"] <= c["typical"] <= c["high"] for c in p["cells"])
+    assert [x["forecast_games"] for x in fk["players"]] == [7] * 5  # games 5-12 minus the surrender, for everyone
+    # Deaths: fewer is better, so the Bind game with 5 deaths is where P1 beats the forecast, per game and per round.
+    for key in ("deaths", "dpr"):
+        fd = build_forecasts(fdb, engine, key)
+        assert fd["player"]["best"]["map"] == "Bind" and fd["player"]["best"]["diff"] < 0, fd["player"]["best"]
+        assert fd["player"]["worst"]["map"] == "Ascent" and fd["player"]["worst"]["diff"] > 0, fd["player"]["worst"]
+    assert [(s["key"], s["group"]) for s in fd["stats"]][:6] == [("kills", "game"), ("deaths", "game"), ("assists", "game"),
+                                                                 ("kpr", "round"), ("dpr", "round"), ("apr", "round")]
+    assert build_forecasts(fdb, engine, "acs", "puuid-3")["player"]["puuid"] == "puuid-3"
+    assert build_forecasts(fdb, engine, "acs", "nobody")["player"]["puuid"] == "puuid-1"  # unknown player: the first
+    try:
+        build_forecasts(fdb, engine, "kd")
+        raise AssertionError("an unknown stat should be refused")
+    except ValueError:
+        pass
+    few = build_forecasts(shared.db, shared.engine)  # the main test database has 4 games: too few to forecast
+    assert few["player"]["overall"] is None and few["player"]["cells"] == [] and few["player"]["games"] == []
+
+
+@section("recap")
+def recap(shared):
+    # Twelve ordinary games, one a day, the last three lost; then a staged comeback win on Ascent. P1 normally gets
+    # 15-20 kills, P2 always plays Sova, P3 is always Gold 3.
+    rdb, engine = DB(os.path.join(shared.tmp, "recap.db")), OddsEngine(shared.cfg)
+    for i, pu in enumerate(PUUIDS.values()):
+        rdb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+
+    def game(mid, k, won, lines):
+        rdb.insert_match({"match_id": mid, "map": "Ascent", "mode": "competitive", "mode_label": "Competitive",
+                          "started_ts": 1000 + k * 86400, "rounds_won": 13 if won else 9, "rounds_lost": 9 if won else 13,
+                          "result": "win" if won else "loss"},
+                         [{"puuid": pu, "agent": "Jett", "kills": 16, "deaths": 15, "assists": 4, "score": 4800,
+                           "damage_dealt": 3000, "headshots": 5, "bodyshots": 20, "legshots": 1, "tier": 10, "tier_name": "Gold 3",
+                           **lines.get(pu, {})} for pu in PUUIDS.values()])
+    for k in range(12):
+        game(f"g{k}", k, k < 9, {"puuid-1": {"kills": 15 + k % 6}, "puuid-2": {"agent": "Sova"}})
+    game("final", 12, True, {"puuid-1": {"kills": 30}, "puuid-2": {"agent": "Clove"},
+                             "puuid-3": {"tier": 11, "tier_name": "Platinum 1"}})
+    rdb.execute("UPDATE matches SET rounds_won=13, rounds_lost=11 WHERE match_id='final'")
+    # The final's rounds: 0-8 down, then 13 of the last 16. Round 9: P1 aces. Round 10: P2 clutches a 1v3.
+    # Round 11: a knife kill by P4. Round 12: P5 kills teammate P3.
+    us, them = list(PUUIDS.values()), [f"e{i}" for i in range(1, 6)]
+    wins = [False] * 8 + [True, True, True, False] * 3 + [True] * 4
+    kill = lambda r, t, a, b, w="Vandal": {"r": r, "t": t, "killer": a, "victim": b, "weapon": w}  # noqa: E731
+    kills = [kill(8, 1000 + i, "puuid-1", e) for i, e in enumerate(them)]
+    kills += [kill(9, 1000, "puuid-2", "e1"), kill(9, 2000, "puuid-2", "e2")]
+    kills += [kill(9, 3000 + i, "e3", u) for i, u in enumerate(["puuid-1", "puuid-3", "puuid-4", "puuid-5"])]
+    kills += [kill(9, 9000, "puuid-2", "e3"), kill(10, 1000, "puuid-4", "e1", "Melee"), kill(11, 1000, "puuid-5", "puuid-3")]
+    rdb.save_timeline("final", {"our_team": "Blue", "team_of": {**{u: "Blue" for u in us}, **{e: "Red" for e in them}},
+                                "rounds": [{"winner": "Blue" if w else "Red", "site": None, "planter_team": None, "defused": False} for w in wins],
+                                "kills": kills})
+    # Bets settled on the final: an underdog match-result win, a long shot, a bet on yourself, a parlay.
+    for bettor, mtype, market, sel, odds, ctx in [
+            ("P4", "team_win", "team:win", "win", 3.0, {"fair_prob": 0.3}),
+            ("P5", "top", "top:kills", "puuid-1", 6.0, {"stat": "kills"}),
+            ("P1", "ou", "ou:kills:puuid-1", "over", 1.9, {"stat": "kills", "puuid": "puuid-1"}),
+            ("P2", "parlay", "parlay", "parlay", 3.6, {"legs": [{}, {}]})]:
+        bid = rdb.insert_bet({"bettor": bettor, "market_id": market, "market_type": mtype, "description": market, "selection": sel,
+                              "selection_label": sel, "line": None, "odds_decimal": odds, "stake": 10.0, "placed_ts": 0,
+                              "context": json.dumps(ctx), "status": "won"})
+        rdb.execute("UPDATE bets SET settled_match_id='final', payout=? WHERE id=?", (10.0 * odds, bid))
+
+    r = build_recap(rdb, engine)  # the latest game by default
+    assert r["match"]["match_id"] == "final" and r["match"]["number"] == 13 and r["match"]["older"] == "g11" and r["match"]["newer"] is None
+    hl = {(h["kind"], h["puuid"]): h for h in r["highlights"]}  # the first (highest-scoring) of each kind per player
+    titles = {h["title"] for h in r["highlights"]}
+    assert "Most kills in a 5-stack game: 30" in titles, titles
+    assert "Lowest ACS in a 5-stack game: 200" in titles  # 4800 score over 24 rounds; averages say highest / lowest
+    assert hl[("ace", "puuid-1")] and hl[("clutch", "puuid-2")]["title"] == "Won a 1v3 clutch"
+    assert {h["title"] for h in r["highlights"] if h["kind"] == "first"} == {"First 5-stack game on Clove", "First time playing Controller"}
+    assert hl[("rank", "puuid-3")]["title"] == "New peak rank: Platinum 1"
+    assert hl[("knife", "puuid-4")]["detail"] == "Round 11" and hl[("team_kill", "puuid-5")]["detail"] == "Round 12"
+    assert hl[("comeback", None)]["title"] == "Came back from 0–8 down"
+    assert hl[("streak", None)]["title"] == "Snapped a 3-game losing streak"
+    assert hl[("upset", None)]["detail"] == "The odds gave the squad 30%"
+    assert hl[("longshot", "puuid-5")]["title"] == "P5 hit a +500 long shot" and hl[("parlay", "puuid-2")]
+    assert hl[("self_bet", "puuid-1")]  # P1's over on their own kills; P5's pick on P1 isn't betting on yourself
+    assert ("self_bet", "puuid-5") not in hl
+    scores = [h["score"] for h in r["highlights"]]
+    assert scores == sorted(scores, reverse=True) and r["highlights"][0]["kind"] == "ace", r["highlights"][:3]
+    # Round by round, and the scoreboard against each player's usual game and forecast.
+    assert len(r["rounds"]) == 24 and r["rounds"][7]["score"] == [0, 8] and r["rounds"][8]["multi"] == {"puuid-1": 5}
+    assert r["rounds"][9]["clutch"] == {"puuid": "puuid-2", "vs": 3, "won": True}
+    board = {p["puuid"]: p for p in r["players"]}
+    assert board["puuid-1"]["kills"] == 30 and board["puuid-1"]["usual"]["kills"] == 17.5 and board["puuid-1"]["forecast"]["kills"]
+    assert board["puuid-3"]["rank_change"] == 1 and board["puuid-2"]["role"] == "Controller"
+    assert board["puuid-1"]["rounds"]["k5"] == 1 and board["puuid-2"]["rounds"]["clutches"] == [{"round": 10, "vs": 3, "won": True}]
+    assert r["betting"]["bets"] == 4 and r["betting"]["house"] == -(20 + 50 + 9 + 26)
+    # An older game only knows what came before it: game 6 has 5 earlier games, too few for records.
+    old = build_recap(rdb, engine, "g5")
+    assert old["match"]["number"] == 6 and not [h for h in old["highlights"] if h["kind"] in ("record", "near_record")]
+    assert build_recap(shared.db, shared.engine)["match"]["match_id"] and build_recap(DB(os.path.join(shared.tmp, "empty.db")), engine) is None
+
+
+@section("custom lines")
+def custom_lines(shared):
+    # Ten games in which P1 gets 14-26 kills; custom lines on them are priced like the board's own line.
+    cdb, engine = DB(os.path.join(shared.tmp, "custom.db")), OddsEngine(shared.cfg)
+    cbets = BetManager(shared.cfg, cdb, engine)
+    for i, pu in enumerate(PUUIDS.values()):
+        cdb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+
+    def play(k, p1_kills, ts=None):
+        cdb.insert_match({"match_id": f"c{k}", "map": "Ascent", "mode": "competitive", "started_ts": ts or 1000 + k,
+                          "rounds_won": 13, "rounds_lost": 9, "result": "win"},
+                         [{"puuid": pu, "agent": "Jett", "kills": p1_kills if pu == "puuid-1" else 15, "deaths": 14,
+                           "assists": 4, "score": 4800, "damage_dealt": 3000, "headshots": 5, "bodyshots": 20, "legshots": 1}
+                          for pu in PUUIDS.values()])
+    for k, kills in enumerate([14, 22, 17, 26, 19, 15, 24, 18, 21, 16]):
+        play(k, kills)
+    board = engine.build(cdb, {}, alts=[("kills", "puuid-1", 24.5), ("kills", "puuid-1", 60.5), ("kills", "puuid-1", 20.0),
+                                        ("kills", "puuid-1", float("nan")), ("kills", "nobody", 20.5)])
+    ok, far, whole, nan = board["custom"]  # an unknown player is simply left out
+    assert ok["available"] and ok["market_id"] == "alt:kills:puuid-1:24.5" and ok["custom"] and ok["type"] == "ou"
+    assert abs(sum(s["fair_prob"] for s in ok["selections"]) - 1) < 1e-3 and ok["selections"][0]["fair_prob"] < 0.5
+    assert not far["available"] and "too far" in far["reason"] and not whole["available"] and "whole numbers" in whole["reason"]
+    assert not nan["available"]
+    lo, hi = ok["limits"]["at_least"]
+    assert lo <= ok["typical"] <= hi and 25 <= hi < 61, ok["limits"]  # "at least 25" is fine, "at least 61" isn't
+    # A custom line at the board's own number costs exactly what the board charges.
+    std = next(mk for mk in board["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
+    same = engine.build(cdb, {}, alts=[("kills", "puuid-1", std["line"])])["custom"][0]
+    assert [s["decimal"] for s in same["selections"]] == [s["decimal"] for s in std["selections"]], (same, std)
+    # Betting on them: singles and parlay legs, one line per player and stat in a parlay.
+    cbets.register("Cus", "secret1")
+    single = cbets.place("Cus", "alt:kills:puuid-1:21.5", "over", 10, {})
+    meta = json.loads(single["context"])
+    assert single["market_type"] == "ou" and single["line"] == 21.5 and meta["custom"] and meta["puuid"] == "puuid-1"
+    assert single["description"] == "P1 Kills Over 21.5" and 0 < meta["fair_prob"] < 1
+    # Over 13.5 is a near-lock (about 92%): not offered, while its long-shot under still is.
+    lock = engine.build(cdb, {}, alts=[("kills", "puuid-1", 13.5)])["custom"][0]
+    assert [(x["key"], x["available"]) for x in lock["selections"]] == [("over", False), ("under", True)], lock["selections"]
+    assert lock["limits"]["at_least"][0] > 14  # "at least 14" is that same near-lock
+    assert cbets.place("Cus", "alt:kills:puuid-1:13.5", "under", 5, {})["line"] == 13.5
+    for bad, why in (("alt:kills:puuid-1:60.5", "too far"), ("alt:kills:puuid-1:abc", "no longer available"),
+                     ("alt:kills:puuid-1:13.5", "nearly certain")):
+        try:
+            cbets.place("Cus", bad, "over", 10, {})
+            raise AssertionError(f"{bad} should be refused")
+        except BetError as e:
+            assert why in str(e), e
+    try:
+        cbets.place_parlay("Cus", [{"market_id": "ou:kills:puuid-1", "selection": "over"},
+                                   {"market_id": "alt:kills:puuid-1:21.5", "selection": "over"}], 10, {})
+        raise AssertionError("a parlay can't hold two lines on the same player and stat")
+    except BetError as e:
+        assert "one line per player and stat" in str(e), e
+    parlay = cbets.place_parlay("Cus", [{"market_id": "alt:kills:puuid-1:21.5", "selection": "over"},
+                                        {"market_id": "alt:deaths:puuid-2:15.5", "selection": "under"}], 10, {})
+    assert [leg["line"] for leg in json.loads(parlay["context"])["legs"]] == [21.5, 15.5]
+    # Exact numbers: the smoothed distribution's share at exactly N, on the counting stats only.
+    exact = engine.build(cdb, {}, alts=[("kills", "puuid-1", n, "exact") for n in range(60)])["custom"]
+    assert abs(sum(x["fair_prob"] for mk in exact for x in mk["selections"]) - 1) < 0.01  # the chances cover everything
+    by_n = {mk["line"]: mk for mk in exact}
+    assert by_n[19]["available"] and by_n[19]["type"] == "exact" and not by_n[45]["available"] and "too unlikely" in by_n[45]["reason"]
+    lo, hi = by_n[19]["limits"]["exactly"]
+    assert lo < 19 < hi and all(by_n[n]["available"] == (lo <= n <= hi) for n in range(60)), (lo, hi)
+    odd = engine.build(cdb, {}, alts=[("acs", "puuid-1", 200, "exact"), ("kills", "puuid-1", 19.5, "exact")])["custom"]
+    assert "only for kills, deaths and assists" in odd[0]["reason"] and "whole numbers" in odd[1]["reason"]
+    hit = cbets.place("Cus", "exact:kills:puuid-1:25", "exact", 5, {})
+    miss = cbets.place("Cus", "exact:kills:puuid-1:21", "exact", 5, {})
+    assert hit["market_type"] == "exact" and hit["description"] == "P1 Kills Exactly 25" and json.loads(hit["context"])["custom"]
+    assert abs(fair_chance(hit["odds_decimal"], "exact", 0.05) - by_n[25]["selections"][0]["fair_prob"]) < 0.01  # double edge
+    try:
+        cbets.place_parlay("Cus", [{"market_id": "exact:kills:puuid-1:20", "selection": "exact"},
+                                   {"market_id": "alt:kills:puuid-1:21.5", "selection": "over"}], 5, {})
+        raise AssertionError("an exact number and a line on the same player and stat can't share a parlay")
+    except BetError as e:
+        assert "one line per player and stat" in str(e), e
+    # A surrender settles an exact number only if it was already passed (lost); otherwise it's refunded.
+    ev = lambda n, kills: cbets._evaluate({"market_type": "exact", "selection": "exact", "line": n,  # noqa: E731
+                                           "context": json.dumps({"stat": "kills", "puuid": "p"})},
+                                          {"mode": "competitive", "rounds_won": 9, "rounds_lost": 4, "result": "win"}, {"p": {"kills": kills}})[0]
+    assert ev(10, 12) == "lost" and ev(15, 12) == "void"
+    # They settle like any over / under: P1 gets 25 kills, P2 dies 14 times.
+    play(10, 25, time.time() + 5)  # starts after the bets were placed
+    settled = {b["id"]: b for b in cbets.settle_for_match(cdb.match("c10"), cdb.match_players("c10"))}
+    assert settled[single["id"]]["status"] == "won" and settled[parlay["id"]]["status"] == "won", settled
+    assert settled[hit["id"]]["status"] == "won" and settled[miss["id"]]["status"] == "lost"  # exactly 25, not 21
+
+
+@section("score markets")
+def score_markets(shared):
+    # Rounds won / lost, winning margin and exact score come from one final-score model that agrees with the
+    # match-result and overtime markets.
+    board = shared.engine.build(shared.db)
+    team = {mk["market_id"]: mk for mk in board["team"]}
+    fair = lambda mid: {x["key"]: x["fair_prob"] for x in team[mid]["selections"]}  # noqa: E731
+    score, margin = fair("team:score"), fair("team:margin")
+    # Only squad wins are offered: the three margins add up to the match-result chance, the 12 regulation scores to
+    # a little less (the rest is an overtime win, which counts as "win by 1-2" but not as an exact score).
+    assert list(score) == [f"13-{x}" for x in range(12)] and list(margin) == ["w1-2", "w3-5", "w6+"]
+    p_win = fair("team:win")["win"]
+    assert abs(sum(margin.values()) - p_win) < 2e-3 and sum(score.values()) < p_win, (margin, p_win)
+    assert margin["w1-2"] > score["13-11"] and team["team:score"]["selections"][0]["label"] == "13–0"
+    assert team["team:rw"]["line"] % 1 == 0.5
+    # The model itself: matches the match-result chance, and the overtime chance unless that's below what it can
+    # produce (about 6%, e.g. a history with no overtime yet), where it sits at its widest spread.
+    for pw, pot in ((0.45, 0.10), (0.6, 0.03)):
+        dist, mu, sd = score_model(pw, pot)
+        won = sum(p for k, p in dist.items() if k == "ot-win" or (isinstance(k, tuple) and k[0] == 13))
+        assert abs(won - pw) < 1e-3 and abs(sum(dist.values()) - 1) < 1e-9
+        assert abs(dist["ot-win"] + dist["ot-loss"] - pot) < 0.03 or sd == SCORE_SD_MAX, (pw, pot, sd)
+    # They settle on the final score; a surrender only settles rounds won / lost already past the line.
+    ev = lambda mtype, sel, match, line=None: shared.bets._evaluate(  # noqa: E731
+        {"market_type": mtype, "selection": sel, "line": line, "context": "{}"}, {"mode": "competitive", **match}, {})[0]
+    w13_7 = {"rounds_won": 13, "rounds_lost": 7, "result": "win"}
+    assert ev("team_score", "13-7", w13_7) == "won" and ev("team_score", "13-6", w13_7) == "lost"
+    assert ev("team_margin", "w6+", w13_7) == "won" and ev("team_margin", "w3-5", w13_7) == "lost"
+    assert ev("team_rw", "over", w13_7, 10.5) == "won" and ev("team_rl", "under", w13_7, 10.5) == "won"
+    ot = {"rounds_won": 15, "rounds_lost": 13, "result": "win"}
+    assert ev("team_score", "13-11", ot) == "lost" and ev("team_margin", "w1-2", ot) == "won" and ev("team_rl", "over", ot, 11.5) == "won"
+    l7_13 = {"rounds_won": 7, "rounds_lost": 13, "result": "loss"}  # a loss loses every margin and exact-score bet
+    assert ev("team_score", "13-7", l7_13) == "lost" and ev("team_margin", "w6+", l7_13) == "lost"
+    assert ev("team_score", "5-3", {"rounds_won": 5, "rounds_lost": 3, "result": "win", "mode": "swiftplay"}) == "void"
+    ff = {"rounds_won": 9, "rounds_lost": 4, "result": "win"}  # surrendered 9-4
+    assert ev("team_rw", "over", ff, 8.5) == "won" and ev("team_rw", "over", ff, 10.5) == "void"
+    assert ev("team_rl", "over", ff, 3.5) == "won" and ev("team_score", "13-4", ff) == "void" and ev("team_margin", "w3-5", ff) == "void"
+    # Placing one: described by market and pick, priced with the multi-way edge.
+    shared.bets.register("Scorer", "secret1")
+    bet = shared.bets.place("Scorer", "team:score", "13-11", 10, {})
+    assert bet["market_type"] == "team_score" and bet["description"] == "Exact score: 13–11", bet
+    assert abs(fair_chance(bet["odds_decimal"], "team_score", 0.05) - score["13-11"]) < 0.01
+    shared.bets.cancel(bet["id"], by="Scorer")
+
+
+@section("streaks")
+def streaks(shared):
+    # A pick that would have won each of the last 3+ games, settled at today's line, carries a "streak" count.
+    from fivestack.bets import COLD_CHANCE, STREAK_LOOKBACK, STREAK_MIN
+    board = shared.bets.mark_streaks(shared.engine.build(shared.db))
+    assert board["streak_lookback"] == STREAK_LOOKBACK
+    wins = 0
+    for m in shared.db.matches(limit=STREAK_LOOKBACK):  # newest first; a draw neither counts nor breaks the run
+        if m["result"] == "draw":
+            continue
+        if m["result"] != "win":
+            break
+        wins += 1
+    sels = {mk["market_id"]: {s["key"]: s for s in mk["selections"]} for g in ("team", "player_props", "top_markets") for mk in board[g]}
+    assert sels["team:win"]["win"].get("streak", 0) == (wins if wins >= STREAK_MIN else 0), (sels["team:win"], wins)
+    assert "streak" not in sels["team:win"]["loss"] or wins == 0
+    hot = [s for picks in sels.values() for s in picks.values() if "streak" in s]
+    assert hot and all(STREAK_MIN <= s["streak"] <= STREAK_LOOKBACK for s in hot), hot
+    for mid, picks in sels.items():  # an over and its under can't both have won the same games
+        if mid.startswith("ou:"):
+            assert not ("streak" in picks["over"] and "streak" in picks["under"]), picks
+    # Cold: a roughly 50/50 pick that missed the last 3+ games (long shots never are).
+    cold = [s for picks in sels.values() for s in picks.values() if "cold" in s]
+    assert all("streak" not in s and s["cold"] >= STREAK_MIN and COLD_CHANCE[0] <= s["fair_prob"] <= COLD_CHANCE[1] for s in cold), cold
+    # Priced at 50%, every pick that lost its last 3+ games is cold, e.g. the other side of a winning streak.
+    even = shared.engine.build(shared.db)
+    for g in ("team", "player_props", "top_markets"):
+        for mk in even[g]:
+            for s in mk["selections"]:
+                s["fair_prob"] = 0.5
+    even = {mk["market_id"]: {s["key"]: s for s in mk["selections"]} for mk in shared.bets.mark_streaks(even)["team"]}
+    assert even["team:win"]["loss"].get("cold", 0) == (wins if wins >= STREAK_MIN else 0), (even["team:win"], wins)
+    assert wins < STREAK_MIN or "cold" in even["team:win"]["loss"]
+    assert shared.bets.mark_streaks({"ready": False}) == {"ready": False}
 
 
 @section("grace and cancel windows")

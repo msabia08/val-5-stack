@@ -2,10 +2,11 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'viz', 'odds', 'bettors', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'forecasts', 'viz', 'odds', 'bettors', 'matches', 'setup'];
   const state = {
     view: 'overview',
-    status: null, stats: null, matches: null, odds: null, content: null, insights: null,
+    status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
+    fc: { stat: 'acs', player: '', cell: '' }, // Forecasts tab: stat, player (puuid) and map|role cell filter
     bets: [], bettors: [], rewards: [], slip: [], me: null, seasons: null, resetOpen: false,
     ctx: { map: '', agents: {} },
     topDir: {}, // scoreboard card -> 'low' when flipped to its counter market (bottom of the scoreboard)
@@ -14,7 +15,10 @@
     stake: Number(localStorage.getItem('fs.stake') || 50) || 50,
     slipMode: 'single',
     matchFilter: { map: '', result: '', mode: '' },
-    expanded: new Set(),
+    recap: null, recapId: '', // Matches tab: the recap shown ('' = the latest game)
+    playerPick: '', // Players tab: the player in the detail ('' = the first)
+    vizGenre: 'all', // Charts tab: which group of charts is shown
+    trends: { stat: 'acs', range: 'all', hidden: {} }, // Players tab's trend chart: stat, every game or the last 10, players hidden
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -84,12 +88,127 @@
     return data;
   }
   const loadStatus = async () => { state.status = await api('/api/status'); renderHeader(); };
+  // The signed-in bettor (balance and open bets) for the top-bar chip; bets.js's loadBets refreshes it too.
+  const loadMe = async () => {
+    try { state.me = (await api('/api/bettor/me')).bettor; } catch (e) { return; }
+    renderMe();
+  };
+  let shownBalance = null; // { name, balance } last shown, for the bet slip's balance ticker
+  function renderMe() {
+    const chip = $('#me-chip'), me = state.me;
+    chip.classList.toggle('hidden', !me);
+    if (!me) return;
+    // Just the name and balance: what's riding on open bets shows under the bet slip.
+    chip.innerHTML = `<span class="me-name">${esc(me.name)}</span><b>${fmt.credits(me.balance)}</b><span class="me-unit">credits</span>`;
+    chip.title = `Betting as ${me.name}: ${fmt.credits(me.balance)} credits. Open Odds & Bets.`;
+    // The balance under the bet slip (Odds & Bets only) counts to a new value; the chip just shows it.
+    const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
+    const slipBalance = $('#slip .acct-balance b');
+    if (slipBalance && was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(slipBalance, was, me.balance);
+    shownBalance = { name: me.name, balance: me.balance };
+    celebrateWins(me);
+  }
+
+  // ---- little celebrations ----------------------------------------------------------
+  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const LONG_SHOT_DECIMAL = 6; // +500 or longer: gold confetti, and more of it
+
+  // Count a balance from its old value to the new one, flashing green (up) or red (down).
+  function tickBalance(el, from, to) {
+    el.classList.remove('tick-up', 'tick-down');
+    void el.offsetWidth; // restart the flash
+    el.classList.add(to > from ? 'tick-up' : 'tick-down');
+    if (reducedMotion() || document.hidden) return; // a hidden tab pauses the frames: just show the new balance
+    const t0 = performance.now(), dur = 900;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur), eased = 1 - (1 - k) ** 3;
+      el.textContent = fmt.credits(from + (to - from) * eased);
+      if (k < 1 && el.isConnected) requestAnimationFrame(step);
+    };
+    el.textContent = fmt.credits(from);
+    requestAnimationFrame(step);
+  }
+
+  // Confetti for wins settled since this browser last saw one (fs.seenWins.<name> holds the newest settled_ts
+  // shown), so a game that settles while the site is closed still gets its confetti on the next visit or poll.
+  // The first visit on a device only sets the marker: old wins aren't celebrated. The confetti comes out of the bet
+  // slip's balance, so it waits until you're on Odds & Bets (renderMe runs after every redraw), and in a background
+  // tab until the tab is visible again (browsers pause animations in hidden tabs).
+  let celebrateLater = false;
+  function celebrateWins(me) {
+    const key = `fs.seenWins.${me.name.toLowerCase()}`, wins = me.recent_wins || [];
+    const newest = wins.reduce((a, w) => Math.max(a, w.settled_ts || 0), 0);
+    let seen = null;
+    try { seen = localStorage.getItem(key); } catch (e) { return; } // no storage: no way to tell what's new
+    const save = () => { try { localStorage.setItem(key, String(newest)); } catch (e) { /* storage blocked */ } };
+    if (seen === null) { save(); return; }
+    const fresh = wins.filter((w) => (w.settled_ts || 0) > Number(seen));
+    const origin = $('#slip .acct-balance b');
+    if (!fresh.length || !origin) return;
+    if (document.hidden) {
+      if (!celebrateLater) {
+        celebrateLater = true;
+        document.addEventListener('visibilitychange', function shown() {
+          if (document.hidden) return;
+          document.removeEventListener('visibilitychange', shown);
+          celebrateLater = false;
+          if (state.me) celebrateWins(state.me);
+        });
+      }
+      return;
+    }
+    save();
+    const longShot = fresh.some((w) => w.odds_decimal >= LONG_SHOT_DECIMAL);
+    const what = (w) => (w.market_type === 'parlay' ? `Your ${(w.description || '').split(' + ').length}-leg parlay` : `“${w.description}”`);
+    const total = fresh.reduce((a, w) => a + (w.payout || 0), 0);
+    toast(`${longShot ? 'Long shot! ' : 'Winner! '}` + (fresh.length === 1 ? `${what(fresh[0])} paid ${fmt.credits(total)} credits`
+      : `${fresh.length} bets paid ${fmt.credits(total)} credits`), 'good');
+    confetti(origin, longShot);
+  }
+
+  const CONFETTI = ['#ff4d6d', '#ffd23f', '#3bceac', '#4f8cff', '#b86bff', '#ff8a00'];
+  const GOLD = ['#ffd700', '#ffc107', '#ffe082', '#fff3c4', '#e6a800'];
+  // A burst of confetti from an element (the bet slip's balance), falling under gravity and fading out.
+  function confetti(from, big) {
+    if (!from || reducedMotion()) return;
+    const r = from.getBoundingClientRect(), x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+    const n = big ? 160 : 80, colors = big ? GOLD : CONFETTI;
+    for (let i = 0; i < n; i++) {
+      const p = document.createElement('span');
+      p.className = `confetti${i % 3 === 0 ? ' round' : ''}`;
+      p.style.cssText = `left:${x0}px;top:${y0}px;background:${colors[i % colors.length]}`;
+      document.body.appendChild(p);
+      const ang = Math.PI * (0.05 + Math.random() * 0.9), speed = (big ? 420 : 320) * (0.35 + Math.random());
+      const vx = Math.cos(ang) * speed, vy = Math.sin(ang) * speed * 0.5 - 160, T = 1.6 + Math.random() * 0.9, spin = (Math.random() - 0.5) * 1440;
+      const frames = [0, 0.25, 0.5, 0.75, 1].map((k) => {
+        const t = k * T;
+        return { transform: `translate(${vx * t}px, ${vy * t + 450 * t * t}px) rotate(${spin * k}deg)`, opacity: k === 1 ? 0 : 1 };
+      });
+      p.animate(frames, { duration: T * 1000, easing: 'linear' }).onfinish = () => p.remove();
+      setTimeout(() => p.remove(), 4000); // in case the animation never finishes
+    }
+  }
   const loadStats = async () => { state.stats = await api('/api/stats'); };
   const loadInsights = async () => { state.insights = await api('/api/insights'); };
+  const loadForecasts = async () => {
+    const p = new URLSearchParams({ stat: state.fc.stat });
+    if (state.fc.player) p.set('player', state.fc.player);
+    state.forecasts = await api('/api/forecasts?' + p.toString());
+    state.fc.player = state.forecasts.player?.puuid || '';
+  };
+  // The Overview's extras: the latest game's recap and the bettors' leaderboard (kept apart from the Matches tab's recap).
+  const loadOverview = async () => {
+    const [recap, lb, won, lost] = await Promise.all([api('/api/recap').catch(() => null), api('/api/bettors').catch(() => null),
+      api('/api/bets?status=won&limit=300').catch(() => null), api('/api/bets?status=lost&limit=300').catch(() => null)]);
+    state.overviewRecap = recap;
+    if (lb) state.bettors = lb.bettors;
+    state.overviewBets = [...(won ? won.bets : []), ...(lost ? lost.bets : [])];
+  };
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
+  const loadRecap = async () => { state.recap = await api('/api/recap' + (state.recapId ? '?match=' + encodeURIComponent(state.recapId) : '')); };
   const loadContent = async () => { state.content = await api('/api/content'); };
   // The betting UI lives in web/bets.js (window.FiveBets); these names keep the call sites below unchanged.
-  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors } = window.FiveBets;
+  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard } = window.FiveBets;
   async function loadOdds() {
     const p = new URLSearchParams();
     if (state.ctx.map) p.set('map', state.ctx.map);
@@ -179,6 +298,8 @@
     ).join('');
   }
 
+  // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
+  const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
   const kpi = (label, value, sub = '', extra = '') =>
     `<div class="tile"><div class="tile-label">${esc(label)}</div><div class="tile-value">${value}</div>` +
     `${sub ? `<div class="tile-sub">${sub}</div>` : ''}${extra}</div>`;
@@ -205,35 +326,97 @@
       kpi('Win rate', fmt.pct(team.win_rate), `${team.wins}W · ${team.losses}L${team.draws ? ' · ' + team.draws + 'D' : ''}`),
       kpi('Current streak', team.streak || '–', 'wins or losses in a row'),
       kpi('Avg round diff', fmt.signed(team.avg_round_diff), 'rounds per game'),
-      kpi('Last game', last ? `<span class="chip ${last.result}">${fmt.res(last.result)}</span> ${last.rounds_won}–${last.rounds_lost}` : '–',
-        last ? `${esc(last.map)} · ${fmt.date(last.started_at)}` : ''),
+      kpi('Last game', last ? `<a class="plain-link recap-latest" href="#matches"><span class="chip ${last.result}">${fmt.res(last.result)}</span> ${last.rounds_won}–${last.rounds_lost}</a>` : '–',
+        last ? `${esc(last.map)} · ${fmt.date(last.started_at)} · <a class="recap-latest" href="#matches">recap</a>` : ''),
     ];
     const mapChart = hbars(team.by_map.map((m) => ({
       label: m.map, value: m.win_rate, text: fmt.pct(m.win_rate), n: `${m.wins}-${m.losses}`,
       title: `${m.map}: ${m.wins}-${m.losses} (${fmt.pct(m.win_rate)}), avg round diff ${fmt.signed(m.avg_round_diff)}`,
     })));
-    const recent = team.recent.map((r) =>
-      `<li class="recent-row"><span class="chip ${r.result}">${fmt.res(r.result)}</span>` +
-      `<span class="recent-score">${r.rounds_won}–${r.rounds_lost}</span><span>${esc(r.map)}</span>` +
-      `<span class="muted small mode">${esc(r.mode_label || '')}</span><span class="muted small">${fmt.date(r.started_at)}</span></li>`
-    ).join('');
-    const rows = st.members.slice().sort((a, b) => (b.overall.acs || 0) - (a.overall.acs || 0)).map((m) => {
-      const o = m.overall, slot = idx.get(m.puuid)?.slot || 1;
-      if (!o.games) return `<tr><td><span class="swatch s${slot}"></span>${esc(m.nickname)}</td><td class="muted" colspan="8">no games yet</td></tr>`;
-      return `<tr><td><span class="swatch s${slot}"></span>${esc(m.nickname)} <span class="muted small">${esc(m.name)}#${esc(m.tag)}</span></td>` +
-        `<td class="num">${o.games}</td><td class="num">${fmt.pct(o.win_rate)}</td><td class="num">${fmt.n0(o.acs)}</td>` +
-        `<td class="num">${fmt.n2(o.kd)}</td><td class="num">${fmt.n1(o.avg_kills)} / ${fmt.n1(o.avg_deaths)} / ${fmt.n1(o.avg_assists)}</td>` +
-        `<td class="num">${fmt.n0(o.adr)}</td><td class="num">${fmt.pct1(o.hs_pct)}</td>` +
-        `<td>${sparkline(m.form.slice().reverse().map((f) => f.acs), { w: 120, h: 30 })}</td></tr>`;
-    }).join('');
+    // The front page: what happened lately. Full detail lives on Matches (recap), Bettors / Odds & Bets and Players.
     return `<section class="kpis">${kpis.join('')}</section>
-      <section class="grid-2">
+      <section class="ov-grid">${overviewLastGame(idx)}${overviewBetting()}</section>
+      <section class="ov-grid">${overviewTrending(st, idx)}
         <div class="card"><h2>Map performance</h2><p class="muted small">Win rate as a 5-stack, ${team.games} games</p>${mapChart}</div>
-        <div class="card"><h2>Recent games</h2><ul class="recent">${recent}</ul></div>
-      </section>
-      <section class="card"><h2>Squad in 5-stack games</h2>
-        <div class="table-wrap"><table><thead><tr><th>Player</th><th class="num">Games</th><th class="num">Win %</th><th class="num">ACS</th><th class="num">K/D</th><th class="num">K / D / A per game</th><th class="num">ADR</th><th class="num">HS %</th><th>ACS, last 15</th></tr></thead><tbody>${rows}</tbody></table></div>
       </section>`;
+  }
+
+  // The latest game's result and its top 3 highlights (from /api/recap), linking to the full recap on Matches.
+  function overviewLastGame(idx) {
+    const r = state.overviewRecap;
+    if (!r) return '';
+    const m = r.match;
+    const who = (h) => (h.puuid ? `<span class="swatch s${idx.get(h.puuid)?.slot || 1}"></span>${esc(h.nickname || '')}` : '<span class="muted">Squad</span>');
+    const cards = r.highlights.slice(0, 3).map((h) => `<div class="hl-card tone-${esc(h.tone)}"><div class="hl-who">${who(h)}</div>` +
+      `<div class="hl-title">${esc(h.title)}</div>${h.detail ? `<div class="hl-detail">${esc(h.detail)}</div>` : ''}</div>`).join('');
+    return `<section class="card"><div class="section-head"><h2>Last game</h2><a class="recap-latest small" href="#matches">Full recap ›</a></div>
+      <div class="ov-game"><span class="chip ${esc(m.result || '')}">${fmt.res(m.result)}</span><b>${m.rounds_won}–${m.rounds_lost}</b>` +
+      `<span>${esc(m.map || '')}</span><span class="muted small">${esc(m.mode_label || '')} · ${fmt.date(m.started_ts ? m.started_ts * 1000 : null)}</span></div>
+      ${cards ? `<div class="ov-hl">${cards}</div>` : '<p class="muted">Nothing out of the ordinary this game.</p>'}</section>`;
+  }
+
+  // The Betting card, in three parts that share one look (tiles and rows): your balance, the leaderboard's top 3,
+  // and the standout bets settled on the last OV_BET_GAMES games.
+  const OV_BET_GAMES = 5;
+  function overviewBetting() {
+    const me = state.me, lb = state.bettors || [];
+    const who = (name) => `<span class="swatch s${bettorSlot(name)}"></span><b>${esc(name)}</b>`;
+    const balance = me
+      ? `<div class="ov-tile ov-balance"><div class="ov-tile-label">Your balance</div><div class="ov-tile-value">${fmt.credits(me.balance)} <span class="ov-unit">credits</span></div>` +
+        `<div class="ov-tile-sub">${me.open_bets ? `+${fmt.credits(me.open_stake)} riding on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : 'No open bets'}</div></div>`
+      : '<p class="muted small">Sign in on <a href="#odds">Odds &amp; Bets</a> to bet and see your balance here.</p>';
+    const leaders = lb.slice(0, 3).map((b, i) =>
+      `<li class="${me && b.name.toLowerCase() === me.name.toLowerCase() ? 'me' : ''}"><span class="ov-medal">${['🥇', '🥈', '🥉'][i]}</span><span class="ov-name">${who(b.name)}</span>` +
+      `<span class="num">${fmt.credits(b.balance)}</span><span class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : 'muted'}">${fmt.signed(b.profit, 0)}</span></li>`).join('');
+    return `<section class="card ov-betting"><div class="section-head"><h2>Betting</h2><span class="small"><a href="#odds">Odds &amp; Bets ›</a> · <a href="#bettors">Bettors ›</a></span></div>
+      ${balance}
+      <h3 class="ov-sub">Leaderboard <span>credits · profit</span></h3>${leaders ? `<ol class="ov-leaders">${leaders}</ol>` : '<p class="muted small">No bettors yet.</p>'}
+      ${overviewStandouts(who)}</section>`;
+  }
+
+  // Biggest win (most profit), biggest loss (biggest stake lost), longest odds won and shortest odds lost among the
+  // bets settled on the last OV_BET_GAMES games, whoever placed them.
+  function overviewStandouts(who) {
+    const all = (state.overviewBets || []).filter((b) => b.settled_match_id);
+    const games = [...new Map(all.map((b) => [b.settled_match_id, b.game_started_ts || 0])).entries()]
+      .sort((x, y) => y[1] - x[1]).slice(0, OV_BET_GAMES).map(([id]) => id);
+    const bets = all.filter((b) => games.includes(b.settled_match_id));
+    const won = bets.filter((b) => b.status === 'won'), lost = bets.filter((b) => b.status === 'lost');
+    const top = (list, score) => list.reduce((best, b) => (!best || score(b) > score(best) ? b : best), null);
+    const what = (b) => (b.market_type === 'parlay' ? `${(b.description || '').split(' + ').length}-leg parlay` : b.description || '');
+    const odds = (b) => fmt.odds({ decimal: b.odds_decimal, american: fmt.american(b.odds_decimal) });
+    const tiles = [
+      ['Biggest win', top(won, (b) => (b.payout || 0) - b.stake), (b) => `+${fmt.credits((b.payout || 0) - b.stake)}`, 'up'],
+      ['Biggest loss', top(lost, (b) => b.stake), (b) => `−${fmt.credits(b.stake)}`, 'down'],
+      ['Longest odds won', top(won, (b) => b.odds_decimal), odds, 'up'],
+      ['Shortest odds lost', top(lost, (b) => -b.odds_decimal), odds, 'down'],
+    ].map(([label, b, value, cls]) => (b
+      ? `<div class="ov-tile"><div class="ov-tile-label">${label}</div><div class="ov-tile-value ${cls}">${value(b)}</div>` +
+        `<div class="ov-tile-sub" title="${esc(`${b.bettor}: ${what(b)}`)}">${who(b.bettor)} · ${esc(what(b))}</div></div>`
+      : `<div class="ov-tile empty"><div class="ov-tile-label">${label}</div><div class="ov-tile-value muted">–</div></div>`)).join('');
+    return `<h3 class="ov-sub">Last ${OV_BET_GAMES} games</h3>` +
+      (bets.length ? `<div class="ov-tiles">${tiles}</div>` : '<p class="muted small">No settled bets on the last few games.</p>');
+  }
+
+  // Each player's ACS and K/D over their last 5 games against the 10 before (the same trend as the Players tab).
+  function overviewTrending(st, idx) {
+    // Each stat: the last TREND_RECENT games' average, and a coloured change against the TREND_BEFORE before them
+    // (grey when it's under TREND_MIN_CHANGE). The two averages are in the tooltip.
+    const cell = (m, key, f) => {
+      const tr = trend(m, key);
+      if (!tr) return '<td class="num muted">–</td>';
+      const d = tr.now - tr.then, cls = Math.abs(tr.rel) < TREND_MIN_CHANGE ? 'flat' : d > 0 ? 'up' : 'down';
+      return `<td class="num" title="Last ${TREND_RECENT} games: ${f(tr.now)} vs ${f(tr.then)} in the ${TREND_BEFORE} before">` +
+        `<b>${f(tr.now)}</b><span class="trend-delta ${cls}">${cls === 'flat' ? '' : d > 0 ? '▲ ' : '▼ '}${d >= 0 ? '+' : '−'}${f(Math.abs(d))}</span></td>`;
+    };
+    const members = st.members.filter((m) => m.overall.games)
+      .sort((a, b) => ((trend(b, 'acs') || { rel: -9 }).rel) - ((trend(a, 'acs') || { rel: -9 }).rel));
+    const rows = members.map((m) => `<tr><th scope="row"><span class="swatch s${idx.get(m.puuid)?.slot || 1}"></span>${esc(m.nickname)}</th>` +
+      `${cell(m, 'acs', fmt.n0)}${cell(m, 'kd', fmt.n2)}<td class="ov-spark">${sparkline(statSeries(m, 'acs'), { w: 110, h: 26 })}</td></tr>`).join('');
+    return `<section class="card"><div class="section-head"><h2>Who's trending</h2><a class="small" href="#players">Players ›</a></div>
+      <p class="muted small">Last ${TREND_RECENT} games against the ${TREND_BEFORE} before them, hottest first.</p>
+      <div class="table-wrap"><table class="ov-trending"><thead><tr><th>Player</th><th class="ov-h">ACS</th><th class="ov-h">K/D</th><th class="ov-h ov-spark">ACS, last ${fmt.n0(Math.max(...members.map((m) => m.form.length)))} games</th></tr></thead>` +
+      `<tbody>${rows}</tbody></table></div></section>`;
   }
 
   // ---- 5-stack vs. usual ----------------------------------------------------------
@@ -253,32 +436,6 @@
   }
   const devMetric = (dv, key) => dv?.metrics.find((x) => x.key === key);
 
-  function devSummary(st, idx) {
-    const withBase = st.members.filter((m) => m.deviation && m.overall.games);
-    if (!withBase.length) {
-      return `<section class="card"><h2>5-stack vs. their other games</h2>
-        <p class="muted">No non-5-stack games stored yet. Each member's other games in the tracked modes are collected on the next sync.</p></section>`;
-    }
-    const acsPct = (m) => devMetric(m.deviation, 'acs')?.pct ?? -Infinity;
-    const rows = withBase.slice().sort((a, b) => acsPct(b) - acsPct(a)).map((m) => {
-      const dv = m.deviation, slot = idx.get(m.puuid)?.slot || 1;
-      const acs = devMetric(dv, 'acs'), kd = devMetric(dv, 'kd'), wr = devMetric(dv, 'win_rate');
-      const so = dv.standout && devMetric(dv, dv.standout);
-      return `<tr><td><span class="swatch s${slot}"></span>${esc(m.nickname)}</td>` +
-        `<td class="num">${dv.stack_games} <span class="muted">/ ${dv.usual_games}</span></td>` +
-        `<td class="num">${acs ? `${fmt.n0(acs.stack)} <span class="muted">vs ${fmt.n0(acs.usual)}</span>` : '–'}</td>` +
-        `<td class="num">${acs ? devDiff(acs) : '–'}</td>` +
-        `<td class="num">${kd ? devDiff(kd) : '–'}</td>` +
-        `<td class="num">${wr ? devDiff(wr) : '–'}</td>` +
-        `<td>${acs ? devBadge(acs.verdict) : ''}</td>` +
-        `<td>${so ? `${esc(so.label)} ${devBadge(so.verdict)}` : '<span class="muted">–</span>'}</td></tr>`;
-    }).join('');
-    return `<section class="card"><h2>5-stack vs. their other games</h2>
-      <p class="muted small">Each player's 5-stack games compared with their games outside the stack (solo queue or smaller parties) in the tracked modes. "Better" or "worse" means the gap is about two standard errors or more; "slightly" means one to two; smaller gaps are within normal game-to-game variation.</p>
-      <div class="table-wrap"><table><thead><tr><th>Player</th><th class="num">Games stack / other</th><th class="num">ACS</th><th class="num">ACS change</th><th class="num">K/D change</th><th class="num">Win % change</th><th>ACS verdict</th><th>Biggest change</th></tr></thead><tbody>${rows}</tbody></table></div>
-    </section>`;
-  }
-
   function devBlock(m) {
     const dv = m.deviation;
     if (!dv) return '<h3>Compared with their other games</h3><p class="muted small">No non-5-stack games stored for this player yet.</p>';
@@ -293,51 +450,158 @@
   }
 
   // ---- players ----------------------------------------------------------------
+  // The tab is one comparison table (a row per player, with how their 5-stack games compare with their other games)
+  // and one player's detail below it, picked from the table or the buttons. Numbers that are the same for everyone
+  // (games, win rate, win rate by map: every tracked game has all five) live on the Overview tab instead.
+  // The detail used to show a "Compared with their other games" table and recent W/L chips; both are switched off,
+  // set either to true to bring it back.
+  const PLAYER_CARD_OTHER_GAMES = false;
+  const PLAYER_CARD_FORM = false;
+  // The major per-player stats: [label, key (per-game value in form / range), overall value, format, higher is better].
+  const PLAYER_COLS = [
+    ['ACS', 'acs', (m) => m.overall.acs, fmt.n0, true],
+    ['K/D', 'kd', (m) => m.overall.kd, fmt.n2, true],
+    ['Kills', 'kills', (m) => m.overall.avg_kills, fmt.n1, true],
+    ['Deaths', 'deaths', (m) => m.overall.avg_deaths, fmt.n1, false],
+    ['Assists', 'assists', (m) => m.overall.avg_assists, fmt.n1, true],
+    ['ADR', 'adr', (m) => m.overall.adr, fmt.n0, true],
+    ['HS %', 'hs_pct', (m) => m.overall.hs_pct, fmt.pct1, true],
+  ];
+  // Trends compare a player's last TREND_RECENT games with the TREND_BEFORE before them (the sparklines' numbers).
+  const TREND_RECENT = 5, TREND_BEFORE = 10, TREND_MIN_CHANGE = 0.05;
+  const gameStat = (f, key) => (key === 'kd' ? f.kills / Math.max(1, f.deaths) : f[key]);
+
+  // A player's per-game values for one stat, oldest first (the last 15 games).
+  const statSeries = (m, key) => m.form.slice().reverse().map((f) => gameStat(f, key));
+
+  function trend(m, key) {
+    const recent = m.form.slice(0, TREND_RECENT), before = m.form.slice(TREND_RECENT, TREND_RECENT + TREND_BEFORE);
+    if (recent.length < TREND_RECENT || before.length < TREND_RECENT) return null;
+    const mean = (games) => {
+      if (key === 'kd') return games.reduce((a, f) => a + f.kills, 0) / Math.max(1, games.reduce((a, f) => a + f.deaths, 0));
+      const vals = games.map((f) => f[key]).filter(isNum);
+      return vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null;
+    };
+    const now = mean(recent), then = mean(before);
+    if (!isNum(now) || !isNum(then) || !then) return null;
+    return { now, then, rel: (now - then) / Math.abs(then) };
+  }
+
   function viewPlayers() {
     const st = state.stats, idx = memberIndex();
-    if (!st.members.length) return emptyState();
-    const breakdown = (rows, key) => {
+    const members = st.members.filter((m) => m.overall.games);
+    if (!members.length) return emptyState();
+    const focus = (members.find((m) => m.puuid === state.playerPick) || members[0]).puuid; // the detail's player
+    return playersTable(members, idx) + playerDetail(members, idx) +
+      window.FiveViz.playerTrends(st.timeline, members, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot }, { ...state.trends, focus });
+  }
+
+  // One row per player: this 5-stack's numbers (the best in each column highlighted, and an arrow when the player's
+  // last 5 games are trending up or down), then how they compare with their games outside the stack.
+  function playersTable(members, idx) {
+    const pick = (members.find((m) => m.puuid === state.playerPick) || members[0]).puuid;
+    const best = PLAYER_COLS.map(([, , get, , up]) => (up ? Math.max : Math.min)(...members.map((m) => get(m) ?? (up ? -Infinity : Infinity))));
+    const rows = members.slice().sort((a, b) => (b.overall.acs || 0) - (a.overall.acs || 0)).map((m) => {
+      const slot = idx.get(m.puuid)?.slot || 1, dv = m.deviation;
+      const cells = PLAYER_COLS.map(([, key, get, f, up], i) => {
+        const v = get(m);
+        if (!isNum(v)) return '<td class="num">–<span class="pc-arrow"></span></td>';
+        const tr = trend(m, key);
+        let arrow = '<span class="pc-arrow"></span>', title = '';
+        if (tr) {
+          title = ` title="Last ${TREND_RECENT} games: ${f(tr.now)} vs ${f(tr.then)} in the ${TREND_BEFORE} before"`;
+          if (Math.abs(tr.rel) >= TREND_MIN_CHANGE) {
+            arrow = `<span class="pc-arrow ${(tr.rel > 0) === up ? 'up' : 'down'}">${tr.rel > 0 ? '▲' : '▼'}</span>`;
+          }
+        }
+        return `<td class="num${v === best[i] ? ' pc-best' : ''}"${title}>${f(v)}${arrow}</td>`;
+      }).join('');
+      const acs = devMetric(dv, 'acs'), kd = devMetric(dv, 'kd'), wr = devMetric(dv, 'win_rate');
+      const so = dv && dv.standout && devMetric(dv, dv.standout);
+      const vs = dv
+        ? `<td class="num pl-split" title="${dv.usual_games} other games">${acs ? devDiff(acs) : '–'}</td><td class="num">${kd ? devDiff(kd) : '–'}</td>` +
+          `<td class="num">${wr ? devDiff(wr) : '–'}</td><td>${so ? `${esc(so.label)} ${devBadge(so.verdict)}` : (acs ? devBadge(acs.verdict) : '<span class="muted">–</span>')}</td>`
+        : '<td class="pl-split muted" colspan="4">No other games stored yet</td>';
+      return `<tr class="pl-row${m.puuid === pick ? ' on' : ''}" data-puuid="${esc(m.puuid)}"><th scope="row"><span class="swatch s${slot}"></span>${esc(m.nickname)}</th>${cells}${vs}</tr>`;
+    }).join('');
+    return `<section class="card"><h2>Squad comparison</h2>
+      ${how(`Per-game averages over the squad's ${fmt.n0(members[0].overall.games)} 5-stack games. Click a row for that player's detail.`,
+        `The best in each column is highlighted. ▲ / ▼ mark a stat trending up or down: the player's last ${TREND_RECENT} games against the ${TREND_BEFORE} before them, 5% or more apart (green is good; for deaths, fewer is good). Hover a number for the two figures. <b>5-stack vs. their other games</b> compares each player's 5-stack games with their games outside the stack (solo queue or smaller parties): "better" or "worse" means the gap is about two standard errors or more, "slightly" one to two.`)}
+      <div class="table-wrap"><table class="pl-table"><thead>
+        <tr><th></th><th colspan="${PLAYER_COLS.length}" class="pl-group">This 5-stack</th><th colspan="4" class="pl-group pl-split">5-stack vs. their other games</th></tr>
+        <tr><th>Player</th>${PLAYER_COLS.map(([label]) => `<th class="num">${label}</th>`).join('')}<th class="num pl-split">ACS</th><th class="num">K/D</th><th class="num">Win %</th><th>Biggest change</th></tr>
+      </thead><tbody>${rows}</tbody></table></div></section>`;
+  }
+
+  // One player's detail: a tile per major stat (average, sparkline, highest and lowest game), their best game, and
+  // their by-agent and by-map tables.
+  function playerDetail(members, idx) {
+    const m = members.find((x) => x.puuid === state.playerPick) || members[0];
+    const slot = idx.get(m.puuid)?.slot || 1, bk = m.best.kills;
+    const picker = `<div class="seg" role="tablist">${members.map((x) => `<button type="button" class="seg-btn pl-pick ${x.puuid === m.puuid ? 'on' : ''}" data-puuid="${esc(x.puuid)}" role="tab" aria-selected="${x.puuid === m.puuid}"><span class="swatch s${idx.get(x.puuid)?.slot || 1}"></span>${esc(x.nickname)}</button>`).join('')}</div>`;
+    const gameLink = (g, word, f) => `<a href="#matches" class="recap-link" data-recap-match="${esc(g.match_id)}" title="${esc(`${g.map || '?'} · ${g.agent || '?'} · ${fmt.date(g.started_at)}: open the recap`)}">${word} ${f(g.value)}</a>`;
+    const tiles = PLAYER_COLS.map(([label, key, get, f]) => {
+      const r = m.range && m.range[key];
+      const one = ['kills', 'deaths', 'assists'].includes(key) ? fmt.n0 : f; // a single game's count is a whole number
+      const range = r ? `<div class="tile-range">${gameLink(r.high, 'High', one)} · ${gameLink(r.low, 'Low', one)}</div>` : '';
+      return kpi(label, f(get(m)), '', sparkline(statSeries(m, key), { w: 110, h: 28 }) + range);
+    }).join('');
+    const table = (rows, key) => {
       if (!rows.length) return '<p class="muted">No games yet.</p>';
-      return `<div class="table-wrap"><table class="compact"><thead><tr><th>${key === 'agent' ? 'Agent' : 'Map'}</th><th class="num">Games</th><th class="num">Win %</th><th class="num">ACS</th><th class="num">K/D</th><th class="num">K / D / A</th><th class="num">ADR</th><th class="num">HS %</th></tr></thead><tbody>` +
-        rows.map((r) => `<tr><td>${esc(r[key])}</td><td class="num">${r.games}</td><td class="num">${fmt.pct(r.win_rate)}</td><td class="num">${fmt.n0(r.acs)}</td><td class="num">${fmt.n2(r.kd)}</td><td class="num">${fmt.n1(r.avg_kills)} / ${fmt.n1(r.avg_deaths)} / ${fmt.n1(r.avg_assists)}</td><td class="num">${fmt.n0(r.adr)}</td><td class="num">${fmt.pct1(r.hs_pct)}</td></tr>`).join('') +
+      const withWin = key === 'agent'; // win rate by map is the same for all five, so only agents show it
+      return `<div class="table-wrap"><table class="compact"><thead><tr><th>${key === 'agent' ? 'Agent' : 'Map'}</th><th class="num">Games</th>${withWin ? '<th class="num">Win %</th>' : ''}<th class="num">ACS</th><th class="num">K/D</th><th class="num">ADR</th><th class="num">HS %</th></tr></thead><tbody>` +
+        rows.slice().sort((a, b) => b.games - a.games).map((r) => `<tr><td>${esc(r[key])}</td><td class="num">${r.games}</td>${withWin ? `<td class="num">${fmt.pct(r.win_rate)}</td>` : ''}<td class="num">${fmt.n0(r.acs)}</td><td class="num">${fmt.n2(r.kd)}</td><td class="num">${fmt.n0(r.adr)}</td><td class="num">${fmt.pct1(r.hs_pct)}</td></tr>`).join('') +
         '</tbody></table></div>';
     };
-    return devSummary(st, idx) + st.members.map((m) => {
-      const o = m.overall, slot = idx.get(m.puuid)?.slot || 1;
-      const form = m.form.slice(0, 10).map((f) =>
-        `<span class="chip ${f.result}" title="${esc(f.map)} · ${esc(f.agent)} · ${f.kills}/${f.deaths}/${f.assists} · ACS ${f.acs}">${fmt.res(f.result)}</span>`).join('');
-      const bk = m.best.kills, ba = m.best.acs;
-      const body = o.games
-        ? `<div class="kpis small">
-            ${kpi('Games', o.games, `${o.wins}W · ${o.losses}L`)}
-            ${kpi('Win rate', fmt.pct(o.win_rate))}
-            ${kpi('ACS', fmt.n0(o.acs), 'per round', sparkline(m.form.slice().reverse().map((f) => f.acs), { w: 110, h: 28 }))}
-            ${kpi('K/D', fmt.n2(o.kd), `${fmt.n1(o.avg_kills)} kills · ${fmt.n1(o.avg_deaths)} deaths`)}
-            ${kpi('ADR', fmt.n0(o.adr), 'damage per round')}
-            ${kpi('Headshot %', fmt.pct1(o.hs_pct))}
-          </div>
-          <div class="grid-2"><div><h3>By agent</h3>${breakdown(m.by_agent, 'agent')}</div><div><h3>By map</h3>${breakdown(m.by_map, 'map')}</div></div>
-          ${devBlock(m)}
-          <p class="muted small">Best game: ${bk ? `${bk.value} kills on ${esc(bk.map)} as ${esc(bk.agent)} (${fmt.date(bk.started_at)})` : '–'}${ba ? ` · Peak ACS ${fmt.n0(ba.value)} on ${esc(ba.map)}` : ''}</p>`
-        : '<p class="muted">No 5-stack games recorded for this player yet.</p>';
-      return `<section class="card player">
-        <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div><div class="form">${form}</div></header>
-        ${body}</section>`;
-    }).join('');
+    const form = m.form.slice(0, 10).map((f) =>
+      `<span class="chip ${f.result}" title="${esc(f.map)} · ${esc(f.agent)} · ${f.kills}/${f.deaths}/${f.assists} · ACS ${f.acs}">${fmt.res(f.result)}</span>`).join('');
+    const bestTile = bk
+      ? `<a href="#matches" class="tile tile-link" data-recap-match="${esc(bk.match_id)}" title="Open this game's recap"><div class="tile-label">Best game</div><div class="tile-value">${fmt.n0(bk.value)} kills</div>` +
+        `<div class="tile-sub">${esc(bk.map || '?')} · ${esc(bk.agent || '?')} · ${fmt.date(bk.started_at)} · recap ›</div></a>`
+      : kpi('Best game', '–');
+    return `<section class="card player" id="player-detail">
+      <div class="pl-picker">${picker}</div>
+      <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div>` +
+        `${PLAYER_CARD_FORM ? `<div class="form">${form}</div>` : ''}<div class="pl-links"><a href="#forecasts" class="btn ghost small" data-forecast-player="${esc(m.puuid)}">${esc(m.nickname)}'s forecasts ›</a><a href="#viz" class="btn ghost small">Charts ›</a></div></header>
+      <p class="muted small">Per-game averages; the lines show the last ${m.form.length} games, and High / Low are their best and worst complete 5-stack games (click one for its recap).</p>
+      <div class="kpis small pl-tiles">${tiles}${bestTile}</div>
+      <div class="grid-2"><div><h3>By agent</h3>${table(m.by_agent, 'agent')}</div><div><h3>By map</h3>${table(m.by_map, 'map')}</div></div>
+      ${PLAYER_CARD_OTHER_GAMES ? devBlock(m) : ''}
+    </section>`;
   }
 
   // ---- visualizations (drawn by web/viz.js) ---------------------------------------
   function viewViz() {
     const idx = memberIndex();
-    const out = window.FiveViz.html(state.insights, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot });
+    const out = window.FiveViz.html(state.insights, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot }, state.vizGenre);
     return out == null ? emptyState() : out;
   }
 
+  // ---- forecasts (drawn by web/viz.js) ---------------------------------------------
+  function viewForecasts() {
+    const idx = memberIndex();
+    return window.FiveViz.forecasts(state.forecasts, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot }, state.fc);
+  }
+  async function openRecap(id) {
+    if (!id) return;
+    state.recapId = id;
+    try { await loadRecap(); draw(); } catch (e) { toast(e.message, 'bad'); return; }
+    $('#recap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  async function refreshForecasts() {
+    try { await loadForecasts(); draw(); } catch (e) { toast(e.message, 'bad'); }
+  }
+
   // ---- odds & bets --------------------------------------------------------------
+  // A flaming border marks a pick that would have won each of the last 3+ games (s.streak), a frosty one a pick that
+  // usually hits but has missed its last 3+ (s.cold); both from BetManager.mark_streaks.
   function oddBtn(mk, s, label) {
     const on = state.slip.some((x) => x.market_id === mk.market_id && x.selection === s.key);
-    return `<button class="odd ${on ? 'on' : ''}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability">` +
-      `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b></button>`;
+    const runOf = (n) => (n >= state.odds.streak_lookback ? `${n}+` : n);
+    const note = s.streak ? `Hit ${runOf(s.streak)} games in a row` : s.cold ? `Missed ${runOf(s.cold)} games in a row` : '';
+    const cls = s.streak ? ' hot' : s.cold ? ' cold' : '';
+    return `<button class="odd ${on ? 'on' : ''}${cls}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability${note ? ` · ${note}` : ''}">` +
+      `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b>${note ? `<span class="sr-only">, ${note}</span>` : ''}</button>`;
   }
 
   function viewOdds() {
@@ -353,16 +617,23 @@
         <button class="btn ghost" id="ctx-clear">Clear</button>
         <label class="right">Odds format<select id="odds-format"><option value="american" ${state.oddsFormat === 'american' ? 'selected' : ''}>American</option><option value="decimal" ${state.oddsFormat === 'decimal' ? 'selected' : ''}>Decimal</option></select></label>
       </div>
-      <p class="muted small">Lines come from your 5-stack history, weighted toward recent games. Choosing a map or agents up-weights matching games. House edge ${Math.round((od.house_edge || 0) * 100)}%.` +
-      `${od.partial_games?.forfeits ? ` ${od.partial_games.forfeits} surrendered ${od.partial_games.forfeits === 1 ? 'game is' : 'games are'} scaled to a full ${od.partial_games.full_game_rounds}-round game and counted at reduced weight.` : ''}</p>
-      <p class="muted small">Bets count for the next game, and for the game that just started if you place them within ${fmt.n0(state.status.bet_grace_minutes ?? 2)} minutes of it starting (while loading in or in round 1). After that they carry over to the following game.</p>
-      <p class="muted small">If the next game ends early by a surrender, the match result stands. Other bets settle only if they were already decided (an over that had already cleared its line wins; its under loses); everything else is refunded. Parlays apply this leg by leg: undecided legs are dropped and the rest still count. A remake in the first few rounds doesn't count as a game: bets carry over to the next one.</p></section>`;
+      ${how(`Odds for the next game, from your 5-stack history (house edge ${Math.round((od.house_edge || 0) * 100)}%). Pick a map or agents to sharpen them.`,
+        `<p>Lines come from your 5-stack history, weighted toward recent games. Choosing a map or agents up-weights matching games.` +
+        `${od.partial_games?.forfeits ? ` ${od.partial_games.forfeits} surrendered ${od.partial_games.forfeits === 1 ? 'game is' : 'games are'} scaled to a full ${od.partial_games.full_game_rounds}-round game and counted at reduced weight.` : ''}</p>` +
+        `<p>Bets count for the next game, and for the game that just started if you place them within ${fmt.n0(state.status.bet_grace_minutes ?? 2)} minutes of it starting (while loading in or in round 1). After that they carry over to the following game.</p>` +
+        '<p>If the next game ends early by a surrender, the match result stands. Other bets settle only if they were already decided (an over that had already cleared its line wins; its under loses); everything else is refunded. Parlays apply this leg by leg: undecided legs are dropped and the rest still count. A remake in the first few rounds doesn\'t count as a game: bets carry over to the next one.</p>')}</section>`;
     if (!od.ready) {
       return ctxBar + `<div class="card empty"><h2>No odds yet</h2><p>${esc(od.message)}</p></div>` + betsSection();
     }
-    const team = od.team.map((mk) =>
-      `<div class="market"><h3>${esc(mk.label)}</h3><p class="muted small">${esc(mk.desc)}${mk.basis ? ` · ${mk.basis.games} games, ${fmt.pct(mk.basis.win_rate)} raw win rate${mk.basis.map_games ? `, ${mk.basis.map_games} on this map` : ''}` : ''}${mk.mean != null ? ` · avg ${mk.mean}` : ''}</p>` +
-      `<div class="sels">${mk.selections.map((s) => oddBtn(mk, s, s.label)).join('')}</div></div>`).join('');
+    // Exact score spans the grid, its 12 scores in a compact grid of their own.
+    // No subtitles (each card's details are in its title's tooltip) and buttons pinned to the bottom, so each row lines up.
+    const team = od.team.map((mk) => {
+      const btnLabel = (s) => (mk.type === 'team_margin' ? s.label.replace(/^Win by /, '') : s.label); // the slip still says "Win by 1–2"
+      const sels = `<div class="sels ${mk.type}">${mk.selections.map((s) => oddBtn(mk, s, btnLabel(s))).join('')}</div>`;
+      const sub = mk.desc + (mk.basis ? ` · ${fmt.pct(mk.basis.win_rate)} of ${mk.basis.games} won${mk.basis.map_games ? `, ${mk.basis.map_games} on this map` : ''}` : '') +
+        (mk.mean != null ? ` · avg ${mk.mean}` : '');
+      return `<div class="market${mk.type === 'team_score' ? ' wide' : ''}"><h3 title="${esc(sub)}">${esc(mk.label)}</h3>${sels}</div>`; // details on hover
+    }).join('');
     const props = new Map(od.player_props.map((p) => [p.market_id, p]));
     const propRows = od.members.map((m) => {
       const slot = idx.get(m.puuid)?.slot || 1;
@@ -371,10 +642,14 @@
           const mk = props.get(`ou:${sd.key}:${m.puuid}`);
           if (!mk) return '<td class="prop muted">–</td>';
           const [o, u] = mk.selections;
-          return `<td class="prop" title="Average ${mk.mean}"><div class="line">${mk.line}</div>${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</td>`;
+          // The line as plain bold text, then over / under as one button split down the middle.
+          return `<td class="prop" title="Line ${mk.line} · average ${mk.mean}"><div class="prop-cell"><span class="prop-line">${mk.line}</span>` +
+            `<div class="prop-pair${o.streak || u.streak || o.cold || u.cold ? ' lit' : ''}">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
         }).join('') + '</tr>';
     }).join('');
-    // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle.
+    // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle. No subtitles, so every
+    // card is the same size: each button's meaning is its tooltip, and the stats whose names don't say it get an ⓘ.
+    const EXPLAIN_TOPS = ['acs_rel'];
     const byId = new Map(od.top_markets.map((mk) => [mk.market_id, mk]));
     const tops = od.top_markets.filter((mk) => mk.direction !== 'low').map((hi) => {
       const lo = byId.get(hi.counter_id);
@@ -382,9 +657,10 @@
       const mk = dir === 'low' ? lo : hi;
       const toggle = lo ? `<div class="slip-mode top-toggle" role="tablist" aria-label="${esc(hi.label)} or ${esc(lo.label)}">` +
         [['high', hi], ['low', lo]].map(([d, m]) =>
-          `<button type="button" class="mode-btn top-dir ${dir === d ? 'on' : ''}" data-pair="${esc(hi.pair)}" data-dir="${d}" role="tab" aria-selected="${dir === d}">${esc(m.label)}</button>`).join('') +
-        '</div>' : `<h3>${esc(mk.label)}</h3>`;
-      return `<div class="market">${toggle}<p class="muted small">${esc(mk.desc)}</p>` +
+          `<button type="button" class="mode-btn top-dir ${dir === d ? 'on' : ''}" data-pair="${esc(hi.pair)}" data-dir="${d}" role="tab" aria-selected="${dir === d}" title="${esc(m.desc)}">` +
+          `${esc(m.label)}${EXPLAIN_TOPS.includes(hi.stat) ? `<span class="top-info" aria-hidden="true">ⓘ</span><span class="sr-only">: ${esc(m.desc)}</span>` : ''}</button>`).join('') +
+        '</div>' : `<h3 title="${esc(mk.desc)}">${esc(mk.label)}</h3>`;
+      return `<div class="market">${toggle}` +
         mk.selections.map((s) => {
           const slot = idx.get(s.key)?.slot || 1;
           return `<div class="top-row"><span class="swatch s${slot}"></span><span>${esc(s.label)}</span>` +
@@ -393,12 +669,12 @@
         }).join('') + '</div>';
     }).join('');
     return ctxBar + `<div class="odds-layout"><div>
-        <section class="card"><h2>Team markets</h2><div class="markets">${team}</div></section>
-        <section class="card"><h2>Player props · over / under</h2><p class="muted small">For the next 5-stack game. Tap O or U to add a pick to the slip.</p>
+        <section class="card"><h2>Team markets</h2>${how('How the next game goes for the squad as a whole.', 'Rounds won / lost, winning margin and exact score all come from one model of the final score, so they agree with the match-result and overtime odds.')}<div class="markets">${team}</div></section>
+        <section class="card"><h2>Player props · over / under</h2><p class="muted small">For the next 5-stack game. Each cell shows the line, then the odds for going over (O) or under (U) it; tap O or U to add a pick to the slip.</p>
           <div class="table-wrap"><table class="props"><thead><tr><th>Player</th>${od.stat_defs.map((s) => `<th>${esc(s.label)}</th>`).join('')}</tr></thead><tbody>${propRows}</tbody></table></div></section>
-        <section class="card"><h2>Top and bottom of the scoreboard</h2><p class="muted small">Pick the one squad member who finishes first in a stat, or flip a card to pick who finishes last. "Popped off" and "Got diff'd" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.</p><div class="markets">${tops}</div></section>
+        <section class="card"><h2>Top and bottom of the scoreboard</h2>${how('Pick who finishes first in a stat, or flip a card for who finishes last.', '"Popped off" and "Got diff\'d" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.')}<div class="markets">${tops}</div></section>
         ${betsSection()}
-      </div><aside class="slip card" id="slip">${slipHtml()}</aside></div>`;
+      </div><aside class="odds-side"><div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}${myBetsCard()}</aside></div>`;
   }
 
 
@@ -408,42 +684,54 @@
 
 
   // ---- matches --------------------------------------------------------------------
-  function matchDetail(m, idx) {
-    const rounds = (m.rounds_won || 0) + (m.rounds_lost || 0) || 1;
-    const rows = m.players.map((p) => {
-      const shots = (p.headshots || 0) + (p.bodyshots || 0) + (p.legshots || 0);
-      const slot = idx.get(p.puuid)?.slot || 1;
-      return `<tr><td><span class="swatch s${slot}"></span>${esc(p.nickname || p.name || String(p.puuid).slice(0, 8))}</td><td>${esc(p.agent || '')}</td>` +
-        `<td class="num">${fmt.n0((p.score || 0) / rounds)}</td><td class="num">${p.kills ?? '–'}</td><td class="num">${p.deaths ?? '–'}</td><td class="num">${p.assists ?? '–'}</td>` +
-        `<td class="num">${fmt.n0((p.damage_dealt || 0) / rounds)}</td><td class="num">${shots ? fmt.pct1(((p.headshots || 0) / shots) * 100) : '–'}</td><td class="muted small">${esc(p.tier_name || '')}</td></tr>`;
-    }).join('');
-    return `<table class="compact inner"><thead><tr><th>Player</th><th>Agent</th><th class="num">ACS</th><th class="num">K</th><th class="num">D</th><th class="num">A</th><th class="num">ADR</th><th class="num">HS %</th><th>Rank</th></tr></thead><tbody>${rows}</tbody></table>` +
-      `<div class="muted small">${m.game_length_ms ? `Game length ${Math.round(m.game_length_ms / 60000)} min · ` : ''}${m.party_verified === 1 ? 'All five in one party · ' : ''}${esc(m.season || '')}</div>`;
-  }
-
+  const NIGHT_GAP_S = 3 * 3600; // a longer break between game starts begins a new night (insights.SESSION_GAP_S)
+  const NIGHTS_OPEN = 3; // the latest nights shown open on the Matches tab; older ones are folded
   function viewMatches() {
     const ms = state.matches, idx = memberIndex();
     if (!ms.length) return emptyState();
+    const shown = state.recap && state.recap.match.match_id;
+    const recap = window.FiveRecap.html(state.recap, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot });
     const f = state.matchFilter;
     const maps = [...new Set(ms.map((m) => m.map).filter(Boolean))].sort();
     const modes = [...new Set(ms.map((m) => m.mode_label).filter(Boolean))].sort();
-    const list = ms.filter((m) => (!f.map || m.map === f.map) && (!f.result || m.result === f.result) && (!f.mode || m.mode_label === f.mode));
-    const rows = list.map((m) => {
-      const open = state.expanded.has(m.match_id);
+    const keep = (m) => (!f.map || m.map === f.map) && (!f.result || m.result === f.result) && (!f.mode || m.mode_label === f.mode);
+    // Nights: games newest first, a new night after a break of more than NIGHT_GAP_S between game starts (the Charts
+    // tab's "nights" use the same rule). Grouped before filtering, so a filter never splits a night.
+    const nights = [];
+    ms.forEach((m) => {
+      const cur = nights[nights.length - 1], prev = cur && cur[cur.length - 1];
+      if (prev && (prev.started_ts || 0) - (m.started_ts || 0) <= NIGHT_GAP_S) cur.push(m); else nights.push([m]);
+    });
+    const shownCount = nights.reduce((a, n) => a + n.filter(keep).length, 0);
+    const time = (m) => (m.started_ts ? new Date(m.started_ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+    const row = (m) => {
       const rounds = (m.rounds_won || 0) + (m.rounds_lost || 0) || 1;
       const top = m.players[0];
-      return `<tr class="match-row ${m.result}" data-id="${esc(m.match_id)}"><td><span class="chip ${m.result}">${fmt.res(m.result)}</span></td>` +
-        `<td class="num"><b>${m.rounds_won}–${m.rounds_lost}</b>${m.ending === 'forfeit' ? ' <span class="tag ff" title="Ended early by a surrender">Surrendered</span>' : ''}</td><td>${esc(m.map)}</td><td class="muted">${esc(m.mode_label || '')}</td>` +
+      return `<tr class="match-row ${m.result}${m.match_id === shown ? ' on' : ''}" data-id="${esc(m.match_id)}" title="Open this game's recap">` +
+        `<td><span class="chip ${m.result}">${fmt.res(m.result)}</span> <b class="m-score">${m.rounds_won}–${m.rounds_lost}</b>` +
+        `${m.ending === 'forfeit' ? ' <span class="tag ff" title="Ended early by a surrender">FF</span>' : ''}</td><td>${esc(m.map)}</td><td class="muted">${esc(m.mode_label || '')}</td>` +
         `<td>${top ? `${esc(top.nickname || top.name)} · ${fmt.n0((top.score || 0) / rounds)} ACS · ${esc(top.agent || '')}` : ''}</td>` +
-        `<td class="muted small">${fmt.date(m.started_at)}</td><td class="muted small">${open ? '▾' : '▸'}</td></tr>` +
-        (open ? `<tr class="detail"><td colspan="7">${matchDetail(m, idx)}</td></tr>` : '');
+        `<td class="muted small">${time(m)}</td><td class="m-go">${m.match_id === shown ? 'showing' : '›'}</td></tr>`;
+    };
+    let open = 0;
+    const groups = nights.map((night) => {
+      const games = night.filter(keep);
+      if (!games.length) return '';
+      const first = night[night.length - 1], w = games.filter((m) => m.result === 'win').length, l = games.filter((m) => m.result === 'loss').length;
+      const date = first.started_ts ? new Date(first.started_ts * 1000).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+      const isOpen = open < NIGHTS_OPEN || games.some((m) => m.match_id === shown);
+      open += 1;
+      return `<details class="night"${isOpen ? ' open' : ''}><summary><span class="night-date">${esc(date)}</span>` +
+        `<span class="night-rec"><b class="up">${w}</b>–<b class="down">${l}</b></span><span class="muted small">${games.length} game${games.length === 1 ? '' : 's'}</span></summary>` +
+        `<div class="table-wrap"><table class="match-table"><colgroup><col class="c-res"><col class="c-map"><col class="c-mode"><col><col class="c-time"><col class="c-go"></colgroup>` +
+        `<tbody>${games.map(row).join('')}</tbody></table></div></details>`;
     }).join('');
-    return `<section class="card"><div class="filters">
+    return recap + `<section class="card"><h2>All games</h2><div class="filters">
         <select id="f-map"><option value="">All maps</option>${maps.map((x) => `<option ${f.map === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
         <select id="f-result"><option value="">All results</option><option value="win" ${f.result === 'win' ? 'selected' : ''}>Wins</option><option value="loss" ${f.result === 'loss' ? 'selected' : ''}>Losses</option></select>
         <select id="f-mode"><option value="">All modes</option>${modes.map((x) => `<option ${f.mode === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-        <span class="muted small">${list.length} of ${ms.length} games · click a row for the scoreboard</span></div>
-      <div class="table-wrap"><table><thead><tr><th></th><th class="num">Score</th><th>Map</th><th>Mode</th><th>Top performer</th><th>Date</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+        <span class="muted small">${shownCount} of ${ms.length} games · by night, newest first · click a game for its recap</span></div>
+      ${groups || '<p class="muted">No games match these filters.</p>'}</section>`;
   }
 
   // ---- setup -----------------------------------------------------------------------
@@ -490,6 +778,7 @@
       switch (state.view) {
         case 'overview': view.innerHTML = viewOverview(); break;
         case 'players': view.innerHTML = viewPlayers(); break;
+        case 'forecasts': view.innerHTML = viewForecasts(); break;
         case 'viz': view.innerHTML = viewViz(); break;
         case 'odds': view.innerHTML = viewOdds(); break;
         case 'bettors': view.innerHTML = viewBettors(); break;
@@ -500,9 +789,10 @@
       console.error(e);
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
-    view.classList.toggle('wide', state.view === 'odds');
+    view.classList.toggle('wide', ['odds', 'players'].includes(state.view)); // the two table-heavy tabs get the wide layout
+    renderMe();
     bind();
-    if ((state.view === 'viz' || state.view === 'bettors') && view.querySelector('[data-chart]')) window.FiveViz.mount(view);
+    if (['viz', 'bettors', 'forecasts', 'matches', 'players'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
   }
 
   async function render() {
@@ -510,11 +800,13 @@
     view.setAttribute('aria-busy', 'true');
     try {
       switch (state.view) {
-        case 'overview': case 'players': await loadStats(); break;
+        case 'overview': await Promise.all([loadStats(), loadOverview()]); break;
+        case 'players': await loadStats(); break;
+        case 'forecasts': await loadForecasts(); break;
         case 'viz': await loadInsights(); break;
         case 'odds': await Promise.all([loadOdds(), loadBets(), loadContent()]); break;
         case 'bettors': await Promise.all([loadBets(), loadBettingReport(), loadSeasons()]); break;
-        case 'matches': await loadMatches(); break;
+        case 'matches': await Promise.all([loadMatches(), loadRecap()]); break;
         default: await loadStatus();
       }
       draw();
@@ -526,6 +818,30 @@
 
   function bind() {
     const view = $('#view');
+    // Players tab: pick a player (table row or button), jump to a recap or their forecasts.
+    const pickPlayer = (puuid) => { state.playerPick = puuid; draw(); $('#player-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    $$('.pl-row', view).forEach((r) => r.addEventListener('click', () => pickPlayer(r.dataset.puuid)));
+    $$('.pl-pick', view).forEach((b) => b.addEventListener('click', () => { state.playerPick = b.dataset.puuid; draw(); }));
+    $$('[data-recap-match]', view).forEach((a) => a.addEventListener('click', (e) => { e.stopPropagation(); state.recapId = a.dataset.recapMatch; }));
+    $$('.viz-genre', view).forEach((b) => b.addEventListener('click', () => { state.vizGenre = b.dataset.v; draw(); }));
+    // Players tab's trend chart: stat, every game or the last 10, and showing / hiding players.
+    $$('.tr-stat', view).forEach((b) => b.addEventListener('click', () => { state.trends.stat = b.dataset.v; draw(); }));
+    $$('.tr-range', view).forEach((b) => b.addEventListener('click', () => { state.trends.range = b.dataset.v; draw(); }));
+    $$('.tr-player', view).forEach((b) => b.addEventListener('click', () => { const h = state.trends.hidden; h[b.dataset.puuid] = !h[b.dataset.puuid]; draw(); }));
+    $$('[data-forecast-player]', view).forEach((a) => a.addEventListener('click', () => { state.fc.player = a.dataset.forecastPlayer; state.fc.cell = ''; }));
+    $$('.fc-player', view).forEach((b) => b.addEventListener('click', () => { state.fc.player = b.dataset.v; state.fc.cell = ''; refreshForecasts(); }));
+    $$('.fc-stat', view).forEach((b) => b.addEventListener('click', () => { state.fc.stat = b.dataset.v; refreshForecasts(); }));
+    $$('.fc-cell', view).forEach((td) => {
+      const pickCell = () => {
+        window.FiveViz.hideTip();
+        state.fc.cell = state.fc.cell === td.dataset.cell ? '' : td.dataset.cell;
+        draw();
+        if (state.fc.cell) $('#viz-forecast-strip')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); // the filtered games sit above the grid
+      };
+      td.addEventListener('click', pickCell);
+      td.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCell(); } });
+    });
+    $('#fc-all')?.addEventListener('click', () => { state.fc.cell = ''; draw(); });
     $('#ctx-map')?.addEventListener('change', (e) => { state.ctx.map = e.target.value; refreshOdds(); });
     $$('.ctx-agent', view).forEach((sel) => sel.addEventListener('change', (e) => {
       const p = e.target.dataset.puuid;
@@ -540,11 +856,9 @@
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
       catch (err) { toast('Could not copy; select the link and copy it manually', 'bad'); }
     });
-    $$('tr.match-row', view).forEach((r) => r.addEventListener('click', () => {
-      const id = r.dataset.id;
-      if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
-      draw();
-    }));
+    $$('tr.match-row', view).forEach((r) => r.addEventListener('click', () => openRecap(r.dataset.id)));
+    $$('.recap-nav', view).forEach((b) => b.addEventListener('click', () => openRecap(b.dataset.recap)));
+    $$('.recap-latest', view).forEach((a) => a.addEventListener('click', () => { state.recapId = ''; })); // the Overview's "Last game" link
     ['map', 'result', 'mode'].forEach((k) => $('#f-' + k)?.addEventListener('change', (e) => { state.matchFilter[k] = e.target.value; draw(); }));
     $('#sync-now')?.addEventListener('click', () => sync(false));
     $('#sync-full')?.addEventListener('click', () => sync(true));
@@ -579,24 +893,46 @@
     const v = (location.hash || '#overview').slice(1);
     state.view = VIEWS.includes(v) ? v : 'overview';
     window.FiveViz?.hideTip();
-    $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === state.view));
+    $$('#tabs a, #setup-btn').forEach((a) => a.classList.toggle('active', a.dataset.view === state.view)); // Setup lives on the ⚙ button
     render();
   }
 
   async function init() {
     window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast });
+    // Themes cycle dark -> light -> Greg Mode (the light colours over web/assets/greg.png) -> dark.
+    const THEMES = { dark: 'Dark', light: 'Light', greg: 'Greg Mode' };
+    const themeBtn = $('#theme-btn');
+    const showTheme = (t) => { themeBtn.title = `Theme: ${THEMES[t]} (click for ${THEMES[t === 'dark' ? 'light' : t === 'light' ? 'greg' : 'dark']})`; };
     const saved = new URLSearchParams(location.search).get('theme') || localStorage.getItem('fs.theme');
-    if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
-    $('#theme-btn').addEventListener('click', () => {
-      const cur = document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-      const next = cur === 'dark' ? 'light' : 'dark';
+    if (THEMES[saved]) document.documentElement.dataset.theme = saved;
+    const current = () => document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    showTheme(current());
+    themeBtn.addEventListener('click', () => {
+      const cur = current();
+      const next = cur === 'dark' ? 'light' : cur === 'light' ? 'greg' : 'dark';
       document.documentElement.dataset.theme = next;
       localStorage.setItem('fs.theme', next);
+      showTheme(next);
+    });
+    // Greg Mode: every click drops a little Greg from the pointer (never blocks the click; off for reduced motion).
+    document.addEventListener('click', (e) => {
+      if (document.documentElement.dataset.theme !== 'greg' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (document.querySelectorAll('.greg-drop').length >= 25) return;
+      const greg = document.createElement('img');
+      greg.src = '/assets/greg-drop.png';
+      greg.alt = '';
+      greg.className = 'greg-drop';
+      greg.style.left = `${e.clientX}px`;
+      greg.style.top = `${e.clientY}px`;
+      greg.style.setProperty('--drift', `${Math.round((Math.random() - 0.5) * 220)}px`);
+      greg.style.setProperty('--spin', `${Math.round((Math.random() - 0.5) * 900)}deg`);
+      greg.addEventListener('animationend', () => greg.remove());
+      document.body.append(greg);
     });
     $('#sync-btn').addEventListener('click', () => sync(false));
     window.addEventListener('hashchange', route);
     try {
-      await Promise.all([loadStatus(), loadContent()]);
+      await Promise.all([loadStatus(), loadContent(), loadMe()]);
     } catch (e) {
       $('#view').innerHTML = `<div class="card error"><h2>Could not reach the server</h2><p>${esc(e.message)}</p></div>`;
       return;
@@ -606,6 +942,7 @@
     setInterval(async () => {
       const prevGames = state.status?.games, wasSyncing = state.status?.tracker?.syncing;
       try { await loadStatus(); } catch (e) { return; }
+      loadMe(); // bets settle when games arrive, so the balance chip keeps up
       const nowSyncing = state.status.tracker?.syncing;
       if (nowSyncing && !wasSyncing) pollUntilIdle();
       else if (state.status.games !== prevGames) render();

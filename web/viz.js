@@ -1,4 +1,4 @@
-/* 5-Stack Tracker: Visualizations tab. Plain SVG/HTML charts drawn from /api/insights, no dependencies.
+/* 5-Stack Tracker: the Charts tab (route #viz). Plain SVG/HTML charts drawn from /api/insights, no dependencies.
  *
  * FiveViz.html(data, helpers) returns the page with empty [data-chart] slots; FiveViz.mount(root) draws
  * each slot at its real width (so text never scales) and redraws on resize. Colors are CSS variables, so
@@ -15,7 +15,6 @@
     { label: 'Evening', sub: '5–9', test: (h) => h >= 17 && h < 21 },
     { label: 'Night', sub: '9 pm–6 am', test: (h) => h >= 21 || h < 6 },
   ];
-  const DAMAGE_GAMES = 20;
   const MAX_COMPS = 8;
 
   let data = null;
@@ -52,7 +51,8 @@
   const memberSlot = (puuid) => h.slot(puuid) || 1;
   const nick = (puuid) => (data.members.find((m) => m.puuid === puuid) || {}).nickname || '?';
 
-  // A tooltip spec lives on the mark as JSON: { t: title, r: [[label, value, colorToken|null], ...] }.
+  // A tooltip spec lives on the mark as JSON: { t: title, r: [[label, value, colorToken|null], ...] }. A row that is a
+  // plain string is a short note line (a verdict, a section heading) instead.
   const tip = (title, rows) => ` data-tip="${h.esc(JSON.stringify({ t: title, r: rows }))}" tabindex="0"`;
 
   function niceMax(v) {
@@ -83,13 +83,20 @@
     return { bg: `color-mix(in oklab, ${pole} ${p}%, var(--div-mid))`, ink: p > 55 ? '#fff' : 'var(--text)' };
   }
 
+  // The "Show as table" view under each chart (Charts, Bettors and Forecasts tabs). Switched off; set to true to bring
+  // every one of them back.
+  const SHOW_TABLES = false;
+
   function table(head, rows) {
+    if (!SHOW_TABLES) return '';
     return `<details class="viz-table"><summary>Show as table</summary><div class="table-wrap"><table class="compact"><thead><tr>` +
       head.map((c, i) => `<th${i ? ' class="num"' : ''}>${h.esc(c)}</th>`).join('') + '</tr></thead><tbody>' +
       rows.map((r) => '<tr>' + r.map((c, i) => `<td${i ? ' class="num"' : ''}>${h.esc(c)}</td>`).join('') + '</tr>').join('') +
       '</tbody></table></div></details>';
   }
 
+  // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
+  const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
   const card = (id, title, takeaway, body, extra = '') =>
     `<section class="card viz-card" id="viz-${id}"><h2>${h.esc(title)}</h2>` +
     `${takeaway ? `<p class="viz-takeaway">${takeaway}</p>` : ''}${body}${extra}</section>`;
@@ -104,7 +111,10 @@
   }
 
   // ---- page -------------------------------------------------------------------------
-  function html(d, helpers) {
+  // Chart genres for the buttons at the top of the Charts tab; "all" keeps the full page in its usual order.
+  const GENRES = [['all', 'All'], ['results', 'Results'], ['players', 'Players'], ['rounds', 'Rounds']];
+
+  function html(d, helpers, genre = 'all') {
     data = d; h = helpers;
     const g = d.games;
     if (!g.length) return null;
@@ -124,16 +134,18 @@
       ? `<p class="viz-note">Only ${plural(g.length, '5-stack game')} so far, so treat these as early reads: one more win or loss can move a percentage a lot. Records are shown next to rates for that reason.</p>`
       : '';
 
-    return early + kpis +
-      formCard() +
-      `<div class="viz-cols">${timeCard()}${sessionCard()}</div>` +
-      mapCard() +
-      agentCard() +
-      swingCard() +
-      `<div class="viz-cols">${clutchCard()}${multiKillCard()}</div>` +
-      spikeCard() +
-      damageCard() +
-      `<div class="viz-cols">${aimCard()}${compCard()}</div>`;
+    const cols = (a, b) => `<div class="viz-cols">${a}${b}</div>`;
+    const pages = {
+      all: () => kpis + formCard() + cols(damageCard(), aimCard()) + swingCard() + cols(timeCard(), sessionCard()) +
+        mapCard() + agentCard() + cols(clutchCard(), multiKillCard()) + cols(compCard(), spikeCard()),
+      results: () => kpis + formCard() + cols(timeCard(), sessionCard()) + compCard(),  // how the squad does, and when
+      players: () => cols(damageCard(), aimCard()) + swingCard() + mapCard() + agentCard(),  // each player's impact, maps, agents
+      rounds: () => cols(clutchCard(), multiKillCard()) + spikeCard(),  // clutches, multi-kills, spike sites
+    };
+    const pick = pages[genre] ? genre : 'all';
+    const buttons = `<div class="seg viz-genres" role="tablist" aria-label="Chart genres">${GENRES.map(([k, label]) =>
+      `<button type="button" class="seg-btn viz-genre ${k === pick ? 'on' : ''}" data-v="${k}" role="tab" aria-selected="${k === pick}">${label}</button>`).join('')}</div>`;
+    return buttons + early + pages[pick]();
   }
 
   // ---- 1. form over time + round margins ------------------------------------------------
@@ -145,7 +157,7 @@
     const take = `Last ${last.length}: <strong>${lw}–${ll}</strong> (${pct(lw / last.length)}) · all games ${rec(all)}`;
     const rows = g.slice().reverse().map((x) => [dateLong(x.ts), x.map || '', resultText(x), x.form == null ? '–' : pct(x.form)]);
     return card('form', 'Form over time', take,
-      legend([{ label: `Win rate, last ${w} games`, color: '--accent', kind: 'line' }, { label: 'Won by', color: '--div-pos' }, { label: 'Lost by', color: '--div-neg' }]) +
+      legend([{ label: `Win rate, last ${w} games`, color: '--accent', kind: 'line' }, { label: 'Won by', color: '--up' }, { label: 'Lost by', color: '--down' }]) +
       slot('form', 310), table(['Game', 'Map', 'Result', `Win rate, last ${w}`], rows));
   }
 
@@ -181,7 +193,7 @@
     const cw = Math.max(2, Math.min(24, band - 2));
     g.forEach((q, i) => {
       if (!q.margin) return;
-      const color = q.margin > 0 ? '--div-pos' : '--div-neg';
+      const color = q.margin > 0 ? '--up' : '--down';
       s += `<path style="fill:var(${color})" d="${colPath(x(i) - cw / 2, cw, mid2, y2(q.margin))}"/>`;
     });
     s += `<line class="viz-base" x1="${m.l}" x2="${W - m.r}" y1="${mid2}" y2="${mid2}"/>` +
@@ -218,7 +230,7 @@
       xs: g.map((_, i) => x(i)),
       tips: g.map((q) => ({
         t: dateLong(q.ts),
-        r: [[`on ${q.map || '?'}${q.mode_label ? ' · ' + q.mode_label : ''}`, resultText(q), q.margin > 0 ? '--div-pos' : q.margin < 0 ? '--div-neg' : null],
+        r: [[`on ${q.map || '?'}${q.mode_label ? ' · ' + q.mode_label : ''}`, resultText(q), q.margin > 0 ? '--up' : q.margin < 0 ? '--down' : null],
           [`win rate, last ${data.constants.form_window}`, q.form == null ? '–' : pct(q.form), '--accent'],
           ['of the night', `game ${q.game_in_session}`, null]],
       })),
@@ -353,7 +365,8 @@
         (rows[rows.length - 1].gap < 0 ? ` · <strong>${h.esc(rows[rows.length - 1].nickname)}</strong> actually scores more in losses` : '')
       : 'Needs both wins and losses on record.';
     return card('swing', 'Who swings results', take,
-      legend([{ label: 'ACS in losses', color: '--pair-lo', kind: 'dot' }, { label: 'ACS in wins', color: '--pair-hi', kind: 'dot' }]) +
+      '<div class="viz-legend"><span class="viz-legend-item"><b class="swing-key up">W</b>ACS in wins</span>' +
+      '<span class="viz-legend-item"><b class="swing-key down">L</b>ACS in losses</span></div>' +
       slot('swing', 34 + rows.length * 38) +
       '<p class="muted small">The bigger the gap, the more the result tracks that player\'s game.</p>',
       table(['Player', 'ACS in wins', 'ACS in losses', 'Gap'], rows.map((p) => [p.nickname, n0(p.acs_win), n0(p.acs_loss), n0(p.gap)])));
@@ -374,97 +387,145 @@
     }
     rows.forEach((p, i) => {
       const cy = m.t + i * rh + rh / 2;
-      s += `<g class="viz-row"${tip(p.nickname, [['in wins', `${n0(p.acs_win)} ACS`, '--pair-hi'], ['in losses', `${n0(p.acs_loss)} ACS`, '--pair-lo'], ['games', `${p.games_win} W · ${p.games_loss} L`, null]])}>` +
+      // A big W at their ACS in wins and an L at their ACS in losses, nudged apart when they'd overlap.
+      let xw = x(p.acs_win), xl = x(p.acs_loss);
+      if (Math.abs(xw - xl) < 16) { const mid = (xw + xl) / 2, dir = xw >= xl ? 1 : -1; xw = mid + dir * 8; xl = mid - dir * 8; }
+      s += `<g class="viz-row"${tip(p.nickname, [['in wins', `${n0(p.acs_win)} ACS`, '--up'], ['in losses', `${n0(p.acs_loss)} ACS`, '--down'], ['games', `${p.games_win} W · ${p.games_loss} L`, null]])}>` +
         `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
         `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/>` +
         `<text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>` +
         `<line class="viz-connector" x1="${x(p.acs_loss)}" x2="${x(p.acs_win)}" y1="${cy}" y2="${cy}"/>` +
-        `<circle class="viz-dot" cx="${x(p.acs_loss)}" cy="${cy}" r="5" style="fill:var(--pair-lo)"/>` +
-        `<circle class="viz-dot" cx="${x(p.acs_win)}" cy="${cy}" r="5" style="fill:var(--pair-hi)"/>` +
+        `<text class="swing-mark down" x="${xl.toFixed(1)}" y="${cy}" text-anchor="middle" dominant-baseline="central">L</text>` +
+        `<text class="swing-mark up" x="${xw.toFixed(1)}" y="${cy}" text-anchor="middle" dominant-baseline="central">W</text>` +
         `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${p.gap >= 0 ? '+' : '−'}${n0(Math.abs(p.gap))}</text></g>`;
     });
     el.innerHTML = s + '</svg>';
   }
 
   // ---- 6. aim profile: head / body / legs -------------------------------------------------
+  // A figure per player, side by side (sharpest first): head, body and legs each show the share of the player's hits
+  // that land there, shaded against the rest of the squad for that part (the highest share gets the strongest blue).
   const AIM = [['head', 'Head', '--aim-1'], ['body', 'Body', '--aim-2'], ['leg', 'Legs', '--aim-3']];
   const aimRows = () => data.players.filter((p) => p.aim.head + p.aim.body + p.aim.leg > 0).sort((a, b) => b.aim.head_pct - a.aim.head_pct);
+  // The figure, in a 100 x 220 box: a round head, a body (a torso with rounded shoulders, a little narrower at the
+  // hips, and two slightly tapered arms) and two slightly tapered legs, a few units apart. The right-hand arm and leg
+  // are the left ones mirrored.
+  const MIRROR = (d) => `<path d="${d}"/><path transform="matrix(-1 0 0 1 100 0)" d="${d}"/>`;
+  const FIGURE = {
+    head: '<circle cx="50" cy="19" r="16"/>',
+    body: '<path d="M34 40 H66 Q76 40 76 51 L73 110 H27 L24 51 Q24 40 34 40 Z"/>' +
+      MIRROR('M8.5 51 Q8.5 45 14 45 Q19.5 45 19.5 51 L18.5 103 Q18.5 109 14 109 Q9.5 109 9.5 103 Z'),
+    leg: MIRROR('M31.5 113 H48.5 L47.5 207 Q47.5 214 41.5 214 H36 Q30 214 30 207 L28.5 117 Q28.5 113 31.5 113 Z'),
+  };
+  const AIM_LABEL_AT = { head: [50, 19], body: [50, 76], leg: [50, 162] };
 
   function aimCard() {
     const rows = aimRows();
     const take = rows.length ? `Sharpest: <strong>${h.esc(rows[0].nickname)}</strong>, ${(rows[0].aim.head_pct * 100).toFixed(1)}% of hits to the head` : '';
-    return card('aim', 'Aim profile', take,
-      legend(AIM.map(([, label, color]) => ({ label, color }))) + slot('aim', 16 + rows.length * 38),
+    const scale = '<div class="viz-legend"><span class="viz-legend-item"><span class="aim-scale" aria-hidden="true"></span>Stronger blue = the highest share in the squad for that part</span></div>';
+    return card('aim', 'Aim profile', take, scale + slot('aim', 200),
       table(['Player', 'Head', 'Body', 'Legs', 'Hits'], rows.map((p) => [p.nickname, pct(p.aim.head_pct), pct(p.aim.body_pct), pct(p.aim.leg_pct), n0(p.aim.head + p.aim.body + p.aim.leg)])));
+  }
+
+  // The figures' layout at width W (5 in a row, or 3 + 2 on a phone). The damage card beside it uses the height to
+  // end level with it.
+  function aimLayout(W, n) {
+    const perRow = W >= 420 ? Math.min(5, n) : Math.min(3, n);
+    const colW = W / perRow, sc = Math.min(1.2, (colW - 12) / 100), figH = 220 * sc, rowH = figH + 40;
+    return { perRow, colW, sc, figH, rowH, height: Math.ceil(n / perRow) * rowH };
   }
 
   function drawAim(el, W) {
     const rows = aimRows();
     if (!rows.length) { el.innerHTML = '<p class="muted">No shot data yet.</p>'; return; }
-    const m = { l: 110, r: 76, t: 8, b: 8 }, rh = 38, t = 18, pw = W - m.l - m.r;
-    let s = `<svg class="viz-svg" width="${W}" height="${m.t + rows.length * rh + m.b}" role="img" aria-label="Share of hits to head, body and legs per player">`;
+    const { perRow, colW, sc, figH, rowH } = aimLayout(W, rows.length);
+    // Each part on its own squad scale: the lowest share in the squad is pale, the highest the strongest blue.
+    const span = Object.fromEntries(AIM.map(([k]) => {
+      const vals = rows.map((p) => p.aim[k + '_pct']);
+      return [k, [Math.min(...vals), Math.max(...vals)]];
+    }));
+    const shade = (k, v) => {
+      const [lo, hi] = span[k];
+      return (hi - lo < 1e-9 ? 0.6 : 0.18 + 0.82 * ((v - lo) / (hi - lo))).toFixed(3);
+    };
+    let svg = `<svg class="viz-svg" width="${W}" height="${Math.ceil(rows.length / perRow) * rowH}" role="img" aria-label="Share of hits to head, body and legs per player">`;
     rows.forEach((p, i) => {
-      const cy = m.t + i * rh + rh / 2, total = p.aim.head + p.aim.body + p.aim.leg;
-      s += `<g class="viz-row"${tip(p.nickname, AIM.map(([k, label, color]) => [label.toLowerCase(), `${(p.aim[k + '_pct'] * 100).toFixed(1)}%`, color]).concat([['hits', n0(total), null]]))}>` +
-        `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
-        `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/>` +
-        `<text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>`;
-      let x = m.l;
-      AIM.forEach(([k, , color], j) => {
-        const w = p.aim[k + '_pct'] * pw, last = j === AIM.length - 1;
-        const segW = Math.max(0, w - (last ? 0 : 2)); // 2px surface gap between segments
-        if (segW > 0) s += `<path style="fill:var(${color})" d="${barPath(x, x + segW, cy, t, last)}"/>`;
-        x += w;
+      const row = Math.floor(i / perRow), inRow = Math.min(perRow, rows.length - row * perRow);
+      const left = (W - inRow * colW) / 2 + (i % perRow) * colW, x0 = left + (colW - 100 * sc) / 2, y0 = row * rowH + 4;
+      const total = p.aim.head + p.aim.body + p.aim.leg, cx = x0 + 50 * sc;
+      svg += `<g class="viz-row"${tip(p.nickname, AIM.map(([k, label, color]) => [label.toLowerCase(), `${(p.aim[k + '_pct'] * 100).toFixed(1)}%`, color]).concat([['hits', n0(total), null]]))}>` +
+        `<rect class="viz-rowhit" x="${left + 2}" y="${row * rowH}" width="${colW - 4}" height="${rowH - 2}" rx="8"/>` +
+        `<g transform="translate(${x0.toFixed(1)} ${y0}) scale(${sc.toFixed(3)})">` +
+        AIM.map(([k]) => `<g class="aim-part" style="fill-opacity:${shade(k, p.aim[k + '_pct'])}">${FIGURE[k]}</g>`).join('') + '</g>';
+      AIM.forEach(([k]) => {
+        const [ux, uy] = AIM_LABEL_AT[k];
+        svg += `<text class="aim-pct${k === 'head' ? ' head' : ''}" x="${(x0 + ux * sc).toFixed(1)}" y="${(y0 + uy * sc + 4).toFixed(1)}" text-anchor="middle">${Math.round(p.aim[k + '_pct'] * 100)}%</text>`;
       });
-      s += `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${(p.aim.head_pct * 100).toFixed(1)}% HS</text></g>`;
+      svg += `<text class="viz-label" x="${cx.toFixed(1)}" y="${(y0 + figH + 18).toFixed(1)}" text-anchor="middle">${h.esc(p.nickname)}</text>` +
+        `<rect x="${(cx - 12).toFixed(1)}" y="${(y0 + figH + 25).toFixed(1)}" width="24" height="3" rx="1.5" style="fill:var(--s${memberSlot(p.puuid)})"/></g>`;
     });
-    el.innerHTML = s + '</svg>';
+    el.innerHTML = svg + '</svg>';
   }
 
-  // ---- 7. damage share, last N games ---------------------------------------------------------
-  function damageGames() { return data.games.filter((g) => Object.keys(g.damage_share).length).slice(-DAMAGE_GAMES); }
+  // ---- 7. who carries the damage: all-time damage as 100 bullets, a row per player ------------------------------
+  // data: each game's damage_cum, every player's share of all the squad's damage from the first game through it; the
+  // last game's is the all-time split. Each share is rounded to whole bullets that always add up to 100.
+  function damageSplit() {
+    const g = data.games.filter((x) => Object.keys(x.damage_cum || {}).length);
+    if (!g.length) return { games: 0, rows: [] };
+    const last = g[g.length - 1].damage_cum;
+    const rows = data.members.filter((m) => last[m.puuid]).map((m) => ({ m, share: last[m.puuid] })).sort((a, b) => b.share - a.share);
+    const counts = toCounts(rows.map((x) => x.share), 100);
+    return { games: g.length, rows: rows.map((x, i) => ({ ...x, bullets: counts[i] })) };
+  }
+
+  // Whole counts out of n in proportion to shares: each share rounded, with the leftovers going to the biggest
+  // remainders so the counts always add up to n (no half bullets).
+  function toCounts(shares, n) {
+    const raw = shares.map((v) => v * n), counts = raw.map(Math.floor);
+    let left = n - counts.reduce((a, c) => a + c, 0);
+    raw.map((v, i) => [v - counts[i], i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left > 0) { counts[i] += 1; left -= 1; } });
+    return counts;
+  }
 
   function damageCard() {
-    const g = damageGames();
-    const avg = data.members.map((m) => ({ ...m, share: g.reduce((a, x) => a + (x.damage_share[m.puuid] || 0), 0) / (g.length || 1) }));
-    const top = avg.slice().sort((a, b) => b.share - a.share)[0];
-    const take = g.length ? `<strong>${h.esc(top.nickname)}</strong> dealt ${pct(top.share)} of the team's damage over the last ${plural(g.length, 'game')} (an even split is 20%)` : '';
+    const d = damageSplit(), top = d.rows[0];
+    const take = top ? `<strong>${h.esc(top.m.nickname)}</strong> has dealt ${top.bullets} of every 100 damage across all ${plural(d.games, 'game')} (an even split is 20)` : '';
     return card('damage', 'Who carries the damage', take,
-      legend(avg.map((m) => ({ label: `${m.nickname} ${pct(m.share)}`, color: `--s${memberSlot(m.puuid)}` }))) + slot('damage', 250),
-      table(['Game', 'Result'].concat(data.members.map((m) => m.nickname)),
-        g.slice().reverse().map((x) => [`${dateShort(x.ts)} · ${x.map || ''}`, resultText(x)].concat(data.members.map((m) => pct(x.damage_share[m.puuid]))))));
+      slot('damage', 5 * 34) +
+      '<p class="muted small">Every 100 damage the squad has dealt: one bullet per 1%.</p>',
+      table(['Player', 'Bullets', 'Share'], d.rows.map((x) => [x.m.nickname, n0(x.bullets), `${(x.share * 100).toFixed(1)}%`])));
   }
 
+  // 100 bullets, a row per player (biggest share first): their name, a bullet per 1% of the damage and the count.
+  // The bullets shrink when needed so the longest row fits; hovering a player's row fades everyone else's.
+  const bullet = (x, y, w, hgt, color) => {
+    const tipH = w * 1.15, neck = y + tipH;
+    return `<path style="fill:var(${color})" d="M${x.toFixed(1)} ${neck.toFixed(1)} Q${x.toFixed(1)} ${(y + tipH * 0.2).toFixed(1)} ${(x + w / 2).toFixed(1)} ${y.toFixed(1)} ` +
+      `Q${(x + w).toFixed(1)} ${(y + tipH * 0.2).toFixed(1)} ${(x + w).toFixed(1)} ${neck.toFixed(1)} Z"/>` +
+      `<rect class="dmg-casing" x="${x.toFixed(1)}" y="${(neck + 1).toFixed(1)}" width="${w.toFixed(1)}" height="${(hgt - tipH - 1).toFixed(1)}" rx="1" style="fill:var(${color})"/>`;
+  };
+
   function drawDamage(el, W) {
-    const g = damageGames();
-    if (!g.length) { el.innerHTML = '<p class="muted">No damage data yet.</p>'; return; }
-    const m = { l: 44, r: 12, t: 8, b: 34 }, H = 190;
-    const pw = W - m.l - m.r, band = pw / g.length, cw = Math.min(24, band - 4);
-    const y = (v) => m.t + (1 - v) * H;
-    let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="Share of team damage per player, per game">`;
-    [0.25, 0.5, 0.75, 1].forEach((v) => {
-      s += `<line class="viz-grid" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>` +
-        `<text class="viz-ax" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${v * 100}%</text>`;
+    const d = damageSplit();
+    if (!d.rows.length) { el.innerHTML = '<p class="muted">No damage data yet.</p>'; return; }
+    const m = { l: 86, r: 34 }, most = Math.max(...d.rows.map((x) => x.bullets));
+    const room = (W - m.l - m.r) / most; // width per bullet, bullet plus the space after it
+    const bw = Math.max(3, Math.min(14, room * 0.72)), gap = Math.max(1, Math.min(bw * 0.35, room - bw));
+    // Side by side with the aim profile (both half width), the rows spread out to the figures' height so the two
+    // cards end level; stacked on a phone they just take the room they need.
+    const n = aimRows().length, level = W >= 420 && n ? aimLayout(W, n).height / d.rows.length : 0;
+    const bh = Math.min(36, bw * 2.6), rh = Math.max(bh + 10, 24, level);
+    let s = `<svg class="viz-svg dmg-belt" width="${W}" height="${d.rows.length * rh}" role="img" aria-label="Every 100 damage the squad has dealt, a row of bullets per player">`;
+    d.rows.forEach((x, i) => {
+      const color = `--s${memberSlot(x.m.puuid)}`, top = i * rh, cy = top + rh / 2, y0 = cy - bh / 2;
+      s += `<g class="viz-row"${tip(x.m.nickname, [['of every 100 damage', n0(x.bullets), color], ['all-time share', `${(x.share * 100).toFixed(1)}%`, null]])}>` +
+        `<rect class="viz-rowhit" x="0" y="${top}" width="${W}" height="${rh}"/>` +
+        `<circle cx="8" cy="${cy}" r="5" style="fill:var(${color})"/>` +
+        `<text class="viz-label" x="20" y="${cy + 4}">${h.esc(x.m.nickname)}</text>`;
+      for (let c = 0; c < x.bullets; c += 1) s += bullet(m.l + c * (bw + gap), y0, bw, bh, color);
+      s += `<text class="viz-label" x="${(m.l + x.bullets * (bw + gap) + 6).toFixed(1)}" y="${cy + 4}">${x.bullets}</text></g>`;
     });
-    g.forEach((q, i) => {
-      const x = m.l + (i + 0.5) * band - cw / 2;
-      let acc = 0;
-      const ms = data.members.filter((mm) => q.damage_share[mm.puuid] != null);
-      ms.forEach((mm, j) => {
-        const v = q.damage_share[mm.puuid], top = j === ms.length - 1;
-        const yb = y(acc), yt = y(acc + v) + (top ? 0 : 2); // 2px surface gap between stacked segments
-        if (yb - yt > 0.5) s += top ? `<path style="fill:var(--s${memberSlot(mm.puuid)})" d="${colPath(x, cw, yb, yt)}"/>` :
-          `<rect x="${x}" y="${yt}" width="${cw}" height="${yb - yt}" style="fill:var(--s${memberSlot(mm.puuid)})"/>`;
-        acc += v;
-      });
-      const rows = ms.slice().sort((a, b) => q.damage_share[b.puuid] - q.damage_share[a.puuid])
-        .map((mm) => [mm.nickname, pct(q.damage_share[mm.puuid]), `--s${memberSlot(mm.puuid)}`]);
-      s += `<rect class="viz-colhit" x="${x - 2}" y="${m.t}" width="${cw + 4}" height="${H}"${tip(`${dateShort(q.ts)} · ${q.map || '?'} · ${resultText(q)}`, rows)}/>` +
-        `<text class="viz-ax" x="${x + cw / 2}" y="${m.t + H + 16}" text-anchor="middle">${q.result === 'win' ? 'W' : q.result === 'loss' ? 'L' : 'D'}</text>`;
-    });
-    s += `<line class="viz-base" x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}"/>` +
-      `<text class="viz-ax" x="${m.l}" y="${m.t + H + 30}">${h.esc(dateShort(g[0].ts))}</text>` +
-      `<text class="viz-ax" x="${W - m.r}" y="${m.t + H + 30}" text-anchor="end">${h.esc(dateShort(g[g.length - 1].ts))}</text>`;
     el.innerHTML = s + '</svg>';
   }
 
@@ -473,15 +534,19 @@
     const rows = data.comps.slice(0, MAX_COMPS);
     const good = rows.filter((c) => c.games >= 3).sort((a, b) => b.win_rate - a.win_rate);
     const take = good.length ? `Best comp with 3+ games: <strong>${h.esc(good[0].label)}</strong> (${rec(good[0])})` : 'Play a comp 3+ times to rank it.';
-    return card('comps', 'Team comps by role', take, slot('comps', 30 + rows.length * 34) +
+    return card('comps', 'Team comps by role', take, slot('comps', 30 + rows.length * 42) +
       '<p class="muted small">D Duelist · C Controller · I Initiator · S Sentinel. Most-played first.</p>',
       table(['Comp', 'Games', 'Record', 'Win rate'], data.comps.map((c) => [c.label, String(c.games), rec(c), pct(c.win_rate)])));
   }
 
+  // A comp's roles as a lineup of letters: "2D 1C 1I 1S" -> D D C I S (U for an agent we can't place).
+  const lineup = (key) => [...key.matchAll(/(\d+)([A-Z])/g)].flatMap(([, n, r]) => Array(Number(n)).fill(r));
+  const CHIP = 18, CHIP_GAP = 3;
+
   function drawComps(el, W) {
     const rows = data.comps.slice(0, MAX_COMPS);
     if (!rows.length) { el.innerHTML = '<p class="muted">No games yet.</p>'; return; }
-    const m = { l: 104, r: 88, t: 6, b: 24 }, rh = 34, t = 16, pw = W - m.l - m.r, H = rows.length * rh;
+    const m = { l: 5 * (CHIP + CHIP_GAP) + 10, r: 86, t: 6, b: 24 }, rh = 42, t = 16, pw = W - m.l - m.r, H = rows.length * rh;
     const x = (v) => m.l + v * pw;
     let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="Win rate by team composition">`;
     [0, 0.5, 1].forEach((v) => {
@@ -492,7 +557,8 @@
       const cy = m.t + i * rh + rh / 2;
       s += `<g class="viz-row"${tip(c.label, [['win rate', pct(c.win_rate), '--accent'], ['record', rec(c), null]])}>` +
         `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
-        `<text class="viz-label viz-mono" x="0" y="${cy + 4}">${h.esc(c.key)}</text>` +
+        lineup(c.key).map((r, j) => `<rect class="role-chip" x="${j * (CHIP + CHIP_GAP)}" y="${cy - CHIP / 2}" width="${CHIP}" height="${CHIP}" rx="4"/>` +
+          `<text class="role-chip-t" x="${j * (CHIP + CHIP_GAP) + CHIP / 2}" y="${cy}" text-anchor="middle" dominant-baseline="central">${h.esc(r)}</text>`).join('') +
         (c.win_rate > 0 ? `<path style="fill:var(--accent)${c.games < 3 ? ';opacity:.45' : ''}" d="${barPath(x(0), x(c.win_rate), cy, t)}"/>` : '') +
         `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${pct(c.win_rate)} <tspan class="viz-sub">${rec(c)}</tspan></text></g>`;
     });
@@ -628,7 +694,7 @@
     const top = rows[0];
     const take = top.attempts ? `<strong>${h.esc(top.nickname)}</strong> wins the most: ${top.wins} of ${plural(top.attempts, 'clutch')} (${pct(top.wins / top.attempts)})` : 'No clutch situations yet.';
     return card('clutch', 'Clutches', take,
-      legend([{ label: 'Won', color: '--pair-hi' }, { label: 'Lost', color: '--pair-lo' }]) + slot('clutch', 16 + rows.length * 38) +
+      legend([{ label: 'Won', color: '--up' }, { label: 'Lost', color: '--down' }]) + slot('clutch', 16 + rows.length * 38) +
       '<p class="muted small">A clutch is any round where one of you is the last one standing against 1-5 enemies. Hover a bar for the 1vX breakdown.</p>' + roundsNote(),
       table(['Player', '1v1', '1v2', '1v3', '1v4', '1v5', 'Total'], rows.map((p) => [p.nickname, ...p.clutch.map((c) => `${c.wins}/${c.attempts}`), `${p.wins}/${p.attempts}`])));
   }
@@ -643,8 +709,8 @@
       s += `<g class="viz-row"${tip(`${p.nickname}: ${p.wins} of ${plural(p.attempts, 'clutch')}`, p.clutch.filter((c) => c.attempts).map((c) => [`1v${c.vs}`, `${c.wins}/${c.attempts}`, null]))}>` +
         `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
         `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/><text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>`;
-      if (p.wins) s += `<path style="fill:var(--pair-hi)" d="${barPath(x0, Math.max(x0 + 0.5, xw - (p.attempts > p.wins ? 2 : 0)), cy, t, p.attempts === p.wins)}"/>`;
-      if (p.attempts > p.wins) s += `<path style="fill:var(--pair-lo)" d="${barPath(xw, xa, cy, t)}"/>`;
+      if (p.wins) s += `<path style="fill:var(--up)" d="${barPath(x0, Math.max(x0 + 0.5, xw - (p.attempts > p.wins ? 2 : 0)), cy, t, p.attempts === p.wins)}"/>`;
+      if (p.attempts > p.wins) s += `<path style="fill:var(--down)" d="${barPath(xw, xa, cy, t)}"/>`;
       s += `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${p.wins}/${p.attempts}${p.attempts ? ` <tspan class="viz-sub">${pct(p.wins / p.attempts)}</tspan>` : ''}</text></g>`;
     });
     el.innerHTML = s + '</svg>';
@@ -687,6 +753,8 @@
   }
 
   // ---- spike sites -----------------------------------------------------------------------------
+  let spikeSide = 'att'; // the spike sites card's side: 'att' (after we plant) or 'def' (after they plant)
+
   function spikeCard() {
     const r = data.rounds;
     if (!r || !r.games) return '';
@@ -702,32 +770,33 @@
     const worstDef = cands.filter((c) => c.kind === 'def').sort((a, b) => a.rate - b.rate)[0];
     const take = [bestAtt ? `Best plant: <strong>${h.esc(bestAtt.map)} ${h.esc(bestAtt.site)}</strong> (${pct(bestAtt.rate)} won after planting, ${bestAtt.n} plants)` : '',
       worstDef ? `weakest retake: <strong>${h.esc(worstDef.map)} ${h.esc(worstDef.site)}</strong> (${pct(worstDef.rate)} won)` : ''].filter(Boolean).join(' · ') || 'Needs 5+ plants on a site to call it.';
-    const heat = (kind) => {
+    // One side at a time (spikeSide, flipped in place by the toggle): a row per map with a tile per site it has,
+    // so a map without a C site just has no C tile. Attack rows also show how often we plant.
+    const pane = (kind) => {
       const plantsKey = kind === 'att' ? 'att_plants' : 'def_plants', winsKey = kind === 'att' ? 'att_wins' : 'def_wins';
-      let t = `<div class="table-wrap"><table class="viz-heat"><thead><tr><th></th>${kind === 'att' ? '<th>Plant rate</th>' : ''}` +
-        sites.map((x) => `<th>${h.esc(x)}</th>`).join('') + '</tr></thead><tbody>';
-      maps.forEach((m) => {
-        t += `<tr><th scope="row">${h.esc(m.map)} <span class="muted small">${plural(m.games, 'game')}</span></th>`;
-        if (kind === 'att') t += `<td${tip(`${m.map}: attack rounds with a plant`, [['plants', `${m.attack_plants} of ${m.attack_rounds}`, null]])}>${m.attack_rounds ? pct(m.attack_plants / m.attack_rounds) : '–'}</td>`;
-        sites.forEach((x) => {
-          const v = m.sites[x];
-          if (!v || !v[plantsKey]) { t += '<td class="viz-empty"></td>'; return; }
-          const rate = v[winsKey] / v[plantsKey], n = v[plantsKey];
+      const rowsHtml = maps.map((m) => {
+        const tiles = Object.keys(m.sites).sort().filter((x) => m.sites[x][plantsKey]).map((x) => {
+          const v = m.sites[x], n = v[plantsKey], rate = v[winsKey] / n;
           const f = divFill((rate - 0.5) * 2 * (n / (n + 3)));
-          t += `<td style="background:${f.bg};color:${f.ink}"${tip(`${m.map} ${x} · ${kind === 'att' ? 'our plants' : 'enemy plants'}`,
+          return `<div class="spike-site" style="background:${f.bg};color:${f.ink}"${tip(`${m.map} ${x} · ${kind === 'att' ? 'our plants' : 'enemy plants'}`,
             [[kind === 'att' ? 'won after planting' : 'won (retake or hold)', pct(rate), null], ['record', `${v[winsKey]}–${n - v[winsKey]}`, null]])}>` +
-            `${pct(rate)}<div class="viz-cell-sub">${n} plant${n === 1 ? '' : 's'}</div></td>`;
-        });
-        t += '</tr>';
-      });
-      return t + '</tbody></table></div>';
+            `<span class="spike-letter">${h.esc(x)}</span>${pct(rate)}<div class="viz-cell-sub">${n} plant${n === 1 ? '' : 's'}</div></div>`;
+        }).join('');
+        const plant = kind === 'att' ? `<div class="spike-plant"${tip(`${m.map}: attack rounds with a plant`, [['plants', `${m.attack_plants} of ${m.attack_rounds}`, null]])}>` +
+          `${m.attack_rounds ? pct(m.attack_plants / m.attack_rounds) : '–'}<div class="viz-cell-sub">planted</div></div>` : '';
+        return `<div class="spike-row"><div class="spike-map">${h.esc(m.map)} <span class="muted small">${plural(m.games, 'game')}</span></div>${plant}` +
+          `<div class="spike-sites">${tiles || '<span class="muted small">no plants yet</span>'}</div></div>`;
+      }).join('');
+      return `<div class="spike-pane ${kind}" data-spike-pane="${kind}"${spikeSide === kind ? '' : ' hidden'}>${rowsHtml}</div>`;
     };
+    const toggle = `<div class="seg spike-toggle" role="tablist">${[['att', 'Attack: our plants'], ['def', 'Defence: their plants']].map(([k, l]) =>
+      `<button type="button" class="seg-btn spike-side ${spikeSide === k ? 'on' : ''}" data-side="${k}" role="tab" aria-selected="${spikeSide === k}">${l}</button>`).join('')}</div>`;
     const rows = [];
     maps.forEach((m) => Object.entries(m.sites).forEach(([x, v]) => rows.push([`${m.map} ${x}`, `${v.att_wins}–${v.att_plants - v.att_wins}`, `${v.def_wins}–${v.def_plants - v.def_wins}`])));
     return card('spikes', 'Spike sites', take,
-      `<div class="viz-cols viz-inner"><div><h3>On attack: after we plant</h3>${heat('att')}</div><div><h3>On defence: after they plant</h3>${heat('def')}</div></div>` +
+      toggle + pane('att') + pane('def') +
       '<div class="viz-scale"><span>Lose more</span><span class="viz-scale-bar"></span><span>Win more</span></div>' +
-      '<p class="muted small">Round win rate after the spike goes down, per site; sites with few plants are paler. Plant rate is the share of our attack rounds with a plant (regulation only).</p>' + roundsNote(),
+      '<p class="muted small">Round win rate after the spike goes down, per site; sites with few plants are paler. "Planted" is the share of our attack rounds with a plant (regulation only).</p>' + roundsNote(),
       table(['Map · site', 'After our plant (W–L)', 'After their plant (W–L)'], rows));
   }
 
@@ -766,7 +835,7 @@
     b.bettors.forEach((n) => Object.entries(b.by_type[n]).forEach(([k, rec]) => rows.push([`${n} · ${catLabel.get(k)}`, String(rec.bets), `${rec.won}–${rec.lost}`, n0(rec.staked), rec.roi == null ? '–' : signedPct(rec.roi)])));
     return card('betting', 'Betting report card', take,
       grid + '<div class="viz-scale"><span>Losing money</span><span class="viz-scale-bar money"></span><span>Making money</span></div>' +
-      '<p class="muted small">Return on investment for settled bets, by market type; the small numbers are won–lost. "On yourself" counts your player props and scoreboard picks on your own player. Cells with few bets are paler.</p>',
+      how('Return on investment by market type; the small numbers are won–lost.', '"On yourself" counts your player props and scoreboard picks on your own player. Cells with few bets are paler.'),
       table(['Bettor · market', 'Bets', 'W–L', 'Wagered', 'ROI'], rows));
   }
 
@@ -798,9 +867,9 @@
       `${pct(b.range[0])}–${pct(b.range[1])}`]);
     return card('accuracy', 'Are the odds right?', take,
       `<div class="viz-cols viz-accuracy"><div>${slot('accuracy', 250)}</div><div>${byType}</div></div>` +
-      '<p class="muted small">Each dot groups picks by the chance the odds gave them (before the house edge) and shows how often they actually won; ' +
-      'the bar is the likely range for that many picks. Dots on the diagonal mean the odds were right. Singles and parlay legs both count, ' +
-      'a pick several people bet in the same game counts once, and voids are left out. "Too generous" means those picks won more often than their price allowed.</p>',
+      how('Dots on the diagonal mean the odds were right.', 'Each dot groups picks by the chance the odds gave them (before the house edge) and shows how often they actually won; ' +
+        'the bar is the likely range for that many picks. Singles and parlay legs both count, ' +
+        'a pick several people bet in the same game counts once, and voids are left out. "Too generous" means those picks won more often than their price allowed.'),
       table(['Odds gave', 'Picks', 'Average chance', 'Won', 'Likely range'], rows));
   }
 
@@ -841,8 +910,260 @@
     el.innerHTML = s + '</svg>';
   }
 
+  // ---- Forecasts tab: each game against what the odds engine predicted beforehand (/api/forecasts) ------------
+  const STRIP_MAX = 60; // the game strip shows at most this many recent games
+  let fc = null; // { d: /api/forecasts response, pick: { stat, player, cell } }
+  const fcStat = () => fc.d.stats.find((s) => s.key === fc.d.stat);
+  const FC_GROUPS = [['game', 'Per game · the betting lines'], ['round', 'Per round'], ['score', 'Scores']];
+  const fcVal = (v) => (v == null ? '–' : fc.d.stat === 'hs_pct' ? `${oneDp(v)}%` : ['acs', 'adr'].includes(fc.d.stat) ? n0(v)
+    : fcStat().group === 'round' ? v.toFixed(2) : oneDp(v));
+  const fcSigned = (v) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fcVal(Math.abs(v));
+  const fcSign = () => (fcStat().lower_is_better ? -1 : 1); // +1: higher is better
+  const fcCellKey = (map, role) => `${map || ''}|${role || ''}`;
+  const fcWhere = (c) => [c.map, c.role].filter(Boolean).join(' as ') || 'overall';
+  const fcPlace = (g) => (g.actual > g.range[1] ? 'above' : g.actual < g.range[0] ? 'below' : 'inside');
+  const fcBetter = (g) => fcPlace(g) !== 'inside' && (fcPlace(g) === 'above') === (fcSign() > 0);
+
+  function forecasts(d, helpers, pick) {
+    h = helpers;
+    fc = { d, pick };
+    const p = d.player;
+    withYear = (p?.games || []).some((g) => new Date(g.ts * 1000).getFullYear() !== new Date().getFullYear());
+    const label = fcStat().label;
+    const seg = (cls, items) => `<div class="seg" role="tablist">${items.map((it) =>
+      `<button type="button" class="seg-btn ${cls} ${it.on ? 'on' : ''}" data-v="${h.esc(it.v)}" role="tab" aria-selected="${it.on}"${it.off ? ` disabled title="${h.esc(it.off)}"` : ''}>` +
+      `${it.swatch ? `<span class="swatch s${it.swatch}"></span>` : ''}${h.esc(it.label)}</button>`).join('')}</div>`;
+    const pickers = `<section class="card fc-pickers">` +
+      seg('fc-player', d.players.map((x) => ({ v: x.puuid, label: x.nickname, swatch: h.slot(x.puuid) || 1, on: p && x.puuid === p.puuid,
+        off: x.forecast_games ? '' : `Needs more than ${d.min_prior} games (has ${x.total_games})` }))) +
+      FC_GROUPS.map(([g, caption]) => `<div class="fc-group"><span class="fc-caption">${h.esc(caption)}</span>` +
+        seg('fc-stat', d.stats.filter((s) => s.group === g).map((s) => ({ v: s.key, label: s.short, on: s.key === d.stat }))) + '</div>').join('') +
+      '</section>';
+    const intro = how('Each game\'s forecast, made beforehand from earlier games only, next to what really happened.',
+      `Before every game, the odds engine would have predicted a range for each player from their earlier 5-stack games only, ` +
+      `weighting recent games and games on the same map and agent more, exactly like the player-prop lines. ` +
+      `About ${pct(d.coverage)} of games should land inside the range, which is lopsided when the stat is (a few big games stretch the top); ` +
+      `the tick marks the typical game, where a betting line would sit.`);
+    if (!p || !p.overall) {
+      return intro + pickers + `<section class="card"><h2>No forecasts yet</h2><p class="muted">A game gets a forecast once the player has ${d.min_prior} earlier 5-stack games` +
+        ` (surrenders aren't forecast).</p></section>`;
+    }
+    const o = p.overall, sign = fcSign();
+    const better = sign > 0 ? o.above : o.below, worse = sign > 0 ? o.below : o.above;
+    const tile = (lbl, value, sub) => `<div class="tile"><div class="tile-label">${h.esc(lbl)}</div><div class="tile-value">${value}</div><div class="tile-sub">${sub}</div></div>`;
+    const kpis = `<section class="kpis">
+      ${tile('Inside the forecast range', pct(o.inside / o.games), `${o.inside} of ${plural(o.games, 'game')} · aim is ${pct(d.coverage)}`)}
+      ${tile('Better than forecast', String(better), `${pct(better / o.games)} of games`)}
+      ${tile('Worse than forecast', String(worse), `${pct(worse / o.games)} of games`)}
+      ${tile(`Average ${label} vs forecast`, fcSigned(o.diff), `${fcVal(o.actual)} actual vs ${fcVal(o.expected)} expected`)}
+    </section>`;
+    return intro + pickers + kpis + fcStripCard(p) + fcGridCard(p);
+  }
+
+  function fcGridCard(p) {
+    const d = fc.d, sign = fcSign(), label = fcStat().label;
+    const byKey = new Map(p.cells.map((c) => [fcCellKey(c.map, c.role), c]));
+    const roles = d.roles.filter((r) => p.cells.some((c) => c.role === r));
+    const maps = p.cells.filter((c) => c.map && !c.role).sort((a, b) => b.games - a.games || a.map.localeCompare(b.map)).map((c) => c.map);
+    const cell = (c, key, cls = '') => {
+      if (!c) return `<td class="viz-empty ${cls}"></td>`;
+      const half = Math.max(1e-9, (c.high - c.low) / 2);
+      const f = divFill(clamp((sign * c.diff) / half, -1, 1) * (c.games / (c.games + 2)));
+      const better = sign > 0 ? c.above : c.below, worse = sign > 0 ? c.below : c.above;
+      const rows = [['actual average', fcVal(c.actual), null], ['expected', fcVal(c.expected), null],
+        ['typical game', fcVal(c.typical), null], ['forecast range', `${fcVal(c.low)}–${fcVal(c.high)}`, '--accent'],
+        ['inside the range', `${c.inside} of ${c.games}`, null], ['better / worse', `${better} / ${worse}`, null]]
+        .concat(c.agents.length ? ['By agent: actual vs expected'] : [])
+        .concat(c.agents.map((a) => [`${a.agent} · ${plural(a.games, 'game')}`, `${fcVal(a.actual)} vs ${fcVal(a.expected)}`, null]));
+      const sel = fc.pick.cell === key ? ' fc-sel' : '';
+      return `<td class="fc-cell ${cls}${sel}" data-cell="${h.esc(key)}" style="background:${f.bg};color:${f.ink}"${tip(`${fcWhere(c)} · ${plural(c.games, 'game')}`, rows)}>` +
+        `${fcVal(c.actual)}<div class="viz-cell-sub">vs ${fcVal(c.expected)} · ${c.games}g</div></td>`;
+    };
+    const totals = roles.length > 1; // an "All roles" column only adds something when they played more than one role
+    let grid = `<div class="table-wrap"><table class="viz-heat"><thead><tr><th></th>${roles.map((r) => `<th>${h.esc(r)}</th>`).join('')}` +
+      `${totals ? '<th class="viz-split">All roles</th>' : ''}</tr></thead><tbody>`;
+    maps.forEach((m) => {
+      grid += `<tr><th scope="row">${h.esc(m)}</th>${roles.map((r) => cell(byKey.get(fcCellKey(m, r)), fcCellKey(m, r))).join('')}` +
+        `${totals ? cell(byKey.get(fcCellKey(m, null)), fcCellKey(m, null), 'viz-split') : ''}</tr>`;
+    });
+    grid += `<tr><th scope="row">All maps</th>${roles.map((r) => cell(byKey.get(fcCellKey(null, r)), fcCellKey(null, r))).join('')}` +
+      `${totals ? `<td class="viz-split muted small">${plural(p.overall.games, 'game')}</td>` : ''}</tr></tbody></table></div>`;
+    const takeParts = [];
+    if (p.best) takeParts.push(`beats the forecast most on <strong>${h.esc(fcWhere(p.best))}</strong> (${fcSigned(p.best.diff)} ${h.esc(label)} over ${plural(p.best.games, 'game')})`);
+    if (p.worst) takeParts.push(`falls short most on <strong>${h.esc(fcWhere(p.worst))}</strong> (${fcSigned(p.worst.diff)} over ${plural(p.worst.games, 'game')})`);
+    const take = takeParts.length ? `${h.esc(p.nickname)} ${takeParts.join(' · ')}` : `Needs ${d.min_cell}+ games on a map and role before calling out where ${h.esc(p.nickname)} beats or misses the forecast.`;
+    const rows = p.cells.map((c) => [`${c.map || 'All maps'} · ${c.role || 'All roles'}`, String(c.games), `${fcVal(c.low)}–${fcVal(c.high)}`, fcVal(c.expected), fcVal(c.actual), `${c.above}/${c.inside}/${c.below}`]);
+    return card('forecast-grid', `${label}: forecast vs actual by map and role`, take,
+      grid + `<div class="viz-scale"><span>Worse than forecast</span><span class="viz-scale-bar"></span><span>Better than forecast</span></div>` +
+      how('Click a cell to show just those games in the chart above.', `Each cell shows the actual average${fcStat().lower_is_better ? ' (fewer is better)' : ''}, the expected average and the number of games. ` +
+        'Hover for the range and each agent. Cells with few games are paler.'),
+      table(['Map · role', 'Games', 'Forecast range', 'Expected', 'Actual', 'Above/inside/below'], rows));
+  }
+
+  function fcFiltered(p) {
+    const [map, role] = (fc.pick.cell || '|').split('|');
+    return p.games.filter((g) => (!map || g.map === map) && (!role || g.role === role));
+  }
+
+  function fcStripCard(p) {
+    const games = fcFiltered(p);
+    const [map, role] = (fc.pick.cell || '|').split('|');
+    const where = fc.pick.cell ? fcWhere({ map, role }) : '';
+    const shown = Math.min(games.length, STRIP_MAX);
+    const head = where ? `Showing ${plural(games.length, 'game')} ${map ? 'on ' : 'as '}<strong>${h.esc(where)}</strong> <button type="button" class="btn ghost small" id="fc-all">Show all games</button>`
+      : `Every forecast game, oldest to newest${games.length > STRIP_MAX ? ` (the last ${STRIP_MAX} of ${games.length})` : ''}.`;
+    const rows = games.slice(-shown).map((g) => [`${dateShort(g.ts)} · ${g.map}`, g.agent || '?', `${fcVal(g.range[0])}–${fcVal(g.range[1])}`, fcVal(g.typical), fcVal(g.actual), fcPlace(g)]);
+    return card('forecast-strip', 'Game by game', head,
+      legend([{ label: 'Forecast range', color: '--accent', kind: 'range' }, { label: 'Typical game', color: '--accent', kind: 'line' },
+        { label: 'Better than forecast', color: '--div-pos', kind: 'dot' },
+        { label: 'Inside the range', color: '--text-2', kind: 'dot' }, { label: 'Worse than forecast', color: '--div-neg', kind: 'dot' }]) +
+      (games.length ? slot('forecast', 240) : '<p class="muted">No games here.</p>'),
+      table(['Game', 'Agent', 'Forecast range', 'Typical', 'Actual', 'Result'], rows));
+  }
+
+  function drawForecast(el, W) {
+    const p = fc.d.player, games = fcFiltered(p).slice(-STRIP_MAX);
+    if (!games.length) return;
+    const vals = games.flatMap((g) => [g.range[0], g.range[1], g.actual]);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const step = niceMax((hi - lo) / 4 || 1);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const m = { l: 44, r: 12, t: 10, b: 26 }, H = 190, pw = W - m.l - m.r, n = games.length;
+    const x = (i) => m.l + ((i + 0.5) / n) * pw;
+    const y = (v) => m.t + ((hi - v) / ((hi - lo) || 1)) * H;
+    const bw = clamp((pw / n) * 0.55, 3, 12);
+    let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="Forecast range and actual value per game">`;
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      s += `<line class="${v === lo ? 'viz-base' : 'viz-grid'}" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>` +
+        `<text class="viz-ax" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${fcVal(v)}</text>`;
+    }
+    games.forEach((g, i) => {
+      const cx = x(i), place = fcPlace(g);
+      const color = place === 'inside' ? '--text-2' : fcBetter(g) ? '--div-pos' : '--div-neg';
+      s += `<rect x="${cx - bw / 2}" y="${y(g.range[1])}" width="${bw}" height="${Math.max(1, y(g.range[0]) - y(g.range[1]))}" rx="${Math.min(4, bw / 2)}" style="fill:var(--accent);opacity:.22"/>` +
+        `<line x1="${cx - bw / 2}" x2="${cx + bw / 2}" y1="${y(g.typical)}" y2="${y(g.typical)}" style="stroke:var(--accent);stroke-width:2"/>` +
+        `<circle class="viz-dot" cx="${cx}" cy="${y(g.actual)}" r="4.5" style="fill:var(${color})"/>`;
+    });
+    s += `<text class="viz-ax" x="${x(0)}" y="${m.t + H + 18}">${h.esc(dateShort(games[0].ts))}</text>` +
+      (n > 1 ? `<text class="viz-ax" x="${x(n - 1)}" y="${m.t + H + 18}" text-anchor="end">${h.esc(dateShort(games[n - 1].ts))}</text>` : '') +
+      `<line class="viz-cross" x1="0" x2="0" y1="${m.t}" y2="${m.t + H}" visibility="hidden"/>` +
+      `<rect class="viz-hit" data-cross="forecast" x="${m.l}" y="0" width="${pw}" height="${m.t + H}" tabindex="0" aria-label="Forecast and actual per game; use the arrow keys"/></svg>`;
+    el.innerHTML = s;
+    const label = fcStat().label;
+    cross.forecast = {
+      xs: games.map((_, i) => x(i)),
+      tips: games.map((g) => ({
+        t: `${dateLong(g.ts)} · ${g.map}`,
+        r: [[label, fcVal(g.actual), fcPlace(g) === 'inside' ? '--text-2' : fcBetter(g) ? '--div-pos' : '--div-neg'],
+          fcPlace(g) === 'inside' ? 'Inside the forecast range' : fcBetter(g) ? 'Better than forecast' : 'Worse than forecast',
+          ['forecast range', `${fcVal(g.range[0])}–${fcVal(g.range[1])}`, '--accent'], ['typical game', fcVal(g.typical), null],
+          ['expected', fcVal(g.expected), null], [g.role, g.agent || '?', null], ['result', resultText(g), null]],
+      })),
+    };
+  }
+
+  // ---- Players tab: everyone's trend in one stat, game by game (data: /api/stats "timeline") ----------------------
+  const TREND_STATS = [['acs', 'ACS'], ['kd', 'K/D'], ['kills', 'Kills'], ['deaths', 'Deaths'], ['assists', 'Assists'], ['adr', 'ADR'], ['hs_pct', 'HS %']];
+  const TREND_RANGES = [['all', 'Every game'], ['10', 'Last 10 games']];
+  let pt = null; // { tl, members, pick: { stat, range, hidden } }
+  const ptVal = (v, stat) => (v == null ? '–' : stat === 'hs_pct' ? `${oneDp(v)}%` : stat === 'kd' ? v.toFixed(2)
+    : ['acs', 'adr'].includes(stat) ? n0(v) : oneDp(v));
+
+  // The games shown (every complete game, or the last 10) and each player's values lined up with them.
+  function trendWindow(tl, pick) {
+    const from = pick.range === 'all' ? 0 : Math.max(0, tl.games.length - Number(pick.range));
+    return { games: tl.games.slice(from), vals: (puuid) => tl.series[puuid][pick.stat].slice(from), from };
+  }
+
+  // A player's average over the shown games (K/D pools their kills and deaths, like everywhere else).
+  function trendAverage(series, stat, from) {
+    if (stat === 'kd') {
+      const k = series.kills.slice(from).reduce((a, x) => a + (x || 0), 0), d = series.deaths.slice(from).reduce((a, x) => a + (x || 0), 0);
+      return k / Math.max(1, d);
+    }
+    const xs = series[stat].slice(from).filter((x) => x != null);
+    return xs.length ? xs.reduce((a, x) => a + x, 0) / xs.length : null;
+  }
+
+  function playerTrends(tl, members, helpers, pick) {
+    h = helpers;
+    pt = { tl, members, pick };
+    withYear = tl.games.some((g) => new Date(g.ts * 1000).getFullYear() !== new Date().getFullYear());
+    if (tl.games.length < 2) return card('trends', 'Trends', '', '<p class="muted">Trends appear after a couple of complete 5-stack games.</p>');
+    const seg = (cls, items) => `<div class="seg" role="tablist">${items.map(([v, label]) =>
+      `<button type="button" class="seg-btn ${cls} ${String(v) === String(cls === 'tr-stat' ? pick.stat : pick.range) ? 'on' : ''}" data-v="${h.esc(v)}">${h.esc(label)}</button>`).join('')}</div>`;
+    const players = members.map((m) => {
+      const off = !!pick.hidden[m.puuid];
+      return `<button type="button" class="tr-player ${off ? 'off' : ''}${m.puuid === pick.focus ? ' focus' : ''}" data-puuid="${h.esc(m.puuid)}" aria-pressed="${!off}" title="${off ? 'Show' : 'Hide'} ${h.esc(m.nickname)}">` +
+        `<span class="viz-key line" style="background:var(--s${h.slot(m.puuid) || 1})"></span>${h.esc(m.nickname)}</button>`;
+    }).join('');
+    const label = TREND_STATS.find(([k]) => k === pick.stat)[1];
+    const lower = pick.stat === 'deaths';
+    const { games, from } = trendWindow(tl, pick);
+    const span = pick.range === 'all' ? `all ${games.length} games` : `the last ${games.length} games`;
+    const ranked = members.filter((m) => !pick.hidden[m.puuid] && tl.series[m.puuid])
+      .map((m) => ({ m, avg: trendAverage(tl.series[m.puuid], pick.stat, from), last: tl.series[m.puuid][pick.stat].slice(-1)[0] }))
+      .filter((x) => x.avg != null).sort((a, b) => (lower ? a.avg - b.avg : b.avg - a.avg));
+    const take = ranked.length ? `${lower ? 'Fewest deaths' : `Best ${h.esc(label)}`} over ${span}: <strong>${h.esc(ranked[0].m.nickname)}</strong> (${ptVal(ranked[0].avg, pick.stat)} a game)` : '';
+    const rows = ranked.map(({ m, avg, last }) => [m.nickname, ptVal(avg, pick.stat), ptVal(last, pick.stat)]);
+    return card('trends', `Trends: ${label}`, take,
+      `<div class="tr-controls">${seg('tr-stat', TREND_STATS)}${seg('tr-range', TREND_RANGES)}</div><div class="tr-legend">${players}</div>` + slot('trends', 290) +
+      `<p class="muted small">${pick.range === 'all' ? 'Every complete 5-stack game' : `The last ${games.length} complete 5-stack games`}, oldest to newest; each point is one game. The player picked above stands out; click a name to hide or show that player, and hover for everyone's value at a game.</p>`,
+      table(['Player', `Average over ${span}`, 'Latest game'], rows));
+  }
+
+  function drawTrends(el, W) {
+    const { tl, members, pick } = pt;
+    const stat = pick.stat, win = trendWindow(tl, pick), games = win.games, G = games.length;
+    // The player picked in the detail above (pick.focus) is drawn bold and last, on top; the rest are faint.
+    const lines = members.filter((m) => !pick.hidden[m.puuid] && tl.series[m.puuid])
+      .map((m) => ({ m, color: `--s${h.slot(m.puuid) || 1}`, vals: win.vals(m.puuid), cls: m.puuid === pick.focus ? 'focus' : 'dim' }))
+      .sort((a, b) => (a.cls === 'focus') - (b.cls === 'focus'));
+    const all = lines.flatMap((l) => l.vals).filter((v) => v != null);
+    if (!all.length) { el.innerHTML = '<p class="muted">Pick at least one player.</p>'; return; }
+    let lo = Math.min(...all), hi = Math.max(...all);
+    const step = niceMax((hi - lo) / 4 || 1);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const m = { l: 48, r: 14, t: 10, b: 26 }, H = 250, pw = W - m.l - m.r;
+    const x = (i) => m.l + (G > 1 ? (i / (G - 1)) * pw : pw / 2);
+    const y = (v) => m.t + ((hi - v) / ((hi - lo) || 1)) * H;
+    let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="${h.esc(stat)} per game for each player">`;
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      s += `<line class="${v === lo ? 'viz-base' : 'viz-grid'}" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>` +
+        `<text class="viz-ax" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${ptVal(v, stat)}</text>`;
+    }
+    lines.forEach((l) => {
+      let d = '', pen = false, last = null;
+      l.vals.forEach((v, i) => {
+        if (v == null) { pen = false; return; }
+        d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+        pen = true; last = i;
+      });
+      s += `<g class="tr-line ${l.cls}"><path class="viz-line" style="stroke:var(${l.color})" d="${d}"/>`;
+      if (G <= 15) { // few enough games to mark each one
+        l.vals.forEach((v, i) => { if (v != null && i !== last) s += `<circle class="viz-dot" cx="${x(i)}" cy="${y(v)}" r="3" style="fill:var(${l.color})"/>`; });
+      }
+      if (last != null) s += `<circle class="viz-dot" cx="${x(last)}" cy="${y(l.vals[last])}" r="4" style="fill:var(${l.color})"/>`;
+      s += '</g>';
+    });
+    s += `<text class="viz-ax" x="${m.l}" y="${m.t + H + 18}">${h.esc(dateShort(games[0].ts))}</text>` +
+      `<text class="viz-ax" x="${x(G - 1)}" y="${m.t + H + 18}" text-anchor="end">${h.esc(dateShort(games[G - 1].ts))}</text>` +
+      `<line class="viz-cross" x1="0" x2="0" y1="${m.t}" y2="${m.t + H}" visibility="hidden"/>` +
+      `<rect class="viz-hit" data-cross="trends" x="${m.l}" y="0" width="${pw}" height="${m.t + H}" tabindex="0" aria-label="Each player's value game by game; use the arrow keys"/></svg>`;
+    el.innerHTML = s;
+    const lower = stat === 'deaths';
+    cross.trends = {
+      xs: games.map((_, i) => x(i)),
+      tips: games.map((g, i) => ({
+        t: `${dateLong(g.ts)} · ${g.map} · ${g.result === 'win' ? 'W' : g.result === 'loss' ? 'L' : 'D'} ${g.score[0]}–${g.score[1]}`,
+        r: lines.map((l) => [l.m.nickname, ptVal(l.vals[i], stat), l.color])
+          .sort((a, b) => { const va = parseFloat(a[1]), vb = parseFloat(b[1]); return (isNaN(va) ? 1 : isNaN(vb) ? -1 : lower ? va - vb : vb - va); }),
+      })),
+    };
+  }
+
   // ---- mounting, tooltips, crosshair ----------------------------------------------------------
-  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll, accuracy: drawAccuracy,
+  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll, accuracy: drawAccuracy, forecast: drawForecast, trends: drawTrends,
     clutch: drawClutch, multi: drawMulti };
 
   function drawAll(root) {
@@ -862,7 +1183,15 @@
     title.className = 'viz-tip-title';
     title.textContent = spec.t;
     tipEl.append(title);
-    (spec.r || []).forEach(([label, value, color]) => {
+    (spec.r || []).forEach((r) => {
+      if (typeof r === 'string') {
+        const note = document.createElement('div');
+        note.className = 'viz-tip-note';
+        note.textContent = r;
+        tipEl.append(note);
+        return;
+      }
+      const [label, value, color] = r;
       const row = document.createElement('div');
       row.className = 'viz-tip-row';
       const key = document.createElement('span');
@@ -935,6 +1264,15 @@
     }
     if (root.dataset.vizBound) return;
     root.dataset.vizBound = '1';
+    // The spike sites card's Attack / Defence toggle flips its panes in place (no redraw).
+    root.addEventListener('click', (e) => {
+      const b = e.target.closest?.('.spike-side');
+      if (!b) return;
+      spikeSide = b.dataset.side;
+      const c = b.closest('.viz-card');
+      c.querySelectorAll('.spike-side').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
+      c.querySelectorAll('[data-spike-pane]').forEach((p) => { p.hidden = p.dataset.spikePane !== spikeSide; });
+    });
     root.addEventListener('pointermove', (e) => {
       const hit = e.target.closest?.('.viz-hit');
       if (hit) return crossAt(hit, nearest(hit, e.clientX), e.clientX, e.clientY);
@@ -982,5 +1320,5 @@
     return accuracyCard();
   }
 
-  window.FiveViz = { html, mount, hideTip, bettingReport, oddsAccuracy };
+  window.FiveViz = { html, mount, hideTip, bettingReport, oddsAccuracy, forecasts, playerTrends };
 })();
