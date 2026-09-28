@@ -15,7 +15,6 @@
     { label: 'Evening', sub: '5–9', test: (h) => h >= 17 && h < 21 },
     { label: 'Night', sub: '9 pm–6 am', test: (h) => h >= 21 || h < 6 },
   ];
-  const DAMAGE_GAMES = 20;
   const MAX_COMPS = 8;
 
   let data = null;
@@ -137,10 +136,10 @@
 
     const cols = (a, b) => `<div class="viz-cols">${a}${b}</div>`;
     const pages = {
-      all: () => kpis + formCard() + cols(timeCard(), sessionCard()) + mapCard() + agentCard() + swingCard() +
-        cols(clutchCard(), multiKillCard()) + spikeCard() + damageCard() + cols(aimCard(), compCard()),
+      all: () => kpis + formCard() + cols(damageCard(), aimCard()) + swingCard() + cols(timeCard(), sessionCard()) +
+        mapCard() + agentCard() + cols(clutchCard(), multiKillCard()) + compCard() + spikeCard(),
       results: () => kpis + formCard() + cols(timeCard(), sessionCard()) + compCard(),  // how the squad does, and when
-      players: () => mapCard() + agentCard() + swingCard() + damageCard() + aimCard(),  // each player's maps, agents, impact
+      players: () => cols(damageCard(), aimCard()) + swingCard() + mapCard() + agentCard(),  // each player's impact, maps, agents
       rounds: () => cols(clutchCard(), multiKillCard()) + spikeCard(),  // clutches, multi-kills, spike sites
     };
     const pick = pages[genre] ? genre : 'all';
@@ -366,7 +365,8 @@
         (rows[rows.length - 1].gap < 0 ? ` · <strong>${h.esc(rows[rows.length - 1].nickname)}</strong> actually scores more in losses` : '')
       : 'Needs both wins and losses on record.';
     return card('swing', 'Who swings results', take,
-      legend([{ label: 'ACS in losses', color: '--pair-lo', kind: 'dot' }, { label: 'ACS in wins', color: '--pair-hi', kind: 'dot' }]) +
+      '<div class="viz-legend"><span class="viz-legend-item"><b class="swing-key up">W</b>ACS in wins</span>' +
+      '<span class="viz-legend-item"><b class="swing-key down">L</b>ACS in losses</span></div>' +
       slot('swing', 34 + rows.length * 38) +
       '<p class="muted small">The bigger the gap, the more the result tracks that player\'s game.</p>',
       table(['Player', 'ACS in wins', 'ACS in losses', 'Gap'], rows.map((p) => [p.nickname, n0(p.acs_win), n0(p.acs_loss), n0(p.gap)])));
@@ -387,97 +387,145 @@
     }
     rows.forEach((p, i) => {
       const cy = m.t + i * rh + rh / 2;
-      s += `<g class="viz-row"${tip(p.nickname, [['in wins', `${n0(p.acs_win)} ACS`, '--pair-hi'], ['in losses', `${n0(p.acs_loss)} ACS`, '--pair-lo'], ['games', `${p.games_win} W · ${p.games_loss} L`, null]])}>` +
+      // A big W at their ACS in wins and an L at their ACS in losses, nudged apart when they'd overlap.
+      let xw = x(p.acs_win), xl = x(p.acs_loss);
+      if (Math.abs(xw - xl) < 16) { const mid = (xw + xl) / 2, dir = xw >= xl ? 1 : -1; xw = mid + dir * 8; xl = mid - dir * 8; }
+      s += `<g class="viz-row"${tip(p.nickname, [['in wins', `${n0(p.acs_win)} ACS`, '--up'], ['in losses', `${n0(p.acs_loss)} ACS`, '--down'], ['games', `${p.games_win} W · ${p.games_loss} L`, null]])}>` +
         `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
         `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/>` +
         `<text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>` +
         `<line class="viz-connector" x1="${x(p.acs_loss)}" x2="${x(p.acs_win)}" y1="${cy}" y2="${cy}"/>` +
-        `<circle class="viz-dot" cx="${x(p.acs_loss)}" cy="${cy}" r="5" style="fill:var(--pair-lo)"/>` +
-        `<circle class="viz-dot" cx="${x(p.acs_win)}" cy="${cy}" r="5" style="fill:var(--pair-hi)"/>` +
+        `<text class="swing-mark down" x="${xl.toFixed(1)}" y="${cy}" text-anchor="middle" dominant-baseline="central">L</text>` +
+        `<text class="swing-mark up" x="${xw.toFixed(1)}" y="${cy}" text-anchor="middle" dominant-baseline="central">W</text>` +
         `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${p.gap >= 0 ? '+' : '−'}${n0(Math.abs(p.gap))}</text></g>`;
     });
     el.innerHTML = s + '</svg>';
   }
 
   // ---- 6. aim profile: head / body / legs -------------------------------------------------
+  // A figure per player, side by side (sharpest first): head, body and legs each show the share of the player's hits
+  // that land there, shaded against the rest of the squad for that part (the highest share gets the strongest blue).
   const AIM = [['head', 'Head', '--aim-1'], ['body', 'Body', '--aim-2'], ['leg', 'Legs', '--aim-3']];
   const aimRows = () => data.players.filter((p) => p.aim.head + p.aim.body + p.aim.leg > 0).sort((a, b) => b.aim.head_pct - a.aim.head_pct);
+  // The figure, in a 100 x 220 box: a round head, a body (a torso with rounded shoulders, a little narrower at the
+  // hips, and two slightly tapered arms) and two slightly tapered legs, a few units apart. The right-hand arm and leg
+  // are the left ones mirrored.
+  const MIRROR = (d) => `<path d="${d}"/><path transform="matrix(-1 0 0 1 100 0)" d="${d}"/>`;
+  const FIGURE = {
+    head: '<circle cx="50" cy="19" r="16"/>',
+    body: '<path d="M34 40 H66 Q76 40 76 51 L73 110 H27 L24 51 Q24 40 34 40 Z"/>' +
+      MIRROR('M8.5 51 Q8.5 45 14 45 Q19.5 45 19.5 51 L18.5 103 Q18.5 109 14 109 Q9.5 109 9.5 103 Z'),
+    leg: MIRROR('M31.5 113 H48.5 L47.5 207 Q47.5 214 41.5 214 H36 Q30 214 30 207 L28.5 117 Q28.5 113 31.5 113 Z'),
+  };
+  const AIM_LABEL_AT = { head: [50, 19], body: [50, 76], leg: [50, 162] };
 
   function aimCard() {
     const rows = aimRows();
     const take = rows.length ? `Sharpest: <strong>${h.esc(rows[0].nickname)}</strong>, ${(rows[0].aim.head_pct * 100).toFixed(1)}% of hits to the head` : '';
-    return card('aim', 'Aim profile', take,
-      legend(AIM.map(([, label, color]) => ({ label, color }))) + slot('aim', 16 + rows.length * 38),
+    const scale = '<div class="viz-legend"><span class="viz-legend-item"><span class="aim-scale" aria-hidden="true"></span>Stronger blue = the highest share in the squad for that part</span></div>';
+    return card('aim', 'Aim profile', take, scale + slot('aim', 200),
       table(['Player', 'Head', 'Body', 'Legs', 'Hits'], rows.map((p) => [p.nickname, pct(p.aim.head_pct), pct(p.aim.body_pct), pct(p.aim.leg_pct), n0(p.aim.head + p.aim.body + p.aim.leg)])));
+  }
+
+  // The figures' layout at width W (5 in a row, or 3 + 2 on a phone). The damage card beside it uses the height to
+  // end level with it.
+  function aimLayout(W, n) {
+    const perRow = W >= 420 ? Math.min(5, n) : Math.min(3, n);
+    const colW = W / perRow, sc = Math.min(1.2, (colW - 12) / 100), figH = 220 * sc, rowH = figH + 40;
+    return { perRow, colW, sc, figH, rowH, height: Math.ceil(n / perRow) * rowH };
   }
 
   function drawAim(el, W) {
     const rows = aimRows();
     if (!rows.length) { el.innerHTML = '<p class="muted">No shot data yet.</p>'; return; }
-    const m = { l: 110, r: 76, t: 8, b: 8 }, rh = 38, t = 18, pw = W - m.l - m.r;
-    let s = `<svg class="viz-svg" width="${W}" height="${m.t + rows.length * rh + m.b}" role="img" aria-label="Share of hits to head, body and legs per player">`;
+    const { perRow, colW, sc, figH, rowH } = aimLayout(W, rows.length);
+    // Each part on its own squad scale: the lowest share in the squad is pale, the highest the strongest blue.
+    const span = Object.fromEntries(AIM.map(([k]) => {
+      const vals = rows.map((p) => p.aim[k + '_pct']);
+      return [k, [Math.min(...vals), Math.max(...vals)]];
+    }));
+    const shade = (k, v) => {
+      const [lo, hi] = span[k];
+      return (hi - lo < 1e-9 ? 0.6 : 0.18 + 0.82 * ((v - lo) / (hi - lo))).toFixed(3);
+    };
+    let svg = `<svg class="viz-svg" width="${W}" height="${Math.ceil(rows.length / perRow) * rowH}" role="img" aria-label="Share of hits to head, body and legs per player">`;
     rows.forEach((p, i) => {
-      const cy = m.t + i * rh + rh / 2, total = p.aim.head + p.aim.body + p.aim.leg;
-      s += `<g class="viz-row"${tip(p.nickname, AIM.map(([k, label, color]) => [label.toLowerCase(), `${(p.aim[k + '_pct'] * 100).toFixed(1)}%`, color]).concat([['hits', n0(total), null]]))}>` +
-        `<rect class="viz-rowhit" x="0" y="${cy - rh / 2}" width="${W}" height="${rh}"/>` +
-        `<circle cx="10" cy="${cy}" r="5" style="fill:var(--s${memberSlot(p.puuid)})"/>` +
-        `<text class="viz-label" x="22" y="${cy + 4}">${h.esc(p.nickname)}</text>`;
-      let x = m.l;
-      AIM.forEach(([k, , color], j) => {
-        const w = p.aim[k + '_pct'] * pw, last = j === AIM.length - 1;
-        const segW = Math.max(0, w - (last ? 0 : 2)); // 2px surface gap between segments
-        if (segW > 0) s += `<path style="fill:var(${color})" d="${barPath(x, x + segW, cy, t, last)}"/>`;
-        x += w;
+      const row = Math.floor(i / perRow), inRow = Math.min(perRow, rows.length - row * perRow);
+      const left = (W - inRow * colW) / 2 + (i % perRow) * colW, x0 = left + (colW - 100 * sc) / 2, y0 = row * rowH + 4;
+      const total = p.aim.head + p.aim.body + p.aim.leg, cx = x0 + 50 * sc;
+      svg += `<g class="viz-row"${tip(p.nickname, AIM.map(([k, label, color]) => [label.toLowerCase(), `${(p.aim[k + '_pct'] * 100).toFixed(1)}%`, color]).concat([['hits', n0(total), null]]))}>` +
+        `<rect class="viz-rowhit" x="${left + 2}" y="${row * rowH}" width="${colW - 4}" height="${rowH - 2}" rx="8"/>` +
+        `<g transform="translate(${x0.toFixed(1)} ${y0}) scale(${sc.toFixed(3)})">` +
+        AIM.map(([k]) => `<g class="aim-part" style="fill-opacity:${shade(k, p.aim[k + '_pct'])}">${FIGURE[k]}</g>`).join('') + '</g>';
+      AIM.forEach(([k]) => {
+        const [ux, uy] = AIM_LABEL_AT[k];
+        svg += `<text class="aim-pct${k === 'head' ? ' head' : ''}" x="${(x0 + ux * sc).toFixed(1)}" y="${(y0 + uy * sc + 4).toFixed(1)}" text-anchor="middle">${Math.round(p.aim[k + '_pct'] * 100)}%</text>`;
       });
-      s += `<text class="viz-label" x="${W - m.r + 10}" y="${cy + 4}">${(p.aim.head_pct * 100).toFixed(1)}% HS</text></g>`;
+      svg += `<text class="viz-label" x="${cx.toFixed(1)}" y="${(y0 + figH + 18).toFixed(1)}" text-anchor="middle">${h.esc(p.nickname)}</text>` +
+        `<rect x="${(cx - 12).toFixed(1)}" y="${(y0 + figH + 25).toFixed(1)}" width="24" height="3" rx="1.5" style="fill:var(--s${memberSlot(p.puuid)})"/></g>`;
     });
-    el.innerHTML = s + '</svg>';
+    el.innerHTML = svg + '</svg>';
   }
 
-  // ---- 7. damage share, last N games ---------------------------------------------------------
-  function damageGames() { return data.games.filter((g) => Object.keys(g.damage_share).length).slice(-DAMAGE_GAMES); }
+  // ---- 7. who carries the damage: all-time damage as 100 bullets, a row per player ------------------------------
+  // data: each game's damage_cum, every player's share of all the squad's damage from the first game through it; the
+  // last game's is the all-time split. Each share is rounded to whole bullets that always add up to 100.
+  function damageSplit() {
+    const g = data.games.filter((x) => Object.keys(x.damage_cum || {}).length);
+    if (!g.length) return { games: 0, rows: [] };
+    const last = g[g.length - 1].damage_cum;
+    const rows = data.members.filter((m) => last[m.puuid]).map((m) => ({ m, share: last[m.puuid] })).sort((a, b) => b.share - a.share);
+    const counts = toCounts(rows.map((x) => x.share), 100);
+    return { games: g.length, rows: rows.map((x, i) => ({ ...x, bullets: counts[i] })) };
+  }
+
+  // Whole counts out of n in proportion to shares: each share rounded, with the leftovers going to the biggest
+  // remainders so the counts always add up to n (no half bullets).
+  function toCounts(shares, n) {
+    const raw = shares.map((v) => v * n), counts = raw.map(Math.floor);
+    let left = n - counts.reduce((a, c) => a + c, 0);
+    raw.map((v, i) => [v - counts[i], i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left > 0) { counts[i] += 1; left -= 1; } });
+    return counts;
+  }
 
   function damageCard() {
-    const g = damageGames();
-    const avg = data.members.map((m) => ({ ...m, share: g.reduce((a, x) => a + (x.damage_share[m.puuid] || 0), 0) / (g.length || 1) }));
-    const top = avg.slice().sort((a, b) => b.share - a.share)[0];
-    const take = g.length ? `<strong>${h.esc(top.nickname)}</strong> dealt ${pct(top.share)} of the team's damage over the last ${plural(g.length, 'game')} (an even split is 20%)` : '';
+    const d = damageSplit(), top = d.rows[0];
+    const take = top ? `<strong>${h.esc(top.m.nickname)}</strong> has dealt ${top.bullets} of every 100 damage across all ${plural(d.games, 'game')} (an even split is 20)` : '';
     return card('damage', 'Who carries the damage', take,
-      legend(avg.map((m) => ({ label: `${m.nickname} ${pct(m.share)}`, color: `--s${memberSlot(m.puuid)}` }))) + slot('damage', 250),
-      table(['Game', 'Result'].concat(data.members.map((m) => m.nickname)),
-        g.slice().reverse().map((x) => [`${dateShort(x.ts)} · ${x.map || ''}`, resultText(x)].concat(data.members.map((m) => pct(x.damage_share[m.puuid]))))));
+      slot('damage', 5 * 34) +
+      '<p class="muted small">Every 100 damage the squad has dealt: one bullet per 1%.</p>',
+      table(['Player', 'Bullets', 'Share'], d.rows.map((x) => [x.m.nickname, n0(x.bullets), `${(x.share * 100).toFixed(1)}%`])));
   }
 
+  // 100 bullets, a row per player (biggest share first): their name, a bullet per 1% of the damage and the count.
+  // The bullets shrink when needed so the longest row fits; hovering a player's row fades everyone else's.
+  const bullet = (x, y, w, hgt, color) => {
+    const tipH = w * 1.15, neck = y + tipH;
+    return `<path style="fill:var(${color})" d="M${x.toFixed(1)} ${neck.toFixed(1)} Q${x.toFixed(1)} ${(y + tipH * 0.2).toFixed(1)} ${(x + w / 2).toFixed(1)} ${y.toFixed(1)} ` +
+      `Q${(x + w).toFixed(1)} ${(y + tipH * 0.2).toFixed(1)} ${(x + w).toFixed(1)} ${neck.toFixed(1)} Z"/>` +
+      `<rect class="dmg-casing" x="${x.toFixed(1)}" y="${(neck + 1).toFixed(1)}" width="${w.toFixed(1)}" height="${(hgt - tipH - 1).toFixed(1)}" rx="1" style="fill:var(${color})"/>`;
+  };
+
   function drawDamage(el, W) {
-    const g = damageGames();
-    if (!g.length) { el.innerHTML = '<p class="muted">No damage data yet.</p>'; return; }
-    const m = { l: 44, r: 12, t: 8, b: 34 }, H = 190;
-    const pw = W - m.l - m.r, band = pw / g.length, cw = Math.min(24, band - 4);
-    const y = (v) => m.t + (1 - v) * H;
-    let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="Share of team damage per player, per game">`;
-    [0.25, 0.5, 0.75, 1].forEach((v) => {
-      s += `<line class="viz-grid" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>` +
-        `<text class="viz-ax" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${v * 100}%</text>`;
+    const d = damageSplit();
+    if (!d.rows.length) { el.innerHTML = '<p class="muted">No damage data yet.</p>'; return; }
+    const m = { l: 86, r: 34 }, most = Math.max(...d.rows.map((x) => x.bullets));
+    const room = (W - m.l - m.r) / most; // width per bullet, bullet plus the space after it
+    const bw = Math.max(3, Math.min(14, room * 0.72)), gap = Math.max(1, Math.min(bw * 0.35, room - bw));
+    // Side by side with the aim profile (both half width), the rows spread out to the figures' height so the two
+    // cards end level; stacked on a phone they just take the room they need.
+    const n = aimRows().length, level = W >= 420 && n ? aimLayout(W, n).height / d.rows.length : 0;
+    const bh = Math.min(36, bw * 2.6), rh = Math.max(bh + 10, 24, level);
+    let s = `<svg class="viz-svg dmg-belt" width="${W}" height="${d.rows.length * rh}" role="img" aria-label="Every 100 damage the squad has dealt, a row of bullets per player">`;
+    d.rows.forEach((x, i) => {
+      const color = `--s${memberSlot(x.m.puuid)}`, top = i * rh, cy = top + rh / 2, y0 = cy - bh / 2;
+      s += `<g class="viz-row"${tip(x.m.nickname, [['of every 100 damage', n0(x.bullets), color], ['all-time share', `${(x.share * 100).toFixed(1)}%`, null]])}>` +
+        `<rect class="viz-rowhit" x="0" y="${top}" width="${W}" height="${rh}"/>` +
+        `<circle cx="8" cy="${cy}" r="5" style="fill:var(${color})"/>` +
+        `<text class="viz-label" x="20" y="${cy + 4}">${h.esc(x.m.nickname)}</text>`;
+      for (let c = 0; c < x.bullets; c += 1) s += bullet(m.l + c * (bw + gap), y0, bw, bh, color);
+      s += `<text class="viz-label" x="${(m.l + x.bullets * (bw + gap) + 6).toFixed(1)}" y="${cy + 4}">${x.bullets}</text></g>`;
     });
-    g.forEach((q, i) => {
-      const x = m.l + (i + 0.5) * band - cw / 2;
-      let acc = 0;
-      const ms = data.members.filter((mm) => q.damage_share[mm.puuid] != null);
-      ms.forEach((mm, j) => {
-        const v = q.damage_share[mm.puuid], top = j === ms.length - 1;
-        const yb = y(acc), yt = y(acc + v) + (top ? 0 : 2); // 2px surface gap between stacked segments
-        if (yb - yt > 0.5) s += top ? `<path style="fill:var(--s${memberSlot(mm.puuid)})" d="${colPath(x, cw, yb, yt)}"/>` :
-          `<rect x="${x}" y="${yt}" width="${cw}" height="${yb - yt}" style="fill:var(--s${memberSlot(mm.puuid)})"/>`;
-        acc += v;
-      });
-      const rows = ms.slice().sort((a, b) => q.damage_share[b.puuid] - q.damage_share[a.puuid])
-        .map((mm) => [mm.nickname, pct(q.damage_share[mm.puuid]), `--s${memberSlot(mm.puuid)}`]);
-      s += `<rect class="viz-colhit" x="${x - 2}" y="${m.t}" width="${cw + 4}" height="${H}"${tip(`${dateShort(q.ts)} · ${q.map || '?'} · ${resultText(q)}`, rows)}/>` +
-        `<text class="viz-ax" x="${x + cw / 2}" y="${m.t + H + 16}" text-anchor="middle">${q.result === 'win' ? 'W' : q.result === 'loss' ? 'L' : 'D'}</text>`;
-    });
-    s += `<line class="viz-base" x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}"/>` +
-      `<text class="viz-ax" x="${m.l}" y="${m.t + H + 30}">${h.esc(dateShort(g[0].ts))}</text>` +
-      `<text class="viz-ax" x="${W - m.r}" y="${m.t + H + 30}" text-anchor="end">${h.esc(dateShort(g[g.length - 1].ts))}</text>`;
     el.innerHTML = s + '</svg>';
   }
 

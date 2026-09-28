@@ -477,6 +477,23 @@ line.viz-grid { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdge
 .viz-key.line { width: 14px; height: 2px; border-radius: 1px; }
 .viz-key.dot { border-radius: 50%; }
 .viz-key.range { width: 8px; height: 14px; border-radius: 3px; opacity: 0.35; }
+/* Aim profile figures: one blue, each part's fill-opacity set by its share of hits against the squad's range for that
+   part, with a faint outline so even the palest part keeps its shape. The shares print over the figure with a halo
+   in the card colour. */
+.aim-part { fill: var(--aim-2); stroke: var(--aim-2); stroke-opacity: .6; stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.aim-pct { fill: var(--text); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.aim-pct.head { font-size: 12px; }
+/* Who carries the damage: a row of bullets per player (the case a shade lighter than the tip; hovering a player's
+   row fades everyone else's). */
+.dmg-casing { fill-opacity: .7; }
+.dmg-belt .viz-row { transition: opacity .15s; }
+.dmg-belt:hover .viz-row:not(:hover) { opacity: .3; }
+/* Who swings results: a big W (ACS in wins) and L (in losses) per player, with the same letters in the legend. */
+.swing-mark { font-size: 18px; font-weight: 800; }
+.swing-mark.up, .swing-key.up { fill: var(--up); color: var(--up); }
+.swing-mark.down, .swing-key.down { fill: var(--down); color: var(--down); }
+.swing-key { font-size: 14px; font-weight: 800; line-height: 1; }
+.aim-scale { display: inline-block; width: 64px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--aim-2) 10%, transparent), var(--aim-2)); }
 .fc-pickers { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; }
 .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
 .seg-btn { background: transparent; border: 0; border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; }

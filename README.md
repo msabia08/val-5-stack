@@ -59,8 +59,9 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   - whether the squad fades later in a night
   - each player's ACS on each map against their own average
   - who swings results (ACS in wins vs. losses)
-  - aim profile (head / body / legs)
-  - share of team damage, game by game
+  - aim profile: a figure per player, head / body / legs each showing the share of
+    their hits, shaded against the squad (the highest share is the strongest blue)
+  - who carries the damage: 100 bullets, one per 1% of all the squad's damage, a row per player
   - team comps by role mix
   - agent pool: each player's ACS on every agent they've played, by role
   - clutches (1vX attempts and wins) and multi-kills (3K, 4K, aces)

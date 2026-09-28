@@ -441,6 +441,15 @@ def insights(shared):
     assert [(c["key"], c["games"], c["wins"]) for c in ins["comps"]] == [("5D", 2, 2), ("5I", 1, 0)], ins["comps"]
     m9 = ins["games"][2]
     assert abs(sum(m9["damage_share"].values()) - 1) < 1e-9 and abs(m9["damage_share"]["puuid-2"] - 0.2) < 1e-9
+    # The running share: the first game's is its own split, and the last one's is every game's damage pooled.
+    first = ins["games"][0]
+    assert all(abs(first["damage_cum"][pu] - v) < 1e-9 for pu, v in first["damage_share"].items()), first
+    pooled = {}
+    for g in ins["games"]:
+        for p in db.match_players(g["match_id"]):
+            pooled[p["puuid"]] = pooled.get(p["puuid"], 0) + (p.get("damage_dealt") or 0)
+    assert abs(sum(m9["damage_cum"].values()) - 1) < 1e-9
+    assert all(abs(m9["damage_cum"][pu] - v / sum(pooled.values())) < 1e-9 for pu, v in pooled.items()), m9["damage_cum"]
     ip1 = next(p for p in ins["players"] if p["puuid"] == "puuid-1")
     assert (ip1["games_win"], ip1["games_loss"]) == (2, 1) and ip1["acs_win"] > ip1["acs_loss"], ip1
     assert set(ip1["maps"]) == {"Ascent", "Bind", "Haven"} and abs(sum(ip1["aim"][k] for k in ("head_pct", "body_pct", "leg_pct")) - 1) < 1e-9
