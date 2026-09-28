@@ -111,6 +111,8 @@ class App:
             "uptime_s": round(time.time() - self.started),
             "house_edge": self.engine.edge,
             "starting_balance": self.bets.starting,
+            "bet_grace_minutes": self.bets.grace_s / 60,
+            "bet_cancel_minutes": self.bets.cancel_s / 60,
             "game_reward": self.rewards.game,
             "win_reward": self.rewards.win,
             "performance_bonus_max": self.rewards.bonus_max,

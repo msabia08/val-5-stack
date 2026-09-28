@@ -1,0 +1,32 @@
+# Runs the offline self-test and a syntax check of the web front-end on every pull request and every push to main.
+# No API key or network access to HenrikDev is needed: the self-test uses a fake API client.
+name: selftest
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]  # the oldest supported version and a current one
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Self-test
+        run: python tests/selftest.py
+      - name: JavaScript syntax check
+        run: for f in web/*.js; do node --check "$f"; done
+      - name: AGENTS.md matches CLAUDE.md (apart from the title)
+        run: |
+          diff <(tail -n +2 CLAUDE.md) <(tail -n +2 AGENTS.md) || {
+            echo 'AGENTS.md must match CLAUDE.md below its title. Rebuild it with:'
+            echo '  { echo "# AGENTS.md"; tail -n +2 CLAUDE.md; } > AGENTS.md'
+            exit 1
+          }

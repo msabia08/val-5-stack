@@ -29,6 +29,8 @@
   "agent_weight_boost": 2.0,
   "simulations": 4000,
   "starting_balance": 1000,
+  "bet_grace_minutes": 2,
+  "bet_cancel_minutes": 1,
   "game_reward": 250,
   "win_reward": 0,
   "performance_bonus_max": 250

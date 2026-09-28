@@ -36,6 +36,12 @@ class BetManager:
         self.db = db
         self.engine = engine
         self.starting = float(cfg.get("starting_balance", 1000))
+        # Riot's start time is when the match launched, so bets made while loading in (or during round 1) are
+        # still meant for that game: they count for it if placed within this long after it started.
+        self.grace_s = max(0.0, float(cfg.get("bet_grace_minutes", 2))) * 60
+        # A bettor can take a bet back only this soon after placing it (fixing a misclick), not once a game is under
+        # way and it's going badly. Admin cancellations aren't limited.
+        self.cancel_s = max(0.0, float(cfg.get("bet_cancel_minutes", 1))) * 60
 
     # ---- bettor accounts -------------------------------------------------
     @staticmethod
@@ -275,6 +281,9 @@ class BetManager:
             raise BetError("Only pending bets can be cancelled.")
         if not admin and (not by or bet["bettor"].lower() != by.lower()):
             raise BetError("You can only cancel your own bets.")
+        if not admin and time.time() - bet["placed_ts"] > self.cancel_s:
+            window = self.cancel_s / 60
+            raise BetError(f"Bets can only be cancelled within {window:g} minute{'' if window == 1 else 's'} of placing them.")
         with self.db.lock:
             self.db.update_bet(
                 bet_id, status="cancelled", settled_ts=time.time(), payout=bet["stake"],
@@ -285,9 +294,9 @@ class BetManager:
 
     # ---- settlement ------------------------------------------------------
     def settle_for_match(self, match, players):
-        """Settle every pending bet that was placed before this match started."""
+        """Settle every pending bet placed before this match started, or within the grace period after (see grace_s)."""
         started = match.get("started_ts") or 0
-        pending = [b for b in self.db.pending_bets() if b["placed_ts"] < started]
+        pending = [b for b in self.db.pending_bets() if b["placed_ts"] < started + self.grace_s]
         if not pending:
             return []
         rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
