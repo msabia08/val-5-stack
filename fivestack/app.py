@@ -295,7 +295,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "Match not found"}, 404)
             m["players"] = app.db.match_players(mid)
             return self._json(m)
-        if path == "/api/odds":
+        if path in ("/api/odds", "/api/odds/custom"):
             ctx = {"map": qs.get("map") or None, "agents": {}}
             raw = qs.get("agents")
             if raw:
@@ -306,7 +306,19 @@ class Handler(BaseHTTPRequestHandler):
                         if ":" in part:
                             k, v = part.split(":", 1)
                             ctx["agents"][k] = v
-            return self._json(app.engine.build(app.db, ctx))
+            if path == "/api/odds":
+                return self._json(app.engine.build(app.db, ctx))
+            # A custom line's price and reasonable range: ?puuid=&stat=&line=24.5 (plus the same map / agents).
+            try:
+                alt = (qs.get("stat") or "", qs.get("puuid") or "", float(qs.get("line") or "nan"))
+            except ValueError:
+                return self._json({"error": "line must be a number"}, 400)
+            board = app.engine.build(app.db, ctx, alts=[alt])
+            if not board.get("ready"):
+                return self._json({"error": board.get("message", "Odds are not available yet.")}, 400)
+            if not board["custom"]:
+                return self._json({"error": "Unknown player or stat."}, 400)
+            return self._json({"market": board["custom"][0], "house_edge": board["house_edge"]})
         if path == "/api/bets":
             return self._json({"bets": app.db.bets(
                 status=qs.get("status") or None, bettor=qs.get("bettor") or None, limit=int(qs.get("limit") or 150)

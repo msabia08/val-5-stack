@@ -188,6 +188,16 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
 - **Player props (over/under):** kills, deaths, assists, ACS, ADR, headshot %.
   The line sits at the weighted median; the over/under probability comes from a
   Gaussian-kernel smoothed distribution of past games.
+- **Custom lines:** "I think Loog gets 25 kills." Under the player props, pick a
+  player, a stat, *at least* or *at most*, and a whole number, and you get odds
+  for it: at least 25 is an over 24.5, at most 12 an under 12.5. It's priced from
+  the same smoothed distribution as the board's own lines, with the same house
+  edge, so a custom line at the board's number costs exactly what the board
+  charges. It settles like any over / under, and can be a single or a parlay leg
+  (one line per player and stat in a parlay). To keep it within reason, the side
+  you bet needs between a 5% and a 90% chance: long shots top out around +1800,
+  and near-certainties ("at least 5 kills") aren't offered. The card shows which
+  numbers you can pick for each player and stat.
 - **"Who tops the scoreboard" markets:** six cards, each with a toggle for its
   counter market at the bottom of the scoreboard:
 
@@ -209,6 +219,18 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
 - **Team markets:** match result, total rounds, and overtime (does the game go
   past 12–12?). Overtime is rare, so its odds come from your history shrunk
   toward a ~10% base rate, and surrendered games are left out of it.
+- **Score markets:** rounds won and rounds lost by the squad (over / under, with
+  overtime counting as 12+), **winning margin** (the squad wins by 1–2, 3–5 or
+  6+; overtime is 1–2), and the **exact score** of a squad win (13–0 to 13–11).
+  Margin and exact score are only offered on the squad winning: a loss loses
+  them, and so does an overtime win for exact score. They all come from one model of the final score:
+  each round is won with some chance, first to 13, and that chance varies from
+  game to game. The model is tuned so its chance of winning matches the match
+  result odds and its chance of reaching 12–12 matches the overtime odds as
+  closely as it can, so none of these markets contradict each other. Winning
+  margin and exact score have many picks each, so like the scoreboard markets
+  they carry double the house edge. They only settle on first-to-13 games (a
+  shorter mode refunds them).
 - **Surrendered games are partial data.** Their kills, deaths and assists are
   scaled up to a full-length game (the median length of your completed games,
   or 22 rounds until there are 5 of them), and the game counts only as much as
@@ -248,8 +270,10 @@ distribution at low weight and are flagged *low confidence*.
   usual. Every other bet settles only if it was **already decided** when the
   game stopped: an over on a counting stat (kills, deaths, assists, total
   rounds) that had already cleared its line wins, and the matching under
-  loses; an overtime bet settles only if the game had already reached 12–12.
-  Anything else is refunded, including per-round stats (ACS, ADR,
+  loses; an overtime bet settles only if the game had already reached 12–12;
+  rounds won / lost settle the same way as total rounds (an over already
+  cleared wins). Exact score and winning margin are refunded, since the final
+  score never happened. Anything else is refunded, including per-round stats (ACS, ADR,
   headshot %) and top/bottom-of-the-scoreboard markets, which could still have
   swung. When the full match record is available, its winner flag decides
   who won, even if the surrendering team was ahead on rounds. Parlay legs

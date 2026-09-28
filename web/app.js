@@ -97,7 +97,7 @@
   const loadRecap = async () => { state.recap = await api('/api/recap' + (state.recapId ? '?match=' + encodeURIComponent(state.recapId) : '')); };
   const loadContent = async () => { state.content = await api('/api/content'); };
   // The betting UI lives in web/bets.js (window.FiveBets); these names keep the call sites below unchanged.
-  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors } = window.FiveBets;
+  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard } = window.FiveBets;
   async function loadOdds() {
     const p = new URLSearchParams();
     if (state.ctx.map) p.set('map', state.ctx.map);
@@ -383,9 +383,15 @@
     if (!od.ready) {
       return ctxBar + `<div class="card empty"><h2>No odds yet</h2><p>${esc(od.message)}</p></div>` + betsSection();
     }
-    const team = od.team.map((mk) =>
-      `<div class="market"><h3>${esc(mk.label)}</h3><p class="muted small">${esc(mk.desc)}${mk.basis ? ` · ${mk.basis.games} games, ${fmt.pct(mk.basis.win_rate)} raw win rate${mk.basis.map_games ? `, ${mk.basis.map_games} on this map` : ''}` : ''}${mk.mean != null ? ` · avg ${mk.mean}` : ''}</p>` +
-      `<div class="sels">${mk.selections.map((s) => oddBtn(mk, s, s.label)).join('')}</div></div>`).join('');
+    // Exact score spans the grid, its 12 scores in a compact grid of their own.
+    // One-line subtitles (the full text is in the tooltip) and buttons pinned to the bottom, so each row lines up.
+    const team = od.team.map((mk) => {
+      const btnLabel = (s) => (mk.type === 'team_margin' ? s.label.replace(/^Win by /, '') : s.label); // the slip still says "Win by 1–2"
+      const sels = `<div class="sels ${mk.type}">${mk.selections.map((s) => oddBtn(mk, s, btnLabel(s))).join('')}</div>`;
+      const sub = mk.desc + (mk.basis ? ` · ${fmt.pct(mk.basis.win_rate)} of ${mk.basis.games} won${mk.basis.map_games ? `, ${mk.basis.map_games} on this map` : ''}` : '') +
+        (mk.mean != null ? ` · avg ${mk.mean}` : '');
+      return `<div class="market${mk.type === 'team_score' ? ' wide' : ''}"><h3>${esc(mk.label)}</h3><p class="muted small market-sub" title="${esc(sub)}">${esc(sub)}</p>${sels}</div>`;
+    }).join('');
     const props = new Map(od.player_props.map((p) => [p.market_id, p]));
     const propRows = od.members.map((m) => {
       const slot = idx.get(m.puuid)?.slot || 1;
@@ -394,7 +400,9 @@
           const mk = props.get(`ou:${sd.key}:${m.puuid}`);
           if (!mk) return '<td class="prop muted">–</td>';
           const [o, u] = mk.selections;
-          return `<td class="prop" title="Average ${mk.mean}"><div class="line">${mk.line}</div>${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</td>`;
+          // The line as plain bold text, then over / under as one button split down the middle.
+          return `<td class="prop" title="Line ${mk.line} · average ${mk.mean}"><div class="prop-cell"><span class="prop-line">${mk.line}</span>` +
+            `<div class="prop-pair">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
         }).join('') + '</tr>';
     }).join('');
     // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle.
@@ -416,12 +424,12 @@
         }).join('') + '</div>';
     }).join('');
     return ctxBar + `<div class="odds-layout"><div>
-        <section class="card"><h2>Team markets</h2><div class="markets">${team}</div></section>
-        <section class="card"><h2>Player props · over / under</h2><p class="muted small">For the next 5-stack game. Tap O or U to add a pick to the slip.</p>
+        <section class="card"><h2>Team markets</h2><p class="muted small">Rounds won / lost, winning margin and exact score all come from one model of the final score, so they agree with the match-result and overtime odds.</p><div class="markets">${team}</div></section>
+        <section class="card"><h2>Player props · over / under</h2><p class="muted small">For the next 5-stack game. Each cell shows the line, then the odds for going over (O) or under (U) it; tap O or U to add a pick to the slip.</p>
           <div class="table-wrap"><table class="props"><thead><tr><th>Player</th>${od.stat_defs.map((s) => `<th>${esc(s.label)}</th>`).join('')}</tr></thead><tbody>${propRows}</tbody></table></div></section>
         <section class="card"><h2>Top and bottom of the scoreboard</h2><p class="muted small">Pick the one squad member who finishes first in a stat, or flip a card to pick who finishes last. "Popped off" and "Got diff'd" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.</p><div class="markets">${tops}</div></section>
         ${betsSection()}
-      </div><aside class="slip card" id="slip">${slipHtml()}</aside></div>`;
+      </div><aside class="odds-side"><div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}</aside></div>`;
   }
 
 
