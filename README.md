@@ -45,8 +45,13 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   match record is fetched) game length, ranks and whether all five shared a party.
   The **Matches** tab opens with a recap of the latest game (see below); click
   any game in the list, or use *Older* / *Newer*, to recap another.
-- **Visualizations tab:** charts built from all of the above. Each has a
-  one-line takeaway, hover details and a table view:
+- **Overview:** the front page. Squad totals, the last game with its top three
+  highlights (linking to the full recap), your balance and the top bettors, who's
+  trending (each player's ACS and K/D over their last 5 games against the 10
+  before), and win rate by map.
+- **Charts tab:** charts built from all of the above, grouped by the buttons at
+  the top (All, Results, Players, Rounds). Each has a one-line takeaway and hover
+  details:
   - record in close games vs. blowouts, win rate after a win vs. after a loss,
     and first game of the night vs. later games
   - form over time (rolling 10-game win rate plus every game's round margin)
@@ -378,7 +383,7 @@ open it from anywhere while it keeps running on your PC.
    password the tunnel refuses to start.
 2. Run `run-online.bat` (or `python server.py --tunnel`). The first time,
    `cloudflared` is downloaded into `tools/` automatically.
-3. Open the Setup page. The public link is shown under *Online access* with a
+3. Open Setup (the ⚙ button, top right). The public link is shown under *Online access* with a
    Copy button, and it is printed in the console too.
 
 That is a *quick tunnel*: free, no account, HTTPS. The address is random and
@@ -447,7 +452,7 @@ A Basic key allows about 30 requests per minute, and HenrikDev also counts the
 Riot requests it makes in the background to fill its cache. A regular sync is
 one request per member plus a handful of match-detail fetches, spaced 1.5 s
 apart; the client reads the rate-limit headers and backs off automatically on
-`429`. If a sync fails you will see why on the Setup page and in the console.
+`429`. If a sync fails you will see why on the Setup page (⚙) and in the console.
 
 ## Project layout
 
@@ -464,7 +469,7 @@ fivestack/             the backend package
   henrik.py            HenrikDev API client
   db.py                SQLite schema and queries (data/tracker.db)
   stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
-  insights.py          datasets for the Visualizations tab (sessions, comps, damage share, ...)
+  insights.py          datasets for the Charts tab (sessions, comps, damage share, ...)
   forecasts.py         Forecasts tab: each game replayed against the odds engine's prediction
   recap.py             Matches tab recap: scoreboard, round by round, betting and highlights
   timeline.py          round-by-round records: clutches, multi-kills, spike sites

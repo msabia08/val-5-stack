@@ -106,6 +106,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 }
 .topbar .topbar-right > .btn:not(:disabled):hover, .topbar .topbar-right > .me-chip:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
 .topbar .topbar-right > .btn.icon { width: 34px; padding: 0; justify-content: center; font-size: 15px; }
+.topbar .topbar-right > .btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }  /* the ⚙ button while on Setup */
 .topbar-right > .me-chip span { opacity: 1; }
 .topbar-right > .me-chip b { color: var(--text); font-size: 14px; }
 .topbar-right > .me-chip .me-inplay { font-size: 12px; color: var(--muted); }
@@ -453,10 +454,7 @@ line.viz-grid { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdge
 .recap-map { font-size: 18px; font-weight: 600; }
 .recap-navs { margin-left: auto; display: flex; gap: 6px; }
 .hl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
-.hl-card { background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 12px; }
-.hl-card.tone-good { border-left-color: var(--up); }
-.hl-card.tone-bad { border-left-color: var(--down); }
-.hl-card.tone-odd { border-left-color: var(--s7); }
+.hl-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }  /* no coloured bar; the Nice / Rough / Odd label carries the tone */
 .hl-who { display: flex; align-items: center; font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
 .hl-who .swatch { margin-right: 6px; }
 .hl-tone { margin-left: auto; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
@@ -548,3 +546,27 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 .tr-player { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
 .tr-player:hover { border-color: var(--accent); }
 .tr-player.off { opacity: 0.4; text-decoration: line-through; }
+
+/* Folded explanations: a one-line summary, with "How this works" opening the rest. */
+.how { font-size: 12.5px; color: var(--muted); margin: 2px 0 10px; line-height: 1.5; }
+.how > summary { cursor: pointer; list-style: none; }
+.how > summary::-webkit-details-marker { display: none; }
+.how > summary::after { content: "How this works ▸"; margin-left: 8px; color: var(--accent); font-size: 12px; white-space: nowrap; }
+.how[open] > summary::after { content: "Hide ▴"; }
+.how-body { margin-top: 6px; color: var(--text-2); }
+.how-body p { margin: 0 0 6px; }
+
+/* ---- Overview: the front page ---- */
+.ov-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.ov-grid > .card { margin-bottom: 16px; }
+.ov-game { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 16px; }
+.ov-game b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.ov-hl { display: grid; gap: 8px; }
+.ov-me { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.ov-me b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.ov-leaders { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.ov-leaders li { display: grid; grid-template-columns: 26px 1fr auto 70px; align-items: center; gap: 8px; }
+.ov-leaders .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ov-medal { font-size: 16px; }
+@media (max-width: 860px) { .ov-grid { grid-template-columns: 1fr; } }
+.viz-genres { margin-bottom: 14px; }

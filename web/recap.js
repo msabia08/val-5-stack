@@ -9,6 +9,8 @@ window.FiveRecap = (() => {
 
   let h = null; // helpers from app.js: esc, fmt, slot(puuid)
 
+  // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
+  const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
   const tip = (title, rows) => ` data-tip="${h.esc(JSON.stringify({ t: title, r: rows }))}" tabindex="0"`;
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const num = (key, v) => (v == null ? '–' : key === 'hs_pct' ? `${Math.round(v)}%` : key === 'kd' ? v.toFixed(2)
@@ -80,8 +82,7 @@ window.FiveRecap = (() => {
     return `<section class="card"><h2>Scoreboard</h2><div class="table-wrap"><table class="compact recap-board"><thead><tr><th>Player</th>` +
       '<th class="num">K</th><th class="num">D</th><th class="num">A</th><th class="num">K/D</th><th class="num">ACS</th><th class="num">ADR</th><th class="num">HS %</th>' +
       '<th class="num" title="Share of the squad\'s damage">Dmg</th><th class="num" title="Rounds opened with the first kill">FB</th><th>Big rounds</th><th>Rank</th></tr></thead>' +
-      `<tbody>${rows}</tbody></table></div><p class="muted small">▲ / ▼ mark a stat well above or below the player's usual 5-stack game (green is good; for deaths, fewer is good). ` +
-      'Hover a number for their usual and the forecast from the Forecasts tab.</p></section>';
+      `<tbody>${rows}</tbody></table></div>${how('▲ / ▼ mark a stat well above or below the player\'s usual game.', 'Green is good; for deaths, fewer is good. Hover a number for their usual 5-stack game and the forecast from the Forecasts tab.')}</section>`;
   }
 
   function rounds(r) {
@@ -107,7 +108,7 @@ window.FiveRecap = (() => {
     }).join('');
     const sides = r.rounds[0].side ? `First half on ${r.rounds[0].side}, second on ${r.rounds[0].side === 'attack' ? 'defence' : 'attack'} (read from who planted). ` : '';
     return `<section class="card"><h2>Round by round</h2><div class="rd-strip">${cells}</div>
-      <p class="muted small">${sides}Letters are spike plants by site (blue: ours, red: theirs), D a defuse; the corner dot shows who got the first kill. Hover a round for details.</p></section>`;
+      ${how('Hover a round for details.', `${sides}Letters are spike plants by site (blue: ours, red: theirs), D a defuse; the corner dot shows who got the first kill.`)}</section>`;
   }
 
   function betting(r) {

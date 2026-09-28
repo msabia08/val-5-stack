@@ -1,4 +1,4 @@
-/* 5-Stack Tracker: Visualizations tab. Plain SVG/HTML charts drawn from /api/insights, no dependencies.
+/* 5-Stack Tracker: the Charts tab (route #viz). Plain SVG/HTML charts drawn from /api/insights, no dependencies.
  *
  * FiveViz.html(data, helpers) returns the page with empty [data-chart] slots; FiveViz.mount(root) draws
  * each slot at its real width (so text never scales) and redraws on resize. Colors are CSS variables, so
@@ -84,13 +84,20 @@
     return { bg: `color-mix(in oklab, ${pole} ${p}%, var(--div-mid))`, ink: p > 55 ? '#fff' : 'var(--text)' };
   }
 
+  // The "Show as table" view under each chart (Charts, Bettors and Forecasts tabs). Switched off; set to true to bring
+  // every one of them back.
+  const SHOW_TABLES = false;
+
   function table(head, rows) {
+    if (!SHOW_TABLES) return '';
     return `<details class="viz-table"><summary>Show as table</summary><div class="table-wrap"><table class="compact"><thead><tr>` +
       head.map((c, i) => `<th${i ? ' class="num"' : ''}>${h.esc(c)}</th>`).join('') + '</tr></thead><tbody>' +
       rows.map((r) => '<tr>' + r.map((c, i) => `<td${i ? ' class="num"' : ''}>${h.esc(c)}</td>`).join('') + '</tr>').join('') +
       '</tbody></table></div></details>';
   }
 
+  // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
+  const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
   const card = (id, title, takeaway, body, extra = '') =>
     `<section class="card viz-card" id="viz-${id}"><h2>${h.esc(title)}</h2>` +
     `${takeaway ? `<p class="viz-takeaway">${takeaway}</p>` : ''}${body}${extra}</section>`;
@@ -105,7 +112,10 @@
   }
 
   // ---- page -------------------------------------------------------------------------
-  function html(d, helpers) {
+  // Chart genres for the buttons at the top of the Charts tab; "all" keeps the full page in its usual order.
+  const GENRES = [['all', 'All'], ['results', 'Results'], ['players', 'Players'], ['rounds', 'Rounds']];
+
+  function html(d, helpers, genre = 'all') {
     data = d; h = helpers;
     const g = d.games;
     if (!g.length) return null;
@@ -125,16 +135,18 @@
       ? `<p class="viz-note">Only ${plural(g.length, '5-stack game')} so far, so treat these as early reads: one more win or loss can move a percentage a lot. Records are shown next to rates for that reason.</p>`
       : '';
 
-    return early + kpis +
-      formCard() +
-      `<div class="viz-cols">${timeCard()}${sessionCard()}</div>` +
-      mapCard() +
-      agentCard() +
-      swingCard() +
-      `<div class="viz-cols">${clutchCard()}${multiKillCard()}</div>` +
-      spikeCard() +
-      damageCard() +
-      `<div class="viz-cols">${aimCard()}${compCard()}</div>`;
+    const cols = (a, b) => `<div class="viz-cols">${a}${b}</div>`;
+    const pages = {
+      all: () => kpis + formCard() + cols(timeCard(), sessionCard()) + mapCard() + agentCard() + swingCard() +
+        cols(clutchCard(), multiKillCard()) + spikeCard() + damageCard() + cols(aimCard(), compCard()),
+      results: () => kpis + formCard() + cols(timeCard(), sessionCard()) + compCard(),  // how the squad does, and when
+      players: () => mapCard() + agentCard() + swingCard() + damageCard() + aimCard(),  // each player's maps, agents, impact
+      rounds: () => cols(clutchCard(), multiKillCard()) + spikeCard(),  // clutches, multi-kills, spike sites
+    };
+    const pick = pages[genre] ? genre : 'all';
+    const buttons = `<div class="seg viz-genres" role="tablist" aria-label="Chart genres">${GENRES.map(([k, label]) =>
+      `<button type="button" class="seg-btn viz-genre ${k === pick ? 'on' : ''}" data-v="${k}" role="tab" aria-selected="${k === pick}">${label}</button>`).join('')}</div>`;
+    return buttons + early + pages[pick]();
   }
 
   // ---- 1. form over time + round margins ------------------------------------------------
@@ -767,7 +779,7 @@
     b.bettors.forEach((n) => Object.entries(b.by_type[n]).forEach(([k, rec]) => rows.push([`${n} · ${catLabel.get(k)}`, String(rec.bets), `${rec.won}–${rec.lost}`, n0(rec.staked), rec.roi == null ? '–' : signedPct(rec.roi)])));
     return card('betting', 'Betting report card', take,
       grid + '<div class="viz-scale"><span>Losing money</span><span class="viz-scale-bar money"></span><span>Making money</span></div>' +
-      '<p class="muted small">Return on investment for settled bets, by market type; the small numbers are won–lost. "On yourself" counts your player props and scoreboard picks on your own player. Cells with few bets are paler.</p>',
+      how('Return on investment by market type; the small numbers are won–lost.', '"On yourself" counts your player props and scoreboard picks on your own player. Cells with few bets are paler.'),
       table(['Bettor · market', 'Bets', 'W–L', 'Wagered', 'ROI'], rows));
   }
 
@@ -799,9 +811,9 @@
       `${pct(b.range[0])}–${pct(b.range[1])}`]);
     return card('accuracy', 'Are the odds right?', take,
       `<div class="viz-cols viz-accuracy"><div>${slot('accuracy', 250)}</div><div>${byType}</div></div>` +
-      '<p class="muted small">Each dot groups picks by the chance the odds gave them (before the house edge) and shows how often they actually won; ' +
-      'the bar is the likely range for that many picks. Dots on the diagonal mean the odds were right. Singles and parlay legs both count, ' +
-      'a pick several people bet in the same game counts once, and voids are left out. "Too generous" means those picks won more often than their price allowed.</p>',
+      how('Dots on the diagonal mean the odds were right.', 'Each dot groups picks by the chance the odds gave them (before the house edge) and shows how often they actually won; ' +
+        'the bar is the likely range for that many picks. Singles and parlay legs both count, ' +
+        'a pick several people bet in the same game counts once, and voids are left out. "Too generous" means those picks won more often than their price allowed.'),
       table(['Odds gave', 'Picks', 'Average chance', 'Won', 'Likely range'], rows));
   }
 
@@ -871,10 +883,11 @@
       FC_GROUPS.map(([g, caption]) => `<div class="fc-group"><span class="fc-caption">${h.esc(caption)}</span>` +
         seg('fc-stat', d.stats.filter((s) => s.group === g).map((s) => ({ v: s.key, label: s.short, on: s.key === d.stat }))) + '</div>').join('') +
       '</section>';
-    const intro = `<p class="viz-note">Before every game, the odds engine would have predicted a range for each player from their earlier 5-stack games only, ` +
-      `weighting recent games and games on the same map and agent more, exactly like the player-prop lines. Here is each prediction next to what really happened. ` +
+    const intro = how('Each game\'s forecast, made beforehand from earlier games only, next to what really happened.',
+      `Before every game, the odds engine would have predicted a range for each player from their earlier 5-stack games only, ` +
+      `weighting recent games and games on the same map and agent more, exactly like the player-prop lines. ` +
       `About ${pct(d.coverage)} of games should land inside the range, which is lopsided when the stat is (a few big games stretch the top); ` +
-      `the tick marks the typical game, where a betting line would sit.</p>`;
+      `the tick marks the typical game, where a betting line would sit.`);
     if (!p || !p.overall) {
       return intro + pickers + `<section class="card"><h2>No forecasts yet</h2><p class="muted">A game gets a forecast once the player has ${d.min_prior} earlier 5-stack games` +
         ` (surrenders aren't forecast).</p></section>`;
@@ -926,8 +939,8 @@
     const rows = p.cells.map((c) => [`${c.map || 'All maps'} · ${c.role || 'All roles'}`, String(c.games), `${fcVal(c.low)}–${fcVal(c.high)}`, fcVal(c.expected), fcVal(c.actual), `${c.above}/${c.inside}/${c.below}`]);
     return card('forecast-grid', `${label}: forecast vs actual by map and role`, take,
       grid + `<div class="viz-scale"><span>Worse than forecast</span><span class="viz-scale-bar"></span><span>Better than forecast</span></div>` +
-      `<p class="muted small">Each cell shows the actual average${fcStat().lower_is_better ? ' (fewer is better)' : ''}, the expected average and the number of games. ` +
-      'Hover for the range and each agent; click a cell to show just those games in the chart above. Cells with few games are paler.</p>',
+      how('Click a cell to show just those games in the chart above.', `Each cell shows the actual average${fcStat().lower_is_better ? ' (fewer is better)' : ''}, the expected average and the number of games. ` +
+        'Hover for the range and each agent. Cells with few games are paler.'),
       table(['Map · role', 'Games', 'Forecast range', 'Expected', 'Actual', 'Above/inside/below'], rows));
   }
 

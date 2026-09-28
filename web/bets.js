@@ -9,6 +9,9 @@ window.FiveBets = (() => {
 
   // Shared with app.js (set by init): the page state object and its helpers.
   let state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast;
+  // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
+  const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
+
   function init(ctx) {
     ({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast } = ctx);
   }
@@ -248,7 +251,7 @@ window.FiveBets = (() => {
     if (c.side === 'exact' && !isCount(c.stat)) c.side = 'over';
     const opt = (v, label, on, off) => `<option value="${esc(v)}"${on ? ' selected' : ''}${off ? ' disabled' : ''}>${esc(label)}</option>`;
     return `<section class="card" id="custom-line"><h2>Custom line</h2>
-      <p class="muted small">Think someone's going big (or bad)? Name your own number: at least, at most, or exactly (kills, deaths and assists). It's priced from the same model as the board, and a number too far from a player's usual game isn't offered.</p>
+      ${how('Name your own number: at least, at most, or exactly.', 'Think someone\'s going big (or bad)? Exactly works for kills, deaths and assists. It\'s priced from the same model as the board, and a number too far from a player\'s usual game isn\'t offered.')}
       <div class="ctx-row">
         <label>Player<select id="cl-player">${members.map((m) => opt(m.puuid, m.nickname, m.puuid === c.puuid)).join('')}</select></label>
         <label>Stat<select id="cl-stat">${stats.map((s) => opt(s.key, s.label, s.key === c.stat)).join('')}</select></label>
@@ -491,7 +494,7 @@ window.FiveBets = (() => {
     }).join('');
     const vizHelpers = { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot };
     return `<section class="kpis">${kpis.join('')}</section>
-      <section class="card"><h2>Rankings</h2><p class="muted small">Ordered by balance. Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).</p>
+      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).`)}
         <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
@@ -558,7 +561,7 @@ window.FiveBets = (() => {
         `<span class="recent-score">${g.rounds_won ?? '?'}–${g.rounds_lost ?? '?'}</span><span>${esc(g.map || '')}</span>` +
         `<span class="rewards-list">${people}</span><span class="muted small">${fmt.date(g.started_ts ? g.started_ts * 1000 : null)}</span></li>`;
     }).join('');
-    return `<section class="card"><h2>Game rewards</h2><p class="muted small">${rule} Hover a name for the details.</p>` +
+    return `<section class="card"><h2>Game rewards</h2>${how(`${fmt.credits(game)} credits a game for everyone, plus a performance bonus of up to ${fmt.credits(bonus)}.`, `${rule} Hover a name for the details.`)}` +
       (games ? `<ul class="recent">${games}</ul>` : '<p class="muted">No rewards yet. They are paid when the next 5-stack game is recorded.</p>') + '</section>';
   }
 
