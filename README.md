@@ -98,6 +98,28 @@ A database created before this feature existed only holds 5-stack games; the
 first sync after upgrading fetches everyone's full history once to fill in the
 baseline.
 
+## Forecasts: predicted vs actual
+
+The **Forecasts** tab replays the odds engine over your history. For every
+5-stack game, it predicts each player's kills, deaths and assists (per game,
+which are the betting lines, and per round), ACS, ADR and headshot % using only
+their *earlier* 5-stack games, weighted exactly like the player-prop lines
+(recent games, and games on that map and agent, count more). The per-round
+versions take game length out: a 26-round overtime game gives more kills than a
+16-round stomp without anyone playing better.
+Each prediction is a range meant to hold about 80% of games, and the page puts
+it next to what actually happened:
+
+- tiles for how often the player landed inside the range, beat it or fell short;
+- a **game-by-game strip** of forecast ranges with the real result as a dot;
+- a **map × role grid** (Duelist, Controller, Initiator, Sentinel) with the actual
+  average against the forecast in each cell, shaded by how far they beat or
+  missed it; hover a cell for the range and each agent, click it to show just
+  those games in the strip.
+
+A game gets a forecast once the player has 5 earlier 5-stack games; surrendered
+games aren't forecast. For deaths, fewer counts as beating the forecast.
+
 ## How the odds work
 
 For each player the history of 5-stack games is turned into a
@@ -352,6 +374,7 @@ fivestack/             the backend package
   db.py                SQLite schema and queries (data/tracker.db)
   stats.py             aggregation (overall / per agent / per map / team, stack vs. other games)
   insights.py          datasets for the Visualizations tab (sessions, comps, damage share, ...)
+  forecasts.py         Forecasts tab: each game replayed against the odds engine's prediction
   timeline.py          round-by-round records: clutches, multi-kills, spike sites
   odds.py              odds engine
   gamestate.py         how a game ended: complete, surrendered, or a remake

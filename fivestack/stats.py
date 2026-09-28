@@ -43,6 +43,8 @@ def player_metrics(p, rounds):
         "kd": kills / max(1, deaths),
         "kda": (kills + assists) / max(1, deaths),
         "kpr": safe_div(kills, rounds),
+        "dpr": safe_div(deaths, rounds),
+        "apr": safe_div(assists, rounds),
         "rounds": rounds,
     }
 
@@ -139,8 +141,6 @@ def _streak(matches):
 def _game_values(r):
     rounds = _rounds(r)
     met = player_metrics(r, rounds)
-    met["dpr"] = met["deaths"] / rounds
-    met["apr"] = met["assists"] / rounds
     met["win_rate"] = 1.0 if r.get("result") == "win" else 0.0
     return met
 

@@ -283,6 +283,7 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 |---|---|
 | `GET /api/status` | Config state, squad members (with their bettor account), record, tracker and sync state, rate limit, reward settings, tunnel, log |
 | `GET /api/stats` | Players page data: per member overall, per agent, per map, form, best games, 5-stack vs other games |
+| `GET /api/forecasts?stat=<key>&player=<puuid>` | Forecasts tab data for one stat (`kills`, `deaths`, `assists`, `kpr`, `dpr`, `apr`, `acs`, `adr`, `hs_pct`; default `acs`; 400 for anything else): every player's record against the forecast (`players[].overall`), and for one player (default the first) each forecast game (`pred` = [low, expected, high], `actual`) and the map × role `cells` with `best` / `worst` |
 | `GET /api/insights` | Visualizations tab data: games, moments, sessions, maps, players (maps, aim, agents), comps, round insights (clutches, multi-kills, spike sites) |
 | `GET /api/betting-report` | Bettors tab betting cards: ROI by market type per bettor, bets on yourself vs others, each bettor's profit over time (`bankroll`), and the odds accuracy card (`accuracy`: picks, won, expected wins and a verdict overall, per market type and per chance bin) |
 | `GET /api/content` | Known maps and agents, and which agents each member plays (for the odds context pickers) |

@@ -2,10 +2,11 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'viz', 'odds', 'bettors', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'forecasts', 'viz', 'odds', 'bettors', 'matches', 'setup'];
   const state = {
     view: 'overview',
-    status: null, stats: null, matches: null, odds: null, content: null, insights: null,
+    status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
+    fc: { stat: 'acs', player: '', cell: '' }, // Forecasts tab: stat, player (puuid) and map|role cell filter
     bets: [], bettors: [], rewards: [], slip: [], me: null, seasons: null, resetOpen: false,
     ctx: { map: '', agents: {} },
     topDir: {}, // scoreboard card -> 'low' when flipped to its counter market (bottom of the scoreboard)
@@ -86,6 +87,12 @@
   const loadStatus = async () => { state.status = await api('/api/status'); renderHeader(); };
   const loadStats = async () => { state.stats = await api('/api/stats'); };
   const loadInsights = async () => { state.insights = await api('/api/insights'); };
+  const loadForecasts = async () => {
+    const p = new URLSearchParams({ stat: state.fc.stat });
+    if (state.fc.player) p.set('player', state.fc.player);
+    state.forecasts = await api('/api/forecasts?' + p.toString());
+    state.fc.player = state.forecasts.player?.puuid || '';
+  };
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadContent = async () => { state.content = await api('/api/content'); };
   // The betting UI lives in web/bets.js (window.FiveBets); these names keep the call sites below unchanged.
@@ -333,6 +340,15 @@
     return out == null ? emptyState() : out;
   }
 
+  // ---- forecasts (drawn by web/viz.js) ---------------------------------------------
+  function viewForecasts() {
+    const idx = memberIndex();
+    return window.FiveViz.forecasts(state.forecasts, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot }, state.fc);
+  }
+  async function refreshForecasts() {
+    try { await loadForecasts(); draw(); } catch (e) { toast(e.message, 'bad'); }
+  }
+
   // ---- odds & bets --------------------------------------------------------------
   function oddBtn(mk, s, label) {
     const on = state.slip.some((x) => x.market_id === mk.market_id && x.selection === s.key);
@@ -490,6 +506,7 @@
       switch (state.view) {
         case 'overview': view.innerHTML = viewOverview(); break;
         case 'players': view.innerHTML = viewPlayers(); break;
+        case 'forecasts': view.innerHTML = viewForecasts(); break;
         case 'viz': view.innerHTML = viewViz(); break;
         case 'odds': view.innerHTML = viewOdds(); break;
         case 'bettors': view.innerHTML = viewBettors(); break;
@@ -502,7 +519,7 @@
     }
     view.classList.toggle('wide', state.view === 'odds');
     bind();
-    if ((state.view === 'viz' || state.view === 'bettors') && view.querySelector('[data-chart]')) window.FiveViz.mount(view);
+    if (['viz', 'bettors', 'forecasts'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
   }
 
   async function render() {
@@ -511,6 +528,7 @@
     try {
       switch (state.view) {
         case 'overview': case 'players': await loadStats(); break;
+        case 'forecasts': await loadForecasts(); break;
         case 'viz': await loadInsights(); break;
         case 'odds': await Promise.all([loadOdds(), loadBets(), loadContent()]); break;
         case 'bettors': await Promise.all([loadBets(), loadBettingReport(), loadSeasons()]); break;
@@ -526,6 +544,19 @@
 
   function bind() {
     const view = $('#view');
+    $$('.fc-player', view).forEach((b) => b.addEventListener('click', () => { state.fc.player = b.dataset.v; state.fc.cell = ''; refreshForecasts(); }));
+    $$('.fc-stat', view).forEach((b) => b.addEventListener('click', () => { state.fc.stat = b.dataset.v; refreshForecasts(); }));
+    $$('.fc-cell', view).forEach((td) => {
+      const pickCell = () => {
+        window.FiveViz.hideTip();
+        state.fc.cell = state.fc.cell === td.dataset.cell ? '' : td.dataset.cell;
+        draw();
+        if (state.fc.cell) $('#viz-forecast-strip')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); // the filtered games sit above the grid
+      };
+      td.addEventListener('click', pickCell);
+      td.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCell(); } });
+    });
+    $('#fc-all')?.addEventListener('click', () => { state.fc.cell = ''; draw(); });
     $('#ctx-map')?.addEventListener('change', (e) => { state.ctx.map = e.target.value; refreshOdds(); });
     $$('.ctx-agent', view).forEach((sel) => sel.addEventListener('change', (e) => {
       const p = e.target.dataset.puuid;

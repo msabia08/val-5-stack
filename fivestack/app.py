@@ -21,6 +21,7 @@ from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bets import BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
+from .forecasts import build_forecasts
 from .gamestate import ending
 from .henrik import HenrikClient
 from .insights import betting_report, build_insights
@@ -262,6 +263,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(build_stats(app.db))
         if path == "/api/insights":
             return self._json(build_insights(app.db))
+        if path == "/api/forecasts":
+            try:
+                return self._json(build_forecasts(app.db, app.engine, qs.get("stat") or "acs", qs.get("player") or None))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/api/seasons":
             return self._json({"current": app.db.season_counts(), "seasons": app.db.seasons()})
         if path == "/api/betting-report":

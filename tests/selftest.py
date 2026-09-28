@@ -19,6 +19,7 @@ from fivestack.app import KNOWN_AGENTS  # noqa: E402
 from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
+from fivestack.forecasts import build_forecasts  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
@@ -618,6 +619,65 @@ def forfeit_odds(shared):
     kills = next(mk for mk in ob["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
     assert kills["mean"] == 20.0 and kills["line"] > 19, kills  # 10 kills in half a game counts as 20, not 10
     assert next(mk for mk in ob["team"] if mk["market_id"] == "team:rounds")["mean"] == 24.0  # the 12-round total is left out
+
+
+@section("forecasts")
+def forecasts(shared):
+    # Thirteen games: P1 plays Jett on Ascent (even games, 20 kills) and Sova on Bind (odd games, 10 kills); game 9 is
+    # a surrender. P1 has 15 deaths a game, except 25 in game 10 (Ascent) and 5 in game 11 (Bind). Game 12 is a 30-round
+    # overtime game on Ascent with the usual 0.9 kills per round, so 27 kills.
+    fdb, engine = DB(os.path.join(shared.tmp, "forecasts.db")), OddsEngine(shared.cfg)
+    for i, pu in enumerate(PUUIDS.values()):
+        fdb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+    for k in range(13):
+        if k == 11:  # what the odds board said just before the last game, for P1 on Bind as Sova
+            board = engine.build(fdb, {"map": "Bind", "agents": {"puuid-1": "Sova"}})
+            board_kills = next(mk for mk in board["player_props"] if mk["market_id"] == "ou:kills:puuid-1")["mean"]
+        bind = k % 2 == 1
+        rw, rl = {9: (8, 4), 12: (16, 14)}.get(k, (13, 9))
+        p1 = {"agent": "Sova" if bind else "Jett", "kills": {12: 27}.get(k, 10 if bind else 20), "deaths": {10: 25, 11: 5}.get(k, 15)}
+        fdb.insert_match({"match_id": f"f{k}", "map": "Bind" if bind else "Ascent", "mode": "competitive",
+                          "started_ts": 1000 + k, "rounds_won": rw, "rounds_lost": rl, "result": "win"},
+                         [{"puuid": pu, "agent": "Omen", "kills": 15, "deaths": 15, "assists": 4, "score": 4800,
+                           "damage_dealt": 3000, "headshots": 5, "bodyshots": 20, "legshots": 1,
+                           **(p1 if pu == "puuid-1" else {})} for pu in PUUIDS.values()])
+    fk = build_forecasts(fdb, engine, "kills")
+    p = fk["player"]
+    assert p["puuid"] == "puuid-1" and [x["nickname"] for x in fk["players"]] == ["P1", "P2", "P3", "P4", "P5"]
+    # From the 6th game on (5 earlier ones), surrender excluded, oldest first.
+    assert [g["match_id"] for g in p["games"]] == ["f5", "f6", "f7", "f8", "f10", "f11", "f12"], p["games"]
+    game = {g["match_id"]: g for g in p["games"]}
+    assert game["f11"]["pred"][1] == board_kills  # the forecast is exactly what the odds board showed before that game
+    f11, f10 = game["f11"]["pred"], game["f10"]["pred"]
+    assert f11[0] < 10 < f11[2] and f11[1] < 15 < f10[1]  # the map and agent pull it
+    assert game["f11"]["role"] == "Initiator" and game["f10"]["role"] == "Duelist"
+    # The overtime game's 27 kills beat the per-game forecast only because it went long; per round it's a normal game.
+    assert game["f12"]["actual"] > game["f12"]["pred"][2], game["f12"]
+    kpr = {g["match_id"]: g for g in build_forecasts(fdb, engine, "kpr")["player"]["games"]}["f12"]
+    assert kpr["actual"] == 0.9 and kpr["pred"][0] <= 0.9 <= kpr["pred"][2], kpr
+    cells = {(c["map"], c["role"]): c for c in p["cells"]}
+    assert cells[("Ascent", "Duelist")]["games"] == 4 and cells[("Bind", "Initiator")]["games"] == 3
+    assert cells[("Ascent", None)]["games"] == 4 and cells[(None, "Duelist")]["games"] == 4
+    assert all(c["above"] + c["inside"] + c["below"] == c["games"] for c in p["cells"])
+    assert cells[("Bind", "Initiator")]["agents"] == [{"agent": "Sova", "games": 3, "actual": 10.0,
+                                                        "mid": cells[("Bind", "Initiator")]["mid"]}]
+    assert "agents" not in fk["players"][0]["overall"]  # the picker only gets each player's summary
+    # Deaths: fewer is better, so the Bind game with 5 deaths is where P1 beats the forecast, per game and per round.
+    for key in ("deaths", "dpr"):
+        fd = build_forecasts(fdb, engine, key)
+        assert fd["player"]["best"]["map"] == "Bind" and fd["player"]["best"]["diff"] < 0, fd["player"]["best"]
+        assert fd["player"]["worst"]["map"] == "Ascent" and fd["player"]["worst"]["diff"] > 0, fd["player"]["worst"]
+    assert [(s["key"], s["group"]) for s in fd["stats"]][:6] == [("kills", "game"), ("deaths", "game"), ("assists", "game"),
+                                                                 ("kpr", "round"), ("dpr", "round"), ("apr", "round")]
+    assert build_forecasts(fdb, engine, "acs", "puuid-3")["player"]["puuid"] == "puuid-3"
+    assert build_forecasts(fdb, engine, "acs", "nobody")["player"]["puuid"] == "puuid-1"  # unknown player: the first
+    try:
+        build_forecasts(fdb, engine, "kd")
+        raise AssertionError("an unknown stat should be refused")
+    except ValueError:
+        pass
+    few = build_forecasts(shared.db, shared.engine)  # the main test database has 4 games: too few to forecast
+    assert few["player"]["overall"] is None and few["player"]["cells"] == [] and few["player"]["games"] == []
 
 
 @section("grace and cancel windows")

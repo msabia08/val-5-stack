@@ -841,8 +841,154 @@
     el.innerHTML = s + '</svg>';
   }
 
+  // ---- Forecasts tab: each game against what the odds engine predicted beforehand (/api/forecasts) ------------
+  const STRIP_MAX = 60; // the game strip shows at most this many recent games
+  let fc = null; // { d: /api/forecasts response, pick: { stat, player, cell } }
+  const fcStat = () => fc.d.stats.find((s) => s.key === fc.d.stat);
+  const FC_GROUPS = [['game', 'Per game · the betting lines'], ['round', 'Per round'], ['score', 'Scores']];
+  const fcVal = (v) => (v == null ? '–' : fc.d.stat === 'hs_pct' ? `${oneDp(v)}%` : ['acs', 'adr'].includes(fc.d.stat) ? n0(v)
+    : fcStat().group === 'round' ? v.toFixed(2) : oneDp(v));
+  const fcSigned = (v) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fcVal(Math.abs(v));
+  const fcSign = () => (fcStat().lower_is_better ? -1 : 1); // +1: higher is better
+  const fcCellKey = (map, role) => `${map || ''}|${role || ''}`;
+  const fcWhere = (c) => [c.map, c.role].filter(Boolean).join(' as ') || 'overall';
+  const fcPlace = (g) => (g.actual > g.pred[2] ? 'above' : g.actual < g.pred[0] ? 'below' : 'inside');
+  const fcBetter = (g) => fcPlace(g) !== 'inside' && (fcPlace(g) === 'above') === (fcSign() > 0);
+
+  function forecasts(d, helpers, pick) {
+    h = helpers;
+    fc = { d, pick };
+    const p = d.player;
+    withYear = (p?.games || []).some((g) => new Date(g.ts * 1000).getFullYear() !== new Date().getFullYear());
+    const label = fcStat().label;
+    const seg = (cls, items) => `<div class="seg" role="tablist">${items.map((it) =>
+      `<button type="button" class="seg-btn ${cls} ${it.on ? 'on' : ''}" data-v="${h.esc(it.v)}" role="tab" aria-selected="${it.on}"${it.off ? ` disabled title="${h.esc(it.off)}"` : ''}>` +
+      `${it.swatch ? `<span class="swatch s${it.swatch}"></span>` : ''}${h.esc(it.label)}</button>`).join('')}</div>`;
+    const pickers = `<section class="card fc-pickers">` +
+      seg('fc-player', d.players.map((x) => ({ v: x.puuid, label: x.nickname, swatch: h.slot(x.puuid) || 1, on: p && x.puuid === p.puuid,
+        off: x.overall ? '' : `Needs more than ${d.min_prior} games (has ${x.total_games})` }))) +
+      FC_GROUPS.map(([g, caption]) => `<div class="fc-group"><span class="fc-caption">${h.esc(caption)}</span>` +
+        seg('fc-stat', d.stats.filter((s) => s.group === g).map((s) => ({ v: s.key, label: s.short, on: s.key === d.stat }))) + '</div>').join('') +
+      '</section>';
+    const intro = `<p class="viz-note">Before every game, the odds engine would have predicted a range for each player from their earlier 5-stack games only, ` +
+      `weighting recent games and games on the same map and agent more, exactly like the player-prop lines. Here is each prediction next to what really happened; ` +
+      `about ${pct(d.coverage)} of games should land inside the range.</p>`;
+    if (!p || !p.overall) {
+      return intro + pickers + `<section class="card"><h2>No forecasts yet</h2><p class="muted">A game gets a forecast once the player has ${d.min_prior} earlier 5-stack games` +
+        ` (surrenders aren't forecast).</p></section>`;
+    }
+    const o = p.overall, sign = fcSign();
+    const better = sign > 0 ? o.above : o.below, worse = sign > 0 ? o.below : o.above;
+    const tile = (lbl, value, sub) => `<div class="tile"><div class="tile-label">${h.esc(lbl)}</div><div class="tile-value">${value}</div><div class="tile-sub">${sub}</div></div>`;
+    const kpis = `<section class="kpis">
+      ${tile('Inside the forecast range', pct(o.inside / o.games), `${o.inside} of ${plural(o.games, 'game')} · aim is ${pct(d.coverage)}`)}
+      ${tile('Better than forecast', String(better), `${pct(better / o.games)} of games`)}
+      ${tile('Worse than forecast', String(worse), `${pct(worse / o.games)} of games`)}
+      ${tile(`Average ${label} vs forecast`, fcSigned(o.diff), `${fcVal(o.actual)} actual vs ${fcVal(o.mid)} forecast`)}
+    </section>`;
+    return intro + pickers + kpis + fcStripCard(p) + fcGridCard(p);
+  }
+
+  function fcGridCard(p) {
+    const d = fc.d, sign = fcSign(), label = fcStat().label;
+    const byKey = new Map(p.cells.map((c) => [fcCellKey(c.map, c.role), c]));
+    const roles = d.roles.filter((r) => p.cells.some((c) => c.role === r));
+    const maps = p.cells.filter((c) => c.map && !c.role).sort((a, b) => b.games - a.games || a.map.localeCompare(b.map)).map((c) => c.map);
+    const cell = (c, key, cls = '') => {
+      if (!c) return `<td class="viz-empty ${cls}"></td>`;
+      const half = Math.max(1e-9, (c.hi - c.lo) / 2);
+      const f = divFill(clamp((sign * c.diff) / half, -1, 1) * (c.games / (c.games + 2)));
+      const rows = [['forecast range', `${fcVal(c.lo)}–${fcVal(c.hi)}`, null], ['forecast', fcVal(c.mid), null], ['actual average', fcVal(c.actual), null],
+        ['above / inside / below', `${c.above} / ${c.inside} / ${c.below}`, null]]
+        .concat(c.agents.map((a) => [a.agent, `${fcVal(a.actual)} vs ${fcVal(a.mid)} · ${plural(a.games, 'game')}`, null]));
+      const sel = fc.pick.cell === key ? ' fc-sel' : '';
+      return `<td class="fc-cell ${cls}${sel}" data-cell="${h.esc(key)}" style="background:${f.bg};color:${f.ink}"${tip(`${fcWhere(c)} · ${plural(c.games, 'game')}`, rows)}>` +
+        `${fcVal(c.actual)}<div class="viz-cell-sub">vs ${fcVal(c.mid)} · ${c.games}g</div></td>`;
+    };
+    const totals = roles.length > 1; // an "All roles" column only adds something when they played more than one role
+    let grid = `<div class="table-wrap"><table class="viz-heat"><thead><tr><th></th>${roles.map((r) => `<th>${h.esc(r)}</th>`).join('')}` +
+      `${totals ? '<th class="viz-split">All roles</th>' : ''}</tr></thead><tbody>`;
+    maps.forEach((m) => {
+      grid += `<tr><th scope="row">${h.esc(m)}</th>${roles.map((r) => cell(byKey.get(fcCellKey(m, r)), fcCellKey(m, r))).join('')}` +
+        `${totals ? cell(byKey.get(fcCellKey(m, null)), fcCellKey(m, null), 'viz-split') : ''}</tr>`;
+    });
+    grid += `<tr><th scope="row">All maps</th>${roles.map((r) => cell(byKey.get(fcCellKey(null, r)), fcCellKey(null, r))).join('')}` +
+      `${totals ? `<td class="viz-split muted small">${plural(p.overall.games, 'game')}</td>` : ''}</tr></tbody></table></div>`;
+    const takeParts = [];
+    if (p.best) takeParts.push(`beats the forecast most on <strong>${h.esc(fcWhere(p.best))}</strong> (${fcSigned(p.best.diff)} ${h.esc(label)} over ${plural(p.best.games, 'game')})`);
+    if (p.worst) takeParts.push(`falls short most on <strong>${h.esc(fcWhere(p.worst))}</strong> (${fcSigned(p.worst.diff)} over ${plural(p.worst.games, 'game')})`);
+    const take = takeParts.length ? `${h.esc(p.nickname)} ${takeParts.join(' · ')}` : `Needs ${d.min_cell}+ games on a map and role before calling out where ${h.esc(p.nickname)} beats or misses the forecast.`;
+    const rows = p.cells.map((c) => [`${c.map || 'All maps'} · ${c.role || 'All roles'}`, String(c.games), `${fcVal(c.lo)}–${fcVal(c.hi)}`, fcVal(c.mid), fcVal(c.actual), `${c.above}/${c.inside}/${c.below}`]);
+    return card('forecast-grid', `${label}: forecast vs actual by map and role`, take,
+      grid + `<div class="viz-scale"><span>Worse than forecast</span><span class="viz-scale-bar"></span><span>Better than forecast</span></div>` +
+      `<p class="muted small">Each cell shows the actual average${fcStat().lower_is_better ? ' (fewer is better)' : ''}, the average forecast and the number of games. ` +
+      'Hover for the range and each agent; click a cell to show just those games in the chart above. Cells with few games are paler.</p>',
+      table(['Map · role', 'Games', 'Forecast range', 'Forecast', 'Actual', 'Above/inside/below'], rows));
+  }
+
+  function fcFiltered(p) {
+    const [map, role] = (fc.pick.cell || '|').split('|');
+    return p.games.filter((g) => (!map || g.map === map) && (!role || g.role === role));
+  }
+
+  function fcStripCard(p) {
+    const games = fcFiltered(p);
+    const [map, role] = (fc.pick.cell || '|').split('|');
+    const where = fc.pick.cell ? fcWhere({ map, role }) : '';
+    const shown = Math.min(games.length, STRIP_MAX);
+    const head = where ? `Showing ${plural(games.length, 'game')} ${map ? 'on ' : 'as '}<strong>${h.esc(where)}</strong> <button type="button" class="btn ghost small" id="fc-all">Show all games</button>`
+      : `Every forecast game, oldest to newest${games.length > STRIP_MAX ? ` (the last ${STRIP_MAX} of ${games.length})` : ''}.`;
+    const rows = games.slice(-shown).map((g) => [`${dateShort(g.ts)} · ${g.map}`, g.agent || '?', `${fcVal(g.pred[0])}–${fcVal(g.pred[2])}`, fcVal(g.actual), fcPlace(g)]);
+    return card('forecast-strip', 'Game by game', head,
+      legend([{ label: 'Forecast range', color: '--accent', kind: 'range' }, { label: 'Better than forecast', color: '--div-pos', kind: 'dot' },
+        { label: 'Inside the range', color: '--text-2', kind: 'dot' }, { label: 'Worse than forecast', color: '--div-neg', kind: 'dot' }]) +
+      (games.length ? slot('forecast', 240) : '<p class="muted">No games here.</p>'),
+      table(['Game', 'Agent', 'Forecast range', 'Actual', 'Result'], rows));
+  }
+
+  function drawForecast(el, W) {
+    const p = fc.d.player, games = fcFiltered(p).slice(-STRIP_MAX);
+    if (!games.length) return;
+    const vals = games.flatMap((g) => [g.pred[0], g.pred[2], g.actual]);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const step = niceMax((hi - lo) / 4 || 1);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const m = { l: 44, r: 12, t: 10, b: 26 }, H = 190, pw = W - m.l - m.r, n = games.length;
+    const x = (i) => m.l + ((i + 0.5) / n) * pw;
+    const y = (v) => m.t + ((hi - v) / ((hi - lo) || 1)) * H;
+    const bw = clamp((pw / n) * 0.55, 3, 12);
+    let s = `<svg class="viz-svg" width="${W}" height="${m.t + H + m.b}" role="img" aria-label="Forecast range and actual value per game">`;
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      s += `<line class="${v === lo ? 'viz-base' : 'viz-grid'}" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>` +
+        `<text class="viz-ax" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${fcVal(v)}</text>`;
+    }
+    games.forEach((g, i) => {
+      const cx = x(i), place = fcPlace(g);
+      const color = place === 'inside' ? '--text-2' : fcBetter(g) ? '--div-pos' : '--div-neg';
+      s += `<rect x="${cx - bw / 2}" y="${y(g.pred[2])}" width="${bw}" height="${Math.max(1, y(g.pred[0]) - y(g.pred[2]))}" rx="${Math.min(4, bw / 2)}" style="fill:var(--accent);opacity:.22"/>` +
+        `<line x1="${cx - bw / 2}" x2="${cx + bw / 2}" y1="${y(g.pred[1])}" y2="${y(g.pred[1])}" style="stroke:var(--accent);stroke-width:2"/>` +
+        `<circle class="viz-dot" cx="${cx}" cy="${y(g.actual)}" r="4.5" style="fill:var(${color})"/>`;
+    });
+    s += `<text class="viz-ax" x="${x(0)}" y="${m.t + H + 18}">${h.esc(dateShort(games[0].ts))}</text>` +
+      (n > 1 ? `<text class="viz-ax" x="${x(n - 1)}" y="${m.t + H + 18}" text-anchor="end">${h.esc(dateShort(games[n - 1].ts))}</text>` : '') +
+      `<line class="viz-cross" x1="0" x2="0" y1="${m.t}" y2="${m.t + H}" visibility="hidden"/>` +
+      `<rect class="viz-hit" data-cross="forecast" x="${m.l}" y="0" width="${pw}" height="${m.t + H}" tabindex="0" aria-label="Forecast and actual per game; use the arrow keys"/></svg>`;
+    el.innerHTML = s;
+    const label = fcStat().label;
+    cross.forecast = {
+      xs: games.map((_, i) => x(i)),
+      tips: games.map((g) => ({
+        t: `${dateLong(g.ts)} · ${g.map}`,
+        r: [['agent', `${g.agent || '?'} (${g.role})`, null], ['result', resultText(g), null],
+          ['forecast', `${fcVal(g.pred[1])} (${fcVal(g.pred[0])}–${fcVal(g.pred[2])})`, '--accent'],
+          [`actual ${label}`, `${fcVal(g.actual)} · ${fcPlace(g) === 'inside' ? 'inside the range' : `${fcBetter(g) ? 'better' : 'worse'} than forecast`}`,
+            fcPlace(g) === 'inside' ? '--text-2' : fcBetter(g) ? '--div-pos' : '--div-neg']],
+      })),
+    };
+  }
+
   // ---- mounting, tooltips, crosshair ----------------------------------------------------------
-  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll, accuracy: drawAccuracy,
+  const DRAW = { form: drawForm, session: drawSession, swing: drawSwing, aim: drawAim, damage: drawDamage, comps: drawComps, bankroll: drawBankroll, accuracy: drawAccuracy, forecast: drawForecast,
     clutch: drawClutch, multi: drawMulti };
 
   function drawAll(root) {
@@ -982,5 +1128,5 @@
     return accuracyCard();
   }
 
-  window.FiveViz = { html, mount, hideTip, bettingReport, oddsAccuracy };
+  window.FiveViz = { html, mount, hideTip, bettingReport, oddsAccuracy, forecasts };
 })();

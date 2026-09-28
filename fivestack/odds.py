@@ -17,6 +17,7 @@ import random
 import time
 from bisect import bisect_left
 from collections import defaultdict
+from statistics import NormalDist
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, full_game_rounds, rounds_to_win, went_to_overtime
 from .stats import aggregate, player_metrics
@@ -161,6 +162,39 @@ class OddsEngine:
                 w *= self.agent_boost
             ws.append(w)
         return ws
+
+    def samples(self, rows, full_rounds, ctx_map=None, ctx_agent=None, relative=True):
+        """(weight, per-game metrics) for one member's rows (newest first), as the odds use them: recency-weighted,
+        boosted for the chosen map and agent, with surrendered games scaled to a full game at reduced weight.
+        relative adds acs_rel (ACS over the player's own average) for the "popped off" markets."""
+        own_acs = aggregate(rows).get("acs") if relative else None
+        out = []
+        for w, r in zip(self._weights(rows, ctx_map, ctx_agent), rows):
+            rounds = (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)
+            metrics = player_metrics(r, rounds)
+            if relative:
+                metrics["acs_rel"] = metrics["acs"] / own_acs if own_acs else None
+            if ending(r) == FORFEIT:
+                game_full = full_rounds * rounds_to_win(r.get("mode")) / DEFAULT_ROUNDS_TO_WIN
+                metrics, share = partial_game(metrics, rounds, game_full)
+                w *= share
+            out.append((w, metrics))
+        return out
+
+    @staticmethod
+    def stat_range(samples, key, coverage=0.8, floor_h=None):
+        """(low, expected, high) for one stat: the weighted average and the range that should hold `coverage` of
+        games. It uses the same smoothing as the over/under lines (bandwidth floor_h or 0.6 sigma), treating the
+        smoothed distribution as normal: its spread is sqrt(sigma^2 + h^2). floor_h defaults to the stat's own
+        (STAT_DEFS) and is needed for stats the odds don't price. None without data."""
+        pts = [(w, x[key]) for w, x in samples if x.get(key) is not None]
+        if not pts or sum(w for w, _ in pts) <= 0:
+            return None
+        mean, sigma = weighted_moments(pts)
+        h = max(FLOOR_H[key] if floor_h is None else floor_h, 0.6 * sigma)
+        z = NormalDist().inv_cdf(0.5 + coverage / 2)
+        half = z * math.sqrt(sigma * sigma + h * h)
+        return max(0.0, mean - half), mean, mean + half
 
     # ---- markets ---------------------------------------------------------
     def _choose_line(self, pts, median, h, kind):
@@ -342,19 +376,7 @@ class OddsEngine:
         pooled = []
         member_samples = {}
         for m in members:
-            mrows = by_member.get(m["puuid"], [])
-            ws = self._weights(mrows, ctx_map, ctx_agents.get(m["puuid"]))
-            own_acs = aggregate(mrows).get("acs")  # the player's average, for "popped off" / "got diff'd"
-            samples = []
-            for w, r in zip(ws, mrows):
-                rounds = (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)
-                metrics = player_metrics(r, rounds)
-                metrics["acs_rel"] = metrics["acs"] / own_acs if own_acs else None
-                if ending(r) == FORFEIT:
-                    game_full = full * rounds_to_win(r.get("mode")) / DEFAULT_ROUNDS_TO_WIN
-                    metrics, share = partial_game(metrics, rounds, game_full)
-                    w *= share
-                samples.append((w, metrics))
+            samples = self.samples(by_member.get(m["puuid"], []), full, ctx_map, ctx_agents.get(m["puuid"]))
             member_samples[m["puuid"]] = samples
             pooled.extend(samples)
 
