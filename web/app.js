@@ -8,6 +8,7 @@
     status: null, stats: null, matches: null, odds: null, content: null, insights: null,
     bets: [], bettors: [], rewards: [], slip: [], me: null,
     ctx: { map: '', agents: {} },
+    topDir: {}, // scoreboard card -> 'low' when flipped to its counter market (bottom of the scoreboard)
     bettor: localStorage.getItem('fs.bettor') || '',
     oddsFormat: localStorage.getItem('fs.oddsFormat') || 'american',
     stake: Number(localStorage.getItem('fs.stake') || 50) || 50,
@@ -46,6 +47,7 @@
     },
     american: (dec) => (dec >= 2 ? '+' + Math.round((dec - 1) * 100) : '-' + Math.round(100 / (dec - 1))),
     odds: (sel) => (state.oddsFormat === 'decimal' ? Number(sel.decimal).toFixed(2) : sel.american),
+    oddsDec: (dec) => (state.oddsFormat === 'decimal' ? Number(dec).toFixed(2) : fmt.american(dec)),
     res: (r) => (r === 'win' ? 'W' : r === 'loss' ? 'L' : 'D'),
   };
 
@@ -56,11 +58,17 @@
   };
 
   // Stable color per bettor name, so a person's slips always look the same at a glance.
+  // A bettor's colour is their squad member's colour (the member whose rewards go to that account), so the
+  // five of us look the same everywhere. Anyone else shares the slots after the squad's.
   function bettorSlot(name) {
+    const key = String(name || '').toLowerCase();
+    const members = state.status?.members || [];
+    const i = members.findIndex((m) => (m.bettor || m.nickname || '').toLowerCase() === key);
+    if (i >= 0) return (i % 8) + 1;
+    const spare = 8 - Math.min(members.length, 7);
     let h = 0;
-    const s = String(name || '');
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    return (h % 8) + 1;
+    for (let c = 0; c < key.length; c++) h = (h * 31 + key.charCodeAt(c)) >>> 0;
+    return 8 - (h % spare);
   }
 
   // ---- data ---------------------------------------------------------------
@@ -81,7 +89,7 @@
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadContent = async () => { state.content = await api('/api/content'); };
   const loadBets = async () => {
-    const [b, l, m, r] = await Promise.all([api('/api/bets?limit=200'), api('/api/bettors'), api('/api/bettor/me'), api('/api/rewards?limit=60')]);
+    const [b, l, m, r] = await Promise.all([api('/api/bets?limit=600'), api('/api/bettors'), api('/api/bettor/me'), api('/api/rewards?limit=60')]);
     state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null; state.rewards = r.rewards;
     if (state.me) { state.bettor = state.me.name; localStorage.setItem('fs.bettor', state.bettor); }
   };
@@ -361,7 +369,7 @@
     const props = new Map(od.player_props.map((p) => [p.market_id, p]));
     const propRows = od.members.map((m) => {
       const slot = idx.get(m.puuid)?.slot || 1;
-      return `<tr><th scope="row"><span class="swatch s${slot}"></span>${esc(m.nickname)}<div class="muted small">${m.games} games${m.context_agent ? ' · ' + esc(m.context_agent) : ''} · <span class="conf ${m.confidence}">${m.confidence} confidence</span>${m.borrowed ? ' · thin history, team average blended in' : ''}</div></th>` +
+      return `<tr><th scope="row"><span class="swatch s${slot}"></span>${esc(m.nickname)}${m.context_agent || m.borrowed ? `<div class="muted small">${[m.context_agent ? esc(m.context_agent) : '', m.borrowed ? 'thin history, team average blended in' : ''].filter(Boolean).join(' · ')}</div>` : ''}</th>` +
         od.stat_defs.map((sd) => {
           const mk = props.get(`ou:${sd.key}:${m.puuid}`);
           if (!mk) return '<td class="prop muted">–</td>';
@@ -369,19 +377,29 @@
           return `<td class="prop" title="Average ${mk.mean}"><div class="line">${mk.line}</div>${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</td>`;
         }).join('') + '</tr>';
     }).join('');
-    const tops = od.top_markets.map((mk) =>
-      `<div class="market"><h3>${esc(mk.label)}</h3><p class="muted small">${esc(mk.desc)}</p>` +
-      mk.selections.map((s) => {
-        const slot = idx.get(s.key)?.slot || 1;
-        return `<div class="top-row"><span class="swatch s${slot}"></span><span>${esc(s.label)}</span>` +
-          `<span class="top-bar"><span class="top-fill s${slot}" style="width:${Math.round(s.fair_prob * 100)}%"></span></span>` +
-          `<span class="muted small num">${Math.round(s.fair_prob * 100)}%</span>${oddBtn(mk, s, '')}</div>`;
-      }).join('') + '</div>').join('');
+    // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle.
+    const byId = new Map(od.top_markets.map((mk) => [mk.market_id, mk]));
+    const tops = od.top_markets.filter((mk) => mk.direction !== 'low').map((hi) => {
+      const lo = byId.get(hi.counter_id);
+      const dir = lo && state.topDir[hi.pair] === 'low' ? 'low' : 'high';
+      const mk = dir === 'low' ? lo : hi;
+      const toggle = lo ? `<div class="slip-mode top-toggle" role="tablist" aria-label="${esc(hi.label)} or ${esc(lo.label)}">` +
+        [['high', hi], ['low', lo]].map(([d, m]) =>
+          `<button type="button" class="mode-btn top-dir ${dir === d ? 'on' : ''}" data-pair="${esc(hi.pair)}" data-dir="${d}" role="tab" aria-selected="${dir === d}">${esc(m.label)}</button>`).join('') +
+        '</div>' : `<h3>${esc(mk.label)}</h3>`;
+      return `<div class="market">${toggle}<p class="muted small">${esc(mk.desc)}</p>` +
+        mk.selections.map((s) => {
+          const slot = idx.get(s.key)?.slot || 1;
+          return `<div class="top-row"><span class="swatch s${slot}"></span><span>${esc(s.label)}</span>` +
+            `<span class="top-bar"><span class="top-fill s${slot}" style="width:${Math.round(s.fair_prob * 100)}%"></span></span>` +
+            `<span class="muted small num">${Math.round(s.fair_prob * 100)}%</span>${oddBtn(mk, s, '')}</div>`;
+        }).join('') + '</div>';
+    }).join('');
     return ctxBar + `<div class="odds-layout"><div>
         <section class="card"><h2>Team markets</h2><div class="markets">${team}</div></section>
         <section class="card"><h2>Player props · over / under</h2><p class="muted small">For the next 5-stack game. Tap O or U to add a pick to the slip.</p>
           <div class="table-wrap"><table class="props"><thead><tr><th>Player</th>${od.stat_defs.map((s) => `<th>${esc(s.label)}</th>`).join('')}</tr></thead><tbody>${propRows}</tbody></table></div></section>
-        <section class="card"><h2>Who tops the scoreboard?</h2><div class="markets">${tops}</div></section>
+        <section class="card"><h2>Top and bottom of the scoreboard</h2><p class="muted small">Pick the one squad member who finishes first in a stat, or flip a card to pick who finishes last. "Popped off" and "Got diff'd" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.</p><div class="markets">${tops}</div></section>
         ${betsSection()}
       </div><aside class="slip card" id="slip">${slipHtml()}</aside></div>`;
   }
@@ -444,18 +462,18 @@
     const legIcon = { won: '✓', lost: '✗', void: '↺' };
     const legRows = legs ? legs.map((l) =>
       `<div class="bet-leg ${l.result || ''}"><span class="leg-icon">${legIcon[l.result] || '•'}</span>` +
-      `<span class="leg-desc">${esc(l.description)}</span><span class="muted small">@ ${fmt.american(l.odds_decimal)}</span></div>`).join('') : '';
+      `<span class="leg-desc">${esc(l.description)}</span><span class="muted small">@ ${fmt.oddsDec(l.odds_decimal)}</span></div>`).join('') : '';
     const cancelBtn = isMine(b) ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`
       : (state.status.auth && state.status.auth.admin_required) ? `<button class="btn ghost small cancel-bet admin" data-id="${b.id}" title="Needs the admin password">Admin cancel</button>`
       : '';
     return `<div class="bet-ticket ${b.status}">
         <div class="bet-ticket-row">
-          <div class="bet-desc">${legs ? `<span class="parlay-badge">Parlay ×${legs.length}</span>` : ''}${esc(b.description)}</div>
+          <div class="bet-desc">${legs ? `<span class="parlay-badge">Parlay ×${legs.length}</span>` : esc(b.description)}</div>
           <span class="status ${b.status}">${b.status}</span>
         </div>
         ${legRows ? `<div class="bet-legs">${legRows}</div>` : ''}
         <div class="bet-ticket-row muted small">
-          <span>Stake ${fmt.credits(b.stake)} @ ${fmt.american(b.odds_decimal)} <span class="muted">(${Number(b.odds_decimal).toFixed(2)})</span></span>
+          <span>${fmt.credits(b.stake)} @ ${fmt.oddsDec(b.odds_decimal)}</span>
           <span>${b.status === 'pending' ? `To win ${fmt.credits(b.stake * (b.odds_decimal - 1))}` : `Return ${fmt.credits(b.payout || 0)}`}</span>
         </div>
         ${b.note ? `<div class="muted small bet-note">${esc(b.note)}</div>` : ''}
@@ -463,7 +481,7 @@
       </div>`;
   }
 
-  function bettorSlips(bets) {
+  function bettorSlips(bets, settled = false) {
     if (!bets.length) return '';
     const groups = new Map();
     bets.forEach((b) => {
@@ -477,20 +495,52 @@
     return `<div class="bettor-slips">${names.map((name) => {
       const rows = groups.get(name);
       return `<div class="bet-slip-card ${isMine({ bettor: name }) ? 'me' : ''}">
-        <div class="bet-slip-head"><span class="swatch s${bettorSlot(name)} lg"></span><b>${esc(name)}</b><span class="muted small right">${rows.length} bet${rows.length > 1 ? 's' : ''}</span></div>
-        ${rows.map(betTicket).join('')}
+        <div class="bet-slip-head"><span class="swatch s${bettorSlot(name)} lg"></span><b>${esc(name)}</b><span class="muted small right">${betTotals(rows, settled)}</span></div>
+        ${rows.map((b) => betTicket(b)).join('')}
       </div>`;
     }).join('')}</div>`;
   }
 
+  const SETTLED_GAMES = 3; // settled bets are shown for this many most recent games
+
+  const signedCredits = (v) => `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt.credits(Math.abs(v))}</span>`;
+  // "6 bets · 155 wagered", plus the net result once the bets have settled (payouts minus stakes).
+  function betTotals(rows, settled) {
+    const staked = rows.reduce((a, b) => a + b.stake, 0);
+    const net = rows.reduce((a, b) => a + (b.payout || 0) - b.stake, 0);
+    return `${rows.length} bet${rows.length === 1 ? '' : 's'} · ${fmt.credits(staked)} wagered${settled ? ` · ${signedCredits(net)}` : ''}`;
+  }
+
   function betsSection() {
     const pending = state.bets.filter((b) => b.status === 'pending');
-    const settled = state.bets.filter((b) => b.status !== 'pending').slice(0, 40);
-    return `<section class="card"><h2>Open bets <span class="muted">(${pending.length})</span></h2>
+    const settled = state.bets.filter((b) => b.settled_match_id && b.status !== 'pending' && b.status !== 'cancelled');
+    return `<section class="card"><div class="section-head"><h2>Open bets</h2>${pending.length ? `<span class="muted small">${betTotals(pending, false)}</span>` : ''}</div>
         ${pending.length ? bettorSlips(pending) : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
         <p class="muted small">Balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>
       <section class="card"><h2>Settled bets</h2>
-        ${settled.length ? bettorSlips(settled) : '<p class="muted">Nothing settled yet.</p>'}</section>`;
+        ${settled.length ? gameSlips(settled) : '<p class="muted">Nothing settled yet.</p>'}</section>`;
+  }
+
+  // The last few games that had bets, newest first: a header per game, then each player's bets on it.
+  function gameSlips(bets) {
+    const groups = new Map();
+    bets.forEach((b) => {
+      if (!groups.has(b.settled_match_id)) groups.set(b.settled_match_id, []);
+      groups.get(b.settled_match_id).push(b);
+    });
+    const keys = [...groups.keys()]
+      .sort((a, b) => (groups.get(b)[0].game_started_ts || 0) - (groups.get(a)[0].game_started_ts || 0))
+      .slice(0, SETTLED_GAMES);
+    return keys.map((key) => {
+      const rows = groups.get(key), g = rows[0];
+      return `<div class="settled-game">
+        <div class="settled-game-head"><span class="chip ${esc(g.game_result || '')}">${fmt.res(g.game_result)}</span>` +
+          `<b>${g.game_rounds_won ?? '?'}–${g.game_rounds_lost ?? '?'}</b><span>${esc(g.game_map || 'Unknown map')}</span>` +
+          `<span class="muted small">${fmt.date(g.game_started_ts ? g.game_started_ts * 1000 : null)}</span>` +
+          `<span class="muted small right">${betTotals(rows, true)}</span></div>
+        ${bettorSlips(rows, true)}
+      </div>`;
+    }).join('');
   }
 
   function findMarket(id, key) {
@@ -810,6 +860,7 @@
       console.error(e);
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
+    view.classList.toggle('wide', state.view === 'odds');
     bind();
     if (state.view === 'viz' && view.querySelector('[data-chart]')) window.FiveViz.mount(view);
   }
@@ -844,6 +895,7 @@
     }));
     $('#ctx-clear')?.addEventListener('click', () => { state.ctx = { map: '', agents: {} }; refreshOdds(); });
     $('#odds-format')?.addEventListener('change', (e) => { state.oddsFormat = e.target.value; localStorage.setItem('fs.oddsFormat', state.oddsFormat); draw(); });
+    $$('.top-dir', view).forEach((b) => b.addEventListener('click', () => { state.topDir[b.dataset.pair] = b.dataset.dir; draw(); }));
     bindSlip();
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
       const headers = {};

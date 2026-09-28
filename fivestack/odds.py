@@ -18,8 +18,8 @@ import time
 from bisect import bisect_left
 from collections import defaultdict
 
-from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, full_game_rounds, rounds_to_win
-from .stats import player_metrics
+from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, full_game_rounds, rounds_to_win, went_to_overtime
+from .stats import aggregate, player_metrics
 
 STAT_DEFS = [
     {"key": "kills", "label": "Kills", "kind": "count", "floor_h": 1.2},
@@ -30,6 +30,7 @@ STAT_DEFS = [
     {"key": "hs_pct", "label": "Headshot %", "kind": "pct", "floor_h": 2.5},
 ]
 FLOOR_H = {d["key"]: d["floor_h"] for d in STAT_DEFS}
+FLOOR_H["acs_rel"] = 0.06  # ACS as a multiple of the player's own average
 COUNT_KEYS = [d["key"] for d in STAT_DEFS if d["kind"] == "count"]
 
 
@@ -44,12 +45,21 @@ def partial_game(metrics, rounds, full_rounds):
             scaled[k] = scaled[k] / share
     return scaled, share
 
+# "Who tops the scoreboard" markets. Each has a counter market for the bottom of the same stat ("low").
+# acs_rel is ACS divided by the player's own average ACS over their 5-stack history, so anyone can win it.
 TOP_DEFS = [
-    {"id": "top:kills", "key": "kills", "label": "Top fragger", "desc": "Most kills on the team"},
-    {"id": "top:acs", "key": "acs", "label": "Highest ACS", "desc": "Highest average combat score"},
-    {"id": "top:assists", "key": "assists", "label": "Most assists", "desc": "Most assists on the team"},
-    {"id": "top:deaths", "key": "deaths", "label": "Most deaths", "desc": "Bottom of the scoreboard"},
-    {"id": "top:hs_pct", "key": "hs_pct", "label": "Best headshot %", "desc": "Highest headshot percentage"},
+    {"id": "top:kills", "key": "kills", "label": "Top fragger", "desc": "Most kills on the team",
+     "low_id": "low:kills", "low_label": "Bottom fragger", "low_desc": "Fewest kills on the team"},
+    {"id": "top:acs", "key": "acs", "label": "Highest ACS", "desc": "Highest average combat score",
+     "low_id": "low:acs", "low_label": "Lowest ACS", "low_desc": "Lowest average combat score"},
+    {"id": "top:assists", "key": "assists", "label": "Most assists", "desc": "Most assists on the team",
+     "low_id": "low:assists", "low_label": "Fewest assists", "low_desc": "Fewest assists on the team"},
+    {"id": "top:deaths", "key": "deaths", "label": "Most deaths", "desc": "Bottom of the scoreboard",
+     "low_id": "low:deaths", "low_label": "Fewest deaths", "low_desc": "Hardest to kill"},
+    {"id": "top:hs_pct", "key": "hs_pct", "label": "Best HS %", "desc": "Highest headshot percentage",
+     "low_id": "low:hs_pct", "low_label": "Worst HS %", "low_desc": "Lowest headshot percentage"},
+    {"id": "top:acs_rel", "key": "acs_rel", "label": "Popped off", "desc": "Highest ACS compared with their own average",
+     "low_id": "low:acs_rel", "low_label": "Got diff'd", "low_desc": "Lowest ACS compared with their own average"},
 ]
 
 
@@ -180,6 +190,7 @@ class OddsEngine:
         }
 
     def top_market(self, members, member_samples, td, rng):
+        """The "tops the scoreboard" market for td and its counter ("bottoms"), from the same simulated games."""
         prep = []
         for m in members:
             pts = [(w, x[td["key"]]) for w, x in member_samples[m["puuid"]] if x.get(td["key"]) is not None]
@@ -194,30 +205,42 @@ class OddsEngine:
             prep.append((m, pts, cum, t, h))
         if len(prep) < 2:
             return None
-        wins = {p[0]["puuid"]: 0 for p in prep}
+        highs = {p[0]["puuid"]: 0 for p in prep}
+        lows = dict(highs)
         for _ in range(self.sims):
-            best, bestv = None, -math.inf
+            best = worst = None
+            bestv, worstv = -math.inf, math.inf
             for m, pts, cum, t, h in prep:
                 i = min(bisect_left(cum, rng.random() * t), len(pts) - 1)
                 v = pts[i][1] + rng.gauss(0.0, h)
                 if v > bestv:
                     bestv, best = v, m["puuid"]
-            wins[best] += 1
+                if v < worstv:
+                    worstv, worst = v, m["puuid"]
+            highs[best] += 1
+            lows[worst] += 1
         k = len(prep)
         overround = 1.0 + self.edge * 2.0
-        sels = []
-        for m, *_ in prep:
-            fair = clamp((wins[m["puuid"]] + 1.0) / (self.sims + k), 0.02, 0.9)
-            sels.append(selection(m["puuid"], m["nickname"], fair, overround))
-        sels.sort(key=lambda s: -s["prob"])
-        return {
-            "market_id": td["id"],
-            "type": "top",
-            "stat": td["key"],
-            "label": td["label"],
-            "desc": td["desc"],
-            "selections": sels,
-        }
+
+        def market(counts, direction, market_id, label, desc, counter_id):
+            sels = []
+            for m, *_ in prep:
+                fair = clamp((counts[m["puuid"]] + 1.0) / (self.sims + k), 0.02, 0.9)
+                sels.append(selection(m["puuid"], m["nickname"], fair, overround))
+            sels.sort(key=lambda s: -s["prob"])
+            return {
+                "market_id": market_id,
+                "type": "top",
+                "direction": direction,  # "high": most of the stat wins; "low": least of it wins
+                "pair": td["id"],
+                "counter_id": counter_id,
+                "stat": td["key"],
+                "label": label,
+                "desc": desc,
+                "selections": sels,
+            }
+        return (market(highs, "high", td["id"], td["label"], td["desc"], td["low_id"]),
+                market(lows, "low", td["low_id"], td["low_label"], td["low_desc"], td["id"]))
 
     def team_markets(self, matches, ctx_map):
         pts_win, pts_rounds = [], []
@@ -265,6 +288,22 @@ class OddsEngine:
                 selection("under", f"Under {line:g}", 1.0 - p_over, two_way),
             ],
         })
+        # Overtime is rare, so the history is shrunk toward a ~10% base rate (0.2 of 2 pseudo-games).
+        # Surrendered games are left out: they stopped before we know whether they'd have reached 12-12.
+        pts_ot = [(0.5 ** (i / self.half_life), 1.0 if went_to_overtime(m) else 0.0)
+                  for i, m in enumerate(matches) if ending(m) != FORFEIT]
+        ot_games = sum(1 for m in matches if went_to_overtime(m))
+        p_ot = clamp((sum(w * v for w, v in pts_ot) + 0.2) / (sum(w for w, _ in pts_ot) + 2.0), 0.03, 0.6)
+        markets.append({
+            "market_id": "team:ot",
+            "type": "team_ot",
+            "label": "Overtime",
+            "desc": f"Does the next game go past 12–12? ({ot_games} of {len(matches)} games so far)",
+            "selections": [
+                selection("yes", "Yes", p_ot, two_way),
+                selection("no", "No", 1.0 - p_ot, two_way),
+            ],
+        })
         return markets
 
     # ---- board -----------------------------------------------------------
@@ -293,10 +332,12 @@ class OddsEngine:
         for m in members:
             mrows = by_member.get(m["puuid"], [])
             ws = self._weights(mrows, ctx_map, ctx_agents.get(m["puuid"]))
+            own_acs = aggregate(mrows).get("acs")  # the player's average, for "popped off" / "got diff'd"
             samples = []
             for w, r in zip(ws, mrows):
                 rounds = (r.get("rounds_won") or 0) + (r.get("rounds_lost") or 0)
                 metrics = player_metrics(r, rounds)
+                metrics["acs_rel"] = metrics["acs"] / own_acs if own_acs else None
                 if ending(r) == FORFEIT:
                     game_full = full * rounds_to_win(r.get("mode")) / DEFAULT_ROUNDS_TO_WIN
                     metrics, share = partial_game(metrics, rounds, game_full)
@@ -338,9 +379,9 @@ class OddsEngine:
                     props.append(mk)
         tops = []
         for td in TOP_DEFS:
-            mk = self.top_market(members, member_samples, td, rng)
-            if mk:
-                tops.append(mk)
+            pair = self.top_market(members, member_samples, td, rng)
+            if pair:
+                tops.extend(pair)
 
         return {
             "ready": True,

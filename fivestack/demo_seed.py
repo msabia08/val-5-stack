@@ -170,75 +170,94 @@ def _seed_rewards(db, games=8):
         rm.pay_for_match(m, db.match_players(m["match_id"]))
 
 
-def _seed_bets(db, rng):
-    """Three bettors with a settled history on the most recent games, so the betting views have data."""
-    bettors = [("Matt", 0.06), ("Jordan", -0.06), ("Sam", 0.0)]  # name, edge over the book
+def _seed_bets(db, rng, games=10):
+    """All five squad members betting 3-7 times each on each of the last `games` games, settled by the real
+    settlement code against what actually happened, plus open bets on the next game."""
+    from statistics import mean
+
+    from .bets import BetManager
+    from .stats import player_metrics
+
+    members = db.members()
+    names = [m.get("nickname") or m["name"] for m in members]
     base = time.time() - 60 * 86400
-    for i, (name, _edge) in enumerate(bettors):
+    for i, name in enumerate(names):
         if not db.get_bettor(name):
             db.execute("INSERT INTO bettors(name, balance, created_at) VALUES(?,?,?)", (name, 1000, base + i))
-    members = db.members()
-    stats = [("kills", "kills", 16.5), ("acs", "ACS", 205.5), ("assists", "assists", 5.5), ("deaths", "deaths", 15.5)]
-    for m in db.matches(30):
-        for name, edge in bettors:
-            if rng.random() > 0.6:
-                continue
-            who = rng.choice(members)
-            key, label, line = rng.choice(stats)
+
+    # Lines near each player's averages, so roughly half the overs win.
+    rows = db.player_rows()
+    lines = {}
+    for m in members:
+        mets = [player_metrics(r, (r["rounds_won"] or 0) + (r["rounds_lost"] or 0)) for r in rows if r["puuid"] == m["puuid"]]
+        lines[m["puuid"]] = {k: mean(x[k] for x in mets if x.get(k) is not None) for k in ("kills", "deaths", "assists", "acs", "adr", "hs_pct")}
+    props = [("kills", "kills"), ("deaths", "deaths"), ("assists", "assists"), ("acs", "ACS"), ("adr", "ADR"), ("hs_pct", "Headshot %")]
+    tops = [("kills", "Top fragger", "Bottom fragger"), ("acs", "Highest ACS", "Lowest ACS"),
+            ("assists", "Most assists", "Fewest assists"), ("acs_rel", "Popped off", "Got diff'd")]
+
+    def leg():
+        roll = rng.random()
+        if roll < 0.62:  # player prop
+            m = rng.choice(members)
+            key, label = rng.choice(props)
+            avg = lines[m["puuid"]][key]
+            line = (round(avg) if key in ("acs", "adr") else int(avg)) + 0.5
             side = rng.choice(["over", "under"])
-            odds = round(rng.uniform(1.6, 2.8), 2)
-            stake = float(rng.choice([25, 50, 50, 75, 100, 150]))
-            won = rng.random() < min(0.9, 0.95 / odds + edge)
-            bet_id = db.insert_bet({
-                "bettor": name, "market_id": f"ou:{key}:{who['puuid']}", "market_type": "ou",
-                "description": f"{who['nickname'] or who['name']} {label} {side} {line}", "selection": side,
-                "selection_label": f"{side.capitalize()} {line}", "line": line, "odds_decimal": odds, "stake": stake,
-                "placed_ts": m["started_ts"] - 1800, "context": "{}", "status": "won" if won else "lost",
-            })
-            payout = round(stake * odds, 2) if won else 0.0
-            db.update_bet(bet_id, settled_match_id=m["match_id"], settled_ts=m["started_ts"] + 2700, payout=payout)
-            db.adjust_balance(name, payout - stake)
+            return {"market_id": f"ou:{key}:{m['puuid']}", "market_type": "ou",
+                    "description": f"{m.get('nickname') or m['name']} {label} {side.capitalize()} {line:g}",
+                    "selection": side, "selection_label": f"{side.capitalize()} {line:g}", "line": line,
+                    "odds_decimal": round(rng.uniform(1.75, 2.05), 2), "meta": {"stat": key, "puuid": m["puuid"]}}
+        if roll < 0.85:  # top or bottom of the scoreboard
+            m = rng.choice(members)
+            key, top_label, low_label = rng.choice(tops)
+            low = rng.random() < 0.4
+            return {"market_id": f"{'low' if low else 'top'}:{key}", "market_type": "top",
+                    "description": f"{low_label if low else top_label}: {m.get('nickname') or m['name']}",
+                    "selection": m["puuid"], "selection_label": m.get("nickname") or m["name"], "line": None,
+                    "odds_decimal": round(rng.uniform(3.0, 6.5), 2), "meta": {"stat": key, "direction": "low" if low else "high"}}
+        if roll < 0.95:
+            win = rng.random() < 0.6
+            return {"market_id": "team:win", "market_type": "team_win", "description": "5-stack wins" if win else "5-stack loses",
+                    "selection": "win" if win else "loss", "selection_label": "5-stack wins" if win else "5-stack loses",
+                    "line": None, "odds_decimal": round(rng.uniform(1.7, 2.3), 2), "meta": {}}
+        side = rng.choice(["over", "under"])
+        return {"market_id": "team:rounds", "market_type": "team_ou", "description": f"Total rounds {side.capitalize()} 22.5",
+                "selection": side, "selection_label": f"{side.capitalize()} 22.5", "line": 22.5,
+                "odds_decimal": round(rng.uniform(1.8, 2.0), 2), "meta": {}}
 
-    # A couple of parlays, so the slip UI has a multi-leg example out of the box.
-    recent = db.matches(1)
-    if recent and len(members) >= 2:
-        last = recent[0]
-        p1, p2 = rng.sample(members, 2)
-        won_legs = [
-            {"market_id": "team:win", "market_type": "team_win", "description": "5-stack wins",
-             "selection": "win", "selection_label": "5-stack wins", "line": None, "odds_decimal": 1.85,
-             "meta": {}, "result": "won", "actual": None, "note": None},
-            {"market_id": f"ou:kills:{p1['puuid']}", "market_type": "ou",
-             "description": f"{p1['nickname'] or p1['name']} kills Over 16.5", "selection": "over",
-             "selection_label": "Over 16.5", "line": 16.5, "odds_decimal": 1.9,
-             "meta": {"stat": "kills", "puuid": p1["puuid"]}, "result": "won", "actual": 22, "note": None},
-        ]
-        odds = round(won_legs[0]["odds_decimal"] * won_legs[1]["odds_decimal"], 2)
-        stake = 40.0
-        bet_id = db.insert_bet({
-            "bettor": "Jordan", "market_id": "parlay", "market_type": "parlay",
-            "description": " + ".join(l["description"] for l in won_legs), "selection": "parlay",
-            "selection_label": "2-leg parlay", "line": None, "odds_decimal": odds, "stake": stake,
-            "placed_ts": last["started_ts"] - 1800, "context": json.dumps({"legs": won_legs}), "status": "won",
-        })
-        payout = round(stake * odds, 2)
-        db.update_bet(bet_id, settled_match_id=last["match_id"], settled_ts=last["started_ts"] + 2700, payout=payout)
-        db.adjust_balance("Jordan", payout - stake)
+    def place(name, placed_ts):
+        """3-7 picks for one bettor; now and then a few of them go in as a parlay instead of singles."""
+        n_bets, parlay = rng.randint(3, 7), rng.random() < 0.3
+        n_legs = rng.randint(2, 3) if parlay else 0
+        picks, seen = [], set()
+        while len(picks) < n_bets - (1 if parlay else 0) + n_legs:  # every market at most once per bettor
+            lg = leg()
+            if lg["market_id"] not in seen:
+                seen.add(lg["market_id"])
+                picks.append(lg)
+        bets = []
+        if parlay:
+            legs, picks = picks[:n_legs], picks[n_legs:]
+            odds = 1.0
+            for lg in legs:
+                odds *= lg["odds_decimal"]
+            bets.append({"market_id": "parlay", "market_type": "parlay", "description": " + ".join(lg["description"] for lg in legs),
+                         "selection": "parlay", "selection_label": f"{len(legs)}-leg parlay", "line": None,
+                         "odds_decimal": round(odds, 2), "context": json.dumps({"legs": legs})})
+        for lg in picks:
+            bets.append({k: v for k, v in lg.items() if k != "meta"} | {"context": json.dumps(lg["meta"])})
+        for b in bets:
+            stake = float(rng.choice([10, 15, 20, 25, 25, 40, 50]))
+            if stake > db.get_bettor(name)["balance"]:
+                continue
+            db.insert_bet({**b, "bettor": name, "stake": stake, "placed_ts": placed_ts - rng.uniform(60, 1800),
+                           "status": "pending"})
+            db.adjust_balance(name, -stake)
 
-        open_legs = [
-            {"market_id": "team:win", "market_type": "team_win", "description": "5-stack wins",
-             "selection": "win", "selection_label": "5-stack wins", "line": None, "odds_decimal": 1.85, "meta": {}},
-            {"market_id": f"ou:acs:{p2['puuid']}", "market_type": "ou",
-             "description": f"{p2['nickname'] or p2['name']} ACS Over 205.5", "selection": "over",
-             "selection_label": "Over 205.5", "line": 205.5, "odds_decimal": 1.95,
-             "meta": {"stat": "acs", "puuid": p2["puuid"]}},
-        ]
-        odds2 = round(open_legs[0]["odds_decimal"] * open_legs[1]["odds_decimal"], 2)
-        stake2 = 25.0
-        db.insert_bet({
-            "bettor": "Sam", "market_id": "parlay", "market_type": "parlay",
-            "description": " + ".join(l["description"] for l in open_legs), "selection": "parlay",
-            "selection_label": "2-leg parlay", "line": None, "odds_decimal": odds2, "stake": stake2,
-            "placed_ts": time.time() - 60, "context": json.dumps({"legs": open_legs}), "status": "pending",
-        })
-        db.adjust_balance("Sam", -stake2)
+    manager = BetManager({}, db, None)
+    for m in reversed(db.matches(games)):  # oldest first, each game settled before the next is bet on
+        for name in names:
+            place(name, m["started_ts"])
+        manager.settle_for_match(m, db.match_players(m["match_id"]))
+    for name in names:  # open bets on the next game
+        place(name, time.time())

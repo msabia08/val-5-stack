@@ -34,6 +34,16 @@ def ending(match):
     return NO_CONTEST if rw + rl <= NO_CONTEST_MAX_ROUNDS else FORFEIT
 
 
+OVERTIME_AT = 12  # 12-12 in the 13-round modes sends the game to overtime
+
+
+def went_to_overtime(match):
+    """True when a 13-round-mode game reached 12-12 (so it was played past regulation)."""
+    if rounds_to_win(match.get("mode")) != DEFAULT_ROUNDS_TO_WIN:
+        return False
+    return min(match.get("rounds_won") or 0, match.get("rounds_lost") or 0) >= OVERTIME_AT
+
+
 def full_game_rounds(matches):
     """Median length of the squad's completed games in the default 13-round modes, or a sensible default."""
     lengths = [total_rounds(m) for m in matches
