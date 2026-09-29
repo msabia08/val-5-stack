@@ -31,7 +31,7 @@
   "starting_balance": 1000,
   "bet_grace_minutes": 2,
   "bet_cancel_minutes": 1,
-  "game_reward": 250,
+  "game_reward": 50,
   "win_reward": 0,
-  "performance_bonus_max": 250
+  "performance_bonus_max": 150
 }

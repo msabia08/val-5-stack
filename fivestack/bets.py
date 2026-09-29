@@ -18,8 +18,9 @@ EARLY_END = "Game ended early (surrender) before this was decided"
 # streaks are counted back through at most STREAK_LOOKBACK games.
 STREAK_MIN = 3
 STREAK_LOOKBACK = 10
-# A pick is "cold" when it lost the last STREAK_MIN+ games and it's a roughly 50/50 pick (its fair chance in this
-# range): long shots lose most games anyway, so a run of misses says nothing about them.
+# A pick is "cold" when it lost the last STREAK_MIN+ games, it's a roughly 50/50 pick (its fair chance in this
+# range: long shots lose most games anyway, so a run of misses says nothing about them) and its market has three or
+# more picks: in a two-way market (over/under, win/loss) the other side of a cold pick already has the flame.
 COLD_CHANCE = (0.35, 0.65)
 
 
@@ -367,9 +368,9 @@ class BetManager:
 
     def mark_streaks(self, board):
         """Give each selection on the board that would have won the last STREAK_MIN games or more in a row a
-        "streak" count, and a roughly 50/50 pick (COLD_CHANCE) that lost them a "cold" count. Each pick is settled
-        like a bet placed at today's line on each recent game, newest first; a void (a push, a surrender, a tie)
-        neither counts nor breaks the run. In a 50/50 two-way market a hot side usually means a cold other side."""
+        "streak" count, and a roughly 50/50 pick (COLD_CHANCE) that lost them a "cold" count, unless its market is
+        two-way (the other side's flame already says it). Each pick is settled like a bet placed at today's line on
+        each recent game, newest first; a void (a push, a surrender, a tie) neither counts nor breaks the run."""
         if not board.get("ready"):
             return board
         rows = self.db.player_rows()
@@ -382,6 +383,7 @@ class BetManager:
         for group in ("team", "player_props", "top_markets"):
             for mk in board.get(group, []):
                 meta = json.dumps({"stat": mk.get("stat"), "puuid": mk.get("puuid"), "direction": mk.get("direction", "high")})
+                two_way = len(mk["selections"]) == 2
                 for s in mk["selections"]:
                     bet = {"market_type": mk["type"], "selection": s["key"], "line": mk.get("line"), "context": meta}
                     won = lost = 0
@@ -394,7 +396,7 @@ class BetManager:
                         won, lost = won + (status == "won"), lost + (status != "won")
                     if won >= STREAK_MIN:
                         s["streak"] = won
-                    elif lost >= STREAK_MIN and COLD_CHANCE[0] <= s["fair_prob"] <= COLD_CHANCE[1]:
+                    elif lost >= STREAK_MIN and not two_way and COLD_CHANCE[0] <= s["fair_prob"] <= COLD_CHANCE[1]:
                         s["cold"] = lost
         board["streak_lookback"] = STREAK_LOOKBACK
         return board

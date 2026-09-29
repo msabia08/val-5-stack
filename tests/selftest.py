@@ -496,39 +496,39 @@ def timelines(shared):
 @section("rewards")
 def rewards(shared):
     cfg, db, bets = shared.cfg, shared.db, shared.bets
-    # Game rewards: 250 per game + up to 250 for beating your own baseline.
+    # Game rewards: 50 per game + up to 150 for beating your own baseline.
     assert beat_share(250, [100, 150, 200, 250, 300, 350]) == 3.5 / 6 and beat_share(9, [1, 2]) == 1.0 and beat_share(5, []) is None
     db.set_meta("rewards_since", db.match("m9")["started_ts"] - 60)  # rewards switched on after m1 / m3 were played
     rm = RewardManager({**cfg, "members": [{"riot_id": "P1#TAG", "bettor": "Tester"}] + MEMBERS[1:]}, db)
     base_rows = [{"puuid": "x", "started_ts": 1, "rounds_won": 13, "rounds_lost": 7, "score": sc} for sc in (2000, 3000, 4000, 5000, 6000, 7000)]
     base_rows.append({"puuid": "x", "started_ts": 99, "rounds_won": 13, "rounds_lost": 7, "score": 1})  # after the game: ignored
     q = rm.quote({"started_ts": 10, "rounds_won": 13, "rounds_lost": 7}, {"puuid": "x", "score": 5000}, base_rows)
-    assert q["acs"] == 250 and q["baseline_games"] == 6 and q["bonus"] == 145, q  # 250 * 3.5/6 = 145.8 -> nearest 5
+    assert q["acs"] == 250 and q["baseline_games"] == 6 and q["bonus"] == 90, q  # 150 * 3.5/6 = 87.5 -> nearest 5
     assert rm.pay_for_match(db.match("m1"), db.match_players("m1")) == []  # games from before rewards existed
     assert rm.pay_for_match(db.match("m3"), db.match_players("m3")) == []
     lb_before = {r["name"]: r for r in bets.leaderboard()}
     paid = rm.pay_for_match(db.match("m9"), db.match_players("m9"))
     by = {r["puuid"]: r for r in paid}
-    assert len(paid) == 5 and all(r["base"] == 250 and 0 <= r["bonus"] <= 250 and r["bonus"] % 5 == 0 for r in paid), paid
+    assert len(paid) == 5 and all(r["base"] == 50 and 0 <= r["bonus"] <= 150 and r["bonus"] % 5 == 0 for r in paid), paid
     assert by["puuid-1"]["bettor"] == "Tester"  # config override
     p2 = db.get_bettor("P2")  # no account yet -> created unclaimed, named after the member
-    assert p2 and not p2.get("password_hash") and p2["balance"] == 1000 + 250 + by["puuid-2"]["bonus"], p2
-    assert by["puuid-2"]["beat_share"] is None and by["puuid-2"]["bonus"] == 125  # only 2 baseline games: neutral bonus
+    assert p2 and not p2.get("password_hash") and p2["balance"] == 1000 + 50 + by["puuid-2"]["bonus"], p2
+    assert by["puuid-2"]["beat_share"] is None and by["puuid-2"]["bonus"] == 75  # only 2 baseline games: neutral bonus
     assert rm.pay_for_match(db.match("m9"), db.match_players("m9")) == []  # never paid twice
     loss = {**db.match("m9"), "match_id": "m10", "started_ts": db.match("m9")["started_ts"] + 3600,
             "rounds_won": 9, "rounds_lost": 13, "result": "loss"}
     db.insert_match(loss, [{**p, "match_id": "m10"} for p in db.match_players("m9")])
     lost = rm.pay_for_match(db.match("m10"), db.match_players("m10"))  # a loss pays the same way
-    assert len(lost) == 5 and all(r["base"] == 250 and 0 <= r["bonus"] <= 250 for r in lost), lost
-    assert next(r for r in lost if r["puuid"] == "puuid-2")["bonus"] == 125
+    assert len(lost) == 5 and all(r["base"] == 50 and 0 <= r["bonus"] <= 150 for r in lost), lost
+    assert next(r for r in lost if r["puuid"] == "puuid-2")["bonus"] == 75
     # The bonus compares against earlier 5-stack games only: P2 has m1, m3 before m9 and m1, m3, m9 before m10
     # (their two non-5-stack games, m2 and m5, don't count).
     assert by["puuid-2"]["baseline_games"] == 2 and next(r for r in lost if r["puuid"] == "puuid-2")["baseline_games"] == 3
     lb_after = {r["name"]: r for r in bets.leaderboard()}
     assert lb_after["Tester"]["profit"] == lb_before["Tester"]["profit"]  # rewards are not betting profit
     tester_lost = next(r for r in lost if r["puuid"] == "puuid-1")["bonus"]
-    assert lb_after["Tester"]["rewards"] == 250 + by["puuid-1"]["bonus"] + 250 + tester_lost and lb_after["P2"]["profit"] == 0
-    assert lb_after["P2"]["rewards"] == 375 + 375 and len(db.rewards()) == 10
+    assert lb_after["Tester"]["rewards"] == 50 + by["puuid-1"]["bonus"] + 50 + tester_lost and lb_after["P2"]["profit"] == 0
+    assert lb_after["P2"]["rewards"] == 125 + 125 and len(db.rewards()) == 10
     # bettor_names.json maps a nickname to another account (any case); a config.json `bettor` still wins over it.
     named = RewardManager({**cfg, "members": [{"riot_id": "P1#TAG", "bettor": "Tester"}] + MEMBERS[1:]}, db,
                           {"p3": "Kikii", "P1": "Ignored"})
@@ -537,8 +537,8 @@ def rewards(shared):
     names = load_bettor_names()  # the committed mapping parses
     assert names.get("it") == "Kikii" and names.get("fat") == "fatty", names
     win_rm = RewardManager({**cfg, "win_reward": 100}, db)  # optional extra for wins
-    assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 350
-    assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 250
+    assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 150
+    assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 50
 
 
 @section("seasons")
@@ -552,7 +552,7 @@ def seasons(shared):
     assert db.rewards() == [] and db.reward_totals() == {} and db.get_bettor("P2")["balance"] == 1000 and db.bets() == []
     assert season["name"] == "Season 1" and season["bets"] == before["bets"] and season["rewards"] == before["rewards"]
     saved = {r["name"]: r for r in season["standings"]}
-    assert saved["Tester"]["balance"] == before["standings"]["Tester"]["balance"] and saved["P2"]["rewards"] == 750
+    assert saved["Tester"]["balance"] == before["standings"]["Tester"]["balance"] and saved["P2"]["rewards"] == 250
     archived = db.archived_bets(season["id"])
     assert len(archived) == before["bets"] and not any(b["status"] == "pending" for b in archived)
     assert sum(b["note"] == "Still open when the season was reset" for b in archived) == before["open"]
@@ -939,18 +939,22 @@ def streaks(shared):
     for mid, picks in sels.items():  # an over and its under can't both have won the same games
         if mid.startswith("ou:"):
             assert not ("streak" in picks["over"] and "streak" in picks["under"]), picks
-    # Cold: a roughly 50/50 pick that missed the last 3+ games (long shots never are).
-    cold = [s for picks in sels.values() for s in picks.values() if "cold" in s]
+    # Cold: a roughly 50/50 pick that missed the last 3+ games (long shots never are), only in markets with 3+ picks:
+    # in a two-way market the other side of a cold pick already has the flame.
+    cold = [s for picks in sels.values() if len(picks) > 2 for s in picks.values() if "cold" in s]
     assert all("streak" not in s and s["cold"] >= STREAK_MIN and COLD_CHANCE[0] <= s["fair_prob"] <= COLD_CHANCE[1] for s in cold), cold
-    # Priced at 50%, every pick that lost its last 3+ games is cold, e.g. the other side of a winning streak.
+    assert not any("cold" in s for picks in sels.values() if len(picks) == 2 for s in picks.values())
+    # Priced at 50%, every multi-way pick that lost its last 3+ games is cold; two-way picks still never are.
     even = shared.engine.build(shared.db)
     for g in ("team", "player_props", "top_markets"):
         for mk in even[g]:
             for s in mk["selections"]:
                 s["fair_prob"] = 0.5
-    even = {mk["market_id"]: {s["key"]: s for s in mk["selections"]} for mk in shared.bets.mark_streaks(even)["team"]}
-    assert even["team:win"]["loss"].get("cold", 0) == (wins if wins >= STREAK_MIN else 0), (even["team:win"], wins)
-    assert wins < STREAK_MIN or "cold" in even["team:win"]["loss"]
+    even = shared.bets.mark_streaks(even)
+    even = {mk["market_id"]: {s["key"]: s for s in mk["selections"]} for g in ("team", "top_markets") for mk in even[g]}
+    assert "cold" not in even["team:win"]["loss"], even["team:win"]  # the other side of the win streak: no frost
+    assert all(len(picks) > 2 for picks in even.values() if any("cold" in s for s in picks.values()))
+    assert any("cold" in s for picks in even.values() for s in picks.values()), "no multi-way pick went cold at 50%"
     assert shared.bets.mark_streaks({"ready": False}) == {"ready": False}
 
 
