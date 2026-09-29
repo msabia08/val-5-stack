@@ -32,9 +32,9 @@ def beat_share(acs, baseline):
 class RewardManager:
     def __init__(self, cfg, db, bettor_names=None):
         self.db = db
-        self.game = float(cfg.get("game_reward", 250))
+        self.game = float(cfg.get("game_reward", 50))
         self.win = float(cfg.get("win_reward", 0))
-        self.bonus_max = float(cfg.get("performance_bonus_max", 250))
+        self.bonus_max = float(cfg.get("performance_bonus_max", 150))
         self.starting = float(cfg.get("starting_balance", 1000))
         self.names = {k.lower(): v for k, v in (bettor_names or {}).items()}  # nickname -> account (bettor_names.json)
         self.overrides = {}  # (name, tag) lower-cased -> bettor account name from config members[].bettor

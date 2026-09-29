@@ -363,17 +363,17 @@ there are 2+ picks.
 Playing earns credits too. For every 5-stack game recorded, won or lost, each
 squad member's bettor account gets:
 
-- **`game_reward`** (default 250), plus `win_reward` on top for a win (default
+- **`game_reward`** (default 50), plus `win_reward` on top for a win (default
   0, so wins and losses pay the same unless you set it), and
-- a **performance bonus** of up to `performance_bonus_max` (default 250). The
+- a **performance bonus** of up to `performance_bonus_max` (default 150). The
   bonus is the share of your *previous 5-stack games* that this game's ACS
   beats, so you're measured against how you usually play with the squad. Beat
-  80% of them and you get 200; set a new 5-stack best and you get the full 250.
+  80% of them and you get 120; set a new 5-stack best and you get the full 150.
   With fewer than 5 earlier 5-stack games to compare against, the bonus is half
-  (125).
+  (75).
   Bonuses are paid in steps of 5 credits (rounded to the nearest 5).
 
-So a game pays between 250 and 500 credits per player with the defaults.
+So a game pays between 50 and 200 credits per player with the defaults.
 
 Rewards go to the member's bettor account. The first of these that applies wins:
 
@@ -455,9 +455,9 @@ time you log in.
 | `starting_balance` | 1000 | Credits for a new bettor. |
 | `bet_grace_minutes` | 2 | A bet placed this soon after a game starts still counts for that game. `0` means only bets placed before the start. |
 | `bet_cancel_minutes` | 1 | How long after placing a bet its bettor can still cancel it. The admin can cancel open bets any time. |
-| `game_reward` | 250 | Credits each member earns per 5-stack game, win or loss. `0` turns it off. |
+| `game_reward` | 50 | Credits each member earns per 5-stack game, win or loss. `0` turns it off. |
 | `win_reward` | 0 | Extra credits each member earns on top for a win. |
-| `performance_bonus_max` | 250 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
+| `performance_bonus_max` | 150 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
 `--config=path/to/other.json`.
