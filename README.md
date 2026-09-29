@@ -211,6 +211,9 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   up to 10 games). A refunded result, like a push or a surrender, is skipped.
   A roughly 50/50 pick (a 35–65% chance) that lost its last 3 or more instead
   gets a frosty border; long shots lose most games anyway, so they never do.
+  Only markets with three or more picks (top / bottom of the scoreboard, margin,
+  exact score) get frost: in an over/under or win/loss market the other side of
+  a cold pick already has the flame.
   These are only labels: the odds don't change.
 - **Celebrations:** a bet you win sets off confetti from your balance under the
   bet slip (gold, and more of it, for a long shot at +500 or longer), with a

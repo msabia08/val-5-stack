@@ -594,7 +594,7 @@
 
   // ---- odds & bets --------------------------------------------------------------
   // A flaming border marks a pick that would have won each of the last 3+ games (s.streak), a frosty one a pick that
-  // usually hits but has missed its last 3+ (s.cold); both from BetManager.mark_streaks.
+  // usually hits but has missed its last 3+ (s.cold, multi-way markets only); both from BetManager.mark_streaks.
   function oddBtn(mk, s, label) {
     const on = state.slip.some((x) => x.market_id === mk.market_id && x.selection === s.key);
     const runOf = (n) => (n >= state.odds.streak_lookback ? `${n}+` : n);
