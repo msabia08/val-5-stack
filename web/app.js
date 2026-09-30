@@ -831,7 +831,7 @@
       console.error(e);
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
-    view.classList.toggle('wide', ['odds', 'players'].includes(state.view)); // the two table-heavy tabs get the wide layout
+    view.classList.toggle('wide', ['odds', 'players', 'bettors'].includes(state.view)); // table-heavy tabs and the ones with a sidebar
     renderMe();
     bind();
     if (['viz', 'bettors', 'forecasts', 'matches', 'players'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);

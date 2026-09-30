@@ -323,6 +323,28 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .odds-side #custom-line h2 { font-size: 16px; }
 .odds-side .my-bets h2 { font-size: 16px; }
 .odds-side .my-bets .bettor-slips { grid-template-columns: 1fr; }
+/* Bettors tab sidebar: Send credits and Game rewards, compact like the bet slip's cards */
+.bettors-side h2 { font-size: 16px; }
+.bettors-side h3 { margin: 12px 0 4px; }
+.bettors-side .tax-banner { padding: 8px 10px; font-size: 13px; gap: 8px; }
+.bettors-side .transfer-form { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: end; }
+.bettors-side .transfer-form label.grow { grid-column: 1 / -1; }
+.bettors-side .transfer-form select, .bettors-side .transfer-form input { width: 100%; min-width: 0; }
+.bettors-side .transfer-form input[type="number"] { width: 100%; }
+.bettors-side #tr-send { grid-column: 1 / -1; width: 100%; }
+.bettors-side .transfer-confirm { font-size: 13px; }
+.bettors-side .recent-row { font-size: 13px; gap: 4px 8px; }
+.bettors-side .recent-row.transfer-row { grid-template-columns: minmax(0, 1fr) auto; }
+.bettors-side .transfer-row > :nth-child(2) { text-align: right; }
+/* Game rewards: a header line per game (result, score, map, date), then who got what in two tidy columns */
+.bettors-side .rewards-card .how { margin-bottom: 4px; }
+.bettors-side .recent-row.reward-row { grid-template-columns: 28px auto minmax(0, 1fr) auto; gap: 8px 10px; padding: 12px 0; }
+.bettors-side .reward-row .rewards-list { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px;
+  font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.bettors-side .reward-row .reward { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+.bettors-side .reward-row .reward b { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.bettors-side .reward-row > :last-child { grid-column: 4; grid-row: 1; }
+.bettors-side .reward-row .recent-score { font-weight: 600; }
 .account { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .account label { width: 100%; margin-bottom: 6px; }
 .account input { width: 100%; }
