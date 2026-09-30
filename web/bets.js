@@ -582,16 +582,17 @@ window.FiveBets = (() => {
         `<td class="num">${b.pending}${b.pending_stake ? ` <span class="muted small">(${fmt.credits(b.pending_stake)})</span>` : ''}</td></tr>`;
     }).join('');
     const vizHelpers = { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot };
+    // Laid out like Odds & Bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
+      <div class="odds-layout bettors-layout"><div>
       <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards and credits sent between bettors (both shown separately; Transfers is what they received minus what they sent, generosity tax included).`)}
         <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
-      ${transferCard()}
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
       ${settledSection()}
-      ${rewardsCard()}
       ${pastSeasonsCard()}
-      ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}`;
+      ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}
+      </div><aside class="odds-side bettors-side">${transferCard()}${rewardsCard()}</aside></div>`;
   }
 
   // The generosity tax (bets.py TAX_RATE / TAX_MIN_TRANSFER, sent in /api/status): send someone enough credits and
@@ -729,6 +730,8 @@ window.FiveBets = (() => {
     return `<section class="card"><h2>Past seasons</h2><p class="muted small">Every reset saves the season here. Click one for its final standings.</p>${rows}</section>`;
   }
 
+  const REWARD_GAMES = 5; // the Game rewards card shows the last this many games
+
   function rewardsCard() {
     const s = state.status, game = s.game_reward || 0, win = s.win_reward || 0, bonus = s.performance_bonus_max || 0;
     if (!game && !win && !bonus) return '';
@@ -740,17 +743,17 @@ window.FiveBets = (() => {
       if (!byGame.has(r.match_id)) byGame.set(r.match_id, []);
       byGame.get(r.match_id).push(r);
     });
-    const games = [...byGame.values()].slice(0, 8).map((rs) => {
+    const games = [...byGame.values()].slice(0, REWARD_GAMES).map((rs) => {
       const g = rs[0], won = g.result === 'win';
       const people = rs.map((r) => {
         const why = r.beat_share == null ? 'fewer than 5 earlier 5-stack games' : `beat ${fmt.pct(r.beat_share)} of their earlier 5-stack games`;
-        return `<span class="reward" title="${esc(`${r.nickname || r.bettor}: ACS ${fmt.n0(r.acs)}, ${why}`)}"><b>${esc(r.bettor)}</b> +${fmt.credits(r.base + r.bonus)}</span>`;
+        return `<span class="reward" title="${esc(`${r.nickname || r.bettor}: ACS ${fmt.n0(r.acs)}, ${why}`)}"><b>${esc(r.bettor)}</b><span>+${fmt.credits(r.base + r.bonus)}</span></span>`;
       }).join('');
       return `<li class="recent-row reward-row"><span class="chip ${won ? 'win' : 'loss'}">${won ? 'W' : 'L'}</span>` +
         `<span class="recent-score">${g.rounds_won ?? '?'}–${g.rounds_lost ?? '?'}</span><span>${esc(g.map || '')}</span>` +
         `<span class="rewards-list">${people}</span><span class="muted small">${fmt.date(g.started_ts ? g.started_ts * 1000 : null)}</span></li>`;
     }).join('');
-    return `<section class="card"><h2>Game rewards</h2>${how(`${fmt.credits(game)} credits a game for everyone, plus a performance bonus of up to ${fmt.credits(bonus)}.`, `${rule} Hover a name for the details.`)}` +
+    return `<section class="card rewards-card"><h2>Game rewards</h2>${how(`${fmt.credits(game)} a game each, plus up to ${fmt.credits(bonus)} for playing well.`, `${rule} Hover a name for the details.`)}` +
       (games ? `<ul class="recent">${games}</ul>` : '<p class="muted">No rewards yet. They are paid when the next 5-stack game is recorded.</p>') + '</section>';
   }
 

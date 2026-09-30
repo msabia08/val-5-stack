@@ -412,10 +412,11 @@ profit and ROI betting-only.
 ## Sending credits
 
 Bettors can pay each other: settle a side bet, pay off a lost argument, spot a
-friend who went broke. On the Bettors tab, **Send credits** takes a recipient
-(any bettor account, claimed or not), an amount (at least 1, no more than your
-balance) and an optional note of up to 80 characters. A confirm line spells out
-who gets how much before anything moves, because there's no undo.
+friend who went broke. In the Bettors tab's sidebar (next to Game rewards),
+**Send credits** takes a recipient (any bettor account, claimed or not), an
+amount (at least 1, no more than your balance) and an optional note of up to 80
+characters. A confirm line spells out who gets how much before anything moves,
+because there's no undo.
 
 - Credits move straight from one balance to the other, in one step, so two
   sends at once can't take you below zero.
