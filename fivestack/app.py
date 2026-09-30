@@ -18,7 +18,9 @@ from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from .arcade import ArcadeManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
+from .bananas import BananaManager
 from .bets import BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
@@ -46,6 +48,7 @@ MIME = {
     ".json": "application/json; charset=utf-8",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    ".wav": "audio/wav",
     ".ico": "image/x-icon",
 }
 
@@ -69,6 +72,8 @@ class App:
         self.engine = OddsEngine(cfg)
         self.bets = BetManager(cfg, self.db, self.engine)
         self.rewards = RewardManager(cfg, self.db, load_bettor_names())
+        self.bananas = BananaManager(cfg, self.db, self.bets)
+        self.arcade = ArcadeManager(self.db)
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
@@ -77,9 +82,12 @@ class App:
         if demo:
             from . import demo_seed
             demo_seed.seed(self.db)
+            self.bananas.earn()
+            demo_seed.seed_shop(self.db, self.bananas)
         elif not self.problems:
             self.client = HenrikClient(cfg["api_key"].strip(), min_interval=float(cfg.get("min_request_interval_s", 1.5)))
             self.tracker = Tracker(cfg, self.db, self.client, on_new_matches=self.on_new_matches)
+        self.bananas.earn()  # credit gains from before the shop existed (or from a sync that stopped part-way)
         self.started = time.time()
 
     def on_new_matches(self, matches):
@@ -90,6 +98,7 @@ class App:
             paid = self.rewards.pay_for_match(m, players)
             if paid:
                 print(f"[rewards] {m['map']} {m['result']}: " + ", ".join(f"{r['bettor']} +{r['base'] + r['bonus']:.0f}" for r in paid), flush=True)
+        self.bananas.earn()  # bananas for the bets just won and the rewards just paid
         return settled
 
     def status(self):
@@ -119,6 +128,7 @@ class App:
             "game_reward": self.rewards.game,
             "win_reward": self.rewards.win,
             "performance_bonus_max": self.rewards.bonus_max,
+            "banana_rate": self.bananas.rate,
             "server_time": time.time(),
             "auth": {"enabled": self.auth.enabled, "admin_required": bool(self.auth.admin_password)},
             "tunnel": dict(self.tunnel.state),
@@ -365,8 +375,19 @@ class Handler(BaseHTTPRequestHandler):
             # The latest wins, newest settled first: the page celebrates the ones settled since it last looked.
             won = sorted(app.db.bets(status="won", bettor=me["name"], limit=200), key=lambda b: b.get("settled_ts") or 0, reverse=True)
             wins = [{k: b.get(k) for k in ("id", "description", "market_type", "stake", "odds_decimal", "payout", "settled_ts")} for b in won[:20]]
-            return self._json({"bettor": {**app.bets.public(me), "open_bets": len(pending),
+            return self._json({"bettor": {**app.bets.public(me), "open_bets": len(pending), "bananas": app.bananas.wallet(me["name"]),
                                           "open_stake": round(sum(b["stake"] for b in pending), 2), "recent_wins": wins}})
+        if path == "/api/shop":
+            return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
+        if path == "/api/arcade":
+            return self._json(app.arcade.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
+        if path == "/api/troop":
+            return self._json(app.bananas.troop())
+        if path == "/api/troop/profile":
+            try:
+                return self._json(app.bananas.profile(qs.get("name") or ""))
+            except BetError as e:
+                return self._json({"error": str(e)}, 404)
         return self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
@@ -403,6 +424,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "started": True}, 202)
             if path == "/api/bettor/register":
                 b = app.bets.register(body.get("name"), body.get("password"))
+                app.bananas.earn()  # a new account's starting bananas
                 cookie = auth.bettor_cookie(b, self.is_https())
                 return self._json({"bettor": app.bets.public(b)}, 201, extra=[("Set-Cookie", cookie)])
             if path == "/api/bettor/login":
@@ -449,12 +471,29 @@ class Handler(BaseHTTPRequestHandler):
                         body.get("stake"), body.get("context") or {},
                     )
                 return self._json({"bet": bet, "bettors": app.bets.leaderboard()}, 201)
+            if path in ("/api/arcade/start", "/api/arcade/finish"):
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to play."}, 403)
+                if path.endswith("start"):
+                    return self._json(app.arcade.start(me["name"], body.get("game")), 201)
+                return self._json(app.arcade.finish(me["name"], body.get("token"), body.get("score")))
+            if path in ("/api/shop/buy", "/api/shop/equip"):
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to use the shop."}, 403)
+                if path == "/api/shop/buy":
+                    out = app.bananas.buy(me["name"], body.get("item"), body.get("target"), body.get("text"))
+                else:
+                    out = {"worn": app.bananas.equip(me["name"], body.get("slot"), body.get("item"))}
+                return self._json({**out, "shop": app.bananas.shop(me)}, 201 if path.endswith("buy") else 200)
             if path == "/api/bettors/reset":
                 if not auth.is_admin(self.headers.get("X-Admin-Password")):
                     return self._json({"error": "Admin password required for that."}, 403)
                 if str(body.get("confirm") or "").strip().upper() != "RESET":
                     return self._json({"error": "Type RESET to confirm ending the season."}, 400)
                 season = app.bets.reset()
+                app.bananas.earn()  # the new season's starting bananas (the reset zeroed every wallet)
                 return self._json({"ok": True, "season": season, "bettors": app.bets.leaderboard()})
             return self._json({"error": "Not found"}, 404)
         except BetError as e:

@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'forecasts', 'viz', 'odds', 'bettors', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'forecasts', 'viz', 'odds', 'bettors', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -19,6 +19,7 @@
     playerPick: '', // Players tab: the player in the detail ('' = the first)
     vizGenre: 'all', // Charts tab: which group of charts is shown
     trends: { stat: 'acs', range: 'all', hidden: {} }, // Players tab's trend chart: stat, every game or the last 10, players hidden
+    shop: null, troop: null, looks: {}, profile: null, troopPick: '', arcade: null, // Onkey's Shop and Monkeys tabs (web/shop.js); troopPick: the profile shown
   };
 
   const $ = (s, el = document) => el.querySelector(s);
@@ -94,13 +95,22 @@
     renderMe();
   };
   let shownBalance = null; // { name, balance } last shown, for the bet slip's balance ticker
+  // The top bar's three chips, on every page: credits (to the Bettors tab), bananas (to the Shop) and the signed-in
+  // bettor's badge and name (to their profile on the Monkeys tab). Signed out, the counters show "–" and the profile chip says Sign in.
   function renderMe() {
-    const chip = $('#me-chip'), me = state.me;
-    chip.classList.toggle('hidden', !me);
+    const me = state.me, shop = window.FiveShop;
+    const credits = $('#me-credits'), bananas = $('#me-bananas'), chip = $('#me-chip');
+    shop.syncMe(); // a new sign-in brings its own bananas, items and themes
+    credits.innerHTML = `<b>${me ? fmt.credits(me.balance) : '–'}</b><span class="me-unit">credits</span>`;
+    credits.title = me ? `${fmt.credits(me.balance)} credits${me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on open bets` : ''}. Open the rankings.` : 'Sign in to see your credits';
+    const nb = me && me.bananas != null ? shop.bn(me.bananas) : '–';
+    bananas.innerHTML = `<b>${nb}</b><span aria-hidden="true">🍌</span><span class="sr-only">bananas</span>`;
+    bananas.title = me ? `${nb} bananas. Open Onkey's Shop.` : 'Sign in to see your bananas';
+    chip.href = me ? `#monkeys/${encodeURIComponent(me.name)}` : '#odds';
+    chip.innerHTML = `<span class="me-avatar" aria-hidden="true">${me ? shop.badgeOf(me.name) : '🐒'}</span>` +
+      `<span class="me-name">${me ? shop.nameHtml(me.name) : 'Sign in'}</span>`;
+    chip.title = me ? `Signed in as ${me.name}. Open your profile.` : 'Sign in on Odds & Bets to bet and shop';
     if (!me) return;
-    // Just the name and balance: what's riding on open bets shows under the bet slip.
-    chip.innerHTML = `<span class="me-name">${esc(me.name)}</span><b>${fmt.credits(me.balance)}</b><span class="me-unit">credits</span>`;
-    chip.title = `Betting as ${me.name}: ${fmt.credits(me.balance)} credits. Open Odds & Bets.`;
     // The balance under the bet slip (Odds & Bets only) counts to a new value; the chip just shows it.
     const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
     const slipBalance = $('#slip .acct-balance b');
@@ -163,20 +173,28 @@
     const total = fresh.reduce((a, w) => a + (w.payout || 0), 0);
     toast(`${longShot ? 'Long shot! ' : 'Winner! '}` + (fresh.length === 1 ? `${what(fresh[0])} paid ${fmt.credits(total)} credits`
       : `${fresh.length} bets paid ${fmt.credits(total)} credits`), 'good');
-    confetti(origin, longShot);
+    confetti(origin, longShot, window.FiveShop.myCelebration());
   }
 
   const CONFETTI = ['#ff4d6d', '#ffd23f', '#3bceac', '#4f8cff', '#b86bff', '#ff8a00'];
   const GOLD = ['#ffd700', '#ffc107', '#ffe082', '#fff3c4', '#e6a800'];
   // A burst of confetti from an element (the bet slip's balance), falling under gravity and fading out.
-  function confetti(from, big) {
+  // style: a Onkey's Shop celebration, { colors } for its own palette or { emoji } to throw emoji instead.
+  function confetti(from, big, style) {
     if (!from || reducedMotion()) return;
     const r = from.getBoundingClientRect(), x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
-    const n = big ? 160 : 80, colors = big ? GOLD : CONFETTI;
+    const emoji = style && style.emoji, n = emoji ? (big ? 70 : 40) : big ? 160 : 80;
+    const colors = big ? GOLD : (style && style.colors) || CONFETTI;
     for (let i = 0; i < n; i++) {
       const p = document.createElement('span');
-      p.className = `confetti${i % 3 === 0 ? ' round' : ''}`;
-      p.style.cssText = `left:${x0}px;top:${y0}px;background:${colors[i % colors.length]}`;
+      if (emoji) {
+        p.className = 'confetti emoji';
+        p.textContent = emoji[i % emoji.length];
+        p.style.cssText = `left:${x0}px;top:${y0}px`;
+      } else {
+        p.className = `confetti${i % 3 === 0 ? ' round' : ''}`;
+        p.style.cssText = `left:${x0}px;top:${y0}px;background:${colors[i % colors.length]}`;
+      }
       document.body.appendChild(p);
       const ang = Math.PI * (0.05 + Math.random() * 0.9), speed = (big ? 420 : 320) * (0.35 + Math.random());
       const vx = Math.cos(ang) * speed, vy = Math.sin(ang) * speed * 0.5 - 160, T = 1.6 + Math.random() * 0.9, spin = (Math.random() - 0.5) * 1440;
@@ -364,7 +382,7 @@
   const OV_BET_GAMES = 5;
   function overviewBetting() {
     const me = state.me, lb = state.bettors || [];
-    const who = (name) => `<span class="swatch s${bettorSlot(name)}"></span><b>${esc(name)}</b>`;
+    const who = (name) => `<span class="swatch s${bettorSlot(name)}"></span><b>${window.FiveShop.nameHtml(name)}</b>`;
     const balance = me
       ? `<div class="ov-tile ov-balance"><div class="ov-tile-label">Your balance</div><div class="ov-tile-value">${fmt.credits(me.balance)} <span class="ov-unit">credits</span></div>` +
         `<div class="ov-tile-sub">${me.open_bets ? `+${fmt.credits(me.open_stake)} riding on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : 'No open bets'}</div></div>`
@@ -786,6 +804,9 @@
         case 'viz': view.innerHTML = viewViz(); break;
         case 'odds': view.innerHTML = viewOdds(); break;
         case 'bettors': view.innerHTML = viewBettors(); break;
+        case 'shop': view.innerHTML = window.FiveShop.viewShop(); break;
+        case 'troop': view.innerHTML = window.FiveShop.viewTroop(); break;
+        case 'arcade': view.innerHTML = window.FiveArcade.viewArcade(); break;
         case 'matches': view.innerHTML = viewMatches(); break;
         default: view.innerHTML = viewSetup();
       }
@@ -810,6 +831,9 @@
         case 'viz': await loadInsights(); break;
         case 'odds': await Promise.all([loadOdds(), loadBets(), loadContent()]); break;
         case 'bettors': await Promise.all([loadBets(), loadBettingReport(), loadSeasons()]); break;
+        case 'shop': await Promise.all([window.FiveShop.loadShop(), window.FiveShop.loadTroop()]); break;
+        case 'troop': await Promise.all([window.FiveShop.loadTroop(), window.FiveShop.loadProfile(), state.shop ? null : window.FiveShop.loadShop()]); break;
+        case 'arcade': await window.FiveArcade.load(); break;
         case 'matches': await Promise.all([loadMatches(), loadRecap()]); break;
         default: await loadStatus();
       }
@@ -856,6 +880,8 @@
     $('#odds-format')?.addEventListener('change', (e) => { state.oddsFormat = e.target.value; localStorage.setItem('fs.oddsFormat', state.oddsFormat); draw(); });
     $$('.top-dir', view).forEach((b) => b.addEventListener('click', () => { state.topDir[b.dataset.pair] = b.dataset.dir; draw(); }));
     window.FiveBets.bind(view);
+    window.FiveShop.bind(view);
+    window.FiveArcade.bind(view);
     $('#copy-url')?.addEventListener('click', async (e) => {
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
       catch (err) { toast('Could not copy; select the link and copy it manually', 'bad'); }
@@ -893,30 +919,122 @@
     finally { polling = false; }
   }
 
+  // The Stats dropdown in the nav: its button names the stat page you're on and lights up; the menu opens on click
+  // (or Enter / Space / ↓), arrow keys move through it, and Escape, a pick or a click elsewhere closes it.
+  const STAT_VIEWS = ['overview', 'players', 'forecasts', 'viz', 'matches'];
+  function navMenu(open) {
+    const menu = $('#stats-menu'), trigger = $('#stats-trigger');
+    menu.classList.toggle('hidden', !open);
+    trigger.setAttribute('aria-expanded', String(open));
+  }
+  function bindNavMenu() {
+    const menu = $('#stats-menu'), trigger = $('#stats-trigger');
+    const items = () => $$('a', menu);
+    const focusItem = (i) => { const list = items(); list[(i + list.length) % list.length].focus(); };
+    trigger.addEventListener('click', () => navMenu(menu.classList.contains('hidden')));
+    trigger.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); navMenu(true); focusItem(Math.max(0, items().findIndex((a) => a.classList.contains('active')))); }
+    });
+    menu.addEventListener('keydown', (e) => {
+      const i = items().indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); focusItem(i + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); focusItem(i - 1); }
+      else if (e.key === 'Escape') { navMenu(false); trigger.focus(); }
+      else if (e.key === 'Tab') navMenu(false);
+    });
+    menu.addEventListener('click', () => navMenu(false));
+    document.addEventListener('click', (e) => { if (!e.target.closest('#nav-stats')) navMenu(false); });
+  }
+
   function route() {
-    const v = (location.hash || '#overview').slice(1);
+    // #monkeys/<name> opens that bettor's profile on the Monkeys tab (the view is still called troop; #troop works too).
+    let [v, arg] = (location.hash || '#overview').slice(1).split('/');
+    if (v === 'monkeys') v = 'troop';
     state.view = VIEWS.includes(v) ? v : 'overview';
+    if (state.view === 'troop') {
+      try { state.troopPick = arg ? decodeURIComponent(arg) : ''; } catch (e) { state.troopPick = ''; }
+      if (arg) window.scrollTo(0, 0);
+    }
     window.FiveViz?.hideTip();
     $$('#tabs a, #setup-btn').forEach((a) => a.classList.toggle('active', a.dataset.view === state.view)); // Setup lives on the ⚙ button
+    const inStats = STAT_VIEWS.includes(state.view);
+    $('#stats-trigger').classList.toggle('active', inStats);
+    $('#stats-label').textContent = inStats ? $(`#stats-menu a[data-view="${state.view}"] b`).textContent : 'Stats';
+    navMenu(false);
     render();
   }
 
+  let checkTheme = () => {}; // set in init: drops a shop theme the signed-in bettor doesn't own
   async function init() {
-    window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast });
-    // Themes cycle dark -> light -> Greg Mode (the light colours over web/assets/greg.png) -> dark.
-    const THEMES = { dark: 'Dark', light: 'Light', greg: 'Greg Mode' };
+    const shop = window.FiveShop;
+    shop.init({ state, $, $$, api, draw, esc, fmt, kpi, toast, confetti, onShop: () => checkTheme() });
+    window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
+    window.FiveArcade.init({ state, $, $$, api, draw, esc, fmt, toast, nameHtml: shop.nameHtml, loadMe });
+    // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
+    // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms
+    // it's owned (checkTheme, after every shop load), so a saved or ?theme= one waits, and one you don't own is dropped.
+    const THEMES = { dark: 'Dark', light: 'Light', greg: 'Greg Mode', onkey: 'Onkey Mode', jungle: 'Jungle Mode', sakura: 'Sakura', midnight: 'Midnight', terminal: 'Terminal', synthwave: 'Synthwave' };
+    const FREE_THEMES = ['dark', 'light'];
     const themeBtn = $('#theme-btn');
-    const showTheme = (t) => { themeBtn.title = `Theme: ${THEMES[t]} (click for ${THEMES[t === 'dark' ? 'light' : t === 'light' ? 'greg' : 'dark']})`; };
-    const saved = new URLSearchParams(location.search).get('theme') || localStorage.getItem('fs.theme');
-    if (THEMES[saved]) document.documentElement.dataset.theme = saved;
-    const current = () => document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-    showTheme(current());
-    themeBtn.addEventListener('click', () => {
+    const cycle = () => [...FREE_THEMES, ...shop.ownedThemes().map((t) => t.key)];
+    const nextTheme = (t) => { const c = cycle(), i = c.indexOf(t); return c[(i + 1) % c.length]; };
+    // Two themes (only dark and light): ◐ toggles. More than two (any bought in the shop): ◐ opens a picker.
+    const picker = () => cycle().length > 2;
+    const showTheme = (t) => {
+      themeBtn.title = picker() ? `Theme: ${THEMES[t]} (click to pick another)` : `Theme: ${THEMES[t]} (click for ${THEMES[nextTheme(t)]})`;
+      themeBtn.setAttribute('aria-haspopup', picker() ? 'true' : 'false');
+      if (!picker()) themeMenu(false);
+    };
+    const menu = $('#theme-menu');
+    const setTheme = (t) => {
+      document.documentElement.dataset.theme = t;
+      localStorage.setItem('fs.theme', t);
+      wanted = null;
+      showTheme(t);
+    };
+    function themeMenu(open) {
+      menu.classList.toggle('hidden', !open);
+      themeBtn.setAttribute('aria-expanded', String(open));
+      if (!open) return;
       const cur = current();
-      const next = cur === 'dark' ? 'light' : cur === 'light' ? 'greg' : 'dark';
-      document.documentElement.dataset.theme = next;
-      localStorage.setItem('fs.theme', next);
-      showTheme(next);
+      menu.innerHTML = cycle().map((t) => `<button type="button" class="theme-pick ${t === cur ? 'active' : ''}" role="menuitemradio" aria-checked="${t === cur}" data-theme-pick="${t}">` +
+        `<span class="shop-theme" data-theme-preview="${t}"><i></i><i></i><i></i></span><b>${esc(THEMES[t])}</b><span class="theme-tick" aria-hidden="true">${t === cur ? '✓' : ''}</span></button>`).join('') +
+        '<a class="theme-more" href="#shop" role="menuitem">More themes in Onkey\'s Shop ›</a>';
+      ($('.theme-pick.active', menu) || $('.theme-pick', menu)).focus();
+    }
+    menu.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-theme-pick]');
+      if (b) setTheme(b.dataset.themePick);
+      themeMenu(false);
+      if (b) themeBtn.focus();
+    });
+    menu.addEventListener('keydown', (e) => {
+      const items = $$('.theme-pick, .theme-more', menu), i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Escape') { themeMenu(false); themeBtn.focus(); }
+      else if (e.key === 'Tab') themeMenu(false);
+    });
+    document.addEventListener('click', (e) => { if (!e.target.closest('#theme-menu, #theme-btn')) themeMenu(false); });
+    let wanted = new URLSearchParams(location.search).get('theme') || localStorage.getItem('fs.theme'); // a shop theme waits here
+    if (FREE_THEMES.includes(wanted)) document.documentElement.dataset.theme = wanted;
+    const current = () => document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    checkTheme = () => {
+      const owned = shop.ownedThemes().map((t) => t.key), cur = document.documentElement.dataset.theme;
+      if (cur && !FREE_THEMES.includes(cur) && !owned.includes(cur)) { // signed out, or someone else's theme on this device
+        delete document.documentElement.dataset.theme;
+        wanted = cur;
+      } else if (wanted && owned.includes(wanted)) {
+        document.documentElement.dataset.theme = wanted;
+        wanted = null;
+      }
+      showTheme(current());
+    };
+    showTheme(current());
+    themeBtn.addEventListener('mouseenter', () => showTheme(current())); // the cycle grows once the shop has loaded
+    themeBtn.addEventListener('click', () => {
+      if (picker()) themeMenu(menu.classList.contains('hidden'));
+      else setTheme(nextTheme(current()));
     });
     // Greg Mode: every click drops a little Greg from the pointer (never blocks the click; off for reduced motion).
     document.addEventListener('click', (e) => {
@@ -934,9 +1052,10 @@
       document.body.append(greg);
     });
     $('#sync-btn').addEventListener('click', () => sync(false));
+    bindNavMenu();
     window.addEventListener('hashchange', route);
     try {
-      await Promise.all([loadStatus(), loadContent(), loadMe()]);
+      await Promise.all([loadStatus(), loadContent(), loadMe(), shop.loadTroop().catch(() => {})]); // the troop's looks style names everywhere
     } catch (e) {
       $('#view').innerHTML = `<div class="card error"><h2>Could not reach the server</h2><p>${esc(e.message)}</p></div>`;
       return;

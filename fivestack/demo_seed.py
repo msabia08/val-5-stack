@@ -266,6 +266,43 @@ def _seed_bets(db, rng, games=10):
         place(name, time.time())
 
 
+# What each demo bettor buys with their bananas, in order, while they can afford it (see seed_shop).
+DEMO_SHOPPING = {
+    "Matt": ["bd-crown", "nc-sunset", "tt-top", "tk-gold"],
+    "Jordan": ["bd-monkey", "tt-cheeky", "nc-jungle", "bn-canopy"],
+    "Sam": ["bd-gorilla", "nc-onkey", "tt-silverback", "bn-onkey"],
+    "Alex": ["bd-coconut", "tt-eco", "tk-leaf"],
+    "Riley": ["bd-banana", "nc-peel", "tt-parlay", "cb-bananas", "tk-peel"],
+}
+
+
+def seed_shop(db, bananas):
+    """A few shop purchases and one of each prank, paid for with the demo's earned bananas plus a starter grant."""
+    if db.banana_items():
+        return
+    for name, wishlist in DEMO_SHOPPING.items():
+        if not db.get_bettor(name):
+            continue
+        # Demo only: a starter grant so the shop has something to show. It isn't "earned" (reason 'demo').
+        db.execute("INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES(?,?,?,?,?,?)",
+                   (name, 1500, "demo", f"grant:{name.lower()}", "Demo starter bananas", time.time() - 7 * 86400))
+        for item in wishlist:
+            try:
+                bananas.buy(name, item)
+            except Exception:  # noqa: BLE001  (can't afford it: stop shopping)
+                break
+    for buyer, item, target, text in [("Matt", "sc-note", "Jordan", "gg on the 4k last night, still owe me a Vandal"),
+                                      ("Riley", "sc-peel", "Matt", None), ("Sam", "sc-jinx", "Riley", None),
+                                      ("Jordan", "sc-title", "Alex", "Professional Baiter"),
+                                      ("Alex", "sc-heckle", "Matt", "bet the under on yourself, coward"), ("Alex", "sc-bounty", "Sam", None),
+                                      ("Jordan", "sc-clown", "Sam", None),
+                                      ("Matt", "sc-nick", "Riley", "Bot Frag")]:
+        try:
+            bananas.buy(buyer, item, target, text)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 THREE_SITE_MAPS = {"Haven", "Lotus"}
 
 

@@ -259,6 +259,11 @@ an existing database without migration code (new tables are fine).
 | `seasons` | ended betting season | season reset | `id`, `name` ('Season N'), `started_ts`, `ended_ts`, `standings` (JSON: the leaderboard at the end), `bets`, `rewards` (counts) |
 | `archived_bets` | bet from an ended season | season reset | `season_id` plus every `bets` column; bets still open at the reset are archived as `cancelled` |
 | `archived_rewards` | reward from an ended season | season reset | `season_id` plus every `rewards` column |
+| `banana_ledger` | change to a bettor's bananas | `bananas.py` (earning after settlement and at start-up, buying), season reset, demo | `bettor`, `delta` (+ earned, − spent), `reason` (`bet_win`, `reward`, `starter` (the season's starting bananas, ref `starter:<season number>:<name>`), `purchase`, `prank`, `arcade`, `season_reset`, `demo`, or `test` in the self-test), `ref` (`bet:<id>`, `reward:<match>:<puuid>`, `<item>:<ns>`, `season:<id>:<name>`; unique with `reason`, so nothing is paid twice), `credits` (the credit gain an earning came from), `note`, `created_ts`. A wallet is the sum of its rows |
+| `banana_items` | item a bettor owns | Onkey's Shop | `bettor`, `item_id` (see `bananas.CATALOG`), `price`, `bought_ts`; kept through season resets |
+| `banana_equipped` | worn slot | Onkey's Shop | `bettor`, `slot` (`name_color`/`badge`/`title`/`banner`/`ticket`/`celebration`/`theme`), `item_id` |
+| `banana_pranks` | social item used on someone | Onkey's Shop | `item_id` (see `bananas.SOCIAL`: `sc-peel`, `sc-jinx`, `sc-upside`, `sc-shrink`, `sc-fog`, `sc-clown`, `sc-glitter`, `sc-bounty`, `sc-heckle`, `sc-nick`, `sc-note`, `sc-title`), `bettor` (who sent it), `target`, `text` (a note or title), `price`, `created_ts`, `expires_ts`, `games` (when above 0, also over once that many 5-stack games have started after `created_ts`: 3 for most pranks) |
+| `arcade_plays` | paid play in Onkey's Arcade | `arcade.py` | `bettor`, `game` (`catch`/`says`/`dash`), `token` (one-time, unique), `price`, `started_ts`, `finished_ts`, `score` (NULL until the game sends it back; boards use each bettor's best above 0). The price is a `banana_ledger` row with reason `arcade` and ref `play:<token>` |
 | `meta` | setting | various | JSON values: `cookie_secret`, `rejected_matches`, `last_sync`, `backfilled`, `history_backfilled`, `rewards_since`, `season_started` |
 
 `match_timelines.data` is a compact copy of the v4 record (see `fivestack/timeline.py`):
@@ -295,7 +300,7 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 | `GET /api/bets?status=&bettor=&limit=` | Bets newest first, with the game each settled on (`game_map`, `game_rounds_won`, ...) |
 | `GET /api/bettors` | Leaderboard: balance, betting-only profit, rewards, record, ROI, open stakes |
 | `GET /api/rewards?limit=` | Recent game rewards |
-| `GET /api/bettor/me` | The signed-in bettor, if any: `name` and `balance` (the top-bar balance chip and the bet slip), `open_bets` and `open_stake` (the bet slip and the Overview), and `recent_wins` (their last 20 won bets, newest settled first: `id`, `description`, `market_type`, `stake`, `odds_decimal`, `payout`, `settled_ts`), which the page celebrates with confetti |
+| `GET /api/bettor/me` | The signed-in bettor, if any: `name`, `balance` and `bananas` (the top bar's credits and bananas chips, and the bet slip), `open_bets` and `open_stake` (the bet slip and the Overview), and `recent_wins` (their last 20 won bets, newest settled first: `id`, `description`, `market_type`, `stake`, `odds_decimal`, `payout`, `settled_ts`), which the page celebrates with confetti |
 | `POST /api/bettor/register`, `/login`, `/logout`, `/password` | Bettor accounts |
 | `POST /api/bettor/clear-password` | Admin: free a bettor name |
 | `POST /api/odds/parlay` | Price a parlay without placing it (`legs`, `context`): `odds_decimal` (what it would pay), `independent_decimal` (the legs' odds multiplied), `factor` (the cut for linked legs, 1 = none), `games` (games replayed), `linked` (groups of leg indexes that won together more than chance) and `legs`; 400 with the reason when the legs can't share a parlay |
@@ -303,6 +308,14 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 | `DELETE /api/bets/{id}` | Cancel a pending bet |
 | `GET /api/seasons` | The current season (start, bet and reward counts) and every past season with its final standings |
 | `POST /api/bettors/reset` | End the season: needs `{"confirm": "RESET"}` (and the admin password header if one is set); archives, then resets |
+| `GET /api/shop` | Onkey's Shop: `rate` (bananas per credit gained), `slots`, `catalog` (each item's `id`, `slot`, `name`, `price`, `desc` and `look`: what the page draws, e.g. `cls`, `emoji`, `text`, `colors`, `theme`), `social` (items used on someone else, with `hours`, `games`, `max_len`), and `me` for a signed-in bettor: `wallet`, `earned`, `season_earned`, `season_credits` (the credits those came from), `spent`, `owned`, `worn` ({slot: item id}) and `history` (their last 25 ledger rows) |
+| `POST /api/shop/buy` | Buy an item (`{"item": id}`, worn straight away) or use a social one (`{"item", "target", "text"}`); returns `item`, `wallet` and the updated `shop`. Needs the bettor session |
+| `POST /api/shop/equip` | Wear an owned item (`{"slot", "item"}`) or take a slot off (`"item": ""`); returns `worn` and `shop` |
+| `GET /api/troop` | The Monkeys tab: every bettor with `wallet`, `earned`, `season_earned`, `season_credits`, `spent`, `items`, `collection` (bananas' worth of items owned), `credits` and betting `profit`, most collected first; plus `looks` ({lower-cased name: {`worn`: {slot: look}, `pranks`: [active pranks on them, with `games_left`]}}), which the page uses to style names everywhere |
+| `GET /api/troop/profile?name=` | One bettor's profile on the Monkeys tab: the same fields, `owned` items, `worn`, `pranks` received (each with `active`), `pranks_sent`, `betting` (balance, profit, rewards, record, ROI) and `looks`; 404 for an unknown name |
+| `GET /api/arcade` | Onkey's Arcade: `price`, `games` (each `key`, `name`, `icon`, `desc`, `plays`, `board`: the top 10 bettors' best scores, and the signed-in bettor's `my_best`) and `me` (`wallet`, `plays`) |
+| `POST /api/arcade/start` | Pay for a play (`{"game": key}`): takes 5 bananas, returns `token` and the new `wallet`. Needs the bettor session |
+| `POST /api/arcade/finish` | Record a play's score (`{"token", "score"}`): once, by the bettor who paid, within an hour, and no higher than the game allows for the time it ran; returns `score`, `best_before`, `new_best`, `rank`, `champion` and the game's `board` |
 | `POST /api/sync` | Start a sync (`{"full": true}` for a full history re-scan) |
 
 ---

@@ -16,6 +16,8 @@ import types
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 
 from fivestack.app import KNOWN_AGENTS  # noqa: E402
+from fivestack.arcade import ARCADE_PRICE, ArcadeManager  # noqa: E402
+from fivestack.bananas import CATALOG, BananaManager  # noqa: E402
 from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
@@ -586,6 +588,171 @@ def rewards(shared):
     assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 50
 
 
+@section("bananas")
+def bananas(shared):
+    db, bets = shared.db, shared.bets
+    bm = shared.bananas = BananaManager({"banana_rate": 0.1, "starting_bananas": 0}, db, bets)  # starters: checked below
+    board = bets.leaderboard()
+    balances = {b["name"]: b["balance"] for b in db.bettors()}
+    # Earning: 0.1 banana per credit gained (won bets' profit + game rewards), paid once.
+    added = bm.earn()
+    assert added > 0 and bm.earn() == 0, added
+    gains, rows = {}, {}
+    for b in db.bets(status="won"):
+        if b["payout"] > b["stake"]:
+            k = b["bettor"].lower()
+            gains[k] = gains.get(k, 0) + b["payout"] - b["stake"]
+            rows[k] = rows.get(k, 0) + 1
+    for r in db.rewards():
+        k = r["bettor"].lower()
+        gains[k] = gains.get(k, 0) + r["base"] + r["bonus"]
+        rows[k] = rows.get(k, 0) + 1
+    totals = db.banana_totals()
+    assert set(totals) == set(gains), (totals.keys(), gains.keys())  # a bettor who only lost earns nothing
+    for k, g in gains.items():  # linear in credits won, up to rounding each row to 0.01
+        t = totals[k]
+        assert abs(t["earned"] - 0.1 * g) <= 0.005 * rows[k] + 1e-9 and abs(t["season_credits"] - g) < 1e-6, (k, t, g)
+        assert abs(t["wallet"] - t["earned"]) < 1e-9 and t["spent"] == 0
+    assert all(b["status"] != "lost" for b in db.bets() if f"bet:{b['id']}" in
+               {r["ref"] for r in db.query("SELECT ref FROM banana_ledger WHERE reason='bet_win'")})
+
+    # Buying: bananas only. Give Tester a test grant so every case can be tried.
+    db.execute("INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES('Tester', 500, 'test', 'grant', '', ?)", (time.time(),))
+    wallet = bm.wallet("Tester")
+    r = bm.buy("Tester", "bd-banana")
+    assert abs(r["wallet"] - (wallet - 40)) < 1e-9 and db.banana_equipped()["tester"] == {"badge": "bd-banana"}
+    for bad, msg in [(("Tester", "bd-banana"), "already own"), (("Tester", "nope"), "isn't in the shop"),
+                     (("Tester", "th-onkey"), "costs 1000")]:
+        try:
+            bm.buy(*bad)
+        except BetError as e:
+            assert msg in str(e), (bad, e)
+        else:
+            raise AssertionError(f"buy {bad} should fail")
+    assert abs(bm.wallet("Tester") - (wallet - 40)) < 1e-9 and len(db.banana_items("Tester")) == 1  # failures cost nothing
+    bm.buy("Tester", "bd-monkey")  # a second badge replaces the first on, both owned
+    assert db.banana_equipped()["tester"]["badge"] == "bd-monkey" and len(db.banana_items("tester")) == 2
+    assert bm.equip("Tester", "badge", "bd-banana") == {"badge": "bd-banana"}
+    for args in [("Tester", "badge", "nc-peel"), ("Tester", "name_color", "nc-peel"), ("Tester", "hat", "")]:
+        try:
+            bm.equip(*args)
+        except BetError:
+            pass
+        else:
+            raise AssertionError(f"equip {args} should fail")
+    assert bm.equip("Tester", "badge", "") == {} and bm.looks().get("tester", {"worn": {}})["worn"] == {}
+    bm.equip("Tester", "badge", "bd-monkey")
+    assert bm.looks()["tester"]["worn"]["badge"]["emoji"] == "🐒"
+
+    # Monkey business: on someone else only, text where the item needs it, gone once a game starts after it.
+    for args, msg in [(("Tester", "sc-peel", "Tester"), "somebody else"), (("Tester", "sc-peel", "Nobody"), "Pick who"),
+                      (("Tester", "sc-note", "P2", ""), "Write something"), (("Tester", "sc-title", "P2", "x" * 25), "24 characters")]:
+        try:
+            bm.buy(*args)
+        except BetError as e:
+            assert msg in str(e), (args, e)
+        else:
+            raise AssertionError(f"buy {args} should fail")
+    bm.buy("Tester", "sc-note", "p2", "  nice   clutch ")
+    bm.buy("Tester", "sc-jinx", "P2")
+    starts = [r["started_ts"] for r in db.query("SELECT started_ts FROM matches ORDER BY started_ts DESC")]
+    db.execute("UPDATE banana_pranks SET created_ts = ?", (starts[0] + 60,))  # m10 "starts" in the future: buy after it
+    looks = bm.looks()["p2"]["pranks"]
+    assert {p["item"] for p in looks} == {"sc-note", "sc-jinx"} and next(p for p in looks if p["item"] == "sc-note")["text"] == "nice clutch"
+    assert next(p for p in looks if p["item"] == "sc-jinx")["games_left"] == 3
+    assert len(starts) >= 3, starts
+    db.execute("UPDATE banana_pranks SET created_ts = ?", (starts[1] - 60,))  # two games since: the jinx still holds
+    assert next(p for p in bm.looks()["p2"]["pranks"] if p["item"] == "sc-jinx")["games_left"] == 1
+    db.execute("UPDATE banana_pranks SET created_ts = ?", (starts[2] - 60,))  # three games since: it wore off
+    assert [p["item"] for p in bm.looks()["p2"]["pranks"]] == ["sc-note"]  # the note stays its 3 days
+    # Pranks with text land on the target as written.
+    db.execute("INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES('P2', 200, 'test', 'grant-p2', '', ?)", (time.time(),))
+    p2_wallet = bm.wallet("P2")
+    bm.buy("P2", "sc-heckle", "Tester", "you whiffed")
+    heckle = bm.looks()["tester"]["pranks"][0]
+    assert heckle["kind"] == "heckle" and heckle["text"] == "you whiffed" and 1 <= heckle["games_left"] < 3  # m9 / m10 "start" later
+    assert abs(bm.wallet("P2") - (p2_wallet - 30)) < 1e-9
+    spent = 40 + 60 + 25 + 60
+    t = db.banana_totals()["tester"]
+    assert abs(t["spent"] - spent) < 1e-9 and abs(t["wallet"] - (t["earned"] + 500 - spent)) < 1e-9, t
+
+    # Nothing above touched credits or the leaderboard.
+    assert bets.leaderboard() == board and {b["name"]: b["balance"] for b in db.bettors()} == balances
+    troop = bm.troop()
+    tester = next(r for r in troop["troop"] if r["name"] == "Tester")
+    assert troop["troop"][0]["name"] == "Tester" and tester["items"] == 2 and tester["collection"] == 100
+    prof = bm.profile("tester")
+    assert prof["name"] == "Tester" and len(prof["owned"]) == 2 and prof["pranks_sent"] and prof["betting"]["balance"] == balances["Tester"]
+    assert any(p["item_id"] == "sc-note" and p["active"] for p in bm.profile("P2")["pranks"])
+    # Starting bananas: every account gets 50 once a season, not counted as earned.
+    wallets = {b["name"]: db.banana_wallet(b["name"]) for b in db.bettors()}
+    earned = {k: v["earned"] for k, v in db.banana_totals().items()}
+    starter = BananaManager({"banana_rate": 0.1, "starting_bananas": 50}, db, bets)
+    assert starter.earn() == len(wallets) and starter.earn() == 0
+    assert all(abs(db.banana_wallet(n) - (w + 50)) < 1e-9 for n, w in wallets.items())
+    assert all(abs(db.banana_totals()[k]["earned"] - e) < 1e-9 for k, e in earned.items())
+    shared.starter = starter
+    order = [(i["slot"], i["price"]) for i in CATALOG]  # the shop lists each slot cheapest first
+    assert all(a[0] != b[0] or a[1] <= b[1] for a, b in zip(order, order[1:]))
+    assert len({i["id"] for i in CATALOG}) == len(CATALOG) and bm.shop(db.get_bettor("Tester"))["me"]["owned"] == ["bd-banana", "bd-monkey"]
+
+
+@section("arcade")
+def arcade(shared):
+    db, bets = shared.db, shared.bets
+    am = ArcadeManager(db)
+    board = bets.leaderboard()
+    balances = {b["name"]: b["balance"] for b in db.bettors()}
+    wallet = db.banana_wallet("Tester")
+    # A play costs bananas up front and hands back a one-time token.
+    play = am.start("Tester", "catch")
+    assert abs(db.banana_wallet("Tester") - (wallet - ARCADE_PRICE)) < 1e-9 and play["token"]
+    db.create_bettor("Broke", 1000)
+    for args, msg in [(("Tester", "pinball"), "doesn't exist"), (("Broke", "catch"), "costs")]:
+        try:
+            am.start(*args)
+        except BetError as e:
+            assert msg in str(e), (args, e)
+        else:
+            raise AssertionError(f"start {args} should fail")
+    # The score has to fit the play: the right bettor, once, and no more than the game allows for the time it ran.
+    for args, msg in [(("P2", play["token"], 100), "isn't yours"), (("Tester", play["token"], 600), "doesn't add up"),
+                      (("Tester", play["token"], -1), "doesn't add up"), (("Tester", "nope", 10), "isn't yours")]:
+        try:
+            am.finish(*args)
+        except BetError as e:
+            assert msg in str(e), (args, e)
+        else:
+            raise AssertionError(f"finish {args} should fail")
+    r = am.finish("Tester", play["token"], 300)
+    assert r["new_best"] and r["rank"] == 1 and r["champion"] and r["best_before"] is None
+    try:
+        am.finish("Tester", play["token"], 300)
+    except BetError as e:
+        assert "already" in str(e)
+    else:
+        raise AssertionError("a play can only be finished once")
+    assert not am.finish("Tester", am.start("Tester", "catch")["token"], 200)["new_best"]
+    r = am.finish("P2", am.start("P2", "catch")["token"], 450)
+    assert r["champion"] and [(b["bettor"], b["score"]) for b in r["board"]] == [("P2", 450), ("Tester", 300)]  # one line each
+    old = am.start("Tester", "dash")
+    db.execute("UPDATE arcade_plays SET started_ts = started_ts - 7200 WHERE token=?", (old["token"],))
+    try:
+        am.finish("Tester", old["token"], 10)
+    except BetError as e:
+        assert "timed out" in str(e)
+    else:
+        raise AssertionError("an old play can't be finished")
+    summary = am.summary(db.get_bettor("Tester"))
+    assert [g["key"] for g in summary["games"]] == ["catch", "says", "dash"] and summary["me"]["plays"] == 3
+    assert next(g for g in summary["games"] if g["key"] == "catch")["my_best"] == 300
+    t = db.banana_totals()["tester"]
+    assert abs(db.banana_wallet("Tester") - (wallet - 3 * ARCADE_PRICE)) < 1e-9 and t["spent"] >= 3 * ARCADE_PRICE
+    # The only prize is the board: no bananas back, and credits never move.
+    assert [r for r in bets.leaderboard() if r["name"] != "Broke"] == board  # "Broke" is new, with no bets
+    assert {b["name"]: b["balance"] for b in db.bettors() if b["name"] != "Broke"} == balances
+
+
 @section("seasons")
 def seasons(shared):
     db, bets = shared.db, shared.bets
@@ -604,6 +771,10 @@ def seasons(shared):
     assert db.query_one("SELECT COUNT(*) AS n FROM archived_rewards WHERE season_id=?", (season["id"],))["n"] == before["rewards"]
     assert db.season_counts() == {"started_ts": season["ended_ts"], "bets": 0, "rewards": 0, "bettors": db.season_counts()["bettors"]}
     assert bets.reset()["name"] == "Season 2" and [x["name"] for x in db.seasons()] == ["Season 2", "Season 1"]
+    # Bananas went back to zero with the credits; bought items stay, and nothing is paid again for the old season.
+    assert all(abs(t["wallet"]) < 1e-9 and t["season_earned"] == 0 for t in db.banana_totals().values())
+    assert len(db.banana_items("Tester")) == 2 and shared.bananas.earn() == 0
+    assert shared.starter.earn() == len(db.bettors()) and all(abs(db.banana_wallet(b["name"]) - 50) < 1e-9 for b in db.bettors())  # a fresh 50
 
 
 @section("forfeits")

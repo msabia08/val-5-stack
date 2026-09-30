@@ -11,35 +11,54 @@
 <body>
 <header class="topbar">
   <div class="brand">
-    <img class="logo logo-main" src="/assets/onkey-logo.png" alt="" width="62" height="36">
-    <img class="logo logo-greg" src="/assets/greg-logo.png" alt="" width="62" height="36">
+    <a class="logo-link" href="#shop" title="Onkey's Shop" aria-label="Onkey's Shop">
+      <img class="logo logo-main" src="/assets/onkey-logo.png" alt="" width="62" height="36">
+      <img class="logo logo-greg" src="/assets/greg-logo.png" alt="" width="62" height="36">
+    </a>
     <div>
       <h1>5-Stack Tracker</h1>
       <div class="sub" id="team-record">Loading…</div>
     </div>
   </div>
   <nav class="tabs" id="tabs" aria-label="Sections">
-    <a href="#overview" data-view="overview">Overview</a>
-    <a href="#players" data-view="players">Players</a>
-    <a href="#forecasts" data-view="forecasts">Forecasts</a>
-    <a href="#viz" data-view="viz">Charts</a>
+    <!-- The five stat pages share one dropdown (app.js bindNavMenu); its button shows the page you're on. -->
+    <div class="nav-group" id="nav-stats">
+      <button type="button" class="nav-trigger" id="stats-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="stats-menu">
+        <span aria-hidden="true">📊</span><span id="stats-label">Stats</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="nav-menu hidden" id="stats-menu" role="menu" aria-label="Stats pages">
+        <a href="#overview" data-view="overview" role="menuitem"><b>Overview</b><span>Record, the last game, who's trending</span></a>
+        <a href="#players" data-view="players" role="menuitem"><b>Players</b><span>The five side by side, with trends</span></a>
+        <a href="#forecasts" data-view="forecasts" role="menuitem"><b>Forecasts</b><span>What the odds expected vs what happened</span></a>
+        <a href="#viz" data-view="viz" role="menuitem"><b>Charts</b><span>Results, players and rounds, charted</span></a>
+        <a href="#matches" data-view="matches" role="menuitem"><b>Matches</b><span>Every game, with its full recap</span></a>
+      </div>
+    </div>
     <a href="#odds" data-view="odds">Odds &amp; Bets</a>
     <a href="#bettors" data-view="bettors">Bettors</a>
-    <a href="#matches" data-view="matches">Matches</a>
+    <a href="#monkeys" data-view="troop">Monkeys</a>
+    <a href="#arcade" data-view="arcade">🕹️ Onkey's Arcade</a>
+    <a href="#shop" data-view="shop">🍌 Onkey's Shop</a>
   </nav>
   <div class="topbar-right">
-    <a id="me-chip" class="me-chip hidden" href="#odds"></a>
+    <a id="me-credits" class="me-chip me-stat" href="#bettors"></a>
+    <a id="me-bananas" class="me-chip me-stat" href="#shop"></a>
+    <a id="me-chip" class="me-chip me-profile" href="#odds"></a>
     <div class="status-pill" id="status-pill"><span class="dot"></span>Connecting…</div>
     <button id="sync-btn" class="btn" disabled><span aria-hidden="true">⟳</span>Sync now</button>
     <a id="logout-btn" class="btn ghost hidden" href="/logout">Log out</a>
     <a id="setup-btn" class="btn ghost icon" href="#setup" data-view="setup" title="Setup: config, squad, sync log" aria-label="Setup">⚙</a>
-    <button id="theme-btn" class="btn ghost icon" title="Switch theme: dark, light, Greg Mode" aria-label="Switch theme">◐</button>
+    <button id="theme-btn" class="btn ghost icon" title="Switch theme: dark, light, and any theme from Onkey's Shop" aria-label="Switch theme">◐</button>
+    <!-- With a theme bought in the shop there are more than two, so ◐ opens this picker instead of toggling (app.js). -->
+    <div class="nav-menu theme-menu hidden" id="theme-menu" role="menu" aria-label="Themes"></div>
   </div>
 </header>
 <div id="banner" class="banner hidden" role="status"></div>
 <main id="view" class="container"><div class="loading">Loading…</div></main>
 <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <script src="/viz.js"></script>
+<script src="/shop.js"></script>
+<script src="/arcade.js"></script>
 <script src="/bets.js"></script>
 <script src="/recap.js"></script>
 <script src="/app.js"></script>

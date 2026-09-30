@@ -9,11 +9,16 @@ window.FiveBets = (() => {
 
   // Shared with app.js (set by init): the page state object and its helpers.
   let state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast;
+  // From Onkey's Shop (web/shop.js): a bettor's name in their bought colours and badge, and their ticket style.
+  let nameHtml, ticketClass, ticketExtras;
   // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
   const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
 
   function init(ctx) {
     ({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast } = ctx);
+    nameHtml = ctx.nameHtml || ((name) => esc(name));
+    ticketClass = ctx.ticketClass || (() => '');
+    ticketExtras = ctx.ticketExtras || (() => '');
   }
 
   // ---- data -------------------------------------------------------------------
@@ -190,8 +195,8 @@ window.FiveBets = (() => {
     });
     return `<div class="bettor-slips">${names.map((name) => {
       const rows = groups.get(name);
-      return `<div class="bet-slip-card ${isMine({ bettor: name }) ? 'me' : ''}">
-        <div class="bet-slip-head"><span class="swatch s${bettorSlot(name)} lg"></span><b>${esc(name)}</b><span class="muted small right">${betTotals(rows, settled)}</span></div>
+      return `<div class="bet-slip-card ${isMine({ bettor: name }) ? 'me' : ''} ${ticketClass(name)}">
+        <div class="bet-slip-head"><span class="swatch s${bettorSlot(name)} lg"></span><b>${nameHtml(name)}</b><span class="muted small right">${betTotals(rows, settled)}</span></div>${ticketExtras(name)}
         ${rows.map((b) => betTicket(b, stamp)).join('')}
       </div>`;
     }).join('')}</div>`;
@@ -568,7 +573,7 @@ window.FiveBets = (() => {
       const bw = bestWin[b.name.toLowerCase()];
       const rank = i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1);
       return `<tr class="${b.name.toLowerCase() === me ? 'me' : ''}"><td class="rank">${rank}</td>` +
-        `<td><b>${esc(b.name)}</b>${b.claimed === false ? ' <span class="muted small">unclaimed</span>' : ''}${bw ? `<div class="muted small">Best win +${fmt.credits(bw.net)} · ${esc(bw.desc)}</div>` : ''}</td>` +
+        `<td><b>${nameHtml(b.name, { link: true })}</b>${b.claimed === false ? ' <span class="muted small">unclaimed</span>' : ''}${bw ? `<div class="muted small">Best win +${fmt.credits(bw.net)} · ${esc(bw.desc)}</div>` : ''}</td>` +
         `<td class="num balance">${fmt.credits(b.balance)}</td>` +
         `<td class="bar-cell"><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((b.balance / maxBal) * 100)}%"></div></div></td>` +
         `<td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +

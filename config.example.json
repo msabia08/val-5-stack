@@ -33,5 +33,7 @@
   "bet_cancel_minutes": 1,
   "game_reward": 50,
   "win_reward": 0,
-  "performance_bonus_max": 150
+  "performance_bonus_max": 150,
+  "banana_rate": 0.1,
+  "starting_bananas": 50
 }

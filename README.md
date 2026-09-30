@@ -408,6 +408,91 @@ Only games played after rewards were switched on pay out, so upgrading doesn't
 pay for past games. The Bettors tab shows rewards in their own column and keeps
 profit and ROI betting-only.
 
+## Onkey's Shop and the Monkeys
+
+Bananas 🍌 are a second currency that runs alongside credits and only buys
+cosmetics and pranks. They never turn back into credits, and spending them
+never changes a balance, a bet or the leaderboard.
+
+**Earning:** every credit you *gain* pays `banana_rate` bananas (default 0.1,
+so 10 credits = 1 banana). That covers a won bet's profit (payout minus stake)
+and every game reward. Losing bets never take bananas away, so a season's
+bananas are always exactly your credits won that season ÷ 10: a straight line.
+Bananas are paid on each sync, right after bets settle and rewards are paid.
+Every account also starts with `starting_bananas` (50), which isn't counted as
+earned. A season reset takes every wallet back to zero with the credits, then
+hands everyone a fresh 50; items you bought stay yours.
+
+**The Onkey's Shop tab** sells one item per slot, worn as soon as you buy it:
+
+| Slot | What it changes | Price |
+| --- | --- | --- |
+| Name colour | how your name is written on rankings, tickets and the Monkeys page (12, from Ripe to an animated Rainbow) | 120-1200 |
+| Badge | an emoji next to your name, and your avatar (17) | 40-500 |
+| Title | a line under your name on the Monkeys page and your profile (17) | 100-800 |
+| Profile banner | the header of your profile (9) | 300-600 |
+| Ticket style | your bet tickets on Odds & Bets and Bettors, for everyone | 300-600 |
+| Win celebration | what bursts out of your balance when a bet wins | 250-350 |
+| Site theme | unlocks Greg Mode, Onkey Mode, Jungle Mode, Sakura, Midnight, Terminal or Synthwave (dark and light are free). With only those two, ◐ toggles between them; once you own a theme, ◐ opens a picker | 750-1200 |
+
+Click any item for a **preview** of your profile card and bet tickets as they
+are now and with the item (a theme shows a small page in its colours, and a
+celebration can be played). Owned items can be worn or taken off at any time.
+
+**Monkey business** items are used on someone else and wear off by
+themselves. Everyone sees who sent what.
+
+| Prank | What it does | Lasts | Price |
+| --- | --- | --- | --- |
+| Shrink Ray | their name goes tiny | 3 games | 35 |
+| Banana Peel | their name slips and wobbles | 3 games | 40 |
+| Upside Down | their name is flipped on its head | 3 games | 45 |
+| Clown Makeup | their badge and avatar become 🤡 | 3 games | 50 |
+| Smoke Screen | their name is blurred until you hover it | 3 games | 55 |
+| Jinx | frost on their name and bet tickets | 3 games | 60 |
+| Glitter Bomb | sparkles on their name and bet tickets | 3 games | 70 |
+| Bounty | a "wanted" strip on their tickets and a poster on their profile, with your name | 3 games | 75 |
+| Heckle | a speech bubble you write (60 characters) on their bet tickets | 3 games | 30 |
+| Wall Note | a note you write (80 characters) pinned on their profile | 3 days | 25 |
+| Nickname | a nickname you write (20 characters) in quotes after their name | 24 hours | 60 |
+| Title Swap | a title you write (24 characters) replaces theirs | 24 hours | 80 |
+
+"3 games" means until three 5-stack games have started since, and a week at
+most.
+
+**The top bar** shows your credits, your bananas and your profile chip (badge
+and name) on every page; they link to the Bettors tab, the shop and your
+profile. Signed out, the counters show "–" and the chip offers to sign in.
+
+**The Monkeys tab** ranks every bettor by the bananas spent on their collection,
+with their unspent bananas and what they earned this season. Click anyone (or a
+name on the Bettors rankings) for their profile: banner, badge, title, what
+they're wearing, their whole collection against the catalogue, their bet ticket
+style, wall notes and the pranks they've sent and received.
+
+## Onkey's Arcade
+
+Three small games on the **Onkey's Arcade** tab. Each play costs **5 bananas**,
+like a quarter in a machine, and the only prize is a place on that game's
+high-score board (each player's best, all time; kept through season resets).
+Bananas are never paid back and credits are never touched.
+
+| Game | How it plays |
+| --- | --- |
+| Banana Catch | Move Onkey (← → / A D, or drag) to catch falling bananas; golden ones are worth 100. Dodge the falling Gregs. 60 seconds, 3 lives, combos up to x3. |
+| Onkey Says | A rhythm game on Onkey's song: each of its 11 sung syllables is a note. Hit ← ↓ → (or A S D, or tap the lanes) as it reaches the ring, and hold the long last note. Three verses, each faster and squeakier (1x, 1.15x, 1.3x), with combo multipliers up to x4. |
+| Spike Dash | An endless runner: jump (Space / ↑ / tap) and double jump over planted spikes, grab bananas, and see how far you get. It keeps speeding up. |
+
+**Sound:** Onkey's song (`web/assets/onkey-song.wav`, the two recordings back to
+back) is always played whole: it's the Onkey Says track, the reward when you
+set a new personal best, and the jukebox button on the arcade sign. Everything
+else is made in the browser: a coin drop, blips, and a bongo chiptune in C♯
+minor, the key Onkey sings in. The sound on/off switch is remembered.
+
+Quitting part-way (Esc or Quit) ends the game and the score so far still
+counts. Scores are sent back with a one-time token from the paid play, and the
+server turns down any score a game couldn't reach in the time it ran.
+
 ## Going online (share it with the squad)
 
 The server can publish itself through a Cloudflare Tunnel, so your friends can
@@ -477,6 +562,8 @@ time you log in.
 | `game_reward` | 50 | Credits each member earns per 5-stack game, win or loss. `0` turns it off. |
 | `win_reward` | 0 | Extra credits each member earns on top for a win. |
 | `performance_bonus_max` | 150 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
+| `starting_bananas` | 50 | Bananas every account starts each season with (new accounts get them straight away). Not counted as earned. `0` turns it off. |
+| `banana_rate` | 0.1 | Bananas paid per credit gained (a won bet's profit, a game reward) for Onkey's Shop. 0.1 = 1 banana per 10 credits. `0` stops paying bananas. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
 `--config=path/to/other.json`.
@@ -511,11 +598,14 @@ fivestack/             the backend package
   odds.py              odds engine
   gamestate.py         how a game ended: complete, surrendered, or a remake
   bets.py              betting ledger and settlement
+  bananas.py           Onkey's Shop: bananas earned from credit gains, the catalogue, buying and wearing items
+  arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
-web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), recap.js (match recap), style.css,
+web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), shop.js (Onkey's Shop and Monkeys), arcade.js (Onkey's Arcade),
+                       recap.js (match recap), style.css,
                        assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
-                       onkey.png, the logo's full-size original) (no build step)
+                       onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song) (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```
