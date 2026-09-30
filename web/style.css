@@ -85,8 +85,11 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
   100% { transform: rotate(0deg) scale(1.08); }
 }
 .sub { color: var(--muted); font-size: 12px; }
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
-.tabs a { text-decoration: none; color: var(--text-2); padding: 7px 12px; border-radius: 8px; font-weight: 500; font-size: 14px; }
+/* Top-level entries 24px apart with a short line half way between each pair. */
+.tabs { display: flex; gap: 24px; }
+.tabs > a, .tabs > .nav-group { position: relative; }
+.tabs > * + *::before { content: ""; position: absolute; left: -12px; top: 9px; bottom: 9px; border-left: 1px solid color-mix(in srgb, var(--text) 18%, transparent); pointer-events: none; }
+.tabs a { text-decoration: none; color: var(--text-2); padding: 7px 14px; border-radius: 8px; font-weight: 500; font-size: 14px; }
 .tabs a:hover { background: var(--surface-2); color: var(--text); }
 .tabs a.active { background: var(--accent-soft); color: var(--text); }
 /* Nav emoji (every entry has one); NAV_ICONS = false in app.js adds .no-nav-icons to <html> and hides them all. */
@@ -95,20 +98,26 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 /* The nav's dropdown groups (Stats, Betting, Onkey's): a tab-looking button over a menu of that group's pages. */
 .nav-group { position: relative; display: flex; }
 .nav-trigger .nav-icon { margin-right: 0; }
-.nav-trigger { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; color: var(--text-2); padding: 7px 12px; border-radius: 8px;
+.nav-trigger { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; color: var(--text-2); padding: 7px 14px; border-radius: 8px;
   font: inherit; font-weight: 500; font-size: 14px; cursor: pointer; }
 .nav-trigger:hover, .nav-trigger[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
 .nav-trigger.active { background: var(--accent-soft); color: var(--text); }
 .nav-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.nav-trigger .caret { font-size: 11px; opacity: 0.7; transition: transform 0.15s ease; }
-.nav-trigger[aria-expanded="true"] .caret { transform: rotate(180deg); }
+/* The caret: a drawn chevron (the ▾ in the markup is hidden), pointing down, and up while the menu is open. */
+.nav-trigger .caret { display: inline-block; width: 7px; height: 7px; margin: 0 0 3px 3px; font-size: 0; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(45deg); transition: transform 0.15s ease; }
+.nav-trigger[aria-expanded="true"] .caret { transform: translateY(3px) rotate(-135deg); }
 .nav-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: grid; gap: 2px; width: min(300px, calc(100vw - 32px)); padding: 6px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); animation: modal-fade 0.12s ease-out; }
 .tabs .nav-menu a { display: grid; gap: 1px; padding: 8px 10px; border-radius: 7px; }
 .tabs .nav-menu a b { font-weight: 600; color: var(--text); }
 .tabs .nav-menu a span { font-size: 12px; color: var(--muted); }
 .tabs .nav-menu a:hover, .tabs .nav-menu a:focus-visible { background: var(--surface-2); outline: none; }
-.tabs .nav-menu a.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.tabs .nav-menu a.active { background: var(--accent-soft); }
+/* A hairline between the pages in a menu (inside the gap, so it never touches a highlighted row). */
+.tabs .nav-menu { gap: 8px; }
+.tabs .nav-menu a + a { position: relative; }
+.tabs .nav-menu a + a::before { content: ""; position: absolute; left: 10px; right: 10px; top: -4px; border-top: 1px solid color-mix(in srgb, var(--text) 18%, transparent); }
 :root[data-theme="greg"] .nav-menu { background: #fcfcfb; }
 .topbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .me-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 12px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--text); text-decoration: none; font-size: 13px; white-space: nowrap; }
@@ -225,6 +234,10 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 
 /* ---- odds ----------------------------------------------------------- */
 .ctx-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+/* Place bets: only the odds format sits above the markets, right-aligned, no card */
+/* The odds format toggle at the top of the Place bets sidebar, above the bet slip. */
+.odds-format { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px; font-size: 13px; color: var(--text-2); }
+.odds-format .slip-mode { margin: 0; }
 .ctx-row label { min-width: 120px; }
 .odds-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 .odds-layout > * { min-width: 0; }
@@ -235,8 +248,43 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .sels { display: flex; gap: 8px; flex-wrap: wrap; }
 .markets .sels { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
 .market.wide { grid-column: 1 / -1; }
-.markets .sels.team_score { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
-.markets .sels.team_score .odd { flex-direction: column; justify-content: center; gap: 1px; padding: 5px 2px; white-space: nowrap; }
+/* Team markets (Place bets). The match result first: equal 220px buttons either side, so the bar between them is
+   centred on the card; under it, each side's chance at the bar's ends and the last five results in its middle, and the
+   buttons centred vertically on the bar and that line together. Then
+   the question cards (4 across, margin twice as wide) and the final score's row of 26 results with a bar above each. */
+.tm-match { display: grid; grid-template-columns: 220px minmax(0, 1fr) 220px; gap: 16px; align-items: center;
+  margin: 6px 0 16px; padding: 14px 20px; border-radius: 10px; border: 1px solid var(--border);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--up) 12%, transparent), transparent 30%, transparent 70%, color-mix(in srgb, var(--down) 12%, transparent)); }
+.tm-match > .odd { justify-content: space-between; padding: 12px 16px; font-size: 16px; }
+.tm-match > .odd b { font-size: 18px; }
+.tm-split { height: 10px; border-radius: 5px; overflow: hidden; background: color-mix(in srgb, var(--down) 60%, var(--surface-2)); }
+.tm-split-win { display: block; height: 100%; background: var(--up); }
+.tm-under { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.tm-under > span:last-child { text-align: right; }
+.tm-form { display: flex; gap: 4px; position: relative; top: 3px; }  /* a nudge below the % labels either side */
+.tm-form .chip { margin: 0; }
+.tm-qgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tm-q { display: grid; gap: 10px; align-content: space-between; padding: 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.tm-q.wide { grid-column: span 2; }
+.tm-q.tm-final { grid-column: 1 / -1; }
+.tm-question { font-size: 16px; font-weight: 600; }
+.tm-answers { display: grid; gap: 6px; }
+.tm-answers .odd { flex-direction: column; gap: 2px; padding: 9px 6px; justify-content: center; }
+.tm-answers .odd b { font-size: 15px; }
+.tm-answers .odd.loss span { color: var(--down); }
+.tm-answers .odd.win span { color: var(--up); }
+.tm-answers .odd.on span { color: #fff; }
+.tm-fact { font-size: 12px; color: var(--muted); }
+.tm-mountain { display: grid; grid-template-columns: repeat(26, minmax(0, 1fr)); gap: 3px; align-items: end; }
+.tm-mountain > div { display: flex; flex-direction: column; gap: 3px; }
+.tm-mountain i { display: block; border-radius: 3px 3px 0 0; }
+.tm-mountain .loss i { background: color-mix(in srgb, var(--down) 70%, transparent); }
+.tm-mountain .win i { background: color-mix(in srgb, var(--up) 75%, transparent); }
+.tm-mountain .ot i { background: color-mix(in srgb, var(--warn) 75%, transparent); }
+.tm-mountain .odd { flex-direction: column; gap: 1px; height: 44px; padding: 4px 1px; justify-content: center; white-space: nowrap; font-size: 11px; }
+.tm-mountain .odd b { font-size: 11.5px; }
+.tm-mountain .top .odd:not(.on) { border-color: var(--text-2); }
+.tm-axis { text-align: center; font-size: 12px; color: var(--warn); }
 .markets .sels.team_score .odd span { font-size: 12px; color: var(--text-2); }
 .markets .sels.team_score .odd.on span { color: #fff; }
 .markets .sels.team_score .odd b { font-size: 12px; }

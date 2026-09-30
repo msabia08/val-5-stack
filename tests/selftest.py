@@ -24,6 +24,7 @@ from fivestack.db import DB  # noqa: E402
 from fivestack.forecasts import build_forecasts  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
+from fivestack.moments import game_facts  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
 from fivestack.odds import SCORE_SD_MAX, OddsEngine, fair_chance, partial_game, score_model  # noqa: E402
 from fivestack.parlay import correlation, price  # noqa: E402
@@ -244,10 +245,12 @@ def odds(shared):
     engine, db = shared.engine, shared.db
     board = engine.build(db, {"map": "Ascent", "agents": {"puuid-1": "Jett"}})
     assert board["ready"]
-    assert len(board["player_props"]) == 5 * 6, len(board["player_props"])
-    assert [mk["market_id"] for mk in board["team"]] == ["team:win", "team:rounds", "team:ot", "team:rw", "team:rl",
-                                                        "team:margin", "team:score"]
-    ot_market = board["team"][2]
+    assert len(board["player_props"]) == 5 * 4, len(board["player_props"])  # kills, deaths, assists, HS% (no ACS or ADR props)
+    assert not any(mk["stat"] in ("acs", "adr") for mk in board["player_props"]) and [d["key"] for d in board["stat_defs"]] == ["kills", "deaths", "assists", "hs_pct"]
+    # No total rounds or rounds won / lost over-unders any more, and no moment markets yet: these games have no timelines.
+    assert [mk["market_id"] for mk in board["team"]] == ["team:win", "team:ot", "team:margin", "team:score"]
+    assert board["team"][0]["basis"]["recent"] == ["loss", "win"]  # the last results, newest first (m3 then m1)
+    ot_market = board["team"][1]
     assert ot_market["selections"][1]["prob"] > ot_market["selections"][0]["prob"]  # no game went to OT: "No" favoured
     tops = {mk["market_id"]: mk for mk in board["top_markets"]}  # 6 "tops the scoreboard" markets, each with a counter
     assert len(tops) == 12 and sum(mk["direction"] == "low" for mk in tops.values()) == 6, sorted(tops)
@@ -256,10 +259,11 @@ def odds(shared):
     assert tops["top:acs_rel"]["label"] == "Popped off" and tops["low:acs_rel"]["label"] == "Got diff'd"
     favourite = lambda mid: tops[mid]["selections"][0]["key"]  # noqa: E731
     assert favourite("top:kills") == "puuid-5" and favourite("low:kills") == "puuid-1", (favourite("top:kills"), favourite("low:kills"))
-    # Margin and exact score only offer squad wins, so their prices don't add up to a whole market: each pick just
+    # Margin and exact score cover every result, so their fair chances add up to 1; being many-way markets, each pick
     # carries double the house edge.
     partial = [mk for mk in board["team"] if mk["type"] in ("team_score", "team_margin")]
     assert all(abs(x["prob"] - min(0.985, max(0.01, x["fair_prob"] * 1.1))) < 1e-3 for mk in partial for x in mk["selections"])
+    assert all(abs(sum(x["fair_prob"] for x in mk["selections"]) - 1) < 2e-3 for mk in partial), [sum(x["fair_prob"] for x in mk["selections"]) for mk in partial]
     for mk in board["player_props"] + [mk for mk in board["team"] if mk not in partial]:
         s = sum(x["prob"] for x in mk["selections"])
         assert 1.03 < s < 1.07, (mk["market_id"], s)
@@ -281,7 +285,7 @@ def placing_bets(shared):
         raise AssertionError("overdraft should fail")
     except BetError:
         pass
-    b3 = bets.place("Tester", "team:rounds", "over", 10, {})
+    b3 = bets.place("Tester", "team:ot", "yes", 10, {})
     for args in ({}, {"by": "Legacy"}, {"by": None}):
         try:
             bets.cancel(b3["id"], **args)
@@ -290,7 +294,7 @@ def placing_bets(shared):
             pass
     bets.cancel(b3["id"], by="tester")
     assert db.bet(b3["id"])["status"] == "cancelled" and db.get_bettor("Tester")["balance"] == 850
-    b4 = bets.place("Tester", "team:rounds", "under", 10, {})
+    b4 = bets.place("Tester", "team:ot", "no", 10, {})
     bets.cancel(b4["id"], admin=True)
     assert db.bet(b4["id"])["status"] == "cancelled" and db.get_bettor("Tester")["balance"] == 850
 
@@ -331,8 +335,8 @@ def parlays(shared):
     # Team legs that decide each other (or can't both win) are refused, whatever the lines.
     refused = [([("team:score", "13-5"), ("team:win", "win")], "already decides"),
                ([("team:margin", "w6+"), ("team:win", "win")], "already decides"),
-               ([("team:ot", "yes"), ("team:rw", "over")], "already decides"),
-               ([("team:win", "win"), ("team:rw", "over")], "already decides"),
+               ([("team:score", "13-5"), ("team:margin", "w6+")], "already decides"),
+               ([("team:ot", "yes"), ("team:margin", "w6+")], "can't both win"),  # an overtime win counts as 1-2
                ([("team:win", "loss"), ("team:margin", "w1-2")], "can't both win"),
                ([("team:score", "13-5"), ("team:ot", "yes")], "can't both win")]
     for legs, why in refused:
@@ -342,7 +346,7 @@ def parlays(shared):
         except BetError as e:
             assert why in str(e), (legs, str(e))
     bets.quote_parlay([{"market_id": "team:win", "selection": "win"}, {"market_id": "team:ot", "selection": "yes"}], {})
-    bets.quote_parlay([{"market_id": "team:win", "selection": "win"}, {"market_id": "team:rounds", "selection": "over"}], {})
+    bets.quote_parlay([{"market_id": "team:win", "selection": "win"}, {"market_id": "ou:kills:puuid-1", "selection": "over"}], {})
 
     # Legs that won together more than chance are priced together. 30 games where two legs won the same 15: they
     # won together 15 times against 7.5 expected, a ratio of (15 + 3) / (7.5 + 3) with 3 pseudo-games of "no link".
@@ -361,7 +365,7 @@ def parlays(shared):
     bets.leg_history = lambda legs: [together] * len(legs)
     try:
         linked_parlay = bets.place_parlay("Parlay", [{"market_id": "team:win", "selection": "win"},
-                                                     {"market_id": "ou:acs:puuid-1", "selection": "over"}], 10, {})
+                                                     {"market_id": "ou:hs_pct:puuid-1", "selection": "over"}], 10, {})
     finally:
         bets.leg_history = real_history
     legs_odds = [l["odds_decimal"] for l in json.loads(linked_parlay["context"])["legs"]]
@@ -946,7 +950,7 @@ def forfeit_odds(shared):
     assert ob["partial_games"] == {"forfeits": 1, "full_game_rounds": 24.0}, ob["partial_games"]
     kills = next(mk for mk in ob["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
     assert kills["mean"] == 20.0 and kills["line"] > 19, kills  # 10 kills in half a game counts as 20, not 10
-    assert next(mk for mk in ob["team"] if mk["market_id"] == "team:rounds")["mean"] == 24.0  # the 12-round total is left out
+    assert "team:rounds" not in [mk["market_id"] for mk in ob["team"]]  # total rounds is off the board (old bets still settle)
 
 
 @section("forecasts")
@@ -1157,7 +1161,7 @@ def custom_lines(shared):
     assert by_n[19]["available"] and by_n[19]["type"] == "exact" and not by_n[45]["available"] and "too unlikely" in by_n[45]["reason"]
     lo, hi = by_n[19]["limits"]["exactly"]
     assert lo < 19 < hi and all(by_n[n]["available"] == (lo <= n <= hi) for n in range(60)), (lo, hi)
-    odd = engine.build(cdb, {}, alts=[("acs", "puuid-1", 200, "exact"), ("kills", "puuid-1", 19.5, "exact")])["custom"]
+    odd = engine.build(cdb, {}, alts=[("hs_pct", "puuid-1", 20, "exact"), ("kills", "puuid-1", 19.5, "exact")])["custom"]
     assert "only for kills, deaths and assists" in odd[0]["reason"] and "whole numbers" in odd[1]["reason"]
     hit = cbets.place("Cus", "exact:kills:puuid-1:25", "exact", 5, {})
     miss = cbets.place("Cus", "exact:kills:puuid-1:21", "exact", 5, {})
@@ -1181,21 +1185,96 @@ def custom_lines(shared):
     assert settled[hit["id"]]["status"] == "won" and settled[miss["id"]]["status"] == "lost"  # exactly 25, not 21
 
 
+@section("team moments")
+def team_moments(shared):
+    # Team markets read from the round timeline: pistol, ahead at half-time, an ace, a comeback, flawless rounds.
+    team_of = {**{p: "Blue" for p in PUUIDS.values()}, **{f"e{i}": "Red" for i in range(5)}}
+
+    def tl(won, kills=()):  # won: one bool per round (did the squad win it); kills: (round, killer, victim) in order
+        return {"our_team": "Blue", "team_of": team_of,
+                "rounds": [{"winner": "Blue" if w else "Red", "site": None, "planter_team": None, "defused": False} for w in won],
+                "kills": [{"r": r, "t": i, "killer": k, "victim": v, "weapon": "Vandal"} for i, (r, k, v) in enumerate(kills)]}
+    # A 13-9 comeback from 0-5: rounds 1-5 lost, then 13 of the last 17. Only one squad death (round 1), so every
+    # round won is flawless; P1 aces round 6. 6 of the first 12 is level at half-time, not ahead.
+    comeback_won = [False] * 5 + [True] * 4 + [False] + [True] * 3 + [False] + [True] * 2 + [False] + [True] * 2 + [False] + [True] * 2
+    ace = [(5, "puuid-1", f"e{i}") for i in range(5)]
+    facts = game_facts({"result": "win", "mode": "competitive"}, tl(comeback_won, [(0, "e0", "puuid-2")] + ace))
+    assert facts == {"pistol": False, "half": False, "ace": True, "comeback": True, "flawless": 13}, facts
+    assert game_facts({"result": "win"}, None) == {k: None for k in facts}  # no timeline: nothing is decided
+    assert game_facts({"result": "win", "mode": "swiftplay"}, tl([True] * 5))["half"] is None  # no round 12
+    assert game_facts({"result": "loss"}, tl([True] * 12 + [False] * 13))["half"] is True  # 12-0 up at the half
+
+    # Priced from the games that have a timeline, once MOMENT_MIN_GAMES of them decide a market.
+    mdb, engine = DB(os.path.join(shared.tmp, "moments.db")), OddsEngine(shared.cfg)
+    mbets = BetManager(shared.cfg, mdb, engine)
+    for i, pu in enumerate(PUUIDS.values()):
+        mdb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+    line = lambda k: [{"puuid": pu, "agent": "Omen", "kills": 15, "deaths": 15, "assists": 4, "score": 4800, "damage_dealt": 3000,  # noqa: E731
+                       "headshots": 5, "bodyshots": 20, "legshots": 1} for pu in PUUIDS.values()]
+    regular = [True] * 7 + [False] * 5 + [True] * 6 + [False] * 4  # pistol won, 7-5 at the half, 13-9, no deaths recorded
+    for k in range(8):
+        won = regular if k < 6 else [False] + regular[1:]  # the two oldest games lost the pistol
+        mdb.insert_match({"match_id": f"g{k}", "map": "Bind", "mode": "competitive", "started_ts": 1000 + (8 - k),
+                          "rounds_won": 13, "rounds_lost": 9, "result": "win"}, line(k))
+        mdb.save_timeline(f"g{k}", tl(won, ace if k == 0 else ()))
+    board = engine.build(mdb)
+    team = {mk["market_id"]: mk for mk in board["team"]}
+    assert [m for m in team if m.startswith("team:") and team[m]["type"] == "team_moment"] == \
+        ["team:pistol", "team:half", "team:ace", "team:comeback", "team:flawless"], list(team)
+    assert team["team:pistol"]["basis"] == {"games": 8, "hits": 6} and 0.5 < team["team:pistol"]["selections"][0]["fair_prob"] < 0.9
+    assert team["team:ace"]["basis"]["hits"] == 1 and team["team:comeback"]["selections"][0]["fair_prob"] < 0.2
+    assert team["team:flawless"]["line"] % 1 == 0.5 and team["team:flawless"]["selections"][0]["label"].startswith("Over ")
+    few = engine.moment_markets(mdb.matches(), {t["match_id"]: t["data"] for t in mdb.timelines()[:4]})
+    assert few == [], few  # 4 games with a timeline: not enough to offer any
+
+    # Settled from the new game's timeline; a game without one refunds them; a parlay replays them like any leg.
+    mbets.register("Moe", "secret1")
+    pistol = mbets.place("Moe", "team:pistol", "yes", 10, {})
+    ace_no = mbets.place("Moe", "team:ace", "no", 10, {})
+    flaw = mbets.place("Moe", "team:flawless", "over", 10, {})
+    assert pistol["description"] == "Pistol round: Yes" and json.loads(pistol["context"])["fact"] == "pistol", pistol
+    legs, _, quote = mbets.quote_parlay([{"market_id": "team:pistol", "selection": "yes"}, {"market_id": "team:win", "selection": "win"}], {})
+    assert set(legs[0]["hist"]) <= {"0", "1"} and len(legs[0]["hist"]) == 8, legs[0]["hist"]  # replayed on every game
+    mdb.insert_match({"match_id": "g-new", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 5,
+                      "rounds_won": 13, "rounds_lost": 9, "result": "win"}, line(9))
+    mdb.save_timeline("g-new", tl(comeback_won, [(0, "e0", "puuid-2")] + ace))
+    settled = {b["id"]: b for b in mbets.settle_for_match(mdb.match("g-new"), mdb.match_players("g-new"))}
+    assert [settled[b["id"]]["status"] for b in (pistol, ace_no, flaw)] == ["lost", "lost", "won"], settled
+    assert settled[flaw["id"]]["actual_value"] == 13
+    again = mbets.place("Moe", "team:pistol", "yes", 10, {})
+    mdb.insert_match({"match_id": "g-bare", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 10,
+                      "rounds_won": 13, "rounds_lost": 5, "result": "win"}, line(10))  # its full record never came
+    bare = mbets.settle_for_match(mdb.match("g-bare"), mdb.match_players("g-bare"))[0]
+    assert bare["id"] == again["id"] and bare["status"] == "void" and "isn't available" in bare["note"], bare
+
+    # A surrender: the pistol and an ace that happened are decided; half-time before round 12, or no ace yet, is void.
+    ev = lambda fact, sel, won, kills=(), ln=None: mbets._evaluate(  # noqa: E731
+        {"market_type": "team_moment", "selection": sel, "line": ln, "context": json.dumps({"fact": fact})},
+        {"mode": "competitive", "rounds_won": sum(won), "rounds_lost": len(won) - sum(won), "result": "win",
+         "timeline": tl(won, kills)}, {})
+    ff = [True, False, True, True, True, True, False, True]  # surrendered by them 6-2
+    assert ev("pistol", "yes", ff)[0] == "won" and "surrender" in ev("pistol", "yes", ff)[2]
+    assert ev("half", "yes", ff)[0] == "void" and ev("ace", "no", ff)[0] == "void" and ev("ace", "yes", ff, ace)[0] == "won"
+    assert ev("flawless", "over", ff, ln=4.5)[0] == "won" and ev("flawless", "under", ff, ln=7.5)[0] == "void"
+
+
 @section("score markets")
 def score_markets(shared):
-    # Rounds won / lost, winning margin and exact score come from one final-score model that agrees with the
-    # match-result and overtime markets.
+    # Margin and exact score come from one final-score model that agrees with the match-result and overtime markets.
     board = shared.engine.build(shared.db)
     team = {mk["market_id"]: mk for mk in board["team"]}
     fair = lambda mid: {x["key"]: x["fair_prob"] for x in team[mid]["selections"]}  # noqa: E731
     score, margin = fair("team:score"), fair("team:margin")
-    # Only squad wins are offered: the three margins add up to the match-result chance, the 12 regulation scores to
-    # a little less (the rest is an overtime win, which counts as "win by 1-2" but not as an exact score).
-    assert list(score) == [f"13-{x}" for x in range(12)] and list(margin) == ["w1-2", "w3-5", "w6+"]
-    p_win = fair("team:win")["win"]
-    assert abs(sum(margin.values()) - p_win) < 2e-3 and sum(score.values()) < p_win, (margin, p_win)
-    assert margin["w1-2"] > score["13-11"] and team["team:score"]["selections"][0]["label"] == "13–0"
-    assert team["team:rw"]["line"] % 1 == 0.5
+    # Every result is offered, in the page's order: a heavy loss to a heavy win, and 0-13 .. overtime .. 13-0.
+    assert list(margin) == ["l6+", "l3-5", "l1-2", "w1-2", "w3-5", "w6+"]
+    assert list(score) == [f"{x}-13" for x in range(12)] + ["ot-loss", "ot-win"] + [f"13-{x}" for x in range(11, -1, -1)]
+    p_win, p_ot = fair("team:win")["win"], fair("team:ot")["yes"]
+    assert abs(sum(v for k, v in margin.items() if k.startswith("w")) - p_win) < 2e-3, (margin, p_win)
+    assert abs(sum(v for k, v in score.items() if k.startswith("13-") or k == "ot-win") - p_win) < 2e-3
+    assert abs(sum(margin.values()) - 1) < 2e-3 and abs(sum(score.values()) - 1) < 2e-3
+    assert margin["w1-2"] > score["13-11"] and team["team:score"]["selections"][-1]["label"] == "13–0"
+    assert team["team:score"]["selections"][12]["label"] == "Overtime loss"
+    assert "team:rw" not in team and "team:rl" not in team  # no longer offered; old bets on them still settle (below)
     # The model itself: matches the match-result chance, and the overtime chance unless that's below what it can
     # produce (about 6%, e.g. a history with no overtime yet), where it sits at its widest spread.
     for pw, pot in ((0.45, 0.10), (0.6, 0.03)):
@@ -1212,8 +1291,10 @@ def score_markets(shared):
     assert ev("team_rw", "over", w13_7, 10.5) == "won" and ev("team_rl", "under", w13_7, 10.5) == "won"
     ot = {"rounds_won": 15, "rounds_lost": 13, "result": "win"}
     assert ev("team_score", "13-11", ot) == "lost" and ev("team_margin", "w1-2", ot) == "won" and ev("team_rl", "over", ot, 11.5) == "won"
-    l7_13 = {"rounds_won": 7, "rounds_lost": 13, "result": "loss"}  # a loss loses every margin and exact-score bet
+    assert ev("team_score", "ot-win", ot) == "won" and ev("team_score", "ot-loss", ot) == "lost"
+    l7_13 = {"rounds_won": 7, "rounds_lost": 13, "result": "loss"}  # losses have their own picks now
     assert ev("team_score", "13-7", l7_13) == "lost" and ev("team_margin", "w6+", l7_13) == "lost"
+    assert ev("team_score", "7-13", l7_13) == "won" and ev("team_margin", "l6+", l7_13) == "won" and ev("team_margin", "l3-5", l7_13) == "lost"
     assert ev("team_score", "5-3", {"rounds_won": 5, "rounds_lost": 3, "result": "win", "mode": "swiftplay"}) == "void"
     ff = {"rounds_won": 9, "rounds_lost": 4, "result": "win"}  # surrendered 9-4
     assert ev("team_rw", "over", ff, 8.5) == "won" and ev("team_rw", "over", ff, 10.5) == "void"

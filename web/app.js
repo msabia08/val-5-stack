@@ -248,7 +248,7 @@
   }
   const loadStats = async () => { state.stats = await api('/api/stats'); };
   const loadInsights = async () => { state.insights = await api('/api/insights'); };
-  // The next-game forecast uses the odds board's map and agents (set on Place bets), and the board itself is loaded
+  // The next-game forecast uses the odds board's map and agents (none since the pickers were removed), and the board itself is loaded
   // too, so the Next game card can show the betting line and add it to the slip.
   const loadForecasts = async () => {
     const p = new URLSearchParams({ stat: state.fc.stat });
@@ -269,7 +269,6 @@
   };
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadRecap = async () => { state.recap = await api('/api/recap' + (state.recapId ? '?match=' + encodeURIComponent(state.recapId) : '')); };
-  const loadContent = async () => { state.content = await api('/api/content'); };
   // The betting UI lives in web/bets.js (window.FiveBets); these names keep the call sites below unchanged.
   const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard } = window.FiveBets;
   async function loadOdds() {
@@ -674,45 +673,84 @@
   // ---- odds & bets --------------------------------------------------------------
   // A flaming border marks a pick that would have won each of the last 3+ games (s.streak), a frosty one a pick that
   // usually hits but has missed its last 3+ (s.cold, multi-way markets only); both from BetManager.mark_streaks.
-  function oddBtn(mk, s, label) {
+  function oddBtn(mk, s, label, extra = '') { // extra: more classes for the button (e.g. 'win' / 'loss' to colour its label)
     const on = state.slip.some((x) => x.market_id === mk.market_id && x.selection === s.key);
     const runOf = (n) => (n >= state.odds.streak_lookback ? `${n}+` : n);
     const note = s.streak ? `Hit ${runOf(s.streak)} games in a row` : s.cold ? `Missed ${runOf(s.cold)} games in a row` : '';
-    const cls = s.streak ? ' hot' : s.cold ? ' cold' : '';
+    const cls = (s.streak ? ' hot' : s.cold ? ' cold' : '') + (extra ? ` ${extra}` : '');
     return `<button class="odd ${on ? 'on' : ''}${cls}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability${note ? ` · ${note}` : ''}">` +
       `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b>${note ? `<span class="sr-only">, ${note}</span>` : ''}</button>`;
   }
 
+  // The line of fact under each team-market card (how often it happened, the streak, the final score's likeliest and
+  // its overtime label). Off to keep the section short; set to true to bring them all back.
+  const TM_FACTS = false;
+
   function viewOdds() {
-    const od = state.odds, c = state.content, idx = memberIndex();
-    const members = state.status.members || [];
-    const ctxBar = `<section class="card"><div class="ctx-row">
-        <label>Expected map<select id="ctx-map"><option value="">Any map</option>${c.maps.map((m) => `<option ${state.ctx.map === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
-        ${members.map((m) => {
-          const played = c.played[m.puuid] || [];
-          const opts = [...played, ...c.agents.filter((a) => !played.includes(a))];
-          return `<label>${esc(m.nickname)}<select class="ctx-agent" data-puuid="${esc(m.puuid)}"><option value="">Any agent</option>${opts.map((a) => `<option ${state.ctx.agents[m.puuid] === a ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select></label>`;
-        }).join('')}
-        <button class="btn ghost" id="ctx-clear">Clear</button>
-        <label class="right">Odds format<select id="odds-format"><option value="american" ${state.oddsFormat === 'american' ? 'selected' : ''}>American</option><option value="decimal" ${state.oddsFormat === 'decimal' ? 'selected' : ''}>Decimal</option></select></label>
-      </div>
-      ${how(`Odds for the next game, from your 5-stack history (house edge ${Math.round((od.house_edge || 0) * 100)}%). Pick a map or agents to sharpen them.`,
-        `<p>Lines come from your 5-stack history, weighted toward recent games. Choosing a map or agents up-weights matching games.` +
-        `${od.partial_games?.forfeits ? ` ${od.partial_games.forfeits} surrendered ${od.partial_games.forfeits === 1 ? 'game is' : 'games are'} scaled to a full ${od.partial_games.full_game_rounds}-round game and counted at reduced weight.` : ''}</p>` +
-        `<p>Bets count for the next game, and for the game that just started if you place them within ${fmt.n0(state.status.bet_grace_minutes ?? 2)} minutes of it starting (while loading in or in round 1). After that they carry over to the following game.</p>` +
-        '<p>If the next game ends early by a surrender, the match result stands. Other bets settle only if they were already decided (an over that had already cleared its line wins; its under loses); everything else is refunded. Parlays apply this leg by leg: undecided legs are dropped and the rest still count. A remake in the first few rounds doesn\'t count as a game: bets carry over to the next one.</p>')}</section>`;
+    const od = state.odds, idx = memberIndex();
+    // Only the odds format sits above the markets. The map and agent pickers are gone, so the odds always use every
+    // game (state.ctx stays empty; the API still takes a map and agents).
+    // The odds format, as a two-way toggle at the top of the sidebar, above the bet slip.
+    const fmtBtn = (v, label) => `<button type="button" class="mode-btn ${state.oddsFormat === v ? 'on' : ''}" data-odds-fmt="${v}" aria-pressed="${state.oddsFormat === v}">${label}</button>`;
+    const fmtBar = `<div class="odds-format"><span>Odds format</span><div class="slip-mode" role="group" aria-label="Odds format">${fmtBtn('american', 'American')}${fmtBtn('decimal', 'Decimal')}</div></div>`;
     if (!od.ready) {
-      return ctxBar + `<div class="card empty"><h2>No odds yet</h2><p>${esc(od.message)}</p></div>` + betsSection();
+      return `<div class="card empty"><h2>No odds yet</h2><p>${esc(od.message)}</p></div>` + betsSection();
     }
-    // Exact score spans the grid, its 12 scores in a compact grid of their own.
-    // No subtitles (each card's details are in its title's tooltip) and buttons pinned to the bottom, so each row lines up.
-    const team = od.team.map((mk) => {
-      const btnLabel = (s) => (mk.type === 'team_margin' ? s.label.replace(/^Win by /, '') : s.label); // the slip still says "Win by 1–2"
-      const sels = `<div class="sels ${mk.type}">${mk.selections.map((s) => oddBtn(mk, s, btnLabel(s))).join('')}</div>`;
-      const sub = mk.desc + (mk.basis ? ` · ${fmt.pct(mk.basis.win_rate)} of ${mk.basis.games} won${mk.basis.map_games ? `, ${mk.basis.map_games} on this map` : ''}` : '') +
-        (mk.mean != null ? ` · avg ${mk.mean}` : '');
-      return `<div class="market${mk.type === 'team_score' ? ' wide' : ''}"><h3 title="${esc(sub)}">${esc(mk.label)}</h3>${sels}</div>`; // details on hover
-    }).join('');
+    // Team markets: the match result first (two big buttons either side of a bar split by each side's chance, centred,
+    // with the last five results under its middle), then the other markets as question cards (with a line on how often, when TM_FACTS is on)
+    // each has happened, then every final score in one row with a bar above each for how likely it is. A card's
+    // details are in its question's tooltip; a market the board doesn't have yet (moments need 5 games with round
+    // data) just isn't drawn.
+    const tm = new Map(od.team.map((mk) => [mk.market_id, mk]));
+    const share = (b) => (b && b.games ? fmt.pct(b.hits / b.games) : '–');
+    const win = tm.get('team:win');
+    let hero = '';
+    if (win) {
+      const [w, l] = win.selections, pw = w.fair_prob / (w.fair_prob + l.fair_prob);
+      const recent = ((win.basis && win.basis.recent) || []).slice().reverse(); // oldest first, so the newest is on the right
+      // The buttons sit either side of the middle column (bar plus the line under it), centred on it vertically.
+      hero = `<div class="tm-match" title="${esc(win.desc)}">${oddBtn(win, w, w.label)}<div class="tm-mid">` +
+        `<div class="tm-split" role="img" aria-label="${fmt.pct(pw)} chance to win"><span class="tm-split-win" style="width:${(pw * 100).toFixed(1)}%"></span></div>` +
+        `<div class="tm-under"><span>${fmt.pct(pw)} to win</span>` +
+        `<span class="tm-form" title="The last ${recent.length} games, oldest to newest">${recent.map((r) => `<span class="chip ${esc(r || '')}">${fmt.res(r)}</span>`).join('')}</span>` +
+        `<span>${fmt.pct(1 - pw)} to lose</span></div></div>${oddBtn(win, l, l.label)}</div>`;
+    }
+    // A question card: the question, its picks (all of them by default) and, when TM_FACTS is on, one line of fact
+    // under them (a pick on a streak says so instead).
+    const qcard = (mk, question, fact, opts = {}) => {
+      if (!mk) return '';
+      const sels = opts.sels || mk.selections;
+      const hot = sels.find((s) => s.streak);
+      const line = hot ? `🔥 ${esc(hot.label)} in each of the last ${hot.streak} games` : fact;
+      return `<div class="tm-q${opts.wide ? ' wide' : ''}"><div class="tm-question" title="${esc(mk.desc)}">${esc(question)}</div>` +
+        `<div class="tm-answers" style="grid-template-columns:repeat(${sels.length}, minmax(0, 1fr))">` +
+        `${sels.map((s) => oddBtn(mk, s, opts.label ? opts.label(s) : s.label, opts.cls ? opts.cls(s) : '')).join('')}</div>` +
+        `${TM_FACTS ? `<div class="tm-fact">${line}</div>` : ''}</div>`;
+    };
+    const margin = tm.get('team:margin'), ot = tm.get('team:ot'), comeback = tm.get('team:comeback'), flawless = tm.get('team:flawless');
+    const cards = [
+      qcard(margin, 'By how much?', 'Overtime counts as 1–2 either way',
+        { wide: true, label: (s) => s.label.replace(' by ', ' '), cls: (s) => (s.key.startsWith('l') ? 'loss' : 'win') }),
+      qcard(tm.get('team:pistol'), 'Win the pistol?', `Round 1 won in ${share(tm.get('team:pistol')?.basis)} of games`),
+      qcard(tm.get('team:half'), 'Ahead at half-time?', `Ahead after round 12 in ${share(tm.get('team:half')?.basis)} of games`),
+      qcard(ot, 'Overtime?', ot && ot.basis ? `Reached 12–12 in ${ot.basis.hits} of ${ot.basis.games} games` : ''),
+      qcard(tm.get('team:ace'), 'Anyone ace?', `An ace in ${share(tm.get('team:ace')?.basis)} of games`),
+      qcard(comeback, 'Comeback from 5 down?', comeback ? `Happened ${comeback.basis.hits === 1 ? 'once' : `${comeback.basis.hits} times`} in ${comeback.basis.games} games` : ''),
+      qcard(flawless, 'Flawless rounds?', flawless ? `${flawless.basis.mean} a game on average (won with nobody dying)` : ''),
+    ].join('');
+    const score = tm.get('team:score');
+    let finalScore = '';
+    if (score) {
+      const peak = Math.max(...score.selections.map((s) => s.fair_prob)) || 1;
+      const likeliest = score.selections.reduce((a, s) => (s.fair_prob > a.fair_prob ? s : a));
+      const kind = (k) => (k.startsWith('ot') ? 'ot' : k.endsWith('-13') ? 'loss' : 'win');
+      const short = (s) => ({ 'ot-loss': 'OT L', 'ot-win': 'OT W' }[s.key] || s.label);
+      finalScore = `<div class="tm-q tm-final"><div class="tm-question" title="${esc(score.desc)}">Final score?</div>` +
+        `<div class="tm-mountain">${score.selections.map((s) => `<div class="${kind(s.key)}${s === likeliest ? ' top' : ''}" title="${esc(s.label)}: ${fmt.pct(s.fair_prob)} chance">` +
+        `<i style="height:${Math.max(3, Math.round((s.fair_prob / peak) * 54))}px"></i>${oddBtn(score, s, short(s))}</div>`).join('')}</div>` +
+        `${TM_FACTS ? `<div class="tm-axis">overtime</div><div class="tm-fact">Likeliest: ${esc(likeliest.label)} (${fmt.pct(likeliest.fair_prob)}), outlined. Hover a bar for its chance.</div>` : ''}</div>`;
+    }
+    const team = hero + `<div class="tm-qgrid">${cards}${finalScore}</div>`;
     const props = new Map(od.player_props.map((p) => [p.market_id, p]));
     const propRows = od.members.map((m) => {
       const slot = idx.get(m.puuid)?.slot || 1;
@@ -747,13 +785,13 @@
             `<span class="muted small num">${Math.round(s.fair_prob * 100)}%</span>${oddBtn(mk, s, '')}</div>`;
         }).join('') + '</div>';
     }).join('');
-    return ctxBar + `<div class="odds-layout"><div>
-        <section class="card"><h2>Team markets</h2>${how('How the next game goes for the squad as a whole.', 'Rounds won / lost, winning margin and exact score all come from one model of the final score, so they agree with the match-result and overtime odds.')}<div class="markets">${team}</div></section>
+    return `<div class="odds-layout"><div>
+        <section class="card"><h2>Team markets</h2>${how('How the next game goes for the squad as a whole.', 'Margin and final score come from one model of the final score, so they agree with the match-result and overtime odds, and they cover every result: one pick wins each game. An overtime game counts as 1–2 for the margin and is its own final-score pick. The pistol, half-time, ace, comeback and flawless-round markets are read from each game\'s round-by-round record; if that record isn\'t available for the game played, those bets are refunded. On a surrender, the ones already decided settle and the rest are refunded.')}${team}</section>
         <section class="card"><h2>Player props · over / under</h2><p class="muted small">For the next 5-stack game. Each cell shows the line, then the odds for going over (O) or under (U) it; tap O or U to add a pick to the slip.</p>
           <div class="table-wrap"><table class="props"><thead><tr><th>Player</th>${od.stat_defs.map((s) => `<th>${esc(s.label)}</th>`).join('')}</tr></thead><tbody>${propRows}</tbody></table></div></section>
         <section class="card"><h2>Top and bottom of the scoreboard</h2>${how('Pick who finishes first in a stat, or flip a card for who finishes last.', '"Popped off" and "Got diff\'d" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.')}<div class="markets">${tops}</div></section>
         ${betsSection()}
-      </div><aside class="odds-side"><div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}${myBetsCard()}</aside></div>`;
+      </div><aside class="odds-side">${fmtBar}<div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}${myBetsCard()}</aside></div>`;
   }
 
 
@@ -885,7 +923,7 @@
         case 'players': await loadStats(); break;
         case 'forecasts': await loadForecasts(); break;
         case 'viz': await loadInsights(); break;
-        case 'odds': await Promise.all([loadOdds(), loadBets(), loadContent()]); break;
+        case 'odds': await Promise.all([loadOdds(), loadBets()]); break;
         case 'bettors': await Promise.all([loadBets(), loadBettingReport(), loadSeasons()]); break;
         case 'shop': await Promise.all([window.FiveShop.loadShop(), window.FiveShop.loadTroop()]); break;
         case 'troop': await Promise.all([window.FiveShop.loadTroop(), window.FiveShop.loadProfile(), state.shop ? null : window.FiveShop.loadShop()]); break;
@@ -927,14 +965,10 @@
     });
     $('#fc-all')?.addEventListener('click', () => { state.fc.cell = ''; draw(); });
     $$('.fc-role', view).forEach((b) => b.addEventListener('click', () => { state.fc.role = b.dataset.v; state.fc.cell = ''; draw(); }));
-    $('#ctx-map')?.addEventListener('change', (e) => { state.ctx.map = e.target.value; refreshOdds(); });
-    $$('.ctx-agent', view).forEach((sel) => sel.addEventListener('change', (e) => {
-      const p = e.target.dataset.puuid;
-      if (e.target.value) state.ctx.agents[p] = e.target.value; else delete state.ctx.agents[p];
-      refreshOdds();
+    $$('[data-odds-fmt]').forEach((b) => b.addEventListener('click', () => {
+      if (state.oddsFormat === b.dataset.oddsFmt) return;
+      state.oddsFormat = b.dataset.oddsFmt; localStorage.setItem('fs.oddsFormat', state.oddsFormat); draw();
     }));
-    $('#ctx-clear')?.addEventListener('click', () => { state.ctx = { map: '', agents: {} }; refreshOdds(); });
-    $('#odds-format')?.addEventListener('change', (e) => { state.oddsFormat = e.target.value; localStorage.setItem('fs.oddsFormat', state.oddsFormat); draw(); });
     $$('.top-dir', view).forEach((b) => b.addEventListener('click', () => { state.topDir[b.dataset.pair] = b.dataset.dir; draw(); }));
     window.FiveBets.bind(view);
     window.FiveShop.bind(view);
@@ -978,7 +1012,7 @@
 
   // Emoji in the nav (every entry, group buttons and menu rows). Set to false to hide them all; the markup in index.html
   // stays, so setting it back to true brings them back.
-  const NAV_ICONS = true;
+  const NAV_ICONS = false;
 
   // The nav's dropdown groups (Stats, Betting, Onkey's in index.html): a group's button names the page you're on, with
   // its icon, and lights up; the menu opens on click (or Enter / Space / ↓), arrow keys move through it, and Escape,
@@ -1128,7 +1162,7 @@
     bindNavMenus();
     window.addEventListener('hashchange', route);
     try {
-      await Promise.all([loadStatus(), loadContent(), loadMe(), shop.loadTroop().catch(() => {})]); // the troop's looks style names everywhere
+      await Promise.all([loadStatus(), loadMe(), shop.loadTroop().catch(() => {})]); // the troop's looks style names everywhere
     } catch (e) {
       $('#view').innerHTML = `<div class="card error"><h2>Could not reach the server</h2><p>${esc(e.message)}</p></div>`;
       return;

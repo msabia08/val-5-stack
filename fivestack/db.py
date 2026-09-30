@@ -463,6 +463,11 @@ class DB:
         self.execute("INSERT OR REPLACE INTO match_timelines(match_id, data, fetched_ts) VALUES(?,?,?)",
                      (match_id, json.dumps(timeline) if timeline else None, time.time()))
 
+    def timeline(self, match_id):
+        """One game's stored timeline (see timeline.py), or None if it has none (yet)."""
+        row = self.query_one("SELECT data FROM match_timelines WHERE match_id=?", (match_id,))
+        return json.loads(row["data"]) if row and row["data"] else None
+
     def timelines(self):
         """Every stored timeline with its game's map and result, newest game first."""
         rows = self.query(

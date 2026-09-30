@@ -951,9 +951,9 @@
     return intro + pickers + fcNextCard(p) + kpis + fcStripCard(p) + fcGridCard(p);
   }
 
-  // What to expect from this player in the next game: the forecast from all their games so far (the odds board's map
-  // and agent, when set on Place bets), drawn as a range on a number line with the betting line, which can be added
-  // to the slip from here.
+  // What to expect from this player in the next game: the forecast from all their games so far (with the odds board's
+  // map and agent when there are any), drawn as a range on a number line with the betting line, which can be added to
+  // the slip from here.
   function fcNextCard(p) {
     const nx = p.next;
     if (!nx) return '';
@@ -969,17 +969,20 @@
       (mk ? `<span class="fc-next-bet" style="left:${pos(mk.line)}"><i>line ${fcVal(mk.line)}</i></span>` : '') +
       `<span class="fc-next-end" style="left:${pos(nx.range[0])}">${fcVal(nx.range[0])}</span>` +
       `<span class="fc-next-end" style="left:${pos(nx.range[1])}">${fcVal(nx.range[1])}</span></div>`;
-    const where = `${nx.map ? `on ${h.esc(nx.map)}` : 'on any map'}, ${nx.agent ? `as ${h.esc(nx.agent)}` : 'any agent'}`;
+    const where = [nx.map ? `on ${h.esc(nx.map)}` : '', nx.agent ? `as ${h.esc(nx.agent)}` : ''].filter(Boolean).join(', ');
     const take = `Most likely between <strong>${fcVal(nx.range[0])} and ${fcVal(nx.range[1])}</strong> (${pct(d.coverage)} of games), ` +
-      `typically <strong>${fcVal(nx.typical)}</strong>, ${fcVal(nx.expected)} on average · ${where}, from their last ${plural(nx.games, 'game')}`;
+      `typically <strong>${fcVal(nx.typical)}</strong>, ${fcVal(nx.expected)} on average${where ? ` ${where}` : ''} · from their last ${plural(nx.games, 'game')}`;
+    const noLine = st.group === 'round' ? 'Per-round stats have no betting line; pick the per-game stat to bet on it.'
+      : ['acs', 'adr'].includes(d.stat) ? `${h.esc(st.label)} has no over / under line; Place bets has it in "Top and bottom of the scoreboard".`
+      : 'No betting line for this stat right now.';
     const bet = mk
       ? `<div class="fc-next-odds"><span>Betting line <b>${fcVal(mk.line)}</b></span>${mk.selections.map((s) => h.oddBtn(mk, s, s.key === 'over' ? 'Over' : 'Under')).join('')}` +
         `<a class="go-link" href="#odds">Place bets ›</a></div>`
-      : `<p class="muted small">${st.group === 'round' ? 'Per-round stats have no betting line; pick the per-game stat to bet on it.' : 'No betting line for this stat right now.'}</p>`;
+      : `<p class="muted small">${noLine}</p>`;
     return card('forecast-next', `${p.nickname}'s next game: ${st.label}`, take,
       `<div class="fc-next">${line}${bet}</div>` +
-      how('The map and agents come from the pickers on Place bets.', 'This is the same forecast as each game in the chart below, made from every game so far: ' +
-        'recent games and games on the same map and agent weigh more, exactly like the player-prop odds, so its average is the one the odds board uses. ' +
+      how('Made from every game so far, weighted like the odds.', 'This is the same forecast as each game in the chart below, made from every game so far: ' +
+        'recent games weigh more, exactly like the player-prop odds, so its average is the one the odds board uses. ' +
         'The tick marks the typical game and the dashed line the betting line.'));
   }
 

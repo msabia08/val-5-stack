@@ -186,8 +186,8 @@ def _agent_pool(rows, overall_acs):
 # Betting report card: market types grouped the way bettors think about them.
 BET_CATEGORIES = [("ou", "Player props"), ("exact", "Exact numbers"), ("top", "Scoreboard"), ("team_win", "Match result"),
                   ("team_ou", "Total rounds"), ("team_rw", "Rounds won"), ("team_rl", "Rounds lost"),
-                  ("team_margin", "Winning margin"), ("team_score", "Exact score"), ("team_ot", "Overtime"),
-                  ("parlay", "Parlays")]
+                  ("team_margin", "Margin"), ("team_score", "Exact score"), ("team_ot", "Overtime"),
+                  ("team_moment", "Round moments"), ("parlay", "Parlays")]
 
 
 def _bet_record(bets):

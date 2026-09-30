@@ -186,9 +186,9 @@ betting lines use:
   skewed stats like kills.
 
 The page starts with the **next game**: the same forecast made from every game so
-far, for the map and agents picked on Place bets. It's drawn as a range on a
-number line with the typical game and the current betting line, and the Over /
-Under buttons add that line to your bet slip.
+far. It's drawn as a range on a number line with the typical game and the
+current betting line, and the Over / Under buttons add that line to your bet
+slip (kills, deaths, assists and headshot %, the stats with a line).
 
 Then it puts each past prediction next to what actually happened:
 
@@ -210,10 +210,14 @@ games aren't forecast. For deaths, fewer counts as beating the forecast.
 
 For each player the history of 5-stack games is turned into a
 recency-weighted sample (half-life `recency_half_life_games`, default 15 games).
-If you pick an expected **map** or an expected **agent** per player on the Odds
-page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`).
+The Place bets page always prices the next game from every map and agent. (The
+odds engine can still weight one map or agent up, `map_weight_boost` and
+`agent_weight_boost`, for anything that asks it to; the page no longer does.)
+American or decimal odds are picked with the toggle above the bet slip.
 
-- **Player props (over/under):** kills, deaths, assists, ACS, ADR, headshot %.
+- **Player props (over/under):** kills, deaths, assists and headshot %. ACS
+  isn't a prop, but it's still bet on through *Top and bottom of the scoreboard*
+  (Highest ACS, Popped off and their counters).
   The line sits at the weighted median; the over/under probability comes from a
   Gaussian-kernel smoothed distribution of past games.
 - **Custom lines:** "I think Loog gets 25 kills." Under the player props, pick a
@@ -269,26 +273,44 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   Probabilities come from a Monte Carlo simulation that draws one game per
   player from their weighted history; each top market and its counter come from
   the same simulated games. A tie at the top (or bottom) refunds the stake.
-- **Team markets:** match result, total rounds, and overtime (does the game go
-  past 12–12?). Overtime is rare, so its odds come from your history shrunk
-  toward a ~10% base rate, and surrendered games are left out of it.
-- **Score markets:** rounds won and rounds lost by the squad (over / under, with
-  overtime counting as 12+), **winning margin** (the squad wins by 1–2, 3–5 or
-  6+; overtime is 1–2), and the **exact score** of a squad win (13–0 to 13–11).
-  Margin and exact score are only offered on the squad winning: a loss loses
-  them, and so does an overtime win for exact score. They all come from one model of the final score:
+- **Team markets:** the match result comes first: Win and Loss either side of a
+  bar split by each side's chance, with the squad's last five results (W / L,
+  newest on the right) under the middle of the bar. Then each market is a
+  question card (hover a question for how the market works):
+  - **By how much?** the margin, from losing by 6+ to winning by 6+
+  - **Win the pistol?** round 1
+  - **Ahead at half-time?** after round 12 (6–6 isn't ahead)
+  - **Overtime?** does the game go past 12–12? It's rare, so its odds come from
+    your history shrunk toward a ~10% base rate; surrendered games are left out.
+  - **Anyone ace?** one of the five kills all five enemies in one round
+  - **Comeback from 5 down?** the squad falls 5 or more rounds behind and still
+    wins (a long shot)
+  - **Flawless rounds?** over / under on rounds won with nobody in the squad dying
+  - **Final score?** every result in one row, from a 0–13 loss through overtime
+    to a 13–0 win, each with a bar for how likely it is.
+
+  The pistol, half-time, ace, comeback and flawless markets are read from each
+  game's round-by-round record, so they appear once 5 games have one, and they're
+  priced from your recent games like the rest. If the record isn't available
+  for the game they settle on, they're refunded. (Total rounds, and rounds won /
+  lost over / unders, used to be offered too; they're gone, but bets already
+  placed on them still settle.)
+- **Score markets:** **margin** (lose or win by 1–2, 3–5 or 6+; overtime is
+  1–2 either way) and the **exact score** (every regulation score either way,
+  plus an overtime win and an overtime loss as their own picks), so one pick
+  wins every game. They all come from one model of the final score:
   each round is won with some chance, first to 13, and that chance varies from
   game to game. The model is tuned so its chance of winning matches the match
   result odds and its chance of reaching 12–12 matches the overtime odds as
-  closely as it can, so none of these markets contradict each other. Winning
-  margin and exact score have many picks each, so like the scoreboard markets
+  closely as it can, so none of these markets contradict each other. Margin and
+  exact score have many picks each, so like the scoreboard markets
   they carry double the house edge. They only settle on first-to-13 games (a
   shorter mode refunds them).
 - **Surrendered games are partial data.** Their kills, deaths and assists are
   scaled up to a full-length game (the median length of your completed games,
   or 22 rounds until there are 5 of them), and the game counts only as much as
-  the share of a full game that was played. They are left out of the
-  total-rounds line, and count normally toward the match-result odds.
+  the share of a full game that was played. They count normally toward the
+  match-result odds and are left out of the overtime odds.
 
 Fair probabilities are then shaded by `house_edge` (default 5%, doubled for the
 multi-way markets), exactly like a sportsbook's vig, and shown as American or
@@ -324,9 +346,13 @@ distribution at low weight and are flagged *low confidence*.
   game stopped: an over on a counting stat (kills, deaths, assists, total
   rounds) that had already cleared its line wins, and the matching under
   loses; an overtime bet settles only if the game had already reached 12–12;
-  rounds won / lost settle the same way as total rounds (an over already
-  cleared wins). Exact score and winning margin are refunded, since the final
-  score never happened. Anything else is refunded, including per-round stats (ACS, ADR,
+  rounds won / lost (older bets; no longer offered) settle the same way as
+  total rounds (an over already cleared wins). The pistol round is always
+  decided; half-time only if round 12 was played; an ace or a comeback settles
+  if it already happened (a comeback also needs the win to stand), and "no ace"
+  is refunded; flawless rounds settle like a count (an over already cleared
+  wins). Exact score and margin are refunded, since the final score never
+  happened. Anything else is refunded, including per-round stats (ACS, ADR,
   headshot %) and top/bottom-of-the-scoreboard markets, which could still have
   swung. When the full match record is available, its winner flag decides
   who won, even if the surrendering team was ahead on rounds. Parlay legs
@@ -362,10 +388,11 @@ there are 2+ picks.
 
 - All legs settle off the same next 5-stack game. If every leg wins, the payout
   is the stake times the combined odds locked in at placement.
-- **Legs that decide each other are refused.** Team legs are all settled from
-  the final score, so a pair where one can only win when the other does
-  ("Exact score 13–5" and "Win", "Win by 6+" and "Win", "Overtime: Yes" and
-  "Rounds won over 10.5") or where both can never win ("Loss" and "Win by 1–2")
+- **Legs that decide each other are refused.** Match result, overtime, margin
+  and exact score are all settled from the final score, so a pair where one can
+  only win when the other does
+  ("Exact score 13–5" and "Win", "Win by 6+" and "Win", "Exact score 13–5" and
+  "Win by 6+") or where both can never win ("Loss" and "Win by 1–2")
   can't share a parlay. The slip says which pair and greys out the button.
 - **Legs that tend to land together are priced together.** The combined odds
   are normally the legs' odds multiplied, which assumes they're unrelated. The

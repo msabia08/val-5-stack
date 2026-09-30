@@ -27,7 +27,7 @@ retire an old one, update this file in the same pull request.
 - **Summary row:** `.kpis` is a row of `.tile`s (label 12px muted, value 28px, sub-line 12px) at the top of a tab.
   Keep it to 4-5 tiles and don't repeat what the card right below shows.
 - **Two columns:** `.grid-2` for pairs of equal cards. Pages with a sidebar use `.odds-layout` (main column plus a
-  320px `aside`): the bet slip on Place bets (pinned, `.odds-side`) and Send credits / Game rewards on Standings
+  320px `aside`): the odds format toggle and bet slip on Place bets (pinned, `.odds-side`; the page has no header row) and Send credits / Game rewards on Standings
   (`.bettors-side`, scrolls with the page because it's taller than the window).
 - **Spacing:** 16px between cards and columns, 12px inside groups (tiles, market boxes), 8px between related
   controls. Keep new spacing on that 4px grid.
@@ -43,8 +43,11 @@ retire an old one, update this file in the same pull request.
 - Page names say what you do there: "Place bets" (the odds and your slip), "Standings" (rankings and results). The
   addresses behind them (`#odds`, `#bettors`) are older and stay as they are, so links keep working; when you write
   about a page, use its label, not its address.
-- Every nav entry has an emoji in a `.nav-icon` span. `NAV_ICONS = false` in `app.js` hides them all (it adds
-  `.no-nav-icons` to `<html>`); the markup stays, so turning them back on is one change.
+- Every nav entry has an emoji in a `.nav-icon` span, but they're off: `NAV_ICONS = false` in `app.js` hides them all
+  (it adds `.no-nav-icons` to `<html>`); the markup stays, so setting it to true brings them back.
+- The nav follows the brand on the left; its entries are 24px apart with a short vertical line between each, and a
+  group's button has a drawn chevron (down, up while open). In a group's menu the page you're on is marked by its background
+  alone (no accent bar), and a hairline divides the rows.
 
 ## Colour
 
@@ -102,6 +105,7 @@ Reuse these before inventing new ones.
 | Top-bar chips | `renderMe()` → `#me-credits`, `#me-bananas`, `#me-chip` | Signed out, only the Sign in chip shows |
 | Better / worse than expected | `.fc-bar-row` (Forecasts, `fcGridCard()`) | A bar either side of a zero line, better to the right, paler with fewer games; rows sorted best to worst and clickable to filter. Use this, not a shaded grid, for "how far off expected" per group |
 | A forecast on a number line | `.fc-next-line` (Forecasts, `fcNextCard()`) | Range band, typical-game tick, dashed betting line, end labels |
+| A market group as questions | `.tm-match`, `.tm-form`, `.tm-qgrid` / `.tm-q`, `.tm-mountain` (Place bets, team markets) | The main bet first and bigger, its bar centred and split by chance, recent form as small W / L chips under the middle, a nudge below the chances either side, and the two buttons centred vertically on the bar and that line; every other market a card asked as a plain question with its picks (the fact line under each is off, `TM_FACTS = false` in `app.js`, to keep the section short); a many-pick market (final score) as one row of columns whose height is the chance, the likeliest outlined |
 | Cards of different heights | `.bettor-slips` (CSS columns) | Stacks cards without holes; `break-inside: avoid` on each card |
 | One list per player | `.ap-grid` > `.ap-col` (Charts, agent pool) | A column per player listing only what they have, instead of a sparse player × item grid |
 
