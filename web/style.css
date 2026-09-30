@@ -323,7 +323,9 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .odds-side #custom-line h2 { font-size: 16px; }
 .odds-side .my-bets h2 { font-size: 16px; }
 .odds-side .my-bets .bettor-slips { grid-template-columns: 1fr; }
-/* Bettors tab sidebar: Send credits and Game rewards, compact like the bet slip's cards */
+/* Bettors tab sidebar: Send credits and Game rewards, compact like the bet slip's cards. Unlike the bet slip it
+   scrolls with the page: it's taller than the window, and a pinned column would need its own scrollbar. */
+.bettors-side { position: static; max-height: none; overflow: visible; }
 .bettors-side h2 { font-size: 16px; }
 .bettors-side h3 { margin: 12px 0 4px; }
 .bettors-side .tax-banner { padding: 8px 10px; font-size: 13px; gap: 8px; }
