@@ -980,6 +980,11 @@ def forecasts(shared):
     assert f11["expected"] == board_kills["mean"] and abs(f11["typical"] - board_kills["line"]) <= 1, (f11, board_kills["line"])
     assert f11["range"][0] < 10 < f11["range"][1] and f11["expected"] < 15 < f10["expected"]  # the map and agent pull it
     assert f11["role"] == "Initiator" and f10["role"] == "Duelist"
+    # The next game's forecast is what the odds board shows now, for the same map and agent.
+    assert p["next"] and p["next"]["map"] is None and p["next"]["range"][0] < p["next"]["typical"] < p["next"]["range"][1], p["next"]
+    now = next(mk for mk in engine.build(fdb, {"map": "Bind", "agents": {"puuid-1": "Sova"}})["player_props"] if mk["market_id"] == "ou:kills:puuid-1")
+    nxt = build_forecasts(fdb, engine, "kills", "puuid-1", "Bind", "Sova")["player"]["next"]
+    assert nxt["expected"] == now["mean"] and (nxt["map"], nxt["agent"], nxt["games"]) == ("Bind", "Sova", 13), (nxt, now["mean"])
     # The overtime game's 27 kills beat the per-game forecast only because it went long; per round it's a normal game.
     assert game["f12"]["actual"] > game["f12"]["range"][1], game["f12"]
     kpr = {g["match_id"]: g for g in build_forecasts(fdb, engine, "kpr")["player"]["games"]}["f12"]

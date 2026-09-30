@@ -1,4 +1,4 @@
-/* 5-Stack Tracker: the betting UI. The bet slip, bet tickets, the Bettors tab (rankings, report card, settled bets,
+/* 5-Stack Tracker: the betting UI. The bet slip, bet tickets, the Standings page (view bettors: rankings, report card, settled bets,
  * rewards, seasons) and their data loading, split out of app.js the way the charts live in viz.js.
  *
  * app.js calls FiveBets.init() once with the helpers this needs (state, api, draw, ...), then uses the functions
@@ -220,10 +220,10 @@ window.FiveBets = (() => {
     const pending = state.bets.filter((b) => b.status === 'pending');
     return `<section class="card"><div class="section-head"><h2>Open bets</h2>${pending.length ? `<span class="muted small">${betTotals(pending, false)}</span>` : ''}</div>
         ${pending.length ? bettorSlips(pending) : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
-        <p class="muted small">Settled bets, balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>`;
+        <p class="muted small">Settled bets, balances and rankings live on <a href="#bettors">Standings</a>.</p></section>`;
   }
 
-  // The Odds & Bets sidebar's "Your open bets": the signed-in bettor's slip card from the open bets section, where a
+  // The Place bets sidebar's "Your open bets": the signed-in bettor's slip card from the open bets section, where a
   // bet just placed lands with its stamp.
   function myBetsCard() {
     if (!state.me) return '';
@@ -242,7 +242,7 @@ window.FiveBets = (() => {
     return new Map([...groups].sort(([, a], [, b]) => (b[0].game_started_ts || 0) - (a[0].game_started_ts || 0)));
   }
 
-  // Bettors tab: settled bets for the game picked in the dropdown (state.settledGame; '' = the most recent), grouped
+  // Standings page: settled bets for the game picked in the dropdown (state.settledGame; '' = the most recent), grouped
   // by bettor. The dropdown lists every game with settled bets among the bets loaded.
   function settledSection() {
     const groups = settledGames();
@@ -549,7 +549,7 @@ window.FiveBets = (() => {
     const bettors = state.bettors || [];
     const start = state.status.starting_balance || 1000;
     if (!bettors.length) {
-      return `<div class="card empty"><h2>No bettors yet</h2><p>Go to <a href="#odds">Odds &amp; Bets</a>, type your name in the bet slip and place a pick. Everyone starts with ${fmt.credits(start)} credits.</p></div>`;
+      return `<div class="card empty"><h2>No bettors yet</h2><p>Go to <a href="#odds">Place bets</a>, type your name in the bet slip and place a pick. Everyone starts with ${fmt.credits(start)} credits.</p></div>`;
     }
     const maxBal = Math.max(1, ...bettors.map((b) => b.balance));
     const bestWin = {};
@@ -587,7 +587,7 @@ window.FiveBets = (() => {
         `<td class="num">${b.pending}${b.pending_stake ? ` <span class="muted small">(${fmt.credits(b.pending_stake)})</span>` : ''}</td></tr>`;
     }).join('');
     const vizHelpers = { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot };
-    // Laid out like Odds & Bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
+    // Laid out like Place bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
       <div class="odds-layout bettors-layout"><div>
       <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards and credits sent between bettors (both shown separately; Transfers is what they received minus what they sent, generosity tax included).`)}
@@ -622,7 +622,7 @@ window.FiveBets = (() => {
     const others = (state.bettors || []).filter((b) => !me || b.name.toLowerCase() !== me.name.toLowerCase())
       .sort((a, b) => a.name.localeCompare(b.name));
     let form;
-    if (!me) form = '<p class="muted small">Sign in on <a href="#odds">Odds &amp; Bets</a> to send credits.</p>';
+    if (!me) form = '<p class="muted small">Sign in on the <a href="#odds">Place bets</a> page to send credits.</p>';
     else if (!others.length) form = '<p class="muted small">Nobody else to send credits to yet.</p>';
     else {
       const amount = Number(t.amount);

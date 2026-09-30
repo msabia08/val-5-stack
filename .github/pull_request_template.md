@@ -8,6 +8,7 @@
 - [ ] Checked in demo mode (`python server.py --demo`) in the browser, with no console errors
 - [ ] New checks added to `tests/selftest.py` for new logic
 - [ ] `docs/DATA.md` updated if a table, column, API field or `/api/*` endpoint changed
+- [ ] `docs/DESIGN.md` updated if a UI pattern was added or retired (checked at 1920×1080, dark first)
 - [ ] README updated for user-facing changes, and new `config.json` keys added to its configuration table
 - [ ] `CLAUDE.md` updated if the architecture changed, then `AGENTS.md` rebuilt:
       `{ echo "# AGENTS.md"; tail -n +2 CLAUDE.md; } > AGENTS.md`

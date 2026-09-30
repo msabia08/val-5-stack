@@ -6,7 +6,7 @@
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
-    fc: { stat: 'acs', player: '', cell: '' }, // Forecasts tab: stat, player (puuid) and map|role cell filter
+    fc: { stat: 'acs', player: '', cell: '', role: '' }, // Forecasts tab: stat, player (puuid), map|role cell filter and role ('' = all)
     bets: [], bettors: [], rewards: [], slip: [], me: null, seasons: null, resetOpen: false,
     ctx: { map: '', agents: {} },
     topDir: {}, // scoreboard card -> 'low' when flipped to its counter market (bottom of the scoreboard)
@@ -95,12 +95,14 @@
     renderMe();
   };
   let shownBalance = null; // { name, balance } last shown, for the bet slip's balance ticker
-  // The top bar's three chips, on every page: credits (to the Bettors tab), bananas (to the Shop) and the signed-in
-  // bettor's badge and name (to their profile on the Monkeys tab). Signed out, the counters show "–" and the profile chip says Sign in.
+  // The top bar's three chips, on every page: credits (to Standings), bananas (to the Shop) and the signed-in
+  // bettor's badge and name (to their profile on the Monkeys tab). Signed out, only the profile chip shows, saying Sign in.
   function renderMe() {
     const me = state.me, shop = window.FiveShop;
     const credits = $('#me-credits'), bananas = $('#me-bananas'), chip = $('#me-chip');
     shop.syncMe(); // a new sign-in brings its own bananas, items and themes
+    credits.classList.toggle('hidden', !me);
+    bananas.classList.toggle('hidden', !me);
     credits.innerHTML = `<b>${me ? fmt.credits(me.balance) : '–'}</b><span class="me-unit">credits</span>`;
     credits.title = me ? `${fmt.credits(me.balance)} credits${me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on open bets` : ''}. Open the rankings.` : 'Sign in to see your credits';
     const nb = me && me.bananas != null ? shop.bn(me.bananas) : '–';
@@ -109,9 +111,9 @@
     chip.href = me ? `#monkeys/${encodeURIComponent(me.name)}` : '#odds';
     chip.innerHTML = `<span class="me-avatar" aria-hidden="true">${me ? shop.badgeOf(me.name) : '🐒'}</span>` +
       `<span class="me-name">${me ? shop.nameHtml(me.name) : 'Sign in'}</span>`;
-    chip.title = me ? `Signed in as ${me.name}. Open your profile.` : 'Sign in on Odds & Bets to bet and shop';
+    chip.title = me ? `Signed in as ${me.name}. Open your profile.` : 'Sign in on the Place bets page to bet and shop';
     if (!me) return;
-    // The balance under the bet slip (Odds & Bets only) counts to a new value; the chip just shows it.
+    // The balance under the bet slip (Place bets only) counts to a new value; the chip just shows it.
     const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
     const slipBalance = $('#slip .acct-balance b');
     if (slipBalance && was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(slipBalance, was, me.balance);
@@ -180,7 +182,7 @@
   // Confetti for wins settled since this browser last saw one (fs.seenWins.<name> holds the newest settled_ts
   // shown), so a game that settles while the site is closed still gets its confetti on the next visit or poll.
   // The first visit on a device only sets the marker: old wins aren't celebrated. The confetti comes out of the bet
-  // slip's balance, so it waits until you're on Odds & Bets (renderMe runs after every redraw), and in a background
+  // slip's balance, so it waits until you're on Place bets (renderMe runs after every redraw), and in a background
   // tab until the tab is visible again (browsers pause animations in hidden tabs).
   let celebrateLater = false;
   function celebrateWins(me) {
@@ -246,10 +248,15 @@
   }
   const loadStats = async () => { state.stats = await api('/api/stats'); };
   const loadInsights = async () => { state.insights = await api('/api/insights'); };
+  // The next-game forecast uses the odds board's map and agents (set on Place bets), and the board itself is loaded
+  // too, so the Next game card can show the betting line and add it to the slip.
   const loadForecasts = async () => {
     const p = new URLSearchParams({ stat: state.fc.stat });
     if (state.fc.player) p.set('player', state.fc.player);
-    state.forecasts = await api('/api/forecasts?' + p.toString());
+    if (state.ctx.map) p.set('map', state.ctx.map);
+    if (state.fc.player && state.ctx.agents[state.fc.player]) p.set('agent', state.ctx.agents[state.fc.player]);
+    const [f] = await Promise.all([api('/api/forecasts?' + p.toString()), loadOdds().catch(() => null)]);
+    state.forecasts = f;
     state.fc.player = state.forecasts.player?.puuid || '';
   };
   // The Overview's extras: the latest game's recap and the bettors' leaderboard (kept apart from the Matches tab's recap).
@@ -376,20 +383,29 @@
   function viewOverview() {
     const st = state.stats, team = st.team, idx = memberIndex();
     if (!team.games) return emptyState();
-    const last = team.recent[0];
+    // The last night the squad played (the Matches tab's rule: a break of more than NIGHT_GAP_S starts a new night).
+    // The last game itself has its own card below, so this tile says how the whole night went.
+    const ts = (g) => Date.parse(g.started_at) / 1000 || 0;
+    const night = [];
+    for (const g of team.recent) {
+      if (night.length && ts(night[night.length - 1]) - ts(g) > NIGHT_GAP_S) break;
+      night.push(g);
+    }
+    const nightW = night.filter((g) => g.result === 'win').length, nightL = night.filter((g) => g.result === 'loss').length;
+    const nightDay = night.length ? new Date(ts(night[0]) * 1000).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '';
     const kpis = [
       kpi('5-stack games', fmt.n0(team.games), `since ${fmt.date(team.first_played)}`),
       kpi('Win rate', fmt.pct(team.win_rate), `${team.wins}W · ${team.losses}L${team.draws ? ' · ' + team.draws + 'D' : ''}`),
       kpi('Current streak', team.streak || '–', 'wins or losses in a row'),
       kpi('Avg round diff', fmt.signed(team.avg_round_diff), 'rounds per game'),
-      kpi('Last game', last ? `<a class="plain-link recap-latest" href="#matches"><span class="chip ${last.result}">${fmt.res(last.result)}</span> ${last.rounds_won}–${last.rounds_lost}</a>` : '–',
-        last ? `${esc(last.map)} · ${fmt.date(last.started_at)} · <a class="recap-latest" href="#matches">recap</a>` : ''),
+      kpi('Last night', night.length ? `<span class="${nightW > nightL ? 'up' : nightW < nightL ? 'down' : ''}">${nightW}–${nightL}</span>` : '–',
+        night.length ? `${nightDay} · ${night.length}${night.length === team.recent.length ? '+' : ''} game${night.length === 1 ? '' : 's'}` : ''),
     ];
     const mapChart = hbars(team.by_map.map((m) => ({
       label: m.map, value: m.win_rate, text: fmt.pct(m.win_rate), n: `${m.wins}-${m.losses}`,
       title: `${m.map}: ${m.wins}-${m.losses} (${fmt.pct(m.win_rate)}), avg round diff ${fmt.signed(m.avg_round_diff)}`,
     })));
-    // The front page: what happened lately. Full detail lives on Matches (recap), Bettors / Odds & Bets and Players.
+    // The front page: what happened lately. Full detail lives on Matches (recap), Standings / Place bets and Players.
     return `<section class="kpis">${kpis.join('')}</section>
       <section class="ov-grid">${overviewLastGame(idx)}${overviewBetting()}</section>
       <section class="ov-grid">${overviewTrending(st, idx)}
@@ -409,7 +425,7 @@
     const cards = r.highlights.slice(0, OV_HIGHLIGHTS).map((h) => `<div class="hl-card tone-${esc(h.tone)}" title="${esc(h.detail ? `${h.title}: ${h.detail}` : h.title)}">` +
       `<div class="hl-title">${esc(h.title)}</div><div class="ov-hl-meta"><span class="hl-who">${who(h)}</span>` +
       `${h.detail ? `<span class="hl-detail">${esc(h.detail)}</span>` : ''}</div></div>`).join('');
-    return `<section class="card"><div class="section-head"><h2>Last game</h2><a class="recap-latest small" href="#matches">Full recap ›</a></div>
+    return `<section class="card"><div class="section-head"><h2>Last game</h2><a class="recap-latest go-link" href="#matches">Full recap ›</a></div>
       <div class="ov-game"><span class="chip ${esc(m.result || '')}">${fmt.res(m.result)}</span><b>${m.rounds_won}–${m.rounds_lost}</b>` +
       `<span>${esc(m.map || '')}</span><span class="muted small">${esc(m.mode_label || '')} · ${fmt.date(m.started_ts ? m.started_ts * 1000 : null)}</span></div>
       ${cards ? `<div class="ov-hl">${cards}</div>` : '<p class="muted">Nothing out of the ordinary this game.</p>'}</section>`;
@@ -424,13 +440,13 @@
     const balance = me
       ? `<div class="ov-tile ov-balance"><div class="ov-tile-label">Your balance</div><div class="ov-tile-value">${fmt.credits(me.balance)} <span class="ov-unit">credits</span></div>` +
         `<div class="ov-tile-sub">${me.open_bets ? `+${fmt.credits(me.open_stake)} riding on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : 'No open bets'}</div></div>`
-      : '<p class="muted small">Sign in on <a href="#odds">Odds &amp; Bets</a> to bet and see your balance here.</p>';
+      : '<p class="muted small">Sign in on the <a href="#odds">Place bets</a> page to bet and see your balance here.</p>';
     const leaders = lb.slice(0, 3).map((b, i) =>
       `<li class="${me && b.name.toLowerCase() === me.name.toLowerCase() ? 'me' : ''}"><span class="ov-medal">${['🥇', '🥈', '🥉'][i]}</span><span class="ov-name">${who(b.name)}</span>` +
       `<span class="num">${fmt.credits(b.balance)}</span><span class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : 'muted'}">${fmt.signed(b.profit, 0)}</span></li>`).join('');
-    return `<section class="card ov-betting"><div class="section-head"><h2>Betting</h2><span class="small"><a href="#odds">Odds &amp; Bets ›</a> · <a href="#bettors">Bettors ›</a></span></div>
+    return `<section class="card ov-betting"><div class="section-head"><h2>Betting</h2><span class="head-links"><a class="go-link" href="#odds">Place bets ›</a><a class="go-link" href="#bettors">Standings ›</a></span></div>
       ${balance}
-      <h3 class="ov-sub">Leaderboard <span>credits · profit</span></h3>${leaders ? `<ol class="ov-leaders">${leaders}</ol>` : '<p class="muted small">No bettors yet.</p>'}
+      <h3 class="ov-sub">Leaderboard <span>credits and profit</span></h3>${leaders ? `<ol class="ov-leaders">${leaders}</ol>` : '<p class="muted small">No bettors yet.</p>'}
       ${overviewStandouts(who)}</section>`;
   }
 
@@ -473,7 +489,7 @@
       .sort((a, b) => ((trend(b, 'acs') || { rel: -9 }).rel) - ((trend(a, 'acs') || { rel: -9 }).rel));
     const rows = members.map((m) => `<tr><th scope="row"><span class="swatch s${idx.get(m.puuid)?.slot || 1}"></span>${esc(m.nickname)}</th>` +
       `${cell(m, 'acs', fmt.n0)}${cell(m, 'kd', fmt.n2)}<td class="ov-spark">${sparkline(statSeries(m, 'acs'), { w: 110, h: 26 })}</td></tr>`).join('');
-    return `<section class="card"><div class="section-head"><h2>Who's trending</h2><a class="small" href="#players">Players ›</a></div>
+    return `<section class="card"><div class="section-head"><h2>Who's trending</h2><a class="go-link" href="#players">Players ›</a></div>
       <p class="muted small">Last ${TREND_RECENT} games against the ${TREND_BEFORE} before them, hottest first.</p>
       <div class="table-wrap"><table class="ov-trending"><thead><tr><th>Player</th><th class="ov-h">ACS</th><th class="ov-h">K/D</th><th class="ov-h ov-spark">ACS, last ${fmt.n0(Math.max(...members.map((m) => m.form.length)))} games</th></tr></thead>` +
       `<tbody>${rows}</tbody></table></div></section>`;
@@ -622,7 +638,7 @@
     return `<section class="card player" id="player-detail">
       <div class="pl-picker">${picker}</div>
       <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div>` +
-        `${PLAYER_CARD_FORM ? `<div class="form">${form}</div>` : ''}<div class="pl-links"><a href="#forecasts" class="btn ghost small" data-forecast-player="${esc(m.puuid)}">${esc(m.nickname)}'s forecasts ›</a><a href="#viz" class="btn ghost small">Charts ›</a></div></header>
+        `${PLAYER_CARD_FORM ? `<div class="form">${form}</div>` : ''}<div class="pl-links"><a href="#forecasts" class="go-link" data-forecast-player="${esc(m.puuid)}">${esc(m.nickname)}'s forecasts ›</a><a href="#viz" class="go-link">Charts ›</a></div></header>
       <p class="muted small">Per-game averages; the lines show the last ${m.form.length} games, and High / Low are their best and worst complete 5-stack games (click one for its recap).</p>
       <div class="kpis small pl-tiles">${tiles}${bestTile}</div>
       <div class="grid-2"><div><h3>By agent</h3>${table(m.by_agent, 'agent')}</div><div><h3>By map</h3>${table(m.by_map, 'map')}</div></div>
@@ -640,7 +656,10 @@
   // ---- forecasts (drawn by web/viz.js) ---------------------------------------------
   function viewForecasts() {
     const idx = memberIndex();
-    return window.FiveViz.forecasts(state.forecasts, { esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot }, state.fc);
+    return window.FiveViz.forecasts(state.forecasts, {
+      esc, fmt, slot: (puuid) => idx.get(puuid)?.slot, bettorSlot, oddBtn, odds: state.odds, ctx: state.ctx,
+      goRecap: (id) => { state.recapId = id; location.hash = '#matches'; }, // a game in the chart opens its recap
+    }, state.fc);
   }
   async function openRecap(id) {
     if (!id) return;
@@ -852,7 +871,6 @@
       console.error(e);
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
-    view.classList.toggle('wide', ['odds', 'players', 'bettors'].includes(state.view)); // table-heavy tabs and the ones with a sidebar
     renderMe();
     bind();
     if (['viz', 'bettors', 'forecasts', 'matches', 'players'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
@@ -908,6 +926,7 @@
       td.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickCell(); } });
     });
     $('#fc-all')?.addEventListener('click', () => { state.fc.cell = ''; draw(); });
+    $$('.fc-role', view).forEach((b) => b.addEventListener('click', () => { state.fc.role = b.dataset.v; state.fc.cell = ''; draw(); }));
     $('#ctx-map')?.addEventListener('change', (e) => { state.ctx.map = e.target.value; refreshOdds(); });
     $$('.ctx-agent', view).forEach((sel) => sel.addEventListener('change', (e) => {
       const p = e.target.dataset.puuid;
@@ -957,31 +976,50 @@
     finally { polling = false; }
   }
 
-  // The Stats dropdown in the nav: its button names the stat page you're on and lights up; the menu opens on click
-  // (or Enter / Space / ↓), arrow keys move through it, and Escape, a pick or a click elsewhere closes it.
-  const STAT_VIEWS = ['overview', 'players', 'forecasts', 'viz', 'matches'];
-  function navMenu(open) {
-    const menu = $('#stats-menu'), trigger = $('#stats-trigger');
-    menu.classList.toggle('hidden', !open);
-    trigger.setAttribute('aria-expanded', String(open));
+  // Emoji in the nav (every entry, group buttons and menu rows). Set to false to hide them all; the markup in index.html
+  // stays, so setting it back to true brings them back.
+  const NAV_ICONS = true;
+
+  // The nav's dropdown groups (Stats, Betting, Onkey's in index.html): a group's button names the page you're on, with
+  // its icon, and lights up; the menu opens on click (or Enter / Space / ↓), arrow keys move through it, and Escape,
+  // a pick or a click elsewhere closes it. Only one menu is open at a time.
+  const navGroups = () => $$('#tabs .nav-group');
+  function navMenu(group, open) {
+    $('.nav-menu', group).classList.toggle('hidden', !open);
+    $('.nav-trigger', group).setAttribute('aria-expanded', String(open));
   }
-  function bindNavMenu() {
-    const menu = $('#stats-menu'), trigger = $('#stats-trigger');
-    const items = () => $$('a', menu);
-    const focusItem = (i) => { const list = items(); list[(i + list.length) % list.length].focus(); };
-    trigger.addEventListener('click', () => navMenu(menu.classList.contains('hidden')));
-    trigger.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown') { e.preventDefault(); navMenu(true); focusItem(Math.max(0, items().findIndex((a) => a.classList.contains('active')))); }
+  const closeNavMenus = (except) => navGroups().forEach((g) => { if (g !== except) navMenu(g, false); });
+  function bindNavMenus() {
+    document.documentElement.classList.toggle('no-nav-icons', !NAV_ICONS);
+    navGroups().forEach((group) => {
+      const menu = $('.nav-menu', group), trigger = $('.nav-trigger', group);
+      const items = () => $$('a', menu);
+      const focusItem = (i) => { const list = items(); list[(i + list.length) % list.length].focus(); };
+      trigger.addEventListener('click', () => { closeNavMenus(group); navMenu(group, menu.classList.contains('hidden')); });
+      trigger.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); closeNavMenus(group); navMenu(group, true); focusItem(Math.max(0, items().findIndex((a) => a.classList.contains('active')))); }
+      });
+      menu.addEventListener('keydown', (e) => {
+        const i = items().indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') { e.preventDefault(); focusItem(i + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); focusItem(i - 1); }
+        else if (e.key === 'Escape') { navMenu(group, false); trigger.focus(); }
+        else if (e.key === 'Tab') navMenu(group, false);
+      });
+      menu.addEventListener('click', () => navMenu(group, false));
     });
-    menu.addEventListener('keydown', (e) => {
-      const i = items().indexOf(document.activeElement);
-      if (e.key === 'ArrowDown') { e.preventDefault(); focusItem(i + 1); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); focusItem(i - 1); }
-      else if (e.key === 'Escape') { navMenu(false); trigger.focus(); }
-      else if (e.key === 'Tab') navMenu(false);
+    document.addEventListener('click', (e) => { if (!e.target.closest('#tabs .nav-group')) closeNavMenus(); });
+  }
+  // A group's button shows the current page's name and icon while you're on one of its pages, else its own.
+  function syncNavGroups() {
+    navGroups().forEach((group) => {
+      const cur = $(`.nav-menu a[data-view="${state.view}"]`, group);
+      const name = cur ? [...$('b', cur).childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim() : group.dataset.label;
+      $('.nav-trigger', group).classList.toggle('active', !!cur);
+      $('.nav-label', group).textContent = name;
+      $('.nav-trigger .nav-icon', group).textContent = cur ? cur.dataset.icon : group.dataset.icon;
+      navMenu(group, false);
     });
-    menu.addEventListener('click', () => navMenu(false));
-    document.addEventListener('click', (e) => { if (!e.target.closest('#nav-stats')) navMenu(false); });
   }
 
   function route() {
@@ -995,10 +1033,7 @@
     }
     window.FiveViz?.hideTip();
     $$('#tabs a, #setup-btn').forEach((a) => a.classList.toggle('active', a.dataset.view === state.view)); // Setup lives on the ⚙ button
-    const inStats = STAT_VIEWS.includes(state.view);
-    $('#stats-trigger').classList.toggle('active', inStats);
-    $('#stats-label').textContent = inStats ? $(`#stats-menu a[data-view="${state.view}"] b`).textContent : 'Stats';
-    navMenu(false);
+    syncNavGroups();
     render();
   }
 
@@ -1056,7 +1091,7 @@
     document.addEventListener('click', (e) => { if (!e.target.closest('#theme-menu, #theme-btn')) themeMenu(false); });
     let wanted = new URLSearchParams(location.search).get('theme') || localStorage.getItem('fs.theme'); // a shop theme waits here
     if (FREE_THEMES.includes(wanted)) document.documentElement.dataset.theme = wanted;
-    const current = () => document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    const current = () => document.documentElement.dataset.theme || 'dark'; // dark unless a theme was picked, whatever the OS prefers
     checkTheme = () => {
       const owned = shop.ownedThemes().map((t) => t.key), cur = document.documentElement.dataset.theme;
       if (cur && !FREE_THEMES.includes(cur) && !owned.includes(cur)) { // signed out, or someone else's theme on this device
@@ -1090,7 +1125,7 @@
       document.body.append(greg);
     });
     $('#sync-btn').addEventListener('click', () => sync(false));
-    bindNavMenu();
+    bindNavMenus();
     window.addEventListener('hashchange', route);
     try {
       await Promise.all([loadStatus(), loadContent(), loadMe(), shop.loadTroop().catch(() => {})]); // the troop's looks style names everywhere

@@ -1,4 +1,5 @@
-/* 5-Stack Tracker — dark by default, light when the OS or the toggle asks for it. */
+/* 5-Stack Tracker — dark by default, whatever the OS prefers; light or a shop theme only when picked with the toggle.
+   Built for desktop and laptop screens only. */
 :root {
   color-scheme: dark;
   --bg: #0d0d0d;
@@ -29,17 +30,6 @@
   --axis: #383835; --div-pos: #3987e5; --div-neg: #e66767; --div-mid: #383835;
   --aim-1: #9ec5f4; --aim-2: #3987e5; --aim-3: #184f95; --pair-lo: #184f95; --pair-hi: #86b6ef;
 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    color-scheme: light;
-    --bg: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec; --border: rgba(11, 11, 11, 0.10);
-    --text: #0b0b0b; --text-2: #52514e; --muted: #898781; --grid: #e1e0d9;
-    --accent: #2a78d6; --accent-soft: rgba(42, 120, 214, 0.12); --up: #006300; --down: #d03b3b;
-    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
-    --spark: #c3c2b7; --bar-track: #e4e3dd; --bar-fill: #2a78d6; --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-    --axis: #c3c2b7; --div-pos: #2a78d6; --div-neg: #e34948; --div-mid: #f0efec; --aim-1: #1c5cab; --aim-2: #3987e5; --aim-3: #86b6ef; --pair-lo: #86b6ef; --pair-hi: #1c5cab;
-  }
-}
 :root[data-theme="light"], :root[data-theme="greg"] {
   color-scheme: light;
   --bg: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec; --border: rgba(11, 11, 11, 0.10);
@@ -53,12 +43,21 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.45; }
-a { color: var(--accent); }
+/* One link style everywhere: accent colour, underlined on hover. A link to another page ends in " ›" (docs/DESIGN.md). */
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.go-link { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.head-links { display: flex; gap: 16px; }
+/* Links drawn as buttons, chips, tiles or menu rows keep their own hover look. */
+.btn:hover, .me-chip:hover, .logo-link:hover, .coin-slot:hover, .tile-link:hover, .nav-menu a:hover { text-decoration: none; }
 h1, h2, h3 { margin: 0 0 6px; line-height: 1.2; }
 h1 { font-size: 17px; }
 h2 { font-size: 17px; font-weight: 600; }
 h3 { font-size: 14px; font-weight: 600; color: var(--text-2); margin-top: 4px; }
 p { margin: 4px 0 10px; }
+/* Prose stays readable on the 1600px page: a paragraph never runs the full card width. */
+.card p, .how-body { max-width: 110ch; }
 code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
@@ -90,8 +89,12 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .tabs a { text-decoration: none; color: var(--text-2); padding: 7px 12px; border-radius: 8px; font-weight: 500; font-size: 14px; }
 .tabs a:hover { background: var(--surface-2); color: var(--text); }
 .tabs a.active { background: var(--accent-soft); color: var(--text); }
-/* The Stats dropdown (index.html #nav-stats): a tab-looking button over a menu of the five stat pages. */
+/* Nav emoji (every entry has one); NAV_ICONS = false in app.js adds .no-nav-icons to <html> and hides them all. */
+.nav-icon { margin-right: 6px; }
+.no-nav-icons .nav-icon { display: none; }
+/* The nav's dropdown groups (Stats, Betting, Onkey's): a tab-looking button over a menu of that group's pages. */
 .nav-group { position: relative; display: flex; }
+.nav-trigger .nav-icon { margin-right: 0; }
 .nav-trigger { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; color: var(--text-2); padding: 7px 12px; border-radius: 8px;
   font: inherit; font-weight: 500; font-size: 14px; cursor: pointer; }
 .nav-trigger:hover, .nav-trigger[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
@@ -135,8 +138,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .banner.info { background: var(--accent-soft); border-color: var(--accent); }
 
 /* ---- layout --------------------------------------------------------- */
-.container { max-width: 1240px; margin: 0 auto; padding: 16px; }
-.container.wide { max-width: 1600px; }
+.container { max-width: 1600px; margin: 0 auto; padding: 16px; } /* one width for every tab (built for 1920×1080, see docs/DESIGN.md) */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .card.error { border-color: var(--bad); }
 .card.empty { text-align: center; padding: 40px 20px; }
@@ -183,7 +185,9 @@ table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 th.num { text-align: right; }
 td { padding: 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
-tr:last-child td { border-bottom: 0; }
+tr:last-child td, tr:last-child th[scope="row"] { border-bottom: 0; }
+/* A row's name (a player, bettor or map) is what people scan for: full-colour text, ruled like the cells beside it. */
+tbody th[scope="row"] { font-size: 14px; font-weight: 600; color: var(--text); border-bottom-color: var(--grid); }
 table.compact td { padding: 5px 8px; font-size: 14px; }
 table.inner { margin: 4px 0 6px; }
 tr.match-row { cursor: pointer; }
@@ -341,8 +345,8 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .odds-side #custom-line label, .odds-side #custom-line select, .odds-side #custom-line input { width: 100%; min-width: 0; }
 .odds-side #custom-line h2 { font-size: 16px; }
 .odds-side .my-bets h2 { font-size: 16px; }
-.odds-side .my-bets .bettor-slips { grid-template-columns: 1fr; }
-/* Bettors tab sidebar: Send credits and Game rewards, compact like the bet slip's cards. Unlike the bet slip it
+.odds-side .my-bets .bettor-slips { columns: 1; }
+/* Standings sidebar: Send credits and Game rewards, compact like the bet slip's cards. Unlike the bet slip it
    scrolls with the page: it's taller than the window, and a pinned column would need its own scrollbar. */
 .bettors-side { position: static; max-height: none; overflow: visible; }
 .bettors-side h2 { font-size: 16px; }
@@ -398,10 +402,14 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .parlay-blocked { margin: 4px 0 8px; }
 
 /* ---- bet tickets (Open / Settled bets, grouped by bettor) -------------- */
-.bettor-slips { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; align-items: start; }
+/* Bet-slip cards stack in columns (like a masonry wall), so cards of different heights leave no holes. */
+.bettor-slips { columns: 280px; column-gap: 12px; }
+.bettor-slips > .bet-slip-card { break-inside: avoid; margin-bottom: 12px; }
 .bet-slip-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
 .bet-slip-card.me { border-color: var(--accent); }
 .bet-slip-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px dashed var(--border); font-size: 14px; }
+.bet-slip-head { flex-wrap: wrap; row-gap: 2px; } /* a long name (nickname, badges) pushes the totals to their own line */
+.bet-slip-head .right { flex: none; white-space: nowrap; }
 .bet-ticket { padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
 .reset-panel { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--bad); border-radius: 10px; background: var(--surface-2); max-width: 640px; }
 .reset-panel h3 { margin: 0 0 6px; color: var(--text); }
@@ -610,10 +618,36 @@ table.ov-trending td.num b { font-variant-numeric: tabular-nums; }
 .seg-btn.on { background: var(--accent); color: #fff; }
 .seg-btn.on .swatch { box-shadow: 0 0 0 2px #fff; }
 .fc-group { display: flex; flex-direction: column; gap: 4px; }
-.fc-caption { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.fc-caption { font-size: 12px; font-weight: 600; color: var(--muted); }
 .seg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.viz-heat td.fc-cell { cursor: pointer; }
-.viz-heat td.fc-sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Forecasts: the next game on a number line (range band, typical tick, dashed betting line), then its odds */
+.fc-next { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px; align-items: center; margin: 16px 0 6px; }
+.fc-next-line { position: relative; height: 58px; margin: 0 12px; }
+.fc-next-line::before { content: ""; position: absolute; left: 0; right: 0; top: 26px; height: 2px; border-radius: 1px; background: var(--grid); }
+.fc-next-range { position: absolute; top: 19px; height: 16px; border-radius: 8px; background: var(--accent); opacity: 0.4; }
+.fc-next-typ { position: absolute; top: 13px; width: 3px; height: 28px; margin-left: -1.5px; border-radius: 2px; background: var(--accent); }
+.fc-next-bet { position: absolute; top: 8px; height: 38px; border-left: 2px dashed var(--warn); }
+.fc-next-bet i { position: absolute; top: -8px; left: 6px; font-style: normal; font-size: 12px; color: var(--warn); white-space: nowrap; }
+.fc-next-end { position: absolute; top: 40px; transform: translateX(-50%); font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.fc-next-odds { display: flex; align-items: center; gap: 10px; font-size: 14px; white-space: nowrap; }
+.fc-next-odds .go-link { margin-left: 8px; }
+/* Forecasts: per map, a bar either side of zero (better to the right); a row filters the chart */
+.fc-roles { margin: 8px 0 12px; }
+.fc-bar-head, .fc-bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 90px 230px; gap: 16px; align-items: center; padding: 6px 10px; }
+.fc-bar-head { padding-bottom: 2px; font-size: 12px; color: var(--muted); }
+.fc-bar-head > span:nth-child(2) { display: flex; justify-content: space-between; }
+.fc-bar-row { border-radius: 8px; cursor: pointer; }
+.fc-bar-row:hover { background: var(--surface-2); }
+.fc-bar-row.fc-sel { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.fc-bar-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fc-bar-name { font-size: 14px; font-weight: 600; }
+.fc-bar-track { position: relative; height: 18px; }
+.fc-bar-mid { position: absolute; left: 50%; top: -5px; bottom: -5px; width: 1px; background: var(--axis); }
+.fc-bar { position: absolute; top: 3px; height: 12px; border-radius: 3px; }
+.fc-bar-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fc-bar-sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fc-bar-row.fc-bar-total { margin-top: 6px; box-shadow: inset 0 1px 0 var(--grid); border-radius: 0; }
+.fc-bar-row.fc-bar-total.fc-sel { box-shadow: inset 0 0 0 1px var(--accent); border-radius: 8px; }
 .viz-heat { border-collapse: separate; border-spacing: 2px; width: 100%; }
 .viz-heat th { font-size: 12px; font-weight: 500; color: var(--text-2); padding: 4px 6px; text-align: center; border: 0; white-space: nowrap; }
 .viz-heat th[scope="row"] { text-align: left; }
@@ -621,9 +655,17 @@ table.ov-trending td.num b { font-variant-numeric: tabular-nums; }
 .viz-heat td[data-tip]:hover, .viz-heat td[data-tip]:focus { box-shadow: inset 0 0 0 2px var(--text); }
 .viz-heat td.viz-empty { background: var(--surface-2); opacity: 0.5; }
 .viz-heat td.viz-thin { font-style: italic; }
-.viz-heat th.viz-group { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding-top: 10px; }
+.viz-heat th.viz-group { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding-top: 10px; }
 .viz-heat .viz-split { border-left: 2px solid var(--border); }
 .viz-cell-sub { font-size: 10px; opacity: 0.75; line-height: 1.1; }
+/* Agent pool (Charts): a column per player, one row per agent they have played */
+.ap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; align-items: start; }
+.ap-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--grid); }
+.ap-head .muted { flex-basis: 100%; }
+.ap-agent { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 10px; margin-bottom: 6px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+.ap-agent.thin { border: 1px solid var(--grid); color: var(--text-2); font-weight: 500; }
+.ap-agent small { display: block; font-size: 11px; font-weight: 400; opacity: 0.75; }
+.ap-num { text-align: right; font-variant-numeric: tabular-nums; }
 .viz-inner { margin-bottom: 4px; }
 .viz-inner h3 { margin: 0 0 6px; }
 .viz-scale { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
@@ -688,7 +730,7 @@ tr.match-row.on td { background: var(--accent-soft); }
 .plain-link { color: inherit; text-decoration: none; }
 @media (max-width: 760px) { .recap-cols { grid-template-columns: 1fr; } .recap-navs { margin-left: 0; } }
 
-/* ---- custom lines (Odds & Bets) ---- */
+/* ---- custom lines (Place bets) ---- */
 .cl-quote { margin-top: 10px; }
 .cl-offer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
 .cl-offer > div { flex: 1 1 220px; }
@@ -718,7 +760,7 @@ tr.match-row.on td { background: var(--accent-soft); }
 }
 
 /* ---- Players tab: the squad comparison table and one player's detail ---- */
-.pl-table th.pl-group { text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; border-bottom: 0; padding-bottom: 0; }
+.pl-table th.pl-group { text-align: center; font-size: 12px; color: var(--muted); font-weight: 600; border-bottom: 0; padding-bottom: 0; }
 .pl-table .pl-split { border-left: 2px solid var(--border); }
 .pl-table tbody th[scope="row"] { font-weight: 600; white-space: nowrap; }
 tr.pl-row { cursor: pointer; }
@@ -731,7 +773,7 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 .recap-link { color: var(--accent); text-decoration: none; white-space: nowrap; }
 .recap-link:hover { text-decoration: underline; }
 .pl-picker { margin-bottom: 14px; }
-.player-head .pl-links { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.player-head .pl-links { margin-left: auto; display: flex; gap: 16px; align-items: center; }
 .tile.tile-link { color: inherit; text-decoration: none; display: block; }
 .tile.tile-link:hover { border-color: var(--accent); }
 .tile.tile-link .tile-sub { color: var(--accent); }
@@ -766,9 +808,8 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 .ov-hl-meta .hl-detail { margin: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .ov-hl-meta .hl-detail::before { content: "·"; margin-right: 8px; }
 /* Overview betting: tiles (your balance, the last games' standout bets) and leaderboard rows share one look. */
-.ov-betting .ov-sub { display: flex; justify-content: space-between; margin: 14px 0 6px; font-size: 12px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-.ov-betting .ov-sub span { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.ov-betting .ov-sub { display: flex; justify-content: space-between; margin: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ov-betting .ov-sub span { font-weight: 400; }
 .ov-tile { min-width: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
 .ov-tile-label { font-size: 12px; color: var(--muted); }
 .ov-tile-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
@@ -884,6 +925,7 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 @keyframes gold-flow { to { background-position: 0 0, 300% 0; } }
 .bet-slip-card.jinxed { position: relative; border-color: #8fd3ff; box-shadow: 0 0 0 1px rgba(143, 211, 255, 0.45), inset 0 0 26px rgba(143, 211, 255, 0.22); }
 .bet-slip-card.jinxed::after { content: "🥶"; position: absolute; top: -9px; right: -7px; font-size: 18px; }
+.bet-slip-card.jinxed .bet-slip-head { padding-right: 12px; } /* room for the sticker in the corner */
 
 /* ---- the Shop tab ------------------------------------------------------- */
 .shop-hero { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 18px; align-items: center; }
@@ -963,7 +1005,7 @@ body.modal-open { overflow: hidden; }
 .modal-controls input, .modal-controls select { width: 100%; }
 .preview-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .preview-pair > div { display: grid; gap: 10px; align-content: start; min-width: 0; }
-.preview-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.preview-label { font-size: 13px; font-weight: 600; color: var(--muted); }
 .preview-celebrate { display: grid; justify-items: center; gap: 8px; padding: 8px 0; text-align: center; }
 .shop-sample.big { width: min(320px, 100%); height: 110px; cursor: default; }
 .shop-sample.big .shop-emoji { font-size: 44px; }
