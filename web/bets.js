@@ -19,14 +19,16 @@ window.FiveBets = (() => {
     nameHtml = ctx.nameHtml || ((name) => esc(name));
     ticketClass = ctx.ticketClass || (() => '');
     ticketExtras = ctx.ticketExtras || (() => '');
+    state.transfer = { to: '', amount: '', note: '', confirm: false }; // the Send credits form, kept across redraws
   }
 
   // ---- data -------------------------------------------------------------------
   const loadBettingReport = async () => { state.bettingReport = await api('/api/betting-report'); };
   const loadSeasons = async () => { state.seasons = await api('/api/seasons'); };
   const loadBets = async () => {
-    const [b, l, m, r] = await Promise.all([api('/api/bets?limit=600'), api('/api/bettors'), api('/api/bettor/me'), api('/api/rewards?limit=60')]);
-    state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null; state.rewards = r.rewards;
+    const [b, l, m, r, t] = await Promise.all([api('/api/bets?limit=600'), api('/api/bettors'), api('/api/bettor/me'),
+      api('/api/rewards?limit=60'), api('/api/transfers?limit=30')]);
+    state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null; state.rewards = r.rewards; state.transfers = t.transfers;
     if (state.me) { state.bettor = state.me.name; localStorage.setItem('fs.bettor', state.bettor); }
   };
   const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
@@ -578,21 +580,123 @@ window.FiveBets = (() => {
         `<td class="bar-cell"><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((b.balance / maxBal) * 100)}%"></div></div></td>` +
         `<td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +
         `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td>` +
+        `<td class="num">${b.transfers ? fmt.signed(b.transfers, 0) : '–'}</td>` +
         `<td class="num">${b.won}-${b.lost}${b.void ? '-' + b.void : ''}</td>` +
         `<td class="num">${settled ? fmt.pct(b.won / settled) : '–'}</td>` +
         `<td class="num">${b.roi != null ? fmt.signed(b.roi * 100, 0) + '%' : '–'}</td>` +
         `<td class="num">${b.pending}${b.pending_stake ? ` <span class="muted small">(${fmt.credits(b.pending_stake)})</span>` : ''}</td></tr>`;
     }).join('');
     const vizHelpers = { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot };
+    // Laid out like Odds & Bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
-      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards (shown separately).`)}
-        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="odds-layout bettors-layout"><div>
+      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards and credits sent between bettors (both shown separately; Transfers is what they received minus what they sent, generosity tax included).`)}
+        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
       ${settledSection()}
-      ${rewardsCard()}
       ${pastSeasonsCard()}
-      ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}`;
+      ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}
+      </div><aside class="odds-side bettors-side">${transferCard()}${rewardsCard()}</aside></div>`;
+  }
+
+  // The generosity tax (bets.py TAX_RATE / TAX_MIN_TRANSFER, sent in /api/status): send someone enough credits and
+  // you take a cut of the net winnings of their next winning bet.
+  const taxPct = () => fmt.pct(state.status.tax_rate ?? 0.1);
+  const taxMin = () => state.status.tax_min_transfer ?? 250;
+  const openTax = (sender, recipient) => (state.transfers || []).some((x) => x.tax_status === 'open' &&
+    x.sender.toLowerCase() === sender.toLowerCase() && x.recipient.toLowerCase() === recipient.toLowerCase());
+
+  // What a transfer row says about its tax: waiting for the recipient's next win, or collected (from which bet).
+  function taxLine(x) {
+    if (x.tax_status === 'open') return `<span class="tax-chip open">${taxPct()} tax on ${esc(x.recipient)}'s next win</span>`;
+    if (x.tax_status !== 'paid') return '';
+    const from = x.tax_bet_net != null ? ` (${taxPct()} of +${fmt.credits(x.tax_bet_net)}${x.tax_bet_description ? ` on “${esc(x.tax_bet_description)}”` : ''})` : '';
+    return `<span class="tax-chip paid">${esc(x.sender)} collected +${fmt.credits(x.tax_amount)}${from}</span>`;
+  }
+
+  // Send credits to another bettor (paying off a side bet, spotting a friend), then this season's transfers. Sending
+  // takes a second click on a confirm line that spells out who gets how much: there's no undo.
+  function transferCard() {
+    const me = state.me, t = state.transfer, list = state.transfers || [];
+    const others = (state.bettors || []).filter((b) => !me || b.name.toLowerCase() !== me.name.toLowerCase())
+      .sort((a, b) => a.name.localeCompare(b.name));
+    let form;
+    if (!me) form = '<p class="muted small">Sign in on <a href="#odds">Odds &amp; Bets</a> to send credits.</p>';
+    else if (!others.length) form = '<p class="muted small">Nobody else to send credits to yet.</p>';
+    else {
+      const amount = Number(t.amount);
+      const tax = !t.to ? ''
+        : openTax(me.name, t.to) ? `You already have a tax waiting on ${esc(t.to)}'s next win, so this one doesn't add another.`
+        : amount >= taxMin() ? `You'll collect the generosity tax: ${taxPct()} of the winnings on ${esc(t.to)}'s next winning bet.`
+        : `Send ${fmt.credits(taxMin())} or more to earn the generosity tax on ${esc(t.to)}'s next win.`;
+      const confirm = t.confirm && t.to && amount >= 1
+        ? `<div class="transfer-confirm" role="group" aria-label="Confirm transfer">Send <b>${fmt.credits(amount)}</b> credits to <b>${esc(t.to)}</b>? ` +
+          `You'll have ${fmt.credits(me.balance - amount)} left, and it can't be undone.<div class="small tax-note">${tax}</div>` +
+          '<div class="btn-row"><button class="btn primary small" id="tr-go">Send</button><button class="btn ghost small" id="tr-cancel">Cancel</button></div></div>'
+        : '';
+      form = `<div class="transfer-form">
+          <label>To<select id="tr-to"><option value="">Pick a bettor</option>${others.map((b) =>
+            `<option value="${esc(b.name)}"${t.to === b.name ? ' selected' : ''}>${esc(b.name)}${b.claimed === false ? ' (unclaimed)' : ''}</option>`).join('')}</select></label>
+          <label>Amount<input id="tr-amount" type="number" min="1" step="1" inputmode="numeric" value="${esc(t.amount)}" placeholder="50"></label>
+          <label class="grow"><span>Note <span class="muted small">(optional)</span></span><input id="tr-note" maxlength="80" value="${esc(t.note)}" placeholder="What it's for"></label>
+          <button class="btn small" id="tr-send"${t.confirm ? ' disabled' : ''}>Send…</button>
+        </div>${confirm}
+        <p class="muted small">You have ${fmt.credits(me.balance)} credits.</p>`;
+    }
+    const rows = list.slice(0, 12).map((x) =>
+      `<li class="recent-row transfer-row"><span><span class="swatch s${bettorSlot(x.sender)}"></span><b>${esc(x.sender)}</b> → ` +
+      `<span class="swatch s${bettorSlot(x.recipient)}"></span><b>${esc(x.recipient)}</b></span><b class="num">${fmt.credits(x.amount)}</b>` +
+      `<span class="muted transfer-note">${x.note ? esc(x.note) : ''}</span><span class="muted small">${fmt.date(x.created_ts * 1000)}</span>` +
+      `${taxLine(x) ? `<span class="transfer-tax">${taxLine(x)}</span>` : ''}</li>`).join('');
+    return `<section class="card" id="transfers"><h2>Send credits</h2>
+      <div class="tax-banner"><div><b>The generous monkey gets rewarded.</b> ` +
+      `Send someone ${fmt.credits(taxMin())}+ credits and you collect the <b>generosity tax</b>: ${taxPct()} of the winnings on their next winning bet.</div></div>
+      ${how('Pay off a side bet, spot a friend, and get a cut of their next win.',
+      `Credits move straight from your balance to theirs. The tax is paid by the person you sent to, out of their next winning bet: ${taxPct()} of what it won ` +
+      `(payout minus stake), and if several of their bets win on the same game, the biggest winner is the one taxed. Only transfers of ${fmt.credits(taxMin())} or more earn it, ` +
+      'and you can only have one tax waiting on each person, so sending again before it\'s paid doesn\'t stack. Their bet ticket shows where the tax went. ' +
+      'Transfers and taxes don\'t count toward anyone\'s betting profit, ROI or record: the Rankings show them in their own column. A season reset archives them with everything else, and a tax still waiting then is dropped.')}
+      ${form}
+      ${rows ? `<h3 class="small">This season</h3><ul class="recent">${rows}</ul>` : ''}</section>`;
+  }
+
+  function bindTransfers(view) {
+    if (!$('#tr-to', view)) return;
+    const t = state.transfer;
+    const edited = () => { // a change after "Send…" takes the confirm line away: it would be out of date
+      if (!t.confirm) return;
+      t.confirm = false;
+      $('.transfer-confirm', view)?.remove();
+      $('#tr-send', view).disabled = false;
+    };
+    $('#tr-to', view).addEventListener('change', (e) => { t.to = e.target.value; edited(); });
+    $('#tr-amount', view).addEventListener('input', (e) => { t.amount = e.target.value; edited(); });
+    $('#tr-note', view).addEventListener('input', (e) => { t.note = e.target.value; edited(); });
+    $('#tr-send', view).addEventListener('click', () => {
+      const amount = Number(t.amount);
+      if (!t.to) { toast('Pick who to send credits to', 'bad'); return; }
+      if (!(amount >= 1)) { toast('The smallest transfer is 1 credit', 'bad'); return; }
+      if (state.me && amount > state.me.balance) { toast(`You only have ${fmt.credits(state.me.balance)} credits`, 'bad'); return; }
+      t.confirm = true;
+      draw();
+      $('#tr-go')?.focus();
+    });
+    $('#tr-cancel', view)?.addEventListener('click', () => { t.confirm = false; draw(); });
+    $('#tr-go', view)?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        const r = await api('/api/transfers', { method: 'POST', body: JSON.stringify({ to: t.to, amount: Number(t.amount), note: t.note }) });
+        toast(`Sent ${fmt.credits(r.transfer.amount)} credits to ${r.transfer.recipient}` +
+          (r.transfer.tax_status === 'open' ? `. You'll collect ${taxPct()} of their next win.` : ''), 'good');
+        state.transfer = { to: '', amount: '', note: '', confirm: false };
+      } catch (err) {
+        toast(err.message, 'bad');
+        t.confirm = false;
+      }
+      await loadBets();
+      draw();
+    });
   }
 
   // Ending the season is typed-confirmation only, and says exactly what happens (the server checks too).
@@ -604,7 +708,7 @@ window.FiveBets = (() => {
     const admin = state.status.auth && state.status.auth.admin_required;
     return `<div class="reset-panel" role="group" aria-labelledby="reset-title">
       <h3 id="reset-title">End the season?</h3>
-      <p>This season's final standings, ${fmt.n0(cur.bets || 0)} bet${cur.bets === 1 ? '' : 's'} and ${fmt.n0(cur.rewards || 0)} game reward${cur.rewards === 1 ? '' : 's'} are saved as <b>${esc(next)}</b> under Past seasons.
+      <p>This season's final standings, ${fmt.n0(cur.bets || 0)} bet${cur.bets === 1 ? '' : 's'}, ${fmt.n0(cur.rewards || 0)} game reward${cur.rewards === 1 ? '' : 's'} and ${fmt.n0(cur.transfers || 0)} transfer${cur.transfers === 1 ? '' : 's'} are saved as <b>${esc(next)}</b> under Past seasons.
         Then every bettor goes back to ${start} credits, open bets are closed, and a new season starts. Accounts and passwords stay.</p>
       <label><span>Type <b>RESET</b> to confirm</span><input id="reset-confirm-text" autocomplete="off" spellcheck="false"></label>
       ${admin ? '<label><span>Admin password</span><input id="reset-admin" type="password" autocomplete="off"></label>' : ''}
@@ -631,6 +735,8 @@ window.FiveBets = (() => {
     return `<section class="card"><h2>Past seasons</h2><p class="muted small">Every reset saves the season here. Click one for its final standings.</p>${rows}</section>`;
   }
 
+  const REWARD_GAMES = 5; // the Game rewards card shows the last this many games
+
   function rewardsCard() {
     const s = state.status, game = s.game_reward || 0, win = s.win_reward || 0, bonus = s.performance_bonus_max || 0;
     if (!game && !win && !bonus) return '';
@@ -642,17 +748,17 @@ window.FiveBets = (() => {
       if (!byGame.has(r.match_id)) byGame.set(r.match_id, []);
       byGame.get(r.match_id).push(r);
     });
-    const games = [...byGame.values()].slice(0, 8).map((rs) => {
+    const games = [...byGame.values()].slice(0, REWARD_GAMES).map((rs) => {
       const g = rs[0], won = g.result === 'win';
       const people = rs.map((r) => {
         const why = r.beat_share == null ? 'fewer than 5 earlier 5-stack games' : `beat ${fmt.pct(r.beat_share)} of their earlier 5-stack games`;
-        return `<span class="reward" title="${esc(`${r.nickname || r.bettor}: ACS ${fmt.n0(r.acs)}, ${why}`)}"><b>${esc(r.bettor)}</b> +${fmt.credits(r.base + r.bonus)}</span>`;
+        return `<span class="reward" title="${esc(`${r.nickname || r.bettor}: ACS ${fmt.n0(r.acs)}, ${why}`)}"><b>${esc(r.bettor)}</b><span>+${fmt.credits(r.base + r.bonus)}</span></span>`;
       }).join('');
       return `<li class="recent-row reward-row"><span class="chip ${won ? 'win' : 'loss'}">${won ? 'W' : 'L'}</span>` +
         `<span class="recent-score">${g.rounds_won ?? '?'}–${g.rounds_lost ?? '?'}</span><span>${esc(g.map || '')}</span>` +
         `<span class="rewards-list">${people}</span><span class="muted small">${fmt.date(g.started_ts ? g.started_ts * 1000 : null)}</span></li>`;
     }).join('');
-    return `<section class="card"><h2>Game rewards</h2>${how(`${fmt.credits(game)} credits a game for everyone, plus a performance bonus of up to ${fmt.credits(bonus)}.`, `${rule} Hover a name for the details.`)}` +
+    return `<section class="card rewards-card"><h2>Game rewards</h2>${how(`${fmt.credits(game)} a game each, plus up to ${fmt.credits(bonus)} for playing well.`, `${rule} Hover a name for the details.`)}` +
       (games ? `<ul class="recent">${games}</ul>` : '<p class="muted">No rewards yet. They are paid when the next 5-stack game is recorded.</p>') + '</section>';
   }
 
@@ -663,6 +769,7 @@ window.FiveBets = (() => {
     $('#settled-game', view)?.addEventListener('change', (e) => { state.settledGame = e.target.value; draw(); });
     bindSlip();
     bindCustom(view);
+    bindTransfers(view);
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
       const headers = {};
       if (b.classList.contains('admin')) {

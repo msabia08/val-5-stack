@@ -342,6 +342,30 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .odds-side #custom-line h2 { font-size: 16px; }
 .odds-side .my-bets h2 { font-size: 16px; }
 .odds-side .my-bets .bettor-slips { grid-template-columns: 1fr; }
+/* Bettors tab sidebar: Send credits and Game rewards, compact like the bet slip's cards. Unlike the bet slip it
+   scrolls with the page: it's taller than the window, and a pinned column would need its own scrollbar. */
+.bettors-side { position: static; max-height: none; overflow: visible; }
+.bettors-side h2 { font-size: 16px; }
+.bettors-side h3 { margin: 12px 0 4px; }
+.bettors-side .tax-banner { padding: 8px 10px; font-size: 13px; gap: 8px; }
+.bettors-side .transfer-form { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: end; }
+.bettors-side .transfer-form label.grow { grid-column: 1 / -1; }
+.bettors-side .transfer-form select, .bettors-side .transfer-form input { width: 100%; min-width: 0; }
+.bettors-side .transfer-form input[type="number"] { width: 100%; }
+.bettors-side #tr-send { grid-column: 1 / -1; width: 100%; }
+.bettors-side .transfer-confirm { font-size: 13px; }
+.bettors-side .recent-row { font-size: 13px; gap: 4px 8px; }
+.bettors-side .recent-row.transfer-row { grid-template-columns: minmax(0, 1fr) auto; }
+.bettors-side .transfer-row > :nth-child(2) { text-align: right; }
+/* Game rewards: a header line per game (result, score, map, date), then who got what in two tidy columns */
+.bettors-side .rewards-card .how { margin-bottom: 4px; }
+.bettors-side .recent-row.reward-row { grid-template-columns: 28px auto minmax(0, 1fr) auto; gap: 8px 10px; padding: 12px 0; }
+.bettors-side .reward-row .rewards-list { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px;
+  font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.bettors-side .reward-row .reward { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+.bettors-side .reward-row .reward b { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.bettors-side .reward-row > :last-child { grid-column: 4; grid-row: 1; }
+.bettors-side .reward-row .recent-score { font-weight: 600; }
 .account { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .account label { width: 100%; margin-bottom: 6px; }
 .account input { width: 100%; }
@@ -426,6 +450,25 @@ table.rankings tr.me td { background: var(--accent-soft); }
 .recent-row.reward-row { grid-template-columns: 30px 56px 70px 1fr auto; }
 .rewards-list { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .reward { white-space: nowrap; color: var(--up); }
+/* Send credits: the form, its confirm line, and this season's transfers */
+.transfer-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.transfer-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.transfer-form label.grow { flex: 1 1 200px; }
+.transfer-form input[type="number"] { width: 110px; }
+.transfer-confirm { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); font-size: 14px; max-width: 640px; }
+.transfer-confirm .btn-row { margin-top: 8px; align-items: center; }
+.transfer-confirm .btn.primary { width: auto; margin-top: 0; }
+.recent-row.transfer-row { grid-template-columns: minmax(0, auto) 70px 1fr auto; }
+.transfer-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.transfer-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the generosity tax: the banner on the Send credits card, and each transfer's tax status */
+.tax-banner { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 10px; border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 16%, var(--surface-2)); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); font-size: 14px; }
+.tax-note { margin-top: 6px; }
+.transfer-tax { grid-column: 1 / -1; }
+.tax-chip { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+.tax-chip.open { background: var(--surface-2); color: var(--text-2); border: 1px dashed var(--border); }
+.tax-chip.paid { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--text); font-weight: 600; }
 .reward b { color: var(--text); font-weight: 500; }
 
 /* ---- matches & setup -------------------------------------------------- */
@@ -458,6 +501,9 @@ ol li { margin-bottom: 6px; }
   .recent-row .mode { display: none; }
   .recent-row.reward-row { grid-template-columns: 30px 50px 1fr; }
   .recent-row.reward-row > :nth-child(3), .recent-row.reward-row > :last-child { display: none; }
+  .recent-row.transfer-row { grid-template-columns: 1fr auto; }
+  .transfer-row .transfer-note, .transfer-row > :last-child { display: none; }
+  .transfer-form label, .transfer-form input[type="number"] { width: 100%; }
   .tile-value { font-size: 24px; }
   .top-row { grid-template-columns: 14px 1fr auto auto; }
   .top-row .top-bar { display: none; }

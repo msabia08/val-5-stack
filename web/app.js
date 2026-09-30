@@ -117,6 +117,44 @@
     if (slipBalance && was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(slipBalance, was, me.balance);
     shownBalance = { name: me.name, balance: me.balance };
     celebrateWins(me);
+    announceTransfers(me);
+    announceTaxes(me);
+  }
+
+  // The generous monkey gets rewarded: a toast for generosity tax collected (a cut of the next win of someone this
+  // bettor sent credits to) since this browser last looked (fs.seenTax.<name>: the newest tax_ts shown).
+  function announceTaxes(me) {
+    const key = `fs.seenTax.${me.name.toLowerCase()}`, got = me.recent_taxes || [];
+    if (document.hidden) return;
+    const newest = got.reduce((a, t) => Math.max(a, t.tax_ts || 0), 0);
+    let seen = null;
+    try { seen = localStorage.getItem(key); localStorage.setItem(key, String(Math.max(newest, Number(seen) || 0))); }
+    catch (e) { return; }
+    if (seen === null) return;
+    const fresh = got.filter((t) => (t.tax_ts || 0) > Number(seen));
+    if (!fresh.length) return;
+    const total = fresh.reduce((a, t) => a + t.tax_amount, 0);
+    toast(`The generous monkey gets rewarded: +${fmt.credits(total)} credits in generosity tax from ` +
+      `${[...new Set(fresh.map((t) => t.recipient))].join(', ')}'s win${fresh.length === 1 ? '' : 's'}`, 'good');
+  }
+
+  // A toast for credits other bettors sent since this browser last looked (fs.seenTransfers.<name> holds the newest
+  // transfer id shown), so one that arrives while the site is closed is mentioned on the next visit. The first visit
+  // on a device only sets the marker, and a hidden tab waits for the next poll.
+  function announceTransfers(me) {
+    const key = `fs.seenTransfers.${me.name.toLowerCase()}`, got = me.recent_received || [];
+    if (document.hidden) return;
+    const newest = got.reduce((a, t) => Math.max(a, t.id), 0);
+    let seen = null;
+    try { seen = localStorage.getItem(key); localStorage.setItem(key, String(Math.max(newest, Number(seen) || 0))); }
+    catch (e) { return; } // no storage: no way to tell what's new
+    if (seen === null) return;
+    const fresh = got.filter((t) => t.id > Number(seen));
+    if (!fresh.length) return;
+    const total = fresh.reduce((a, t) => a + t.amount, 0);
+    toast(fresh.length === 1
+      ? `${fresh[0].sender} sent you ${fmt.credits(total)} credits${fresh[0].note ? `: “${fresh[0].note}”` : ''}`
+      : `${fresh.length} transfers came in: ${fmt.credits(total)} credits`, 'good');
   }
 
   // ---- little celebrations ----------------------------------------------------------
@@ -814,7 +852,7 @@
       console.error(e);
       view.innerHTML = `<div class="card error"><h2>Something went wrong drawing this page</h2><p>${esc(e.message)}</p></div>`;
     }
-    view.classList.toggle('wide', ['odds', 'players'].includes(state.view)); // the two table-heavy tabs get the wide layout
+    view.classList.toggle('wide', ['odds', 'players', 'bettors'].includes(state.view)); // table-heavy tabs and the ones with a sidebar
     renderMe();
     bind();
     if (['viz', 'bettors', 'forecasts', 'matches', 'players'].includes(state.view) && view.querySelector('[data-chart], [data-tip]')) window.FiveViz.mount(view);
