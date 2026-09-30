@@ -787,7 +787,7 @@
     }).join('');
     return `<div class="odds-layout"><div>
         <section class="card"><h2>Team markets</h2>${how('How the next game goes for the squad as a whole.', 'Margin and final score come from one model of the final score, so they agree with the match-result and overtime odds, and they cover every result: one pick wins each game. An overtime game counts as 1–2 for the margin and is its own final-score pick. The pistol, half-time, ace, comeback and flawless-round markets are read from each game\'s round-by-round record; if that record isn\'t available for the game played, those bets are refunded. On a surrender, the ones already decided settle and the rest are refunded.')}${team}</section>
-        <section class="card"><h2>Player props · over / under</h2><p class="muted small">For the next 5-stack game. Each cell shows the line, then the odds for going over (O) or under (U) it; tap O or U to add a pick to the slip.</p>
+        <section class="card"><h2>Player props · over / under</h2><p class="muted small">The line for the next game, then the odds for over (O) and under (U); tap one to add it to the slip.</p>
           <div class="table-wrap"><table class="props"><thead><tr><th>Player</th>${od.stat_defs.map((s) => `<th>${esc(s.label)}</th>`).join('')}</tr></thead><tbody>${propRows}</tbody></table></div></section>
         <section class="card"><h2>Top and bottom of the scoreboard</h2>${how('Pick who finishes first in a stat, or flip a card for who finishes last.', '"Popped off" and "Got diff\'d" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.')}<div class="markets">${tops}</div></section>
         ${betsSection()}
