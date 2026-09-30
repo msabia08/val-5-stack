@@ -149,6 +149,36 @@ CREATE TABLE IF NOT EXISTS archived_rewards (
     baseline_games INTEGER,
     created_ts REAL
 );
+-- Credits one bettor sent another (BetManager.send). Zero-sum: nothing is created or destroyed. A big enough
+-- transfer earns the sender the generosity tax (tax_status 'open'): a cut of the recipient's next winning bet, paid
+-- at settlement ('paid', with the bet, game and amount). NULL tax_status: this transfer earned none.
+CREATE TABLE IF NOT EXISTS transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    amount REAL NOT NULL,
+    note TEXT,
+    created_ts REAL NOT NULL,
+    tax_status TEXT,
+    tax_amount REAL,
+    tax_bet_id INTEGER,
+    tax_match_id TEXT,
+    tax_ts REAL
+);
+CREATE TABLE IF NOT EXISTS archived_transfers (
+    season_id INTEGER NOT NULL,
+    id INTEGER,
+    sender TEXT,
+    recipient TEXT,
+    amount REAL,
+    note TEXT,
+    created_ts REAL,
+    tax_status TEXT,
+    tax_amount REAL,
+    tax_bet_id INTEGER,
+    tax_match_id TEXT,
+    tax_ts REAL
+);
 -- Compact round-by-round record of a 5-stack game (see timeline.py); data is JSON, NULL if the record had none.
 CREATE TABLE IF NOT EXISTS match_timelines (
     match_id TEXT PRIMARY KEY,
@@ -189,6 +219,8 @@ ARCHIVED_BET_COLUMNS = [
     "stake", "placed_ts", "context", "status", "settled_match_id", "settled_ts", "payout", "actual_value", "note",
 ]
 ARCHIVED_REWARD_COLUMNS = ["match_id", "puuid", "bettor", "base", "bonus", "acs", "beat_share", "baseline_games", "created_ts"]
+TRANSFER_COLUMNS = ["id", "sender", "recipient", "amount", "note", "created_ts",
+                    "tax_status", "tax_amount", "tax_bet_id", "tax_match_id", "tax_ts"]
 BET_FIELDS = [
     "bettor", "market_id", "market_type", "description", "selection", "selection_label",
     "line", "odds_decimal", "stake", "placed_ts", "context", "status",
@@ -427,10 +459,11 @@ class DB:
         rewards = self.query_one("SELECT COUNT(*) AS n FROM rewards")["n"]
         started = self.get_meta("season_started") or bets["first"]
         return {"started_ts": started, "bets": bets["n"], "rewards": rewards,
+                "transfers": self.query_one("SELECT COUNT(*) AS n FROM transfers")["n"],
                 "bettors": self.query_one("SELECT COUNT(*) AS n FROM bettors")["n"]}
 
     def archive_and_reset(self, balance, standings):
-        """End the season: archive its standings, bets and rewards, then clear them and reset every balance.
+        """End the season: archive its standings, bets, rewards and transfers, then clear them and reset every balance.
         One transaction, so a failure part-way leaves everything as it was. Returns the new season row."""
         now = time.time()
         with self.lock:
@@ -449,8 +482,11 @@ class DB:
                     "WHERE season_id=? AND status='pending'", (sid,))
                 cols = ", ".join(ARCHIVED_REWARD_COLUMNS)
                 self.conn.execute(f"INSERT INTO archived_rewards(season_id, {cols}) SELECT ?, {cols} FROM rewards", (sid,))
+                cols = ", ".join(TRANSFER_COLUMNS)
+                self.conn.execute(f"INSERT INTO archived_transfers(season_id, {cols}) SELECT ?, {cols} FROM transfers", (sid,))
                 self.conn.execute("DELETE FROM bets")
                 self.conn.execute("DELETE FROM rewards")
+                self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('season_started', ?)", (json.dumps(now),))
                 self.conn.commit()
@@ -540,3 +576,88 @@ class DB:
         """Total rewards per bettor, keyed by lower-cased name."""
         return {r["k"]: r["total"] for r in self.query(
             "SELECT lower(bettor) AS k, SUM(base + bonus) AS total FROM rewards GROUP BY lower(bettor)")}
+
+    # ---- transfers between bettors ------------------------------------------
+    def transfer(self, sender, recipient, amount, note, tax_min=None):
+        """Move credits from one bettor to another and record it, in one transaction. The sender's balance is
+        checked inside it, so two sends at once can't overdraw. With tax_min, a transfer of at least that much earns
+        the sender the generosity tax (tax_status 'open'), unless they already have one open on this recipient.
+        Returns the new row's id, or None if the sender doesn't have enough."""
+        with self.lock:
+            row = self.conn.execute("SELECT balance FROM bettors WHERE lower(name)=lower(?)", (sender,)).fetchone()
+            if row is None or row[0] + 1e-9 < amount:
+                return None
+            open_already = self.conn.execute(
+                "SELECT 1 FROM transfers WHERE lower(sender)=lower(?) AND lower(recipient)=lower(?) AND tax_status='open'",
+                (sender, recipient)).fetchone()
+            tax = "open" if tax_min is not None and amount >= tax_min and not open_already else None
+            try:
+                self.conn.execute("UPDATE bettors SET balance = balance - ? WHERE lower(name)=lower(?)", (amount, sender))
+                self.conn.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (amount, recipient))
+                cur = self.conn.execute(
+                    "INSERT INTO transfers(sender, recipient, amount, note, created_ts, tax_status) VALUES(?,?,?,?,?,?)",
+                    (sender, recipient, amount, note, time.time(), tax))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+            return cur.lastrowid
+
+    def transfers(self, bettor=None, received_by=None, limit=None):
+        """Transfers newest first: all of them, those a bettor sent or received, or only those they received. A paid
+        generosity tax comes with the bet it was taken from (tax_bet_description, tax_bet_net: its net winnings)."""
+        sql = ("SELECT t.*, b.description AS tax_bet_description, b.payout - b.stake AS tax_bet_net "
+               "FROM transfers t LEFT JOIN bets b ON b.id = t.tax_bet_id")
+        params = []
+        if bettor:
+            sql += " WHERE lower(t.sender)=lower(?) OR lower(t.recipient)=lower(?)"
+            params = [bettor, bettor]
+        elif received_by:
+            sql += " WHERE lower(t.recipient)=lower(?)"
+            params = [received_by]
+        sql += " ORDER BY t.created_ts DESC, t.id DESC"
+        if limit:
+            sql += f" LIMIT {int(limit)}"
+        return self.query(sql, params)
+
+    def transfer_totals(self):
+        """Net credits received from other bettors (received minus sent, plus generosity tax collected minus tax
+        paid), keyed by lower-cased name."""
+        net = {}
+        for r in self.query("SELECT lower(sender) AS s, lower(recipient) AS r, amount, tax_amount FROM transfers"):
+            moved = r["amount"] - (r["tax_amount"] or 0.0)  # the tax flows back from the recipient to the sender
+            net[r["s"]] = net.get(r["s"], 0.0) - moved
+            net[r["r"]] = net.get(r["r"], 0.0) + moved
+        return net
+
+    def open_taxes(self, recipient, before_ts):
+        """Generosity taxes owed on a bettor's next winning bet: open transfers to them made before before_ts."""
+        return self.query("SELECT * FROM transfers WHERE lower(recipient)=lower(?) AND tax_status='open' AND created_ts < ? "
+                          "ORDER BY created_ts", (recipient, before_ts))
+
+    def pay_tax(self, transfer_id, bet_id, match_id, amount, bet_note):
+        """Settle one generosity tax: the recipient pays the sender `amount`, the transfer records which bet and game
+        it came from, and the bet's note says so. One transaction; False if it was already paid."""
+        with self.lock:
+            try:
+                cur = self.conn.execute(
+                    "UPDATE transfers SET tax_status='paid', tax_amount=?, tax_bet_id=?, tax_match_id=?, tax_ts=? "
+                    "WHERE id=? AND tax_status='open'", (amount, bet_id, match_id, time.time(), transfer_id))
+                if cur.rowcount:
+                    t = self.conn.execute("SELECT sender, recipient FROM transfers WHERE id=?", (transfer_id,)).fetchone()
+                    self.conn.execute("UPDATE bettors SET balance = balance - ? WHERE lower(name)=lower(?)", (amount, t[1]))
+                    self.conn.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (amount, t[0]))
+                    self.conn.execute("UPDATE bets SET note=? WHERE id=?", (bet_note, bet_id))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+            return bool(cur.rowcount)
+
+    def taxes_collected(self, sender, limit=20):
+        """Generosity taxes a bettor collected, newest first, with the bet they came from."""
+        return self.query(
+            """SELECT t.*, b.description AS bet_description, b.payout AS bet_payout, b.stake AS bet_stake
+               FROM transfers t LEFT JOIN bets b ON b.id = t.tax_bet_id
+               WHERE lower(t.sender)=lower(?) AND t.tax_status='paid' ORDER BY t.tax_ts DESC LIMIT ?""",
+            (sender, int(limit)))

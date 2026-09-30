@@ -259,6 +259,8 @@ an existing database without migration code (new tables are fine).
 | `seasons` | ended betting season | season reset | `id`, `name` ('Season N'), `started_ts`, `ended_ts`, `standings` (JSON: the leaderboard at the end), `bets`, `rewards` (counts) |
 | `archived_bets` | bet from an ended season | season reset | `season_id` plus every `bets` column; bets still open at the reset are archived as `cancelled` |
 | `archived_rewards` | reward from an ended season | season reset | `season_id` plus every `rewards` column |
+| `transfers` | credits one bettor sent another | Send credits (`BetManager.send`), settlement (the tax) | `id`, `sender`, `recipient`, `amount`, `note` (NULL if none), `created_ts`; the generosity tax: `tax_status` (`open` = waiting on the recipient's next winning bet, `paid`, NULL = this transfer earned none), `tax_amount`, `tax_bet_id` (the bet it came from), `tax_match_id`, `tax_ts` |
+| `archived_transfers` | transfer from an ended season | season reset | `season_id` plus every `transfers` column |
 | `meta` | setting | various | JSON values: `cookie_secret`, `rejected_matches`, `last_sync`, `backfilled`, `history_backfilled`, `rewards_since`, `season_started` |
 
 `match_timelines.data` is a compact copy of the v4 record (see `fivestack/timeline.py`):
@@ -281,7 +283,7 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 
 | Method and path | Returns / does |
 |---|---|
-| `GET /api/status` | Config state, squad members (with their bettor account), record, tracker and sync state, rate limit, reward settings, tunnel, log |
+| `GET /api/status` | Config state, squad members (with their bettor account), record, tracker and sync state, rate limit, reward settings, generosity tax settings (`tax_rate`, `tax_min_transfer`), tunnel, log |
 | `GET /api/stats` | Players page data: per member overall, per agent, per map, form (last 15 games), best games, `range` (highest and lowest complete game for ACS, K/D, kills, deaths, assists, ADR and HS%), 5-stack vs other games; and `timeline`: every complete game oldest first (`games`) with each member's per-game values of those stats lined up with it (`series[puuid][stat]`), for the trend chart |
 | `GET /api/forecasts?stat=<key>&player=<puuid>` | Forecasts tab data for one stat (`kills`, `deaths`, `assists`, `kpr`, `dpr`, `apr`, `acs`, `adr`, `hs_pct`; default `acs`; 400 for anything else): every player's `forecast_games` count, and for one player (default the first with forecasts) each forecast game (`range` = [low, high], `typical` = median, `expected` = mean, `actual`), the `overall` record and the map × role `cells` (averages of those, plus above / inside / below counts and agents) with `best` / `worst` |
 | `GET /api/insights` | Visualizations tab data: games (each with its `damage_share` and `damage_cum`, the running all-time share), moments, sessions, maps, players (maps, aim, agents), comps, round insights (clutches, multi-kills, spike sites) |
@@ -293,15 +295,17 @@ cookie when `site_password` is set. Bettor actions also need the bettor session 
 | `GET /api/odds?map=&agents=` | The odds board: team markets, player props, top/bottom-of-scoreboard markets. A selection that would have won the last 3+ games in a row at today's line carries `streak` (the run length, counted back through `streak_lookback` games; voids skipped), shown as a flame border; a roughly 50/50 pick (fair chance 35–65%) in a market with three or more picks that lost as many carries `cold` instead, shown frosted (two-way markets never do: the other side already has the flame) |
 | `GET /api/odds/custom?puuid=&stat=&line=&map=&agents=` (or `&exact=N` instead of `line`) | A custom line's `market` (id `alt:<stat>:<puuid>:<line>`; an exact number's is `exact:<stat>:<puuid>:<N>`, type `exact`, one `exact` selection needing a 2% chance, `limits.exactly`): the reasonable `limits` for "at least" / "at most", `typical`, and over / under `selections`, each with `available` (fair chance between 5% and 90%) or a `reason`; 400 for a bad line, player or stat |
 | `GET /api/bets?status=&bettor=&limit=` | Bets newest first, with the game each settled on (`game_map`, `game_rounds_won`, ...) |
-| `GET /api/bettors` | Leaderboard: balance, betting-only profit, rewards, record, ROI, open stakes |
+| `GET /api/bettors` | Leaderboard: balance, betting-only profit, rewards, `transfers` (net credits received from other bettors), record, ROI, open stakes |
 | `GET /api/rewards?limit=` | Recent game rewards |
-| `GET /api/bettor/me` | The signed-in bettor, if any: `name` and `balance` (the top-bar balance chip and the bet slip), `open_bets` and `open_stake` (the bet slip and the Overview), and `recent_wins` (their last 20 won bets, newest settled first: `id`, `description`, `market_type`, `stake`, `odds_decimal`, `payout`, `settled_ts`), which the page celebrates with confetti |
+| `GET /api/transfers?bettor=&limit=` | This season's transfers newest first (default 50), optionally only those a bettor sent or received; a paid tax also carries `tax_bet_description` and `tax_bet_net` (the taxed bet's net winnings) |
+| `POST /api/transfers` | Send credits as the signed-in bettor: `to`, `amount` (at least 1, at most the balance, rounded to cents), optional `note` (80 characters); returns the `transfer`, the sender's new `bettor` and the leaderboard |
+| `GET /api/bettor/me` | The signed-in bettor, if any: `name` and `balance` (the top-bar balance chip and the bet slip), `open_bets` and `open_stake` (the bet slip and the Overview), and `recent_wins` (their last 20 won bets, newest settled first: `id`, `description`, `market_type`, `stake`, `odds_decimal`, `payout`, `settled_ts`), which the page celebrates with confetti, `recent_received` (the last 20 transfers other bettors sent them, newest first), which it announces once, and `recent_taxes` (the last 20 generosity taxes they collected, newest paid first, with the bet's `bet_description`), which it also announces once |
 | `POST /api/bettor/register`, `/login`, `/logout`, `/password` | Bettor accounts |
 | `POST /api/bettor/clear-password` | Admin: free a bettor name |
 | `POST /api/odds/parlay` | Price a parlay without placing it (`legs`, `context`): `odds_decimal` (what it would pay), `independent_decimal` (the legs' odds multiplied), `factor` (the cut for linked legs, 1 = none), `games` (games replayed), `linked` (groups of leg indexes that won together more than chance) and `legs`; 400 with the reason when the legs can't share a parlay |
 | `POST /api/bets` | Place a single (`market_id`, `selection`, `stake`) or a parlay (`legs`, `stake`) |
 | `DELETE /api/bets/{id}` | Cancel a pending bet |
-| `GET /api/seasons` | The current season (start, bet and reward counts) and every past season with its final standings |
+| `GET /api/seasons` | The current season (start, bet, reward and transfer counts) and every past season with its final standings |
 | `POST /api/bettors/reset` | End the season: needs `{"confirm": "RESET"}` (and the admin password header if one is set); archives, then resets |
 | `POST /api/sync` | Start a sync (`{"full": true}` for a full history re-scan) |
 

@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
-from .bets import BetError, BetManager
+from .bets import TAX_MIN_TRANSFER, TAX_RATE, BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
 from .forecasts import build_forecasts
@@ -119,6 +119,8 @@ class App:
             "game_reward": self.rewards.game,
             "win_reward": self.rewards.win,
             "performance_bonus_max": self.rewards.bonus_max,
+            "tax_rate": TAX_RATE,
+            "tax_min_transfer": TAX_MIN_TRANSFER,
             "server_time": time.time(),
             "auth": {"enabled": self.auth.enabled, "admin_required": bool(self.auth.admin_password)},
             "tunnel": dict(self.tunnel.state),
@@ -357,6 +359,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"bettors": app.bets.leaderboard()})
         if path == "/api/rewards":
             return self._json({"rewards": app.db.rewards(int(qs.get("limit") or 40))})
+        if path == "/api/transfers":
+            return self._json({"transfers": app.db.transfers(bettor=qs.get("bettor") or None, limit=int(qs.get("limit") or 50))})
         if path == "/api/bettor/me":
             me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
             if not me:
@@ -365,8 +369,12 @@ class Handler(BaseHTTPRequestHandler):
             # The latest wins, newest settled first: the page celebrates the ones settled since it last looked.
             won = sorted(app.db.bets(status="won", bettor=me["name"], limit=200), key=lambda b: b.get("settled_ts") or 0, reverse=True)
             wins = [{k: b.get(k) for k in ("id", "description", "market_type", "stake", "odds_decimal", "payout", "settled_ts")} for b in won[:20]]
+            # Credits other bettors sent them lately, newest first: the page says so once ("Matt sent you 50").
+            received = app.db.transfers(received_by=me["name"], limit=20)
             return self._json({"bettor": {**app.bets.public(me), "open_bets": len(pending),
-                                          "open_stake": round(sum(b["stake"] for b in pending), 2), "recent_wins": wins}})
+                                          "open_stake": round(sum(b["stake"] for b in pending), 2), "recent_wins": wins,
+                                          "recent_received": received,
+                                          "recent_taxes": app.db.taxes_collected(me["name"], 20)}})
         return self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
@@ -437,6 +445,13 @@ class Handler(BaseHTTPRequestHandler):
                 legs, _, quote = app.bets.quote_parlay(body.get("legs"), body.get("context") or {})
                 return self._json({**quote, "legs": [{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal")}
                                                      for leg in legs]})
+            if path == "/api/transfers":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to send credits."}, 403)
+                transfer = app.bets.send(me["name"], body.get("to"), body.get("amount"), body.get("note"))
+                return self._json({"transfer": transfer, "bettor": app.bets.public(app.db.get_bettor(me["name"])),
+                                   "bettors": app.bets.leaderboard()}, 201)
             if path == "/api/bets":
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

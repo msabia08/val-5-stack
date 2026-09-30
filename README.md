@@ -370,9 +370,10 @@ there are 2+ picks.
   underneath the ticket, with a ✓ / ✗ / ↺ per leg once it settles.
 - *Reset season* (under the Bettors tab's rankings) ends the season. It asks
   you to type `RESET` (and the admin password, if one is set), and says exactly
-  what will happen. The season's final standings, every bet and every game
-  reward are then saved under **Past seasons** on the Bettors tab, before
-  everyone goes back to the starting balance and bets and rewards are cleared.
+  what will happen. The season's final standings, every bet, every game
+  reward and every transfer are then saved under **Past seasons** on the
+  Bettors tab, before everyone goes back to the starting balance and bets,
+  rewards and transfers are cleared.
   Bets still open at that moment are closed. Nothing is lost: past seasons keep
   their full history. Set `admin_password` so that only the commissioner can
   end a season.
@@ -407,6 +408,42 @@ with that name.
 Only games played after rewards were switched on pay out, so upgrading doesn't
 pay for past games. The Bettors tab shows rewards in their own column and keeps
 profit and ROI betting-only.
+
+## Sending credits
+
+Bettors can pay each other: settle a side bet, pay off a lost argument, spot a
+friend who went broke. On the Bettors tab, **Send credits** takes a recipient
+(any bettor account, claimed or not), an amount (at least 1, no more than your
+balance) and an optional note of up to 80 characters. A confirm line spells out
+who gets how much before anything moves, because there's no undo.
+
+- Credits move straight from one balance to the other, in one step, so two
+  sends at once can't take you below zero.
+- Transfers don't count as betting profit, ROI or record. The Rankings show
+  each bettor's net transfers (received minus sent, generosity tax included)
+  in their own column.
+- The recipient gets a toast the next time they open the site ("Matt sent you
+  50 credits: …"), and the card lists this season's transfers.
+- A season reset archives transfers with the rest of the season.
+
+### The generosity tax
+
+*The generous monkey gets rewarded.* Send someone **250 or more** credits and
+you collect the **generosity tax**: **10%** of the winnings (payout minus
+stake) on their next winning bet. The person you sent to pays it out of that
+win.
+
+- "Next winning bet" means the next game on which one of their bets wins. If
+  several of their bets win on that game, the biggest winner is the one taxed.
+- You can have only one tax waiting on each person. Sending them more before
+  it's paid doesn't add a second one.
+- If several people sent them 250+, each collects their 10% from that same win.
+- It's shown everywhere it matters: the banner on the Send credits card, the
+  confirm line before you send, a tag on each transfer ("10% tax on Matt's
+  next win", then "collected +40"), a note on the taxed bet's ticket saying
+  where the money went, and a toast for the sender when it's paid.
+- The rate and minimum are `TAX_RATE` and `TAX_MIN_TRANSFER` in
+  `fivestack/bets.py`. A tax still waiting when the season is reset is dropped.
 
 ## Going online (share it with the squad)
 

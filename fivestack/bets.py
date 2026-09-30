@@ -23,6 +23,17 @@ STREAK_LOOKBACK = 10
 # range: long shots lose most games anyway, so a run of misses says nothing about them) and its market has three or
 # more picks: in a two-way market (over/under, win/loss) the other side of a cold pick already has the flame.
 COLD_CHANCE = (0.35, 0.65)
+NOTE_MAX = 80  # characters in a transfer's note
+# The generosity tax ("the generous monkey gets rewarded"): send another bettor at least TAX_MIN_TRANSFER credits and
+# you take TAX_RATE of the net winnings of their next winning bet (the biggest one, if several win on that game).
+# One open tax per sender and recipient: sending again before it's paid doesn't stack. The minimum stops a 1-credit
+# transfer to everyone from earning a cut of all their wins.
+TAX_RATE = 0.10
+TAX_MIN_TRANSFER = 250
+
+
+def _credits(v):
+    return f"{v:,.2f}".rstrip("0").rstrip(".")
 
 
 class BetError(Exception):
@@ -131,18 +142,22 @@ class BetManager:
                 s["returned"] += b["payout"] or 0.0
                 s[st] = s.get(st, 0) + 1
         rewards = self.db.reward_totals()
+        transfers = self.db.transfer_totals()
         out = []
         for b in self.db.bettors():
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
             earned = rewards.get(b["name"].lower(), 0.0)
-            # Betting profit only: game rewards are credits too, but they are reported separately.
-            profit = b["balance"] + s["pending_stake"] - self.starting - earned
+            received = transfers.get(b["name"].lower(), 0.0)
+            # Betting profit only: game rewards and credits sent between bettors change the balance too, but they
+            # are reported separately.
+            profit = b["balance"] + s["pending_stake"] - self.starting - earned - received
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
                 "balance": round(b["balance"], 2),
                 "profit": round(profit, 2),
                 "rewards": round(earned, 2),
+                "transfers": round(received, 2),
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }
             for k, v in s.items():
@@ -150,6 +165,32 @@ class BetManager:
             out.append(row)
         out.sort(key=lambda x: -x["balance"])
         return out
+
+    # ---- transfers between bettors ------------------------------------------
+    def send(self, sender_name, recipient_name, amount, note=None):
+        """Send credits from one bettor to another (paying off a side bet, spotting a friend). Whole credits or
+        cents, at least 1, no more than the sender has; the note is optional and short. Returns the transfer."""
+        try:
+            amount = round(float(amount), 2)
+        except (TypeError, ValueError):
+            raise BetError("Enter an amount.")
+        if not amount >= 1:  # also catches NaN
+            raise BetError("The smallest transfer is 1 credit.")
+        sender = self.db.get_bettor(self._valid_name(sender_name))
+        if not sender:
+            raise BetError("Sign in as a bettor first.")
+        recipient = self.db.get_bettor((recipient_name or "").strip()) if (recipient_name or "").strip() else None
+        if not recipient:
+            raise BetError("Pick who to send credits to.")
+        if recipient["name"].lower() == sender["name"].lower():
+            raise BetError("You can't send credits to yourself.")
+        note = " ".join(str(note or "").split())
+        if len(note) > NOTE_MAX:
+            raise BetError(f"Keep the note to {NOTE_MAX} characters.")
+        transfer_id = self.db.transfer(sender["name"], recipient["name"], amount, note or None, tax_min=TAX_MIN_TRANSFER)
+        if transfer_id is None:
+            raise BetError(f"{sender['name']} only has {self.db.get_bettor(sender['name'])['balance']:.0f} credits.")
+        return self.db.query_one("SELECT * FROM transfers WHERE id=?", (transfer_id,))
 
     # ---- placement -------------------------------------------------------
     def place(self, bettor_name, market_id, sel_key, stake, context):
@@ -356,7 +397,33 @@ class BetManager:
                 if payout:
                     self.db.adjust_balance(b["bettor"], payout)
             settled.append(self.db.bet(b["id"]))
+        if self.collect_taxes(settled, match):
+            settled = [self.db.bet(b["id"]) for b in settled]  # the taxed bets' notes changed
         return settled
+
+    def collect_taxes(self, settled, match):
+        """The generosity tax. Everyone with an open tax on a bettor (they sent them TAX_MIN_TRANSFER+ credits before
+        this settlement) takes TAX_RATE of the net winnings of that bettor's biggest winning bet on this game, paid
+        by the bettor. The bet's note says where the money went. Returns the taxes paid."""
+        best = {}
+        for b in settled:
+            net = (b.get("payout") or 0.0) - b["stake"]
+            key = b["bettor"].lower()
+            if b["status"] == "won" and net > 0 and (key not in best or net > best[key][1]):
+                best[key] = (b, net)
+        paid = []
+        for bet, net in best.values():
+            note, amount = bet.get("note"), round(net * TAX_RATE, 2)
+            if amount <= 0:
+                continue
+            for t in self.db.open_taxes(bet["bettor"], bet.get("settled_ts") or time.time()):
+                line = (f"Generosity tax: {_credits(amount)} of the winnings went to {t['sender']}, "
+                        f"who sent you {_credits(t['amount'])} credits")
+                note = f"{note} · {line}" if note else line
+                if self.db.pay_tax(t["id"], bet["id"], match["match_id"], amount, note):
+                    paid.append({"transfer_id": t["id"], "sender": t["sender"], "recipient": bet["bettor"],
+                                 "bet_id": bet["id"], "amount": amount})
+        return paid
 
     def _add_relative_acs(self, metrics, started, rows=None):
         """ACS as a multiple of each player's own average over their 5-stack games before this one."""
