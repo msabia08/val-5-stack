@@ -349,6 +349,10 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .top-toggle .top-info { margin-left: 4px; font-size: 11px; font-weight: 400; opacity: .75; cursor: help; }
 .parlay-summary { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 8px 0; border-top: 1px dashed var(--border); margin-top: 4px; }
 .parlay-summary b { font-variant-numeric: tabular-nums; }
+/* legs priced together (they tend to land together) and a parlay the server refused */
+.slip-item.parlay-leg.linked { box-shadow: inset 3px 0 0 var(--accent); padding-left: 8px; }
+.linked-tag { color: var(--accent); font-weight: 600; }
+.parlay-blocked { margin: 4px 0 8px; }
 
 /* ---- bet tickets (Open / Settled bets, grouped by bettor) -------------- */
 .bettor-slips { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; align-items: start; }

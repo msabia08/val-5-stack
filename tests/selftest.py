@@ -24,6 +24,7 @@ from fivestack.henrik import HenrikError  # noqa: E402
 from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
 from fivestack.odds import SCORE_SD_MAX, OddsEngine, fair_chance, partial_game, score_model  # noqa: E402
+from fivestack.parlay import correlation, price  # noqa: E402
 from fivestack.recap import build_recap  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
@@ -320,6 +321,50 @@ def parlays(shared):
         {"market_id": "ou:kills:puuid-1", "selection": "under"},
     ], 20, {})
     assert db.get_bettor("Parlay")["balance"] == 960  # 1000 - 20 - 20
+    # Two games of history is too few to judge correlation: the legs' odds are just multiplied.
+    corr = json.loads(parlay_win["context"])["corr"]
+    assert corr["factor"] == 1.0 and corr["odds_decimal"] == parlay_win["odds_decimal"] == corr["independent_decimal"], corr
+    assert all(len(l["hist"]) == 2 for l in json.loads(parlay_win["context"])["legs"])  # replayed on both games
+
+    # Team legs that decide each other (or can't both win) are refused, whatever the lines.
+    refused = [([("team:score", "13-5"), ("team:win", "win")], "already decides"),
+               ([("team:margin", "w6+"), ("team:win", "win")], "already decides"),
+               ([("team:ot", "yes"), ("team:rw", "over")], "already decides"),
+               ([("team:win", "win"), ("team:rw", "over")], "already decides"),
+               ([("team:win", "loss"), ("team:margin", "w1-2")], "can't both win"),
+               ([("team:score", "13-5"), ("team:ot", "yes")], "can't both win")]
+    for legs, why in refused:
+        try:
+            bets.quote_parlay([{"market_id": m, "selection": s} for m, s in legs], {})
+            raise AssertionError(f"{legs} should be refused")
+        except BetError as e:
+            assert why in str(e), (legs, str(e))
+    bets.quote_parlay([{"market_id": "team:win", "selection": "win"}, {"market_id": "team:ot", "selection": "yes"}], {})
+    bets.quote_parlay([{"market_id": "team:win", "selection": "win"}, {"market_id": "team:rounds", "selection": "over"}], {})
+
+    # Legs that won together more than chance are priced together. 30 games where two legs won the same 15: they
+    # won together 15 times against 7.5 expected, a ratio of (15 + 3) / (7.5 + 3) with 3 pseudo-games of "no link".
+    together, apart = "1" * 15 + "0" * 15, "10" * 15
+    c = correlation([together, together])
+    assert c["linked"] == [[0, 1]] and abs(c["factor"] - 18 / 10.5) < 1e-3 and c["games"] == 30, c
+    assert correlation([together, "01" * 15])["factor"] == 1.0  # unrelated: no cut
+    assert correlation([together, "0" * 15 + "1" * 15])["factor"] == 1.0  # never together: odds are never boosted
+    assert correlation(["1" * 5 + "0" * 4, "1" * 5 + "0" * 4])["factor"] == 1.0  # 9 games: too few to judge
+    assert correlation([together + "-" * 10, "-" * 10 + together])["games"] == 20  # voids leave a game out
+    three = correlation([together, together, together, apart])  # a linked trio inside a longer parlay
+    assert three["linked"] == [[0, 1, 2]] and three["factor"] > c["factor"], three
+    assert price([2.0, 2.0], 18 / 10.5) == 2.33 and price([2.0, 2.0], 1.0) == 4.0
+    assert price([1.5, 3.0], 4.0) == 3.0  # never less than the longest leg alone
+    real_history = bets.leg_history
+    bets.leg_history = lambda legs: [together] * len(legs)
+    try:
+        linked_parlay = bets.place_parlay("Parlay", [{"market_id": "team:win", "selection": "win"},
+                                                     {"market_id": "ou:acs:puuid-1", "selection": "over"}], 10, {})
+    finally:
+        bets.leg_history = real_history
+    legs_odds = [l["odds_decimal"] for l in json.loads(linked_parlay["context"])["legs"]]
+    assert linked_parlay["odds_decimal"] == price(legs_odds, 18 / 10.5) < round(legs_odds[0] * legs_odds[1], 2), linked_parlay
+    bets.cancel(linked_parlay["id"], by="Parlay")
     # Counter ("bottom of the scoreboard") markets remember their direction, as singles and as parlay legs.
     bets.register("Counter", "secret2")
     low_single = bets.place("Counter", "low:kills", "puuid-1", 10, {})
@@ -612,6 +657,16 @@ def forfeits(shared):
                   ("team_ou", "under", 12.5, {}))[0] == "lost"  # 13 rounds already beat the under
     status, payout, _, note, _ = parlay(("ou", "over", 150.5, {"stat": "acs", "puuid": "puuid-1"}), ("top", "puuid-1", None, {"stat": "kills"}))
     assert status == "void" and payout == 10.0 and "surrender" in note, (status, payout, note)  # nothing decided: refunded
+    # The legs that stood are re-priced together from their saved histories: two legs that always landed together
+    # pay 2.33, not 2.0 x 2.0 (see "parlays").
+    together = "1" * 15 + "0" * 15
+    linked = [{"market_type": "team_win", "selection": "win", "line": None, "odds_decimal": 2.0, "meta": {}, "hist": together},
+              {"market_type": "ou", "selection": "over", "line": 10.5, "odds_decimal": 2.0, "hist": together,
+               "meta": {"stat": "kills", "puuid": "puuid-1"}},
+              {"market_type": "ou", "selection": "over", "line": 150.5, "odds_decimal": 2.0, "hist": "10" * 15,
+               "meta": {"stat": "acs", "puuid": "puuid-1"}}]  # voided by the surrender
+    status, payout, *_ = bets._evaluate_parlay({"stake": 10.0, "odds_decimal": 5.0, "context": json.dumps({"legs": linked})}, ff, ff_metrics)
+    assert status == "won" and payout == 23.3, (status, payout)
     # Overtime: a completed game settles on whether it reached 12-12; a surrender only if it already had.
     def ot_bet(sel, match):
         return bets._evaluate({"market_type": "team_ot", "selection": sel, "line": None, "context": "{}"}, match, ff_metrics)[0]

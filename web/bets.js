@@ -34,6 +34,67 @@ window.FiveBets = (() => {
     return left >= 0 ? `Leaves you ${fmt.credits(left)} credits` : `<span class="down">${fmt.credits(-left)} more than you have</span>`;
   }
 
+  // A parlay's price comes from the server (/api/odds/parlay): legs that tend to land together are priced together,
+  // and legs that decide each other are refused. Until it answers, the slip shows the legs' odds multiplied.
+  let parlayQuote = null; // {key, quote} or {key, error} for the slip's legs and odds context
+  let parlaySeq = 0, parlayAsking = null; // parlayAsking: the key of the request on its way
+  const parlayKey = () => JSON.stringify([state.slip.map((x) => [x.market_id, x.selection]), state.ctx]);
+  const currentQuote = () => (parlayQuote && parlayQuote.key === parlayKey() ? parlayQuote : null);
+  const parlayBlocked = () => !!(currentQuote() || {}).error;
+  function parlayDecimal() {
+    const q = (currentQuote() || {}).quote;
+    return q ? q.odds_decimal : state.slip.reduce((a, x) => a * Number(x.decimal), 1);
+  }
+  const parlayToWin = (stake) => (parlayBlocked() ? '' : `To win ${fmt.credits(stake * (parlayDecimal() - 1))}`);
+
+  function parlayQuoteHtml() {
+    const pq = currentQuote(), q = pq && pq.quote;
+    const linked = new Set(q ? q.linked.flat() : []);
+    const legs = state.slip.map((x, i) =>
+      `<div class="slip-item parlay-leg${linked.has(i) ? ' linked' : ''}"><div><div class="slip-desc">${esc(x.desc)}</div>` +
+      `<div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)}${linked.has(i) ? ' · <span class="linked-tag">linked</span>' : ''}</div></div>` +
+      `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
+    const dec = parlayDecimal();
+    let note = '';
+    if (!pq) note = '<p class="muted small">Checking how these legs go together…</p>';
+    else if (pq.error) note = `<p class="small down parlay-blocked">${esc(pq.error)}</p>`;
+    else if (q.odds_decimal < q.independent_decimal) {
+      note = how(`Linked legs: odds cut from ${fmt.oddsDec(q.independent_decimal)} to ${fmt.oddsDec(q.odds_decimal)}.`,
+        `The legs marked "linked" won together more often than chance over the last ${q.games} games at today's lines ` +
+        `(a player's kills and ACS, say), so multiplying their odds would overpay. The price is cut by how much more often ` +
+        `they all landed together than they would have if they were unrelated, pulled toward "unrelated" when there are few ` +
+        `games. Odds are only ever cut, never raised, and a parlay never pays less than its longest leg.`);
+    }
+    return `${legs}<div class="parlay-summary"><span>${state.slip.length}-leg parlay</span>` +
+      `<b>${pq && pq.error ? '–' : fmt.oddsDec(dec)}</b></div>${note}`;
+  }
+
+  async function fetchParlayQuote() {
+    const key = parlayKey();
+    if (currentQuote() || parlayAsking === key) return;
+    const seq = ++parlaySeq;
+    parlayAsking = key;
+    let next;
+    try {
+      const quote = await api('/api/odds/parlay', { method: 'POST', body: JSON.stringify({
+        legs: state.slip.map((x) => ({ market_id: x.market_id, selection: x.selection })), context: state.ctx }) });
+      next = { key, quote };
+    } catch (e) {
+      next = { key, error: e.message };
+    }
+    if (seq !== parlaySeq) return; // the slip changed while this was on its way
+    parlayAsking = null;
+    parlayQuote = next;
+    const box = $('#parlay-quote');
+    if (!box || parlayKey() !== key) return;
+    box.innerHTML = parlayQuoteHtml();
+    bindRemove(box);
+    const tw = $('.parlay-towin');
+    if (tw) tw.textContent = parlayToWin(Number($('#parlay-stake')?.value) || 0);
+    const place = $('#place-bets');
+    if (place && state.me) place.disabled = !!next.error;
+  }
+
   function slipHtml() {
     const me = state.me;
     const account = me
@@ -57,16 +118,10 @@ window.FiveBets = (() => {
       : '';
     let body, placeLabel;
     if (mode === 'parlay') {
-      const combinedDecimal = state.slip.reduce((a, x) => a * Number(x.decimal), 1);
-      const combined = { decimal: combinedDecimal, american: fmt.american(combinedDecimal) };
       const stake = state.stake;
-      const legs = state.slip.map((x, i) =>
-        `<div class="slip-item parlay-leg"><div><div class="slip-desc">${esc(x.desc)}</div><div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)}</div></div>` +
-        `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
-      body = `${legs}
-        <div class="parlay-summary"><span>${state.slip.length}-leg parlay</span><b>${fmt.odds(combined)}</b></div>
+      body = `<div id="parlay-quote">${parlayQuoteHtml()}</div>
         <label>Stake<input type="number" min="1" step="1" value="${stake}" id="parlay-stake" aria-label="Parlay stake"></label>
-        <div class="muted small parlay-towin">To win ${fmt.credits(stake * (combinedDecimal - 1))}</div>
+        <div class="muted small parlay-towin">${parlayToWin(stake)}</div>
         <div class="small slip-after">${afterStake(stake)}</div>
         <p class="muted small">All ${state.slip.length} legs must win. If one is voided (a push), the payout uses the odds of the legs that stood.</p>`;
       placeLabel = 'Place parlay';
@@ -84,14 +139,18 @@ window.FiveBets = (() => {
       ${account}
       ${modeToggle}
       ${body}
-      <button class="btn primary" id="place-bets" ${me ? '' : 'disabled title="Sign in first"'}>${placeLabel}</button>
+      <button class="btn primary" id="place-bets" ${!me ? 'disabled title="Sign in first"' : mode === 'parlay' && parlayBlocked() ? 'disabled' : ''}>${placeLabel}</button>
       <button class="btn ghost" id="clear-slip" style="width:100%;margin-top:6px">Clear slip</button>`;
   }
 
   // ---- bet tickets (slip-style rendering, grouped by bettor) --------------------
   // stamp: a ticket placed a moment ago lands with a "Placed" stamp (only in the sidebar's "Your open bets").
   function betTicket(b, stamp = false) {
-    const legs = b.market_type === 'parlay' ? (JSON.parse(b.context || '{}').legs || []) : null;
+    const ctx = b.market_type === 'parlay' ? JSON.parse(b.context || '{}') : null;
+    const legs = ctx ? ctx.legs || [] : null;
+    // Linked legs were priced together (see parlayQuoteHtml): say what the odds were cut from.
+    const cut = ctx && ctx.corr && ctx.corr.independent_decimal > b.odds_decimal
+      ? `<div class="muted small bet-note">Linked legs: odds cut from ${fmt.oddsDec(ctx.corr.independent_decimal)}</div>` : '';
     const legIcon = { won: '✓', lost: '✗', void: '↺' };
     const legRows = legs ? legs.map((l) =>
       `<div class="bet-leg ${l.result || ''}"><span class="leg-icon">${legIcon[l.result] || '•'}</span>` +
@@ -112,6 +171,7 @@ window.FiveBets = (() => {
           <span>${fmt.credits(b.stake)} @ ${fmt.oddsDec(b.odds_decimal)}</span>
           <span>${b.status === 'pending' ? `To win ${fmt.credits(b.stake * (b.odds_decimal - 1))}` : `Return ${fmt.credits(b.payout || 0)}`}</span>
         </div>
+        ${cut}
         ${b.note ? `<div class="muted small bet-note">${esc(b.note)}</div>` : ''}
         ${b.status === 'pending' && cancelBtn ? `<div class="bet-ticket-row">${cancelBtn}</div>` : ''}
       </div>`;
@@ -415,16 +475,20 @@ window.FiveBets = (() => {
       const stake = Math.max(0, Number(e.target.value) || 0);
       state.stake = stake || state.stake;
       localStorage.setItem('fs.stake', String(state.stake));
-      const combinedDecimal = state.slip.reduce((a, x) => a * Number(x.decimal), 1);
       const tw = $('.parlay-towin', slip);
-      if (tw) tw.textContent = `To win ${fmt.credits(stake * (combinedDecimal - 1))}`;
+      if (tw) tw.textContent = parlayToWin(stake);
       const after = $('.slip-after', slip);
       if (after) after.innerHTML = afterStake(stake);
     });
     $$('.mode-btn', slip).forEach((b) => b.addEventListener('click', () => { state.slipMode = b.dataset.mode; drawSlip(); }));
-    $$('.rm', slip).forEach((b) => b.addEventListener('click', () => { state.slip.splice(Number(b.dataset.i), 1); drawSlip(); syncOddButtons(); }));
+    bindRemove(slip);
     $('#clear-slip')?.addEventListener('click', () => { state.slip = []; drawSlip(); syncOddButtons(); });
     $('#place-bets')?.addEventListener('click', placeSlip);
+    if ($('#parlay-quote', slip)) fetchParlayQuote();
+  }
+
+  function bindRemove(root) {
+    $$('.rm', root).forEach((b) => b.addEventListener('click', () => { state.slip.splice(Number(b.dataset.i), 1); drawSlip(); syncOddButtons(); }));
   }
 
   // Bets placed in the last moment or two, whose tickets land with a stamp (cleared once it has played).
