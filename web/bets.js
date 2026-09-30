@@ -103,17 +103,11 @@ window.FiveBets = (() => {
   }
 
   function slipHtml() {
+    // Only the picks: signing in lives in the account menu (the profile chip, top right) and the balance in the
+    // credits chip beside it.
     const me = state.me;
-    const account = me
-      ? `<div class="account"><div>Betting as <b>${esc(me.name)}</b></div><div class="acct-balance"><b>${fmt.credits(me.balance)}</b> credits</div>` +
-        (me.open_bets ? `<div class="muted small">+${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}</div>` : '') +
-        `<div class="btn-row"><button class="btn ghost small" id="bettor-signout">Sign out</button><button class="btn ghost small" id="bettor-password">Change password</button></div></div>`
-      : `<div class="account"><label>Name<input id="bettor-name" placeholder="Your name" value="${esc(state.bettor)}" autocomplete="username" maxlength="32"></label>` +
-        `<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>` +
-        `<div class="btn-row"><button class="btn small" id="bettor-signin">Sign in</button><button class="btn ghost small" id="bettor-register">Create account</button></div>` +
-        `<p class="muted small">Each bettor has a personal password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits.</p></div>`;
     if (!state.slip.length) {
-      return `<h2>Bet slip</h2>${account}<p class="muted">Tap any odds to add a pick.</p><p class="muted small">Picks placed up to ${fmt.n0(state.status.bet_grace_minutes ?? 2)} min after a game starts still count for it. You can cancel a pick for ${fmt.n0(state.status.bet_cancel_minutes ?? 1)} min after placing it.</p>`;
+      return `<h2>Bet slip</h2><p class="muted">Tap any odds to add a pick.</p><p class="muted small">Picks placed up to ${fmt.n0(state.status.bet_grace_minutes ?? 2)} min after a game starts still count for it. You can cancel a pick for ${fmt.n0(state.status.bet_cancel_minutes ?? 1)} min after placing it.</p>`;
     }
     const canParlay = state.slip.length >= 2;
     const mode = canParlay ? state.slipMode : 'single';
@@ -143,10 +137,10 @@ window.FiveBets = (() => {
       placeLabel = `Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}`;
     }
     return `<h2>Bet slip</h2>
-      ${account}
       ${modeToggle}
       ${body}
-      <button class="btn primary" id="place-bets" ${!me ? 'disabled title="Sign in first"' : mode === 'parlay' && parlayBlocked() ? 'disabled' : ''}>${placeLabel}</button>
+      ${me ? `<button class="btn primary" id="place-bets" ${mode === 'parlay' && parlayBlocked() ? 'disabled' : ''}>${placeLabel}</button>`
+        : '<button type="button" class="btn primary" data-signin>Sign in to place</button>'}
       <button class="btn ghost" id="clear-slip" style="width:100%;margin-top:6px">Clear slip</button>`;
   }
 
@@ -428,42 +422,9 @@ window.FiveBets = (() => {
     bindSlip();
   }
 
-  async function bettorSession(path) {
-    const name = ($('#bettor-name')?.value || '').trim();
-    const password = $('#bettor-pass')?.value || '';
-    if (!name) { toast('Enter your name', 'bad'); return; }
-    if (!password) { toast('Enter your betting password', 'bad'); return; }
-    try {
-      const r = await api(path, { method: 'POST', body: JSON.stringify({ name, password }) });
-      state.bettor = r.bettor.name;
-      localStorage.setItem('fs.bettor', state.bettor);
-      toast(path.endsWith('register') ? `Account created. Welcome, ${r.bettor.name}.` : `Signed in as ${r.bettor.name}`, 'good');
-      await loadBets();
-      draw();
-    } catch (e) {
-      toast(e.message, 'bad');
-    }
-  }
-
   function bindSlip() {
     const slip = $('#slip');
     if (!slip) return;
-    $('#bettor-signin')?.addEventListener('click', () => bettorSession('/api/bettor/login'));
-    $('#bettor-register')?.addEventListener('click', () => bettorSession('/api/bettor/register'));
-    $('#bettor-pass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') bettorSession('/api/bettor/login'); });
-    $('#bettor-signout')?.addEventListener('click', async () => {
-      try { await api('/api/bettor/logout', { method: 'POST', body: '{}' }); } catch (e) { /* cookie is cleared anyway */ }
-      await loadBets();
-      draw();
-    });
-    $('#bettor-password')?.addEventListener('click', async () => {
-      const old = window.prompt('Current betting password');
-      if (old == null) return;
-      const nw = window.prompt('New betting password (4 to 64 characters)');
-      if (nw == null) return;
-      try { await api('/api/bettor/password', { method: 'POST', body: JSON.stringify({ old, new: nw }) }); toast('Password changed', 'good'); }
-      catch (e) { toast(e.message, 'bad'); }
-    });
     $$('.stake', slip).forEach((inp) => inp.addEventListener('input', (e) => {
       const it = state.slip[Number(e.target.dataset.i)];
       if (!it) return;
@@ -622,7 +583,7 @@ window.FiveBets = (() => {
     const others = (state.bettors || []).filter((b) => !me || b.name.toLowerCase() !== me.name.toLowerCase())
       .sort((a, b) => a.name.localeCompare(b.name));
     let form;
-    if (!me) form = '<p class="muted small">Sign in on the <a href="#odds">Place bets</a> page to send credits.</p>';
+    if (!me) form = '<p class="muted small"><a href="#" data-signin>Sign in</a> to send credits.</p>';
     else if (!others.length) form = '<p class="muted small">Nobody else to send credits to yet.</p>';
     else {
       const amount = Number(t.amount);

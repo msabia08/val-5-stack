@@ -167,7 +167,7 @@ window.FiveShop = (() => {
       kpi('Earned this season', bananas(me.season_earned), `from ${fmt.credits(me.season_credits)} credits won`),
       kpi('Spent in all', bananas(me.spent), 'on looks, pranks and the arcade'),
     ] : [];
-    const signIn = me ? '' : '<div class="viz-note">Sign in on the <a href="#odds">Place bets</a> page to spend bananas. You can still preview everything.</div>';
+    const signIn = me ? '' : '<div class="viz-note"><a href="#" data-signin>Sign in</a> to spend bananas. You can still preview everything.</div>';
     const sections = s.slots.filter((x) => state.shopSlot === 'all' || state.shopSlot === x.key).map((slot) => {
       const items = s.catalog.filter((i) => i.slot === slot.key);
       const worn = me && me.worn[slot.key];
@@ -313,7 +313,7 @@ window.FiveShop = (() => {
       }
     }
     const have = !social && owns(item.id), afford = me && me.wallet + 1e-9 >= item.price;
-    const buy = !me ? '<a class="btn" href="#odds">Sign in to buy</a>'
+    const buy = !me ? '<button type="button" class="btn" data-signin>Sign in to buy</button>'
       : have ? `<button class="btn modal-buy" disabled>You own this</button>`
       : `<button class="btn modal-buy" ${afford ? '' : 'disabled'}>${social ? 'Use' : 'Buy'} for ${bn(item.price)} ${BANANA}</button>`;
     const wallet = me ? `<span class="muted small">You have ${bn(me.wallet)} ${BANANA}${afford || have ? '' : ` · ${bn(item.price - me.wallet)} short`}</span>` : '';
@@ -487,5 +487,5 @@ window.FiveShop = (() => {
     });
   }
 
-  return { init, bind, loadShop, loadTroop, loadProfile, syncMe, viewShop, viewTroop, nameHtml, badgeOf, ticketClass, ticketExtras, myCelebration, ownedThemes, bn };
+  return { init, bind, loadShop, loadTroop, loadProfile, syncMe, viewShop, viewTroop, nameHtml, badgeOf, ticketClass, ticketExtras, myCelebration, ownedThemes, bn, closePreview };
 })();

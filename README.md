@@ -240,11 +240,11 @@ American or decimal odds are picked with the toggle above the bet slip.
   exact score) get frost: in an over/under or win/loss market the other side of
   a cold pick already has the flame.
   These are only labels: the odds don't change.
-- **Celebrations:** a bet you win sets off confetti from your balance under the
-  bet slip (gold, and more of it, for a long shot at +500 or longer), with a
+- **Celebrations:** a bet you win sets off confetti from your credits at the top
+  of the page (gold, and more of it, for a long shot at +500 or longer), with a
   toast saying what paid. Your browser remembers the last win it showed you, so
   a bet that settles while the site is closed, or while you're on another tab,
-  gets its confetti the next time you open Place bets. The balance under the bet slip counts up or down when it changes,
+  gets its confetti the next time you look. Your credits count up or down when they change,
   and a bet you place lands with a "Placed" stamp in **Your open bets**, the box
   under the custom line that lists just your own open bets.
 - **Exact numbers:** the same card's *exactly* option ("Loog gets exactly 25
@@ -319,8 +319,10 @@ distribution at low weight and are flagged *low confidence*.
 
 ## Betting rules
 
-- Every bettor has their own account: pick a name and a personal betting
-  password in the bet slip (*Create account*). From then on only someone signed
+- Every bettor has their own account: click **Sign in** at the top right, then
+  pick a name and a personal betting password (*Create account*). The same menu
+  signs you in on another device, and once you're signed in it has your
+  profile, *Change password* and *Sign out*. From then on only someone signed
   in with that password can bet as that name or cancel its bets. Accounts
   start with `starting_balance` credits (default 1000).
 - Forgot a password? With `admin_password` set, the commissioner can free the
@@ -510,8 +512,10 @@ themselves. Everyone sees who sent what.
 most.
 
 **The top bar** shows your credits, your bananas and your profile chip (badge
-and name) on every page; they link to Standings, the shop and your
-profile. Signed out, the counters show "–" and the chip offers to sign in.
+and name) on every page. The credits open Standings, the bananas open the shop,
+and the profile chip opens your account menu (your profile, change password,
+sign out). Signed out, only the chip shows, saying Sign in, and it opens the
+sign-in form. The bet slip holds only your picks.
 
 **The Monkeys tab** ranks every bettor by the bananas spent on their collection,
 with their unspent bananas and what they earned this season. Click anyone (or a

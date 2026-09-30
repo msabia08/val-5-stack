@@ -94,9 +94,9 @@
     try { state.me = (await api('/api/bettor/me')).bettor; } catch (e) { return; }
     renderMe();
   };
-  let shownBalance = null; // { name, balance } last shown, for the bet slip's balance ticker
+  let shownBalance = null; // { name, balance } last shown, for the credits chip's ticker
   // The top bar's three chips, on every page: credits (to Standings), bananas (to the Shop) and the signed-in
-  // bettor's badge and name (to their profile on the Monkeys tab). Signed out, only the profile chip shows, saying Sign in.
+  // bettor's badge and name, which opens the account menu. Signed out, only that chip shows, saying Sign in.
   function renderMe() {
     const me = state.me, shop = window.FiveShop;
     const credits = $('#me-credits'), bananas = $('#me-bananas'), chip = $('#me-chip');
@@ -108,15 +108,15 @@
     const nb = me && me.bananas != null ? shop.bn(me.bananas) : '–';
     bananas.innerHTML = `<b>${nb}</b><span aria-hidden="true">🍌</span><span class="sr-only">bananas</span>`;
     bananas.title = me ? `${nb} bananas. Open Onkey's Shop.` : 'Sign in to see your bananas';
-    chip.href = me ? `#monkeys/${encodeURIComponent(me.name)}` : '#odds';
     chip.innerHTML = `<span class="me-avatar" aria-hidden="true">${me ? shop.badgeOf(me.name) : '🐒'}</span>` +
       `<span class="me-name">${me ? shop.nameHtml(me.name) : 'Sign in'}</span>`;
-    chip.title = me ? `Signed in as ${me.name}. Open your profile.` : 'Sign in on the Place bets page to bet and shop';
+    chip.title = me ? `Signed in as ${me.name}: your profile, password and sign out` : 'Sign in to bet and shop';
+    accountMenuRefresh();
     if (!me) return;
-    // The balance under the bet slip (Place bets only) counts to a new value; the chip just shows it.
+    // The credits chip counts to a new balance.
     const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
-    const slipBalance = $('#slip .acct-balance b');
-    if (slipBalance && was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(slipBalance, was, me.balance);
+    const chipBalance = $('#me-credits b');
+    if (chipBalance && was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(chipBalance, was, me.balance);
     shownBalance = { name: me.name, balance: me.balance };
     celebrateWins(me);
     announceTransfers(me);
@@ -181,9 +181,9 @@
 
   // Confetti for wins settled since this browser last saw one (fs.seenWins.<name> holds the newest settled_ts
   // shown), so a game that settles while the site is closed still gets its confetti on the next visit or poll.
-  // The first visit on a device only sets the marker: old wins aren't celebrated. The confetti comes out of the bet
-  // slip's balance, so it waits until you're on Place bets (renderMe runs after every redraw), and in a background
-  // tab until the tab is visible again (browsers pause animations in hidden tabs).
+  // The first visit on a device only sets the marker: old wins aren't celebrated. The confetti comes out of the
+  // credits chip in the top bar, on any page, and in a background tab waits until the tab is visible again (browsers
+  // pause animations in hidden tabs).
   let celebrateLater = false;
   function celebrateWins(me) {
     const key = `fs.seenWins.${me.name.toLowerCase()}`, wins = me.recent_wins || [];
@@ -193,7 +193,7 @@
     const save = () => { try { localStorage.setItem(key, String(newest)); } catch (e) { /* storage blocked */ } };
     if (seen === null) { save(); return; }
     const fresh = wins.filter((w) => (w.settled_ts || 0) > Number(seen));
-    const origin = $('#slip .acct-balance b');
+    const origin = $('#me-credits b');
     if (!fresh.length || !origin) return;
     if (document.hidden) {
       if (!celebrateLater) {
@@ -218,7 +218,7 @@
 
   const CONFETTI = ['#ff4d6d', '#ffd23f', '#3bceac', '#4f8cff', '#b86bff', '#ff8a00'];
   const GOLD = ['#ffd700', '#ffc107', '#ffe082', '#fff3c4', '#e6a800'];
-  // A burst of confetti from an element (the bet slip's balance), falling under gravity and fading out.
+  // A burst of confetti from an element (the credits chip), falling under gravity and fading out.
   // style: a Onkey's Shop celebration, { colors } for its own palette or { emoji } to throw emoji instead.
   function confetti(from, big, style) {
     if (!from || reducedMotion()) return;
@@ -439,7 +439,7 @@
     const balance = me
       ? `<div class="ov-tile ov-balance"><div class="ov-tile-label">Your balance</div><div class="ov-tile-value">${fmt.credits(me.balance)} <span class="ov-unit">credits</span></div>` +
         `<div class="ov-tile-sub">${me.open_bets ? `+${fmt.credits(me.open_stake)} riding on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}` : 'No open bets'}</div></div>`
-      : '<p class="muted small">Sign in on the <a href="#odds">Place bets</a> page to bet and see your balance here.</p>';
+      : '<p class="muted small"><a href="#" data-signin>Sign in</a> to bet and see your balance here.</p>';
     const leaders = lb.slice(0, 3).map((b, i) =>
       `<li class="${me && b.name.toLowerCase() === me.name.toLowerCase() ? 'me' : ''}"><span class="ov-medal">${['🥇', '🥈', '🥉'][i]}</span><span class="ov-name">${who(b.name)}</span>` +
       `<span class="num">${fmt.credits(b.balance)}</span><span class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : 'muted'}">${fmt.signed(b.profit, 0)}</span></li>`).join('');
@@ -1072,6 +1072,99 @@
   }
 
   let checkTheme = () => {}; // set in init: drops a shop theme the signed-in bettor doesn't own
+  // The account menu under the profile chip (top right, every page). Signed out: name, betting password, Sign in and
+  // Create account. Signed in: your profile, Change password and Sign out. Anything with data-signin (the bet slip's
+  // "Sign in to place", the shop's "Sign in to buy", ...) opens it too.
+  let accountOpen = false;
+  function accountMenuHtml() {
+    const me = state.me;
+    if (me) {
+      return `<div class="acct-head">Signed in as <b>${window.FiveShop.nameHtml(me.name)}</b></div>` +
+        `<a class="acct-item" role="menuitem" href="#monkeys/${encodeURIComponent(me.name)}">Your profile</a>` +
+        '<button type="button" class="acct-item" role="menuitem" id="bettor-password">Change password</button>' +
+        '<button type="button" class="acct-item" role="menuitem" id="bettor-signout">Sign out</button>';
+    }
+    return '<form class="acct-form" id="acct-form"><label>Name<input id="bettor-name" placeholder="Your name" ' +
+      `value="${esc(state.bettor)}" autocomplete="username" maxlength="32"></label>` +
+      '<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>' +
+      '<div class="btn-row"><button class="btn primary small" id="bettor-signin">Sign in</button><button type="button" class="btn ghost small" id="bettor-register">Create account</button></div>' +
+      `<p class="muted small">Your own password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits.</p></form>`;
+  }
+  function accountMenu(open) {
+    const menu = $('#account-menu'), chip = $('#me-chip');
+    accountOpen = open;
+    menu.classList.toggle('hidden', !open);
+    chip.setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    closeNavMenus();
+    // Right-aligned under the chip (the menu sits in .topbar-right, which is position: relative).
+    menu.style.right = `${Math.max(0, menu.parentElement.getBoundingClientRect().right - chip.getBoundingClientRect().right)}px`;
+    menu.innerHTML = accountMenuHtml();
+    bindAccount(menu);
+    const name = $('#bettor-name', menu);
+    (name ? (name.value ? $('#bettor-pass', menu) : name) : $('.acct-item', menu)).focus();
+  }
+  // After a sign-in or sign-out the menu shows the other side; a closed menu stays closed.
+  function accountMenuRefresh() {
+    if (!accountOpen) return;
+    const menu = $('#account-menu');
+    if (menu.contains(document.activeElement) && $('#bettor-name', menu)) return; // don't wipe what's being typed
+    menu.innerHTML = accountMenuHtml();
+    bindAccount(menu);
+  }
+  async function bettorSession(path) {
+    const name = ($('#bettor-name')?.value || '').trim();
+    const password = $('#bettor-pass')?.value || '';
+    if (!name) { toast('Enter your name', 'bad'); return; }
+    if (!password) { toast('Enter your betting password', 'bad'); return; }
+    try {
+      const r = await api(path, { method: 'POST', body: JSON.stringify({ name, password }) });
+      state.bettor = r.bettor.name;
+      localStorage.setItem('fs.bettor', state.bettor);
+      toast(path.endsWith('register') ? `Account created. Welcome, ${r.bettor.name}.` : `Signed in as ${r.bettor.name}`, 'good');
+      accountMenu(false);
+      await loadBets();
+      draw();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  }
+  function bindAccount(menu) {
+    $('#acct-form', menu)?.addEventListener('submit', (e) => { e.preventDefault(); bettorSession('/api/bettor/login'); });
+    $('#bettor-register', menu)?.addEventListener('click', () => bettorSession('/api/bettor/register'));
+    $('#bettor-signout', menu)?.addEventListener('click', async () => {
+      accountMenu(false);
+      try { await api('/api/bettor/logout', { method: 'POST', body: '{}' }); } catch (e) { /* cookie is cleared anyway */ }
+      await loadBets();
+      draw();
+    });
+    $('#bettor-password', menu)?.addEventListener('click', async () => {
+      accountMenu(false);
+      const old = window.prompt('Current betting password');
+      if (old == null) return;
+      const nw = window.prompt('New betting password (4 to 64 characters)');
+      if (nw == null) return;
+      try { await api('/api/bettor/password', { method: 'POST', body: JSON.stringify({ old, new: nw }) }); toast('Password changed', 'good'); }
+      catch (e) { toast(e.message, 'bad'); }
+    });
+    $$('a.acct-item', menu).forEach((a) => a.addEventListener('click', () => accountMenu(false)));
+  }
+  function bindAccountMenu() {
+    const menu = $('#account-menu'), chip = $('#me-chip');
+    chip.addEventListener('click', () => accountMenu(!accountOpen));
+    menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { accountMenu(false); chip.focus(); } });
+    document.addEventListener('click', (e) => {
+      const ask = e.target.closest('[data-signin]');
+      if (ask) {
+        e.preventDefault();
+        window.FiveShop.closePreview(); // the shop's preview window would cover the menu
+        accountMenu(true);
+        return;
+      }
+      if (accountOpen && !e.target.closest('#account-menu, #me-chip')) accountMenu(false);
+    });
+  }
+
   async function init() {
     const shop = window.FiveShop;
     shop.init({ state, $, $$, api, draw, esc, fmt, kpi, toast, confetti, onShop: () => checkTheme() });
@@ -1160,6 +1253,7 @@
     });
     $('#sync-btn').addEventListener('click', () => sync(false));
     bindNavMenus();
+    bindAccountMenu();
     window.addEventListener('hashchange', route);
     try {
       await Promise.all([loadStatus(), loadMe(), shop.loadTroop().catch(() => {})]); // the troop's looks style names everywhere

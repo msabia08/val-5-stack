@@ -102,7 +102,7 @@ Reuse these before inventing new ones.
 | Tables | `table`, `.table-wrap`, `th.num` / `td.num` | Row names are `<th scope="row">` (full-colour, weight 600); headers are muted 12px |
 | Tooltips | `data-tip` JSON, drawn by `FiveViz.mount` (`.viz-tip`) | Rendered with `textContent`; call `FiveViz.mount(view)` on any tab that uses them |
 | Toasts | `toast(msg, 'good' \| 'bad')` | Short, past tense for what just happened ("Sent 50 credits to Matt") |
-| Top-bar chips | `renderMe()` → `#me-credits`, `#me-bananas`, `#me-chip` | Signed out, only the Sign in chip shows |
+| Top-bar chips | `renderMe()` → `#me-credits`, `#me-bananas`, `#me-chip` | Signed out, only the Sign in chip shows. The profile chip opens the account menu (`#account-menu`: the sign-in form, or profile / password / sign out); the credits chip is the one place the balance shows, and it ticks and throws the win confetti. Anything with `data-signin` opens the menu |
 | Better / worse than expected | `.fc-bar-row` (Forecasts, `fcGridCard()`) | A bar either side of a zero line, better to the right, paler with fewer games; rows sorted best to worst and clickable to filter. Use this, not a shaded grid, for "how far off expected" per group |
 | A forecast on a number line | `.fc-next-line` (Forecasts, `fcNextCard()`) | Range band, typical-game tick, dashed betting line, end labels |
 | A market group as questions | `.tm-match`, `.tm-form`, `.tm-qgrid` / `.tm-q`, `.tm-mountain` (Place bets, team markets) | The main bet first and bigger, its bar centred and split by chance, recent form as small W / L chips under the middle, a nudge below the chances either side, and the two buttons centred vertically on the bar and that line; every other market a card asked as a plain question with its picks (the fact line under each is off, `TM_FACTS = false` in `app.js`, to keep the section short); a many-pick market (final score) as one row of columns whose height is the chance, the likeliest outlined |
@@ -113,7 +113,8 @@ Reuse these before inventing new ones.
 
 - Name things by what people see and do, not how they're built: "Send credits", not "create transfer".
 - Buttons say what happens ("Place parlay", "Send", "End season"), and the toast afterwards uses the same verb.
-- Empty states say what to do next ("Sign in on the Place bets page to spend bananas").
+- Empty states say what to do next ("Sign in to spend bananas", with Sign in opening the account menu via `data-signin`).
+- Each box does one job: the bet slip holds picks only (no sign-in form, no balance).
 - Errors say what went wrong and how to fix it, without apologising.
 - Meta lines may join short facts with " · " (`Abyss · Sep 26 5:00 PM · recap`); don't use it in headings or labels.
 - Casual is fine (it's a friends' site: "the generous monkey gets rewarded"), but numbers and rules stay exact.

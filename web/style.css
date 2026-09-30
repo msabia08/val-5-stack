@@ -327,8 +327,8 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 /* Confetti for a winning bet (see confetti() in app.js), and the bet slip balance ticker's flash. */
 .confetti { position: fixed; width: 7px; height: 11px; margin: -5px 0 0 -3px; border-radius: 2px; pointer-events: none; z-index: 1000; }
 .confetti.round { width: 8px; height: 8px; border-radius: 50%; }
-.acct-balance b.tick-up { animation: tick-up 1.4s ease-out; }
-.acct-balance b.tick-down { animation: tick-down 1.4s ease-out; }
+.me-chip b.tick-up { animation: tick-up 1.4s ease-out; }
+.me-chip b.tick-down { animation: tick-down 1.4s ease-out; }
 @keyframes tick-up { from { color: var(--up); text-shadow: 0 0 10px var(--up); } }
 @keyframes tick-down { from { color: var(--down); text-shadow: 0 0 10px var(--down); } }
 
@@ -418,13 +418,19 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .bettors-side .reward-row .reward b { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .bettors-side .reward-row > :last-child { grid-column: 4; grid-row: 1; }
 .bettors-side .reward-row .recent-score { font-weight: 600; }
-.account { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
-.account label { width: 100%; margin-bottom: 6px; }
-.account input { width: 100%; }
-.account .btn-row { margin-top: 4px; }
-.account p { margin-bottom: 0; }
-.acct-balance { font-size: 13px; color: var(--text-2); margin: 2px 0; }
-.acct-balance b { font-size: 24px; color: var(--text); font-variant-numeric: tabular-nums; }
+/* The account menu under the profile chip (top right): the sign-in form, or your profile, password and sign out. */
+.nav-menu.account-menu { left: auto; width: 300px; padding: 12px; gap: 4px; }
+.acct-form { display: grid; gap: 8px; }
+.acct-form label { width: 100%; }
+.acct-form input { width: 100%; }
+.acct-form .btn-row { display: flex; gap: 8px; margin-top: 2px; }
+.acct-form .btn-row .btn { flex: 1; width: auto; margin: 0; }
+.acct-form p { margin: 0; }
+.acct-head { padding: 2px 8px 8px; font-size: 13px; color: var(--text-2); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.acct-item { display: block; width: 100%; text-align: left; padding: 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text);
+  font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; }
+.acct-item:hover, .acct-item:focus-visible { background: var(--surface-2); outline: none; }
+#slip [data-signin] { width: 100%; }
 .slip-after { color: var(--text-2); margin-top: 2px; }
 .slip label { width: 100%; }
 .slip input { width: 100%; }
@@ -933,7 +939,7 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 /* Top bar: credits, bananas and the profile chip sit together and show on every page (app.js renderMe). */
 .topbar .topbar-right > .me-stat { gap: 5px; font-variant-numeric: tabular-nums; }
 .topbar .topbar-right > .me-stat .me-unit { color: var(--text-2); }
-.topbar .topbar-right > .me-profile { padding: 0 10px 0 4px; gap: 7px; max-width: 200px; }
+.topbar .topbar-right > .me-profile { padding: 0 10px 0 4px; gap: 7px; max-width: 200px; cursor: pointer; }  /* a button: opens the account menu */
 .topbar .topbar-right > .me-profile .me-name { overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 600; }
 .topbar .topbar-right > .me-profile .bn { display: inline; }
 .topbar .topbar-right > .me-profile .bbadge { display: none; }  /* the badge is already the avatar */
@@ -1293,7 +1299,7 @@ body.modal-open { overflow: hidden; }
 /* Reduced motion: no wiggling logo, and hot-streak borders stand still. Last in the file so it wins. */
 @media (prefers-reduced-motion: reduce) {
   .logo:hover, .odd.hot, td.prop .prop-pair .odd.hot, td.prop .prop-pair .odd.hot::before, .odd.cold, td.prop .prop-pair .odd.cold::before,
-  .acct-balance b.tick-up, .acct-balance b.tick-down, .bet-ticket.just-placed,
+  .me-chip b.tick-up, .me-chip b.tick-down, .bet-ticket.just-placed,
   .nc-gold, .bname.slipped, .bet-slip-card.tk-gold, .modal, .modal-backdrop, .shop-hero:hover .shop-hero-art, .nav-menu,
   .nc-rainbow, .bname.glittered, .neon, .attract-art, .attract-text, .coin-slot.coin-drop .coin, .arcade-modal { animation: none; }
   .odd.hot { box-shadow: inset 0 0 0 1px #ff8a00; } /* a still flame border */

@@ -58,7 +58,10 @@
   <div class="topbar-right">
     <a id="me-credits" class="me-chip me-stat" href="#bettors"></a>
     <a id="me-bananas" class="me-chip me-stat" href="#shop"></a>
-    <a id="me-chip" class="me-chip me-profile" href="#odds"></a>
+    <!-- The profile chip opens the account menu (app.js bindAccountMenu): sign in or create an account, or, signed in,
+         your profile, a password change and sign out. -->
+    <button type="button" id="me-chip" class="me-chip me-profile" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu"></button>
+    <div class="nav-menu account-menu hidden" id="account-menu" role="dialog" aria-label="Your account"></div>
     <div class="status-pill" id="status-pill"><span class="dot"></span>Connecting…</div>
     <button id="sync-btn" class="btn" disabled><span aria-hidden="true">⟳</span>Sync now</button>
     <a id="logout-btn" class="btn ghost hidden" href="/logout">Log out</a>
