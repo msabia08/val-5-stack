@@ -198,6 +198,59 @@ CREATE TABLE IF NOT EXISTS rewards (
     created_ts REAL,
     PRIMARY KEY (match_id, puuid)
 );
+-- Bananas (see bananas.py): the shop's currency, kept apart from credits. Every change is a row here and a wallet
+-- is the sum of its rows. (reason, ref) is unique, so an earning is never paid twice.
+CREATE TABLE IF NOT EXISTS banana_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL COLLATE NOCASE,
+    delta REAL NOT NULL,
+    reason TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    credits REAL,
+    note TEXT,
+    created_ts REAL NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_banana_ref ON banana_ledger(reason, ref);
+CREATE INDEX IF NOT EXISTS idx_banana_bettor ON banana_ledger(bettor);
+-- Shop items a bettor owns (kept through season resets) and the one worn in each slot.
+CREATE TABLE IF NOT EXISTS banana_items (
+    bettor TEXT NOT NULL COLLATE NOCASE,
+    item_id TEXT NOT NULL,
+    price REAL,
+    bought_ts REAL,
+    PRIMARY KEY (bettor, item_id)
+);
+CREATE TABLE IF NOT EXISTS banana_equipped (
+    bettor TEXT NOT NULL COLLATE NOCASE,
+    slot TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    PRIMARY KEY (bettor, slot)
+);
+-- Social items used on another bettor (banana peel, jinx, wall note, title swap): active until expires_ts and, when
+-- games > 0, until that many 5-stack games have started after created_ts.
+CREATE TABLE IF NOT EXISTS banana_pranks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL,
+    bettor TEXT NOT NULL COLLATE NOCASE,
+    target TEXT NOT NULL COLLATE NOCASE,
+    text TEXT,
+    price REAL,
+    created_ts REAL NOT NULL,
+    expires_ts REAL NOT NULL,
+    games INTEGER DEFAULT 0
+);
+-- Onkey's Arcade (see arcade.py): one row per paid play; score stays NULL until the game sends it back.
+CREATE TABLE IF NOT EXISTS arcade_plays (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL COLLATE NOCASE,
+    game TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    price REAL,
+    started_ts REAL NOT NULL,
+    finished_ts REAL,
+    score INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_arcade_game ON arcade_plays(game, score);
 """
 
 MATCH_FIELDS = [
@@ -488,6 +541,12 @@ class DB:
                 self.conn.execute("DELETE FROM rewards")
                 self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
+                # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.
+                self.conn.execute(
+                    "INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) "
+                    "SELECT bettor, -SUM(delta), 'season_reset', 'season:' || ? || ':' || lower(bettor), ?, ? "
+                    "FROM banana_ledger GROUP BY lower(bettor) HAVING ABS(SUM(delta)) > 1e-9",
+                    (sid, f"Season {n} ended", now))
                 self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('season_started', ?)", (json.dumps(now),))
                 self.conn.commit()
             except Exception:
@@ -576,6 +635,101 @@ class DB:
         """Total rewards per bettor, keyed by lower-cased name."""
         return {r["k"]: r["total"] for r in self.query(
             "SELECT lower(bettor) AS k, SUM(base + bonus) AS total FROM rewards GROUP BY lower(bettor)")}
+
+    # ---- bananas (see bananas.py) -------------------------------------------
+    def earn_bananas(self, rate, now=None):
+        """Pay bananas for every credit gain not paid yet: a won bet's profit and each game reward, `rate` bananas per
+        credit. The unique (reason, ref) makes it safe to run after every settlement. Returns the rows added."""
+        now = now or time.time()
+        with self.lock:
+            before = self.conn.total_changes
+            self.conn.execute(
+                "INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, credits, note, created_ts) "
+                "SELECT bettor, ROUND((payout - stake) * ?, 2), 'bet_win', 'bet:' || id, payout - stake, description, ? "
+                "FROM bets WHERE status='won' AND payout > stake", (rate, now))
+            self.conn.execute(
+                "INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, credits, note, created_ts) "
+                "SELECT r.bettor, ROUND((r.base + r.bonus) * ?, 2), 'reward', 'reward:' || r.match_id || ':' || r.puuid, "
+                "r.base + r.bonus, 'Game reward: ' || COALESCE(m.map, 'a game'), ? "
+                "FROM rewards r LEFT JOIN matches m USING(match_id) WHERE r.base + r.bonus > 0", (rate, now))
+            self.conn.commit()
+            return self.conn.total_changes - before
+
+    def grant_starting_bananas(self, amount, now=None):
+        """Every account gets `amount` bananas once per season (reason 'starter', like starting_balance for credits;
+        not counted as earned). The ref names the season, so a season reset, which zeroes wallets, grants them again.
+        Returns the rows added."""
+        with self.lock:
+            season = self.conn.execute("SELECT COUNT(*) FROM seasons").fetchone()[0] + 1
+            before = self.conn.total_changes
+            self.conn.execute(
+                "INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) "
+                "SELECT name, ?, 'starter', 'starter:' || ? || ':' || lower(name), 'Starting bananas', ? FROM bettors",
+                (amount, season, now or time.time()))
+            self.conn.commit()
+            return self.conn.total_changes - before
+
+    def banana_totals(self):
+        """Per bettor (lower-cased name): wallet, earned (all time and since the season started) and spent."""
+        since = self.get_meta("season_started") or 0
+        return {r["k"]: r for r in self.query(
+            """SELECT lower(bettor) AS k, SUM(delta) AS wallet,
+                      SUM(CASE WHEN reason IN ('bet_win', 'reward') THEN delta ELSE 0 END) AS earned,
+                      SUM(CASE WHEN reason IN ('bet_win', 'reward') AND created_ts >= ? THEN delta ELSE 0 END) AS season_earned,
+                      SUM(CASE WHEN reason IN ('bet_win', 'reward') AND created_ts >= ? THEN credits ELSE 0 END) AS season_credits,
+                      -SUM(CASE WHEN reason IN ('purchase', 'prank', 'arcade') THEN delta ELSE 0 END) AS spent
+               FROM banana_ledger GROUP BY lower(bettor)""", (since, since))}
+
+    def banana_wallet(self, name):
+        row = self.query_one("SELECT COALESCE(SUM(delta), 0) AS w FROM banana_ledger WHERE bettor=?", (name,))
+        return row["w"] if row else 0.0
+
+    def banana_history(self, name, limit=30):
+        return self.query("SELECT * FROM banana_ledger WHERE bettor=? ORDER BY id DESC LIMIT ?", (name, int(limit)))
+
+    def spend_bananas(self, name, price, reason, ref, note):
+        """Take `price` bananas in one transaction with the purchase it pays for; False if the wallet is short.
+        Call inside `with db.lock:` together with the write it pays for."""
+        if self.banana_wallet(name) + 1e-9 < price:
+            return False
+        self.conn.execute(
+            "INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES(?,?,?,?,?,?)",
+            (name, -price, reason, ref, note, time.time()))
+        return True
+
+    def banana_items(self, name=None):
+        if name:
+            return self.query("SELECT * FROM banana_items WHERE bettor=? ORDER BY bought_ts", (name,))
+        return self.query("SELECT * FROM banana_items ORDER BY bought_ts")
+
+    def banana_equipped(self):
+        """Every bettor's worn items: {lower-cased name: {slot: item_id}}."""
+        out = {}
+        for r in self.query("SELECT * FROM banana_equipped"):
+            out.setdefault(r["bettor"].lower(), {})[r["slot"]] = r["item_id"]
+        return out
+
+    def set_equipped(self, name, slot, item_id):
+        if item_id:
+            self.execute("INSERT OR REPLACE INTO banana_equipped(bettor, slot, item_id) VALUES(?,?,?)", (name, slot, item_id))
+        else:
+            self.execute("DELETE FROM banana_equipped WHERE bettor=? AND slot=?", (name, slot))
+
+    def banana_pranks(self, active_only=True, target=None, limit=200):
+        """Social items, newest first, each with `games_since` (5-stack games started after it). Active ones haven't
+        expired and, when `games` > 0, fewer than `games` games have started since."""
+        sql = ("SELECT * FROM (SELECT p.*, (SELECT COUNT(*) FROM matches m WHERE m.started_ts > p.created_ts) AS games_since "
+               "FROM banana_pranks p)")
+        conds, params = [], []
+        if active_only:
+            conds.append("expires_ts > ? AND (games = 0 OR games_since < games)")
+            params.append(time.time())
+        if target:
+            conds.append("target=?")
+            params.append(target)
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        return self.query(sql + f" ORDER BY id DESC LIMIT {int(limit)}", params)
 
     # ---- transfers between bettors ------------------------------------------
     def transfer(self, sender, recipient, amount, note, tax_min=None):
