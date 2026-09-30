@@ -586,6 +586,79 @@ def rewards(shared):
     assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 50
 
 
+@section("transfers")
+def transfers(shared):
+    db, bets = shared.db, shared.bets
+    # Credits sent between bettors: zero-sum, and outside everyone's betting profit.
+    before = {r["name"]: r for r in bets.leaderboard()}
+    sent = bets.send("Tester", "p2", 30, "  side bet   on Bind  ")  # any case finds the account; the note is tidied
+    assert sent["sender"] == "Tester" and sent["recipient"] == "P2" and sent["amount"] == 30 and sent["note"] == "side bet on Bind", sent
+    bets.send("P2", "Tester", 12.345)  # cents are fine (rounded); no note
+    after = {r["name"]: r for r in bets.leaderboard()}
+    assert abs(after["Tester"]["balance"] - (before["Tester"]["balance"] - 30 + 12.35)) < 1e-6
+    assert abs(after["P2"]["balance"] - (before["P2"]["balance"] + 30 - 12.35)) < 1e-6
+    assert after["Tester"]["transfers"] == -17.65 and after["P2"]["transfers"] == 17.65, (after["Tester"], after["P2"])
+    assert all(after[n]["profit"] == before[n]["profit"] for n in before), "transfers are not betting profit"
+    assert sum(r["balance"] for r in after.values()) == sum(r["balance"] for r in before.values())  # nothing created
+    assert [t["amount"] for t in db.transfers(received_by="tester")] == [12.35] and len(db.transfers(bettor="P2")) == 2
+    assert db.transfers(received_by="P2")[0]["note"] == "side bet on Bind" and db.transfers(received_by="Tester")[0]["note"] is None
+    tester_balance = db.get_bettor("Tester")["balance"]
+    for bad in (("Tester", "Tester", 10, None, "yourself"), ("Tester", "Nobody", 10, None, "Pick who"),
+                ("Tester", "", 10, None, "Pick who"), ("Tester", "P2", 0.5, None, "smallest"),
+                ("Tester", "P2", "lots", None, "Enter an amount"), ("Tester", "P2", float("nan"), None, "smallest"),
+                ("Tester", "P2", tester_balance + 1, None, "only has"), ("Tester", "P2", 5, "x" * 81, "80 characters"),
+                ("Ghost", "P2", 5, None, "Sign in")):
+        try:
+            bets.send(*bad[:4])
+            raise AssertionError(f"transfer should be refused: {bad}")
+        except BetError as e:
+            assert bad[4] in str(e), (bad, str(e))
+    assert db.get_bettor("Tester")["balance"] == tester_balance and len(db.transfers()) == 2  # refusals change nothing
+    assert db.transfer("Tester", "P2", tester_balance + 1, None) is None  # checked inside the transaction too
+    assert all(t["tax_status"] is None for t in db.transfers())  # under 250 credits: no generosity tax
+    assert tester_balance >= 250
+    big = bets.send("Tester", "P2", tester_balance)  # the whole balance is allowed; 250+ earns the tax
+    assert db.get_bettor("Tester")["balance"] == 0 and big["tax_status"] == "open", big
+    assert bets.send("P2", "Tester", tester_balance)["tax_status"] == "open"  # P2 waits on Tester's next win
+
+    # The generosity tax: Tester and Parlay each sent P2 250+ credits, so each takes 10% of the net winnings of P2's
+    # next winning bet: the biggest, when several win on the same game. P2 pays it.
+    assert bets.send("Tester", "P2", 60)["tax_status"] is None  # one open tax per sender and recipient: no stacking
+    assert bets.send("Parlay", "P2", 249)["tax_status"] is None  # just under the minimum
+    assert bets.send("Parlay", "P2", 250)["tax_status"] == "open"
+    small = bets.place("P2", "team:win", "win", 10, {})
+    large = bets.place("P2", "ou:kills:puuid-1", "over", 40, {})
+    lost = bets.place("P2", "ou:kills:puuid-2", "over", 20, {})
+    lb_before = {r["name"]: r for r in bets.leaderboard()}
+    bal = {n: db.get_bettor(n)["balance"] for n in ("P2", "Tester", "Parlay")}
+    game = {"match_id": "tax-game", "mode": "competitive", "rounds_won": 13, "rounds_lost": 5, "result": "win",
+            "started_ts": time.time() + 5}  # settled on directly, never recorded, so later sections see no new game
+    lines = [{**p, "kills": 30 if p["puuid"] == "puuid-1" else 5} for p in db.match_players("m9")]
+    settled = {b["id"]: b for b in bets.settle_for_match(game, lines)}
+    assert [settled[b["id"]]["status"] for b in (small, large, lost)] == ["won", "won", "lost"], settled
+    net = {i: settled[i]["payout"] - settled[i]["stake"] for i in (small["id"], large["id"])}
+    taxed = max(net, key=net.get)  # the kills over paid more
+    tax = round(net[taxed] * 0.10, 2)
+    assert taxed == large["id"] and "Generosity tax" in settled[taxed]["note"] and "Parlay" in settled[taxed]["note"]
+    assert settled[small["id"]]["note"] is None  # only the biggest winner is taxed
+    assert abs(db.get_bettor("Tester")["balance"] - (bal["Tester"] + tax)) < 1e-6
+    assert abs(db.get_bettor("Parlay")["balance"] - (bal["Parlay"] + tax)) < 1e-6
+    assert abs(db.get_bettor("P2")["balance"] - (bal["P2"] + sum(settled[i]["payout"] for i in net) - 2 * tax)) < 1e-6
+    paid = [t for t in db.transfers(received_by="P2") if t["tax_status"] == "paid"]
+    assert sorted(t["sender"] for t in paid) == ["Parlay", "Tester"] and all(t["tax_amount"] == tax and t["tax_bet_id"] == taxed
+                                                                            and t["tax_match_id"] == "tax-game" for t in paid), paid
+    assert paid[0]["tax_bet_net"] == net[taxed] and db.taxes_collected("tester")[0]["tax_amount"] == tax
+    assert db.open_taxes("Tester", time.time() + 60)[0]["sender"] == "P2"  # Tester had no bets: still waiting
+    lb_after = {r["name"]: r for r in bets.leaderboard()}
+    assert abs(lb_after["P2"]["profit"] - (lb_before["P2"]["profit"] + sum(net.values()) - 20)) < 1e-6  # tax isn't betting
+    assert lb_after["Tester"]["profit"] == lb_before["Tester"]["profit"]
+    assert abs(lb_after["Tester"]["transfers"] - (lb_before["Tester"]["transfers"] + tax)) < 1e-6
+    assert bets.collect_taxes(list(settled.values()), game) == []  # paid once only
+    late = bets.send("Tester", "P2", 250)  # made after that game: waits for P2's next win
+    assert late["tax_status"] == "open" and db.open_taxes("P2", late["created_ts"]) == []
+    shared.transfer_count = len(db.transfers())
+
+
 @section("seasons")
 def seasons(shared):
     db, bets = shared.db, shared.bets
@@ -602,7 +675,11 @@ def seasons(shared):
     assert len(archived) == before["bets"] and not any(b["status"] == "pending" for b in archived)
     assert sum(b["note"] == "Still open when the season was reset" for b in archived) == before["open"]
     assert db.query_one("SELECT COUNT(*) AS n FROM archived_rewards WHERE season_id=?", (season["id"],))["n"] == before["rewards"]
-    assert db.season_counts() == {"started_ts": season["ended_ts"], "bets": 0, "rewards": 0, "bettors": db.season_counts()["bettors"]}
+    assert db.query_one("SELECT COUNT(*) AS n FROM archived_transfers WHERE season_id=?", (season["id"],))["n"] == shared.transfer_count
+    assert db.transfers() == [] and db.transfer_totals() == {}
+    assert saved["P2"]["transfers"] == before["standings"]["P2"]["transfers"] != 0  # the standings keep them
+    assert db.season_counts() == {"started_ts": season["ended_ts"], "bets": 0, "rewards": 0, "transfers": 0,
+                                  "bettors": db.season_counts()["bettors"]}
     assert bets.reset()["name"] == "Season 2" and [x["name"] for x in db.seasons()] == ["Season 2", "Season 1"]
 
 
