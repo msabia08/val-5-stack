@@ -6,6 +6,7 @@ import secrets
 import time
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, rounds_to_win, went_to_overtime
+from .moments import game_facts
 from .odds import STAT_DEFS, alt_family, find_market, margin_key, parse_alt, score_key
 from .parlay import LOOKBACK, correlation, price, score_conflict
 from .stats import aggregate, player_metrics
@@ -15,6 +16,8 @@ COUNTING_STATS = {d["key"] for d in STAT_DEFS if d["kind"] == "count"}
 SCORE_MARKETS = {"team_score", "team_margin", "team_rw", "team_rl"}  # priced from odds.score_model
 # Note on a bet voided by a surrender. A void single is refunded; a void parlay leg is dropped from the parlay.
 EARLY_END = "Game ended early (surrender) before this was decided"
+# Note on a bet on a moment market (pistol, ace, ...) when the game's round timeline was never fetched: refunded.
+NO_ROUND_DATA = "Round-by-round data for this game isn't available: stake refunded"
 # A pick on the board that would have won in each of the last STREAK_MIN games (at today's line) gets a flame;
 # streaks are counted back through at most STREAK_LOOKBACK games.
 STREAK_MIN = 3
@@ -262,6 +265,8 @@ class BetManager:
             return f"Overtime: {sel['label']}", {}
         if mtype == "team_ou":
             return f"Total rounds {sel['label']}", {}
+        if mtype == "team_moment":  # pistol, half-time, ace, comeback, flawless rounds: settled from the timeline
+            return f"{market['label']}: {sel['label']}", {"fact": market["fact"]}
         return f"{market['label']}: {sel['label']}", {}  # rounds won / lost, winning margin, exact score
 
     def quote_parlay(self, legs, context):
@@ -370,6 +375,7 @@ class BetManager:
         pending = [b for b in self.db.pending_bets() if b["placed_ts"] < started + self.grace_s]
         if not pending:
             return []
+        match = {**match, "timeline": self.db.timeline(match["match_id"])}  # the moment markets settle from it
         rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
         metrics = {p["puuid"]: player_metrics(p, rounds) for p in players}
         self._add_relative_acs(metrics, started)
@@ -445,7 +451,7 @@ class BetManager:
         games = self._recent_games(STREAK_LOOKBACK)
         for group in ("team", "player_props", "top_markets"):
             for mk in board.get(group, []):
-                meta = json.dumps({"stat": mk.get("stat"), "puuid": mk.get("puuid"), "direction": mk.get("direction", "high")})
+                meta = json.dumps({"stat": mk.get("stat"), "puuid": mk.get("puuid"), "direction": mk.get("direction", "high"), "fact": mk.get("fact")})
                 two_way = len(mk["selections"]) == 2
                 for s in mk["selections"]:
                     bet = {"market_type": mk["type"], "selection": s["key"], "line": mk.get("line"), "context": meta}
@@ -470,8 +476,10 @@ class BetManager:
         lines = {}
         for r in rows:
             lines.setdefault(r["match_id"], []).append(r)
+        timelines = {t["match_id"]: t["data"] for t in self.db.timelines()}
         games = []
         for match in self.db.matches(limit=limit):
+            match = {**match, "timeline": timelines.get(match["match_id"])}  # for the moment markets
             rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
             metrics = {p["puuid"]: player_metrics(p, rounds) for p in lines.get(match["match_id"], [])}
             self._add_relative_acs(metrics, match.get("started_ts") or 0, rows)
@@ -543,6 +551,8 @@ class BetManager:
         t = b["market_type"]
         sel = b["selection"]
         line = b.get("line")
+        if t == "team_moment":  # surrenders are handled inside, fact by fact
+            return self._evaluate_moment(b, match, meta)
         if ending(match) == FORFEIT and t != "team_win":
             return self._evaluate_forfeit(b, match, metrics, meta)
         if t == "ou":
@@ -609,6 +619,30 @@ class BetManager:
             won = value > line if sel == "over" else value < line
             return ("won" if won else "lost"), value, None
         return "void", None, "Unknown market type"
+
+    @staticmethod
+    def _evaluate_moment(b, match, meta):
+        """A team market read from the round timeline (moments.game_facts: pistol, half, ace, comeback, flawless).
+        Without the game's timeline (the full record wasn't fetched) it's void. On a surrender, a fact that was
+        already decided settles (the pistol, half-time once round 12 was played, an ace that happened, flawless rounds
+        already past the line, a comeback since the result stands) and the rest are void."""
+        sel, line, fact = b["selection"], b.get("line"), meta.get("fact")
+        if not match.get("timeline"):
+            return "void", None, NO_ROUND_DATA
+        forfeit = ending(match) == FORFEIT
+        v = game_facts(match, match["timeline"]).get(fact)
+        if v is None:
+            return "void", None, EARLY_END if forfeit else "This game had no round 12 (a shorter mode)"
+        decided = "Decided before the surrender" if forfeit else None
+        if line is not None:  # an over / under on a count, which only goes up
+            if forfeit and v <= line:
+                return "void", v, EARLY_END
+            if abs(v - line) < 1e-9:
+                return "void", v, "Push: landed exactly on the line"
+            return ("won" if (v > line) == (sel == "over") else "lost"), v, decided
+        if forfeit and fact == "ace" and not v:
+            return "void", 0, EARLY_END  # nobody had aced yet, but someone still could have
+        return ("won" if bool(v) == (sel in ("yes", "us")) else "lost"), int(bool(v)), decided
 
     @staticmethod
     def _evaluate_forfeit(b, match, metrics, meta):

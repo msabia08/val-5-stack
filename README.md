@@ -8,6 +8,18 @@ your next game** that the squad can bet on with virtual credits.
 
 No Node, no build step, no third-party packages: Python 3.10+ and a browser.
 
+**Screens and theme.** The site is built around a 1920×1080 desktop screen;
+other sizes (phones, tablets, small laptops) aren't supported. It opens in dark
+mode whatever your computer's own light/dark setting is. Light mode (and any
+theme bought in Onkey's Shop) is one click on ◐ in the top bar, and the site
+remembers your pick.
+
+**Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
+**Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
+the odds for the next game and your bet slip; **Standings**: rankings, results,
+seasons, credits and rewards) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+button shows the page you're on.
+
 ## Quick start
 
 1. **Get an API key** (free). Open <https://api.henrikdev.xyz/dashboard/>, sign in
@@ -40,16 +52,31 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   kills / deaths / assists per game, ADR, headshot %, kills per round, plus the
   same breakdown **per agent** and **per map**, recent form and best games.
 - **5-stack vs. their other games:** how each player's 5-stack numbers differ
-  from their games outside the stack (see below).
+  from their games outside the stack (see below). The comparison is still worked
+  out, but it's hidden on the Players page for now.
 - **Each match:** map, mode, score, date, each member's line, and (when the full
   match record is fetched) game length, ranks and whether all five shared a party.
   The **Matches** tab opens with a recap of the latest game (see below); click
   any game in the list, or use *Older* / *Newer*, to recap another.
-- **Overview:** the front page. Squad totals, the last game with its top five
-  highlights (linking to the full recap), your balance and the top bettors, the
-  standout bets of the last 5 games (biggest win and loss, longest odds won,
-  shortest odds lost), who's trending (each player's ACS and K/D over their last 5 games
-  against the 10 before, with an ACS sparkline), and win rate by map.
+- **Overview:** the front page, all on one screen. Across the top: the squad's
+  record, its form (the last 10 results; click one for its recap), last night's
+  record, and the **next game**: the match result odds plus up to two picks on a
+  hot streak, which add to your bet slip like on Place bets. Then the last game
+  with its top five highlights (linking to the full recap); betting (who leads,
+  and your own place when you're signed in, and the standout bets this season:
+  biggest win and loss, longest odds won, shortest odds lost); who's
+  trending (whether each player is heating up, cooling off or steady, from
+  their ACS over the last 5 games against the 10 before; their ACS and K/D over
+  those games, each with the change from the 10 before; and an ACS sparkline, all players on one scale, with the last 5
+  games shaded. Click a player to open them on Players); and
+  map performance (win rate per map, best first, green from 50% and red below,
+  with the average round difference; maps with 3 or fewer games are faded, and
+  clicking one opens its games on Matches). Two more cards round out the grid:
+  **Riding on the next game** (how many credits are on the next game and from
+  how many bettors, the pick with the most credits behind it, and the three
+  biggest open bets) and **Onkey's** (the top collector, the newest pranks in
+  play with who pranked whom and how long they last, and each arcade game's best
+  score).
 - **Charts tab:** charts built from all of the above, grouped by the buttons at
   the top (All, Results, Players, Rounds). Each has a one-line takeaway and hover
   details:
@@ -93,8 +120,10 @@ in it too. Anything else is remembered as rejected so it is never re-checked.
 The same stored-match responses also contain every game each member played
 without the full stack (solo queue, duos, 3- and 4-stacks). Those games, in the
 tracked `modes`, are kept as each player's baseline, so this costs no extra API
-calls. The Players page compares the two on ACS, kills / deaths / assists per
-round, ADR, headshot %, K/D and win rate.
+calls. The comparison covers ACS, kills / deaths / assists per round, ADR,
+headshot %, K/D and win rate. It's hidden on the Players page for now
+(`PLAYER_TABLE_OTHER_GAMES` and `PLAYER_CARD_OTHER_GAMES` in `web/app.js` bring it
+back), and `/api/stats` still returns it for each player as `deviation`.
 
 A difference is labelled **better** or **worse** when it is about two standard
 errors or more (judged from how much the stat swings game to game on each side),
@@ -110,7 +139,7 @@ baseline.
 ## Match recap
 
 The top of the **Matches** tab recaps one game: the latest by default, or any
-game you pick from the list below it. (The Overview's *Last game* tile links
+game you pick from the list below it. (The Overview's *Last game* card links
 here too.)
 
 - **Header:** result, score, map, mode, date, length, which game of the night it
@@ -137,8 +166,7 @@ here too.)
     quickest win, overtime, surrenders.
   - *Forecast and betting surprises:* a player well outside their forecast from
     the Forecasts tab, winning as underdogs or losing as favourites, long shots,
-    parlays, big wins, betting on yourself and cashing it, the full performance
-    bonus.
+    parlays, big wins, the full performance bonus.
 
   Records only count against games *before* this one, so an old game shows what
   was notable at the time. They need 10 earlier games, and 5 on an agent or map,
@@ -173,14 +201,23 @@ betting lines use:
   because against the median everyone would seem to beat the forecast on
   skewed stats like kills.
 
-The page puts each prediction next to what actually happened:
+The page starts with the **next game**: the same forecast made from every game so
+far. It's drawn as a range on a number line with the typical game and the
+current betting line, and the Over / Under buttons add that line to your bet
+slip (kills, deaths, assists and headshot %, the stats with a line).
 
-- tiles for how often the player landed inside the range, beat it or fell short;
-- a **game-by-game strip** of forecast ranges with the real result as a dot;
-- a **map × role grid** (Duelist, Controller, Initiator, Sentinel) with the actual
-  average against the expected average in each cell, shaded by how far they beat or
-  missed it; hover a cell for the range and each agent, click it to show just
-  those games in the strip.
+Then it puts each past prediction next to what actually happened:
+
+- tiles for how often the player landed inside the range, beat it or fell short
+  (for the map picked below, when one is);
+- a **game-by-game chart** of forecast ranges with the real result as a dot. A
+  miss has a line from the edge of the range, faint dashed lines separate nights,
+  and clicking a game opens its recap on the Matches tab;
+- a **bar per map** for how far the player's average landed from the expected
+  average, better to the right and worse to the left (paler with fewer games).
+  With more than one role (Duelist, Controller, Initiator, Sentinel) there's a
+  chip for each. Hover a map for the range and each agent; click it to show just
+  those games in the chart and tiles.
 
 A game gets a forecast once the player has 5 earlier 5-stack games; surrendered
 games aren't forecast. For deaths, fewer counts as beating the forecast.
@@ -189,10 +226,14 @@ games aren't forecast. For deaths, fewer counts as beating the forecast.
 
 For each player the history of 5-stack games is turned into a
 recency-weighted sample (half-life `recency_half_life_games`, default 15 games).
-If you pick an expected **map** or an expected **agent** per player on the Odds
-page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`).
+The Place bets page always prices the next game from every map and agent. (The
+odds engine can still weight one map or agent up, `map_weight_boost` and
+`agent_weight_boost`, for anything that asks it to; the page no longer does.)
+American or decimal odds are picked with the toggle above the bet slip.
 
-- **Player props (over/under):** kills, deaths, assists, ACS, ADR, headshot %.
+- **Player props (over/under):** kills, deaths, assists and headshot %. ACS
+  isn't a prop, but it's still bet on through *Top and bottom of the scoreboard*
+  (Highest ACS, Popped off and their counters).
   The line sits at the weighted median; the over/under probability comes from a
   Gaussian-kernel smoothed distribution of past games.
 - **Custom lines:** "I think Loog gets 25 kills." Under the player props, pick a
@@ -215,11 +256,11 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   exact score) get frost: in an over/under or win/loss market the other side of
   a cold pick already has the flame.
   These are only labels: the odds don't change.
-- **Celebrations:** a bet you win sets off confetti from your balance under the
-  bet slip (gold, and more of it, for a long shot at +500 or longer), with a
+- **Celebrations:** a bet you win sets off confetti from your credits at the top
+  of the page (gold, and more of it, for a long shot at +500 or longer), with a
   toast saying what paid. Your browser remembers the last win it showed you, so
   a bet that settles while the site is closed, or while you're on another tab,
-  gets its confetti the next time you open Odds & Bets. The balance under the bet slip counts up or down when it changes,
+  gets its confetti the next time you look. Your credits count up or down when they change,
   and a bet you place lands with a "Placed" stamp in **Your open bets**, the box
   under the custom line that lists just your own open bets.
 - **Exact numbers:** the same card's *exactly* option ("Loog gets exactly 25
@@ -248,26 +289,44 @@ page, matching games get extra weight (`map_weight_boost`, `agent_weight_boost`)
   Probabilities come from a Monte Carlo simulation that draws one game per
   player from their weighted history; each top market and its counter come from
   the same simulated games. A tie at the top (or bottom) refunds the stake.
-- **Team markets:** match result, total rounds, and overtime (does the game go
-  past 12–12?). Overtime is rare, so its odds come from your history shrunk
-  toward a ~10% base rate, and surrendered games are left out of it.
-- **Score markets:** rounds won and rounds lost by the squad (over / under, with
-  overtime counting as 12+), **winning margin** (the squad wins by 1–2, 3–5 or
-  6+; overtime is 1–2), and the **exact score** of a squad win (13–0 to 13–11).
-  Margin and exact score are only offered on the squad winning: a loss loses
-  them, and so does an overtime win for exact score. They all come from one model of the final score:
+- **Team markets:** the match result comes first: Win and Loss either side of a
+  bar split by each side's chance, with the squad's last five results (W / L,
+  newest on the right) under the middle of the bar. Then each market is a
+  question card (hover a question for how the market works):
+  - **By how much?** the margin, from losing by 6+ to winning by 6+
+  - **Win the pistol?** round 1
+  - **Ahead at half-time?** after round 12 (6–6 isn't ahead)
+  - **Overtime?** does the game go past 12–12? It's rare, so its odds come from
+    your history shrunk toward a ~10% base rate; surrendered games are left out.
+  - **Anyone ace?** one of the five kills all five enemies in one round
+  - **Comeback from 5 down?** the squad falls 5 or more rounds behind and still
+    wins (a long shot)
+  - **Flawless rounds?** over / under on rounds won with nobody in the squad dying
+  - **Final score?** every result in one row, from a 0–13 loss through overtime
+    to a 13–0 win, each with a bar for how likely it is.
+
+  The pistol, half-time, ace, comeback and flawless markets are read from each
+  game's round-by-round record, so they appear once 5 games have one, and they're
+  priced from your recent games like the rest. If the record isn't available
+  for the game they settle on, they're refunded. (Total rounds, and rounds won /
+  lost over / unders, used to be offered too; they're gone, but bets already
+  placed on them still settle.)
+- **Score markets:** **margin** (lose or win by 1–2, 3–5 or 6+; overtime is
+  1–2 either way) and the **exact score** (every regulation score either way,
+  plus an overtime win and an overtime loss as their own picks), so one pick
+  wins every game. They all come from one model of the final score:
   each round is won with some chance, first to 13, and that chance varies from
   game to game. The model is tuned so its chance of winning matches the match
   result odds and its chance of reaching 12–12 matches the overtime odds as
-  closely as it can, so none of these markets contradict each other. Winning
-  margin and exact score have many picks each, so like the scoreboard markets
+  closely as it can, so none of these markets contradict each other. Margin and
+  exact score have many picks each, so like the scoreboard markets
   they carry double the house edge. They only settle on first-to-13 games (a
   shorter mode refunds them).
 - **Surrendered games are partial data.** Their kills, deaths and assists are
   scaled up to a full-length game (the median length of your completed games,
   or 22 rounds until there are 5 of them), and the game counts only as much as
-  the share of a full game that was played. They are left out of the
-  total-rounds line, and count normally toward the match-result odds.
+  the share of a full game that was played. They count normally toward the
+  match-result odds and are left out of the overtime odds.
 
 Fair probabilities are then shaded by `house_edge` (default 5%, doubled for the
 multi-way markets), exactly like a sportsbook's vig, and shown as American or
@@ -276,8 +335,10 @@ distribution at low weight and are flagged *low confidence*.
 
 ## Betting rules
 
-- Every bettor has their own account: pick a name and a personal betting
-  password in the bet slip (*Create account*). From then on only someone signed
+- Every bettor has their own account: click **Sign in** at the top right, then
+  pick a name and a personal betting password (*Create account*). The same menu
+  signs you in on another device, and once you're signed in it has your
+  profile, *Change password* and *Sign out*. From then on only someone signed
   in with that password can bet as that name or cancel its bets. Accounts
   start with `starting_balance` credits (default 1000).
 - Forgot a password? With `admin_password` set, the commissioner can free the
@@ -303,9 +364,13 @@ distribution at low weight and are flagged *low confidence*.
   game stopped: an over on a counting stat (kills, deaths, assists, total
   rounds) that had already cleared its line wins, and the matching under
   loses; an overtime bet settles only if the game had already reached 12–12;
-  rounds won / lost settle the same way as total rounds (an over already
-  cleared wins). Exact score and winning margin are refunded, since the final
-  score never happened. Anything else is refunded, including per-round stats (ACS, ADR,
+  rounds won / lost (older bets; no longer offered) settle the same way as
+  total rounds (an over already cleared wins). The pistol round is always
+  decided; half-time only if round 12 was played; an ace or a comeback settles
+  if it already happened (a comeback also needs the win to stand), and "no ace"
+  is refunded; flawless rounds settle like a count (an over already cleared
+  wins). Exact score and margin are refunded, since the final score never
+  happened. Anything else is refunded, including per-round stats (ACS, ADR,
   headshot %) and top/bottom-of-the-scoreboard markets, which could still have
   swung. When the full match record is available, its winner flag decides
   who won, even if the surrendering team was ahead on rounds. Parlay legs
@@ -313,12 +378,12 @@ distribution at low weight and are flagged *low confidence*.
 - **Remakes.** A game that ends within the first 4 rounds is treated as a
   remake or an abandoned lobby, not a game: it isn't recorded, open bets
   carry over to the next game, and it pays no rewards.
-- Bets are shown as **slips**. On the Odds & Bets tab, open bets are grouped
+- Bets are shown as **slips**. On Place bets, open bets are grouped
   card by card under the bettor who placed it, with each card's bets and total
   wagered in its corner, so it's obvious at a glance who has what riding on
   the next game. Every bettor's colour is their squad member's colour, and odds
   follow the American / decimal switch.
-- The **Bettors** tab ranks everyone by balance, with profit against the
+- **Standings** ranks everyone by balance, with profit against the
   starting bankroll, record, win rate, ROI and open stakes. Under the rankings,
   a **betting report card** shows each bettor's ROI by market type, and how they
   do betting on themselves vs on others, followed by each bettor's **profit over
@@ -341,10 +406,11 @@ there are 2+ picks.
 
 - All legs settle off the same next 5-stack game. If every leg wins, the payout
   is the stake times the combined odds locked in at placement.
-- **Legs that decide each other are refused.** Team legs are all settled from
-  the final score, so a pair where one can only win when the other does
-  ("Exact score 13–5" and "Win", "Win by 6+" and "Win", "Overtime: Yes" and
-  "Rounds won over 10.5") or where both can never win ("Loss" and "Win by 1–2")
+- **Legs that decide each other are refused.** Match result, overtime, margin
+  and exact score are all settled from the final score, so a pair where one can
+  only win when the other does
+  ("Exact score 13–5" and "Win", "Win by 6+" and "Win", "Exact score 13–5" and
+  "Win by 6+") or where both can never win ("Loss" and "Win by 1–2")
   can't share a parlay. The slip says which pair and greys out the button.
 - **Legs that tend to land together are priced together.** The combined odds
   are normally the legs' odds multiplied, which assumes they're unrelated. The
@@ -368,11 +434,11 @@ there are 2+ picks.
   and a parlay where nothing was decided is refunded.
 - The **Open bets** / **Settled bets** slips show each leg of a parlay
   underneath the ticket, with a ✓ / ✗ / ↺ per leg once it settles.
-- *Reset season* (under the Bettors tab's rankings) ends the season. It asks
+- *Reset season* (under the rankings on Standings) ends the season. It asks
   you to type `RESET` (and the admin password, if one is set), and says exactly
   what will happen. The season's final standings, every bet, every game
   reward and every transfer are then saved under **Past seasons** on the
-  Bettors tab, before everyone goes back to the starting balance and bets,
+  Standings page, before everyone goes back to the starting balance and bets,
   rewards and transfers are cleared.
   Bets still open at that moment are closed. Nothing is lost: past seasons keep
   their full history. Set `admin_password` so that only the commissioner can
@@ -406,7 +472,7 @@ Names match regardless of case. If no such account exists yet, one is created
 with the starting balance and left unclaimed; the player claims it by signing up
 with that name.
 Only games played after rewards were switched on pay out, so upgrading doesn't
-pay for past games. The Bettors tab shows rewards in their own column and keeps
+pay for past games. Standings shows rewards in their own column and keeps
 profit and ROI betting-only.
 
 ## Onkey's Shop and the Monkeys
@@ -432,7 +498,7 @@ hands everyone a fresh 50; items you bought stay yours.
 | Badge | an emoji next to your name, and your avatar (17) | 40-500 |
 | Title | a line under your name on the Monkeys page and your profile (17) | 100-800 |
 | Profile banner | the header of your profile (9) | 300-600 |
-| Ticket style | your bet tickets on Odds & Bets and Bettors, for everyone | 300-600 |
+| Ticket style | your bet tickets on Place bets and Standings, for everyone | 300-600 |
 | Win celebration | what bursts out of your balance when a bet wins | 250-350 |
 | Site theme | unlocks Greg Mode, Onkey Mode, Jungle Mode, Sakura, Midnight, Terminal or Synthwave (dark and light are free). With only those two, ◐ toggles between them; once you own a theme, ◐ opens a picker | 750-1200 |
 
@@ -462,8 +528,10 @@ themselves. Everyone sees who sent what.
 most.
 
 **The top bar** shows your credits, your bananas and your profile chip (badge
-and name) on every page; they link to the Bettors tab, the shop and your
-profile. Signed out, the counters show "–" and the chip offers to sign in.
+and name) on every page. The credits open Standings, the bananas open the shop,
+and the profile chip opens your account menu (your profile, change password,
+sign out). Signed out, only the chip shows, saying Sign in, and it opens the
+sign-in form. The bet slip holds only your picks.
 
 **The Monkeys tab** ranks every bettor by the bananas spent on their collection,
 with their unspent bananas and what they earned this season. Click anyone (or a
@@ -497,7 +565,7 @@ server turns down any score a game couldn't reach in the time it ran.
 ## Sending credits
 
 Bettors can pay each other: settle a side bet, pay off a lost argument, spot a
-friend who went broke. In the Bettors tab's sidebar (next to Game rewards),
+friend who went broke. In the Standings page's sidebar (next to Game rewards),
 **Send credits** takes a recipient (any bettor account, claimed or not), an
 amount (at least 1, no more than your balance) and an optional note of up to 80
 characters. A confirm line spells out who gets how much before anything moves,
@@ -655,6 +723,9 @@ check) for every pull request and every push to `main`
 
 [`docs/DATA.md`](docs/DATA.md) lists every piece of data available: what the HenrikDev API returns (with field
 structures from real responses), what the tracker stores, and what the website's `/api/*` endpoints serve.
+
+[`docs/DESIGN.md`](docs/DESIGN.md) is the design guide for the website: the 1920×1080 dark-first target, layout,
+colour tokens, type, the shared components, wording, and how to check a UI change.
 
 ## Notes and limits
 

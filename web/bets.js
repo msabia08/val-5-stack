@@ -1,4 +1,4 @@
-/* 5-Stack Tracker: the betting UI. The bet slip, bet tickets, the Bettors tab (rankings, report card, settled bets,
+/* 5-Stack Tracker: the betting UI. The bet slip, bet tickets, the Standings page (view bettors: rankings, report card, settled bets,
  * rewards, seasons) and their data loading, split out of app.js the way the charts live in viz.js.
  *
  * app.js calls FiveBets.init() once with the helpers this needs (state, api, draw, ...), then uses the functions
@@ -103,17 +103,11 @@ window.FiveBets = (() => {
   }
 
   function slipHtml() {
+    // Only the picks: signing in lives in the account menu (the profile chip, top right) and the balance in the
+    // credits chip beside it.
     const me = state.me;
-    const account = me
-      ? `<div class="account"><div>Betting as <b>${esc(me.name)}</b></div><div class="acct-balance"><b>${fmt.credits(me.balance)}</b> credits</div>` +
-        (me.open_bets ? `<div class="muted small">+${fmt.credits(me.open_stake)} on ${me.open_bets} open bet${me.open_bets === 1 ? '' : 's'}</div>` : '') +
-        `<div class="btn-row"><button class="btn ghost small" id="bettor-signout">Sign out</button><button class="btn ghost small" id="bettor-password">Change password</button></div></div>`
-      : `<div class="account"><label>Name<input id="bettor-name" placeholder="Your name" value="${esc(state.bettor)}" autocomplete="username" maxlength="32"></label>` +
-        `<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>` +
-        `<div class="btn-row"><button class="btn small" id="bettor-signin">Sign in</button><button class="btn ghost small" id="bettor-register">Create account</button></div>` +
-        `<p class="muted small">Each bettor has a personal password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits.</p></div>`;
     if (!state.slip.length) {
-      return `<h2>Bet slip</h2>${account}<p class="muted">Tap any odds to add a pick.</p><p class="muted small">Picks placed up to ${fmt.n0(state.status.bet_grace_minutes ?? 2)} min after a game starts still count for it. You can cancel a pick for ${fmt.n0(state.status.bet_cancel_minutes ?? 1)} min after placing it.</p>`;
+      return `<h2>Bet slip</h2><p class="muted">Tap any odds to add a pick.</p><p class="muted small">Picks placed up to ${fmt.n0(state.status.bet_grace_minutes ?? 2)} min after a game starts still count for it. You can cancel a pick for ${fmt.n0(state.status.bet_cancel_minutes ?? 1)} min after placing it.</p>`;
     }
     const canParlay = state.slip.length >= 2;
     const mode = canParlay ? state.slipMode : 'single';
@@ -143,10 +137,10 @@ window.FiveBets = (() => {
       placeLabel = `Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}`;
     }
     return `<h2>Bet slip</h2>
-      ${account}
       ${modeToggle}
       ${body}
-      <button class="btn primary" id="place-bets" ${!me ? 'disabled title="Sign in first"' : mode === 'parlay' && parlayBlocked() ? 'disabled' : ''}>${placeLabel}</button>
+      ${me ? `<button class="btn primary" id="place-bets" ${mode === 'parlay' && parlayBlocked() ? 'disabled' : ''}>${placeLabel}</button>`
+        : '<button type="button" class="btn primary" data-signin>Sign in to place</button>'}
       <button class="btn ghost" id="clear-slip" style="width:100%;margin-top:6px">Clear slip</button>`;
   }
 
@@ -220,10 +214,10 @@ window.FiveBets = (() => {
     const pending = state.bets.filter((b) => b.status === 'pending');
     return `<section class="card"><div class="section-head"><h2>Open bets</h2>${pending.length ? `<span class="muted small">${betTotals(pending, false)}</span>` : ''}</div>
         ${pending.length ? bettorSlips(pending) : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
-        <p class="muted small">Settled bets, balances and rankings live on the <a href="#bettors">Bettors</a> tab.</p></section>`;
+        <p class="muted small">Settled bets, balances and rankings live on <a href="#bettors">Standings</a>.</p></section>`;
   }
 
-  // The Odds & Bets sidebar's "Your open bets": the signed-in bettor's slip card from the open bets section, where a
+  // The Place bets sidebar's "Your open bets": the signed-in bettor's slip card from the open bets section, where a
   // bet just placed lands with its stamp.
   function myBetsCard() {
     if (!state.me) return '';
@@ -242,7 +236,7 @@ window.FiveBets = (() => {
     return new Map([...groups].sort(([, a], [, b]) => (b[0].game_started_ts || 0) - (a[0].game_started_ts || 0)));
   }
 
-  // Bettors tab: settled bets for the game picked in the dropdown (state.settledGame; '' = the most recent), grouped
+  // Standings page: settled bets for the game picked in the dropdown (state.settledGame; '' = the most recent), grouped
   // by bettor. The dropdown lists every game with settled bets among the bets loaded.
   function settledSection() {
     const groups = settledGames();
@@ -428,42 +422,9 @@ window.FiveBets = (() => {
     bindSlip();
   }
 
-  async function bettorSession(path) {
-    const name = ($('#bettor-name')?.value || '').trim();
-    const password = $('#bettor-pass')?.value || '';
-    if (!name) { toast('Enter your name', 'bad'); return; }
-    if (!password) { toast('Enter your betting password', 'bad'); return; }
-    try {
-      const r = await api(path, { method: 'POST', body: JSON.stringify({ name, password }) });
-      state.bettor = r.bettor.name;
-      localStorage.setItem('fs.bettor', state.bettor);
-      toast(path.endsWith('register') ? `Account created. Welcome, ${r.bettor.name}.` : `Signed in as ${r.bettor.name}`, 'good');
-      await loadBets();
-      draw();
-    } catch (e) {
-      toast(e.message, 'bad');
-    }
-  }
-
   function bindSlip() {
     const slip = $('#slip');
     if (!slip) return;
-    $('#bettor-signin')?.addEventListener('click', () => bettorSession('/api/bettor/login'));
-    $('#bettor-register')?.addEventListener('click', () => bettorSession('/api/bettor/register'));
-    $('#bettor-pass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') bettorSession('/api/bettor/login'); });
-    $('#bettor-signout')?.addEventListener('click', async () => {
-      try { await api('/api/bettor/logout', { method: 'POST', body: '{}' }); } catch (e) { /* cookie is cleared anyway */ }
-      await loadBets();
-      draw();
-    });
-    $('#bettor-password')?.addEventListener('click', async () => {
-      const old = window.prompt('Current betting password');
-      if (old == null) return;
-      const nw = window.prompt('New betting password (4 to 64 characters)');
-      if (nw == null) return;
-      try { await api('/api/bettor/password', { method: 'POST', body: JSON.stringify({ old, new: nw }) }); toast('Password changed', 'good'); }
-      catch (e) { toast(e.message, 'bad'); }
-    });
     $$('.stake', slip).forEach((inp) => inp.addEventListener('input', (e) => {
       const it = state.slip[Number(e.target.dataset.i)];
       if (!it) return;
@@ -549,7 +510,7 @@ window.FiveBets = (() => {
     const bettors = state.bettors || [];
     const start = state.status.starting_balance || 1000;
     if (!bettors.length) {
-      return `<div class="card empty"><h2>No bettors yet</h2><p>Go to <a href="#odds">Odds &amp; Bets</a>, type your name in the bet slip and place a pick. Everyone starts with ${fmt.credits(start)} credits.</p></div>`;
+      return `<div class="card empty"><h2>No bettors yet</h2><p>Go to <a href="#odds">Place bets</a>, type your name in the bet slip and place a pick. Everyone starts with ${fmt.credits(start)} credits.</p></div>`;
     }
     const maxBal = Math.max(1, ...bettors.map((b) => b.balance));
     const bestWin = {};
@@ -587,7 +548,7 @@ window.FiveBets = (() => {
         `<td class="num">${b.pending}${b.pending_stake ? ` <span class="muted small">(${fmt.credits(b.pending_stake)})</span>` : ''}</td></tr>`;
     }).join('');
     const vizHelpers = { esc, fmt, slot: (puuid) => memberIndex().get(puuid)?.slot, bettorSlot };
-    // Laid out like Odds & Bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
+    // Laid out like Place bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
       <div class="odds-layout bettors-layout"><div>
       <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit is betting only: it counts open stakes, is measured against the ${fmt.credits(start)} everyone started with, and leaves out game rewards and credits sent between bettors (both shown separately; Transfers is what they received minus what they sent, generosity tax included).`)}
@@ -622,7 +583,7 @@ window.FiveBets = (() => {
     const others = (state.bettors || []).filter((b) => !me || b.name.toLowerCase() !== me.name.toLowerCase())
       .sort((a, b) => a.name.localeCompare(b.name));
     let form;
-    if (!me) form = '<p class="muted small">Sign in on <a href="#odds">Odds &amp; Bets</a> to send credits.</p>';
+    if (!me) form = '<p class="muted small"><a href="#" data-signin>Sign in</a> to send credits.</p>';
     else if (!others.length) form = '<p class="muted small">Nobody else to send credits to yet.</p>';
     else {
       const amount = Number(t.amount);

@@ -467,14 +467,6 @@ def _betting(bets, match, edge, members_by_bettor):
             out.append(_hl(56 + (0.4 - p_win) * 60, "upset", "Won as underdogs", f"The odds gave the squad {p_win:.0%}"))
         elif match.get("result") == "loss" and p_win >= 0.6:
             out.append(_hl(44, "upset", "Lost as favourites", f"The odds gave the squad {p_win:.0%}", None, "bad"))
-    # Betting on yourself and cashing it.
-    for b in won:
-        puuid = members_by_bettor.get(b["bettor"].lower())  # the squad member whose bettor account this is
-        if not puuid:
-            continue
-        meta = json.loads(b.get("context") or "{}")
-        if (b["market_type"] == "ou" and meta.get("puuid") == puuid) or (b["market_type"] == "top" and b["selection"] == puuid):
-            out.append(_hl(42, "self_bet", "Bet on themselves and cashed it", b.get("description") or "", puuid))
     return recap, out
 
 

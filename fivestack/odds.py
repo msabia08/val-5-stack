@@ -21,6 +21,7 @@ from collections import defaultdict
 from statistics import NormalDist
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, full_game_rounds, rounds_to_win, went_to_overtime
+from .moments import game_facts
 from .stats import aggregate, player_metrics
 
 STAT_DEFS = [
@@ -31,6 +32,9 @@ STAT_DEFS = [
     {"key": "adr", "label": "ADR", "kind": "score", "floor_h": 8.0},
     {"key": "hs_pct", "label": "Headshot %", "kind": "pct", "floor_h": 2.5},
 ]
+# The stats with an over / under line per player on the board (and custom lines on the page). ACS and ADR aren't
+# offered as player props; they still price the "top of the scoreboard" markets and appear in stats and forecasts.
+PROP_KEYS = ("kills", "deaths", "assists", "hs_pct")
 FLOOR_H = {d["key"]: d["floor_h"] for d in STAT_DEFS}
 STAT_BY_KEY = {d["key"]: d for d in STAT_DEFS}
 # Custom lines ("I think Loog gets 25 kills"): any .5 line on a player prop, priced from the same smoothed
@@ -120,6 +124,22 @@ SCORE_SD_MAX = 0.2
 MARGIN_BANDS = [("w1-2", "Win by 1–2", 1, 2), ("w3-5", "Win by 3–5", 3, 5), ("w6+", "Win by 6+", 6, 13),
                 ("l1-2", "Lose by 1–2", -2, -1), ("l3-5", "Lose by 3–5", -5, -3), ("l6+", "Lose by 6+", -13, -6)]
 
+# Team markets read from the round timeline (moments.py), in the page's order. kind "yes": a yes/no-style pair whose
+# first key is the fact being true, pulled toward `prior`; kind "ou": an over / under on a count or minutes.
+MOMENT_DEFS = [
+    {"fact": "pistol", "kind": "yes", "label": "Pistol round", "desc": "Does the 5-stack win round 1?", "prior": 0.5,
+     "keys": [("yes", "Yes"), ("no", "No")]},
+    {"fact": "half", "kind": "yes", "label": "Ahead at half-time", "desc": "Is the 5-stack ahead after round 12?", "prior": 0.45,
+     "keys": [("yes", "Yes"), ("no", "No")]},
+    {"fact": "ace", "kind": "yes", "label": "Ace", "desc": "Does anyone in the 5-stack kill all five in one round?", "prior": 0.2,
+     "keys": [("yes", "Yes"), ("no", "No")]},
+    {"fact": "comeback", "kind": "yes", "label": "Comeback", "desc": "The 5-stack falls 5+ rounds behind and still wins", "prior": 0.03,
+     "keys": [("yes", "Yes"), ("no", "No")]},
+    {"fact": "flawless", "kind": "ou", "label": "Flawless rounds", "desc": "Rounds the 5-stack wins without anyone dying", "floor_h": 0.7,
+     "line_kind": "count"},
+]
+MOMENT_MIN_GAMES = 5  # games that decide a moment before it's offered
+
 
 def _score_dist(r):
     """{(13, x) / (x, 13) for x < 12: chance, "ot-win" / "ot-loss": chance} for one round-win chance r."""
@@ -173,12 +193,6 @@ def margin_key(match):
     diff = (match.get("rounds_won") or 0) - (match.get("rounds_lost") or 0)
     return next((key for key, _, lo, hi in MARGIN_BANDS if lo <= diff <= hi), None)
 
-
-def _rounds_line(dist, side):
-    """The .5 line (4.5-11.5) on rounds won (side 0) or lost (side 1) closest to a 50/50 split, and P(over)."""
-    def p_over(line):
-        return sum(p for k, p in dist.items() if not isinstance(k, tuple) or k[side] > line)  # overtime: 12+ each
-    return min(((x + 0.5, p_over(x + 0.5)) for x in range(4, 12)), key=lambda lp: abs(lp[1] - 0.5))
 
 
 def fair_chance(decimal, market_type, edge):
@@ -454,8 +468,11 @@ class OddsEngine:
         return (market(highs, "high", td["id"], td["label"], td["desc"], td["low_id"]),
                 market(lows, "low", td["low_id"], td["low_label"], td["low_desc"], td["id"]))
 
-    def team_markets(self, matches, ctx_map):
-        pts_win, pts_rounds = [], []
+    def team_markets(self, matches, ctx_map, timelines=None):
+        """Match result, overtime, margin and exact score (from the final score), then the moment markets read from
+        the round timelines ({match_id: timeline}). Total rounds and rounds won / lost over-unders used to be offered
+        too and are gone from the board; bets already placed on them still settle in bets._evaluate."""
+        pts_win = []
         map_games = 0
         for i, m in enumerate(matches):
             w = 0.5 ** (i / self.half_life)
@@ -464,10 +481,6 @@ class OddsEngine:
                 map_games += 1
             wv = 1.0 if m.get("result") == "win" else (0.5 if m.get("result") == "draw" else 0.0)
             pts_win.append((w, wv))  # a surrender is still a real result
-            if ending(m) != FORFEIT:  # a surrendered game's round total was cut short
-                pts_rounds.append((w, (m.get("rounds_won") or 0) + (m.get("rounds_lost") or 0)))
-        if not pts_rounds:
-            pts_rounds = [(1.0, 22.0)]
         tw = sum(w for w, _ in pts_win)
         p_win = clamp((sum(w * v for w, v in pts_win) + 1.0) / (tw + 2.0), 0.1, 0.9)
         raw_wr = sum(1 for m in matches if m.get("result") == "win") / len(matches)
@@ -477,29 +490,14 @@ class OddsEngine:
             "type": "team_win",
             "label": "Match result",
             "desc": "Does the 5-stack win?",
-            "basis": {"games": len(matches), "win_rate": round(raw_wr, 3), "map_games": map_games},
+            # recent: the last five results, newest first, for the form guide under the match result.
+            "basis": {"games": len(matches), "win_rate": round(raw_wr, 3), "map_games": map_games,
+                      "recent": [m.get("result") for m in matches[:5]]},
             "selections": [
                 selection("win", "Win", p_win, two_way),
                 selection("loss", "Loss", 1.0 - p_win, two_way),
             ],
         }]
-        _, sigma = weighted_moments(pts_rounds)
-        h = max(1.5, 0.6 * sigma)
-        median = weighted_quantile(pts_rounds, 0.5)
-        line = self._choose_line(pts_rounds, median, h, "count")
-        p_over = clamp(kde_over(pts_rounds, line, h), 0.05, 0.95)
-        markets.append({
-            "market_id": "team:rounds",
-            "type": "team_ou",
-            "label": "Total rounds",
-            "desc": "Both teams combined",
-            "line": line,
-            "mean": round(sum(w * v for w, v in pts_rounds) / sum(w for w, _ in pts_rounds), 1),
-            "selections": [
-                selection("over", f"Over {line:g}", p_over, two_way),
-                selection("under", f"Under {line:g}", 1.0 - p_over, two_way),
-            ],
-        })
         # Overtime is rare, so the history is shrunk toward a ~10% base rate (0.2 of 2 pseudo-games).
         # Surrendered games are left out: they stopped before we know whether they'd have reached 12-12.
         pts_ot = [(0.5 ** (i / self.half_life), 1.0 if went_to_overtime(m) else 0.0)
@@ -511,39 +509,77 @@ class OddsEngine:
             "type": "team_ot",
             "label": "Overtime",
             "desc": f"Past 12–12? {ot_games} of {len(matches)} games so far",
+            "basis": {"games": len(matches), "hits": ot_games},
             "selections": [
                 selection("yes", "Yes", p_ot, two_way),
                 selection("no", "No", 1.0 - p_ot, two_way),
             ],
         })
         markets += self.score_markets(p_win, p_ot)
+        markets += self.moment_markets(matches, timelines or {})
         return markets
 
     def score_markets(self, p_win, p_ot):
-        """Rounds won, rounds lost, winning margin and exact score, all from score_model()."""
+        """Winning margin and exact score, both from score_model(). (Rounds won / lost over-unders used to be offered
+        too; they mostly repeated the match result, "rounds lost under 11.5" being a win, so the board dropped them.
+        Bets already placed on them, types team_rw / team_rl, still settle in bets._evaluate.)"""
         dist, mu, sd = score_model(round(p_win, 4), round(p_ot, 4))
-        two_way, multi = market_overround("team_rw", self.edge), market_overround("team_score", self.edge)
+        multi = market_overround("team_score", self.edge)
         basis = {"round_win": mu, "spread": sd}
         out = []
-        for side, key, mtype, label, desc in ((0, "team:rw", "team_rw", "Rounds won", "Rounds the 5-stack wins"),
-                                              (1, "team:rl", "team_rl", "Rounds lost", "Rounds the enemy wins")):
-            line, p_over = _rounds_line(dist, side)
-            out.append({"market_id": key, "type": mtype, "label": label, "desc": f"{desc} · OT counts as 12+",
-                        "line": line, "model": basis,
-                        "selections": [selection("over", f"Over {line:g}", p_over, two_way),
-                                       selection("under", f"Under {line:g}", 1.0 - p_over, two_way)]})
         diff = {(k if isinstance(k, str) else f"{k[0]}-{k[1]}"): p for k, p in dist.items()}
         margin = {key: sum(p for k, p in dist.items() if k != "ot-win" and k != "ot-loss" and lo <= k[0] - k[1] <= hi)
                   + (dist["ot-win"] if key == "w1-2" else dist["ot-loss"] if key == "l1-2" else 0.0)
                   for key, _, lo, hi in MARGIN_BANDS}
-        # Margin and exact score are only offered on the squad winning; if it loses (or, for exact score, wins in
-        # overtime), those bets simply lose.
-        out.append({"market_id": "team:margin", "type": "team_margin", "label": "Winning margin",
-                    "desc": "5-stack wins by… · OT counts as 1–2", "model": basis,
-                    "selections": [selection(key, lbl, margin[key], multi) for key, lbl, _, _ in MARGIN_BANDS if key.startswith("w")]})
+        # Both are offered for every result, so each game has exactly one winning pick. Margin runs from a heavy loss to
+        # a heavy win (overtime counts as 1-2 either way); exact score runs 0-13 .. 11-13, overtime (a loss, then a
+        # win), 13-11 .. 13-0, the order the page draws them in, left to right.
+        order = ["l6+", "l3-5", "l1-2", "w1-2", "w3-5", "w6+"]
+        label = {key: lbl for key, lbl, _, _ in MARGIN_BANDS}
+        out.append({"market_id": "team:margin", "type": "team_margin", "label": "Margin",
+                    "desc": "How much the 5-stack wins or loses by · OT counts as 1–2", "model": basis,
+                    "selections": [selection(key, label[key], margin[key], multi) for key in order]})
+        keys = [f"{x}-13" for x in range(12)] + ["ot-loss", "ot-win"] + [f"13-{x}" for x in range(11, -1, -1)]
+        names = {"ot-loss": "Overtime loss", "ot-win": "Overtime win"}
         out.append({"market_id": "team:score", "type": "team_score", "label": "Exact score",
-                    "desc": "The 5-stack wins the next game by exactly this score; a loss or an overtime win loses", "model": basis,
-                    "selections": [selection(f"13-{x}", f"13–{x}", diff[f"13-{x}"], multi) for x in range(12)]})
+                    "desc": "The final score; an overtime game is its own pick (win or loss)", "model": basis,
+                    "selections": [selection(k, names.get(k, k.replace("-", "–")), diff[k], multi) for k in keys]})
+        return out
+
+    def moment_markets(self, matches, timelines):
+        """The team markets read from each game's round timeline (moments.game_facts), priced from the squad's recent
+        games like the rest: recency-weighted, a yes/no pulled toward MOMENT_PRIOR (two pseudo-games at its base
+        rate) and an over/under from the same smoothed distribution as total rounds. A market needs MOMENT_MIN_GAMES
+        games that decide it, so it only appears once enough full records are stored. Each carries `basis` (games,
+        hits or median) for the page's one-line facts."""
+        two_way = market_overround("team_moment", self.edge)
+        facts = []
+        for i, m in enumerate(matches):  # newest first
+            facts.append((0.5 ** (i / self.half_life), game_facts(m, timelines.get(m["match_id"]))))
+        out = []
+        for spec in MOMENT_DEFS:
+            fact = spec["fact"]
+            pts = [(w, f[fact]) for w, f in facts if f[fact] is not None]
+            if len(pts) < MOMENT_MIN_GAMES:
+                continue
+            base = {"market_id": f"team:{fact}", "type": "team_moment", "fact": fact, "label": spec["label"], "desc": spec["desc"]}
+            if spec["kind"] == "yes":
+                tw = sum(w for w, _ in pts)
+                p = clamp((sum(w * (1.0 if v else 0.0) for w, v in pts) + 2 * spec["prior"]) / (tw + 2), 0.02, 0.98)
+                hits = sum(1 for _, v in pts if v)
+                out.append({**base, "basis": {"games": len(pts), "hits": hits},
+                            "selections": [selection(k, lbl, p if k == spec["keys"][0][0] else 1.0 - p, two_way) for k, lbl in spec["keys"]]})
+            else:  # over / under
+                _, sigma = weighted_moments(pts)
+                h = max(spec["floor_h"], 0.6 * sigma)
+                median = weighted_quantile(pts, 0.5)
+                line = self._choose_line(pts, median, h, spec["line_kind"])
+                p_over = clamp(kde_over(pts, line, h), 0.05, 0.95)
+                unit = spec.get("unit", "")
+                out.append({**base, "line": line, "basis": {"games": len(pts), "median": round(sorted(v for _, v in pts)[len(pts) // 2], 1),
+                                                            "mean": round(sum(v for _, v in pts) / len(pts), 1)},
+                            "selections": [selection("over", f"Over {line:g}{unit}", p_over, two_way),
+                                           selection("under", f"Under {line:g}{unit}", 1.0 - p_over, two_way)]})
         return out
 
     # ---- board -----------------------------------------------------------
@@ -603,7 +639,7 @@ class OddsEngine:
 
         props = []
         for m in members:
-            for sd in STAT_DEFS:
+            for sd in (d for d in STAT_DEFS if d["key"] in PROP_KEYS):
                 mk = self.ou_market(m, member_samples[m["puuid"]], sd)
                 if mk:
                     props.append(mk)
@@ -611,7 +647,7 @@ class OddsEngine:
         custom = []
         for alt in alts or []:  # (stat, puuid, line) for a custom line, (stat, puuid, n, "exact") for an exact number
             st, pu, value, kind = (*alt, "line")[:4]
-            if pu in by_puuid and st in STAT_BY_KEY:
+            if pu in by_puuid and st in PROP_KEYS:
                 market = self.exact_market if kind == "exact" else self.alt_market
                 custom.append(market(by_puuid[pu], member_samples[pu], STAT_BY_KEY[st], value))
         tops = []
@@ -633,11 +669,11 @@ class OddsEngine:
                 "map": matches[0].get("map"),
             },
             "members": info,
-            "team": self.team_markets(matches, ctx_map),
+            "team": self.team_markets(matches, ctx_map, {t["match_id"]: t["data"] for t in db.timelines()}),
             "player_props": props,
             "top_markets": tops,
             "custom": [mk for mk in custom if mk],
-            "stat_defs": [{"key": d["key"], "label": d["label"], "count": d["kind"] == "count"} for d in STAT_DEFS],
+            "stat_defs": [{"key": d["key"], "label": d["label"], "count": d["kind"] == "count"} for d in STAT_DEFS if d["key"] in PROP_KEYS],
         }
 
 

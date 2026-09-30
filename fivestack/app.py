@@ -304,7 +304,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(build_insights(app.db))
         if path == "/api/forecasts":
             try:
-                return self._json(build_forecasts(app.db, app.engine, qs.get("stat") or "acs", qs.get("player") or None))
+                return self._json(build_forecasts(app.db, app.engine, qs.get("stat") or "acs", qs.get("player") or None,
+                                                  qs.get("map") or None, qs.get("agent") or None))
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
         if path == "/api/seasons":

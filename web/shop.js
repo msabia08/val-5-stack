@@ -161,15 +161,13 @@ window.FiveShop = (() => {
     const s = state.shop;
     if (!s) return '<div class="loading">Loading…</div>';
     const me = s.me, per = Math.round(1 / (s.rate || 0.1));
+    // The exchange rate is in the intro line below, so it doesn't get a tile of its own.
     const tiles = me ? [
       kpi('Your bananas', bananas(me.wallet), 'ready to spend'),
       kpi('Earned this season', bananas(me.season_earned), `from ${fmt.credits(me.season_credits)} credits won`),
       kpi('Spent in all', bananas(me.spent), 'on looks, pranks and the arcade'),
-      kpi('Exchange rate', `${per} → 1 ${BANANA}`, 'credits won → bananas'),
-    ] : [
-      kpi('Exchange rate', `${per} → 1 ${BANANA}`, 'credits won → bananas'),
-    ];
-    const signIn = me ? '' : '<div class="viz-note">Sign in on <a href="#odds">Odds &amp; Bets</a> to spend bananas. You can still preview everything.</div>';
+    ] : [];
+    const signIn = me ? '' : '<div class="viz-note"><a href="#" data-signin>Sign in</a> to spend bananas. You can still preview everything.</div>';
     const sections = s.slots.filter((x) => state.shopSlot === 'all' || state.shopSlot === x.key).map((slot) => {
       const items = s.catalog.filter((i) => i.slot === slot.key);
       const worn = me && me.worn[slot.key];
@@ -182,7 +180,7 @@ window.FiveShop = (() => {
         'Most last for the next 3 5-stack games (a week at most). A Wall Note stays on their profile for 3 days; a Nickname or Title Swap lasts 24 hours. Everyone can see who sent what.')}
         <div class="shop-grid">${s.social.map((i) => itemCard(i, me)).join('')}</div></section>`);
     }
-    return `<section class="kpis">${tiles.join('')}</section>
+    return `${tiles.length ? `<section class="kpis">${tiles.join('')}</section>` : ''}
       <section class="card shop-hero"><div class="shop-hero-art" aria-hidden="true"></div><div>
         <h2>Onkey's Shop</h2>
         ${how(`Every ${per} credits you win pays 1 ${BANANA}. Bananas only buy looks, never credits.`,
@@ -219,7 +217,8 @@ window.FiveShop = (() => {
     const ring = `<button type="button" class="cm-ring shop-slot ${state.shopSlot === 'all' ? 'on' : ''}" data-v="all" aria-pressed="${state.shopSlot === 'all'}" style="--pct:${(pct * 100).toFixed(1)}%">
         <span class="cm-ring-in"><b>${have}<small>/${total}</small></b><span>${me ? 'collected' : 'items'}</span></span></button>`;
     return `<section class="card cm-card"><div class="section-head"><h2>${me ? 'Your collection' : 'In the shop'}</h2>
-        <span class="muted small">${me ? `${Math.round(pct * 100)}% of the shop · pick a section to browse it` : `${total} looks and ${s.social.length} pranks · pick a section to browse it`}</span></div>
+        <span class="muted small">${me ? `${Math.round(pct * 100)}% of the shop` : `${total} looks and ${s.social.length} pranks`}. ` +
+        `${state.shopSlot === 'all' ? 'Pick a section to show just that one.' : 'Click the ring to show everything again.'}</span></div>
       <div class="cm-wrap">${ring}<div class="cm-grid">${cards}</div></div></section>`;
   }
 
@@ -314,7 +313,7 @@ window.FiveShop = (() => {
       }
     }
     const have = !social && owns(item.id), afford = me && me.wallet + 1e-9 >= item.price;
-    const buy = !me ? '<a class="btn" href="#odds">Sign in to buy</a>'
+    const buy = !me ? '<button type="button" class="btn" data-signin>Sign in to buy</button>'
       : have ? `<button class="btn modal-buy" disabled>You own this</button>`
       : `<button class="btn modal-buy" ${afford ? '' : 'disabled'}>${social ? 'Use' : 'Buy'} for ${bn(item.price)} ${BANANA}</button>`;
     const wallet = me ? `<span class="muted small">You have ${bn(me.wallet)} ${BANANA}${afford || have ? '' : ` · ${bn(item.price - me.wallet)} short`}</span>` : '';
@@ -488,5 +487,5 @@ window.FiveShop = (() => {
     });
   }
 
-  return { init, bind, loadShop, loadTroop, loadProfile, syncMe, viewShop, viewTroop, nameHtml, badgeOf, ticketClass, ticketExtras, myCelebration, ownedThemes, bn };
+  return { init, bind, loadShop, loadTroop, loadProfile, syncMe, viewShop, viewTroop, nameHtml, badgeOf, ticketClass, ticketExtras, myCelebration, ownedThemes, bn, closePreview };
 })();

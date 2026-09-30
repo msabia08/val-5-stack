@@ -131,9 +131,13 @@ def _grid(games, key):
             "worst": brief(worst) if worst and sign * worst["diff"] < 0 else None}
 
 
-def build_forecasts(db, engine, stat="acs", puuid=None):
+def build_forecasts(db, engine, stat="acs", puuid=None, map_name=None, agent=None):
     """The Forecasts tab's data (/api/forecasts?stat=kills&player=<puuid>): every player's count of forecast games
-    for the picker, and the full detail (games, grid) for one player, the first with forecasts by default."""
+    for the picker, and the full detail (games, grid) for one player, the first with forecasts by default.
+
+    The player also gets `next`: the forecast for their next game from all their 5-stack games so far, on map_name
+    with agent when given (the odds board's context), weighted like the odds, so its expected value is the player-prop
+    mean the board shows. None until they have MIN_PRIOR games."""
     if stat not in STAT:
         raise ValueError(f"unknown stat {stat!r}")
     members, matches = db.members(), db.matches()
@@ -152,7 +156,13 @@ def build_forecasts(db, engine, stat="acs", puuid=None):
                                "total_games": len(rows), "forecast_games": len(_forecastable(rows))})
     picked = next((p for p in out["players"] if p["puuid"] == puuid), None) \
         or next((p for p in out["players"] if p["forecast_games"]), out["players"][0])
-    games = _forecast_games(by_member.get(picked["puuid"], []), engine, full_game_rounds(matches), stat)
-    out["player"] = {**picked, "games": games,
+    rows, full = by_member.get(picked["puuid"], []), full_game_rounds(matches)
+    games = _forecast_games(rows, engine, full, stat)
+    nxt = None
+    if len(rows) >= MIN_PRIOR:
+        nxt = forecast_one({"map": map_name, "agent": agent}, rows, engine, full, stat)
+        if nxt:
+            nxt = {**nxt, "map": map_name, "agent": agent, "games": min(len(rows), HISTORY)}
+    out["player"] = {**picked, "games": games, "next": nxt,
                      **(_grid(games, stat) or {"overall": None, "cells": [], "best": None, "worst": None})}
     return out
