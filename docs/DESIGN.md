@@ -25,7 +25,13 @@ retire an old one, update this file in the same pull request.
 - **Cards:** content sits in `.card` (surface colour, 1px border, 12px radius, 16/18px padding, 16px apart). A card
   opens with an `h2`; if it links elsewhere, the heading row is a `.section-head` with a `.go-link` on the right.
 - **Summary row:** `.kpis` is a row of `.tile`s (label 12px muted, value 28px, sub-line 12px) at the top of a tab.
-  Keep it to 4-5 tiles and don't repeat what the card right below shows.
+  Keep it to 4-5 tiles and don't repeat what the card right below shows, or the top bar (the Overview dropped its
+  games and win-rate tiles because the brand line already says "21-27 as a 5-stack · 44% win rate").
+- **Overview:** fits one 1920×1080 screen without scrolling (about 930px of page under the top bar). `.ov-top` is
+  three tiles plus the Next game strip (`.ov-next`, twice as wide), then a 3 × 2 `.ov-grid` of cards whose columns
+  are 1.15 : 1 : 0.85 (tables on the left, lists on the right). A new Overview card replaces one of the six rather
+  than adding a row; check the page still fits after any change (measure `document.documentElement.scrollHeight`).
+  Things that name a game, player or map click through to it (recap, Players, Matches filtered to the map).
 - **Two columns:** `.grid-2` for pairs of equal cards. Pages with a sidebar use `.odds-layout` (main column plus a
   320px `aside`): the odds format toggle and bet slip on Place bets (pinned, `.odds-side`; the page has no header row) and Send credits / Game rewards on Standings
   (`.bettors-side`, scrolls with the page because it's taller than the window).
@@ -113,6 +119,10 @@ Reuse these before inventing new ones.
 
 - Name things by what people see and do, not how they're built: "Send credits", not "create transfer".
 - Buttons say what happens ("Place parlay", "Send", "End season"), and the toast afterwards uses the same verb.
+- Names in small text: wherever a bettor's name sits in small or secondary text (tile sub-lines, meta lines, notes,
+  anything around 12px), show the simplified name, `plainName(name)` in `app.js`: their colour swatch and the plain
+  name. The shop's full look (`FiveShop.nameHtml()`: name colour, badge, title, prank marks) is for names at full
+  size, such as ranking rows, ticket headers and profile cards, where the decorations have room and are the point.
 - Empty states say what to do next ("Sign in to spend bananas", with Sign in opening the account menu via `data-signin`).
 - Each box does one job: the bet slip holds picks only (no sign-in form, no balance).
 - Errors say what went wrong and how to fix it, without apologising.

@@ -52,16 +52,31 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   kills / deaths / assists per game, ADR, headshot %, kills per round, plus the
   same breakdown **per agent** and **per map**, recent form and best games.
 - **5-stack vs. their other games:** how each player's 5-stack numbers differ
-  from their games outside the stack (see below).
+  from their games outside the stack (see below). The comparison is still worked
+  out, but it's hidden on the Players page for now.
 - **Each match:** map, mode, score, date, each member's line, and (when the full
   match record is fetched) game length, ranks and whether all five shared a party.
   The **Matches** tab opens with a recap of the latest game (see below); click
   any game in the list, or use *Older* / *Newer*, to recap another.
-- **Overview:** the front page. Squad totals and last night's record, the last game with its top five
-  highlights (linking to the full recap), your balance and the top bettors, the
-  standout bets of the last 5 games (biggest win and loss, longest odds won,
-  shortest odds lost), who's trending (each player's ACS and K/D over their last 5 games
-  against the 10 before, with an ACS sparkline), and win rate by map.
+- **Overview:** the front page, all on one screen. Across the top: the squad's
+  record, its form (the last 10 results; click one for its recap), last night's
+  record, and the **next game**: the match result odds plus up to two picks on a
+  hot streak, which add to your bet slip like on Place bets. Then the last game
+  with its top five highlights (linking to the full recap); betting (who leads,
+  and your own place when you're signed in, and the standout bets this season:
+  biggest win and loss, longest odds won, shortest odds lost); who's
+  trending (whether each player is heating up, cooling off or steady, from
+  their ACS over the last 5 games against the 10 before; their ACS and K/D over
+  those games, each with the change from the 10 before; and an ACS sparkline, all players on one scale, with the last 5
+  games shaded. Click a player to open them on Players); and
+  map performance (win rate per map, best first, green from 50% and red below,
+  with the average round difference; maps with 3 or fewer games are faded, and
+  clicking one opens its games on Matches). Two more cards round out the grid:
+  **Riding on the next game** (how many credits are on the next game and from
+  how many bettors, the pick with the most credits behind it, and the three
+  biggest open bets) and **Onkey's** (the top collector, the newest pranks in
+  play with who pranked whom and how long they last, and each arcade game's best
+  score).
 - **Charts tab:** charts built from all of the above, grouped by the buttons at
   the top (All, Results, Players, Rounds). Each has a one-line takeaway and hover
   details:
@@ -105,8 +120,10 @@ in it too. Anything else is remembered as rejected so it is never re-checked.
 The same stored-match responses also contain every game each member played
 without the full stack (solo queue, duos, 3- and 4-stacks). Those games, in the
 tracked `modes`, are kept as each player's baseline, so this costs no extra API
-calls. The Players page compares the two on ACS, kills / deaths / assists per
-round, ADR, headshot %, K/D and win rate.
+calls. The comparison covers ACS, kills / deaths / assists per round, ADR,
+headshot %, K/D and win rate. It's hidden on the Players page for now
+(`PLAYER_TABLE_OTHER_GAMES` and `PLAYER_CARD_OTHER_GAMES` in `web/app.js` bring it
+back), and `/api/stats` still returns it for each player as `deviation`.
 
 A difference is labelled **better** or **worse** when it is about two standard
 errors or more (judged from how much the stat swings game to game on each side),
@@ -149,8 +166,7 @@ here too.)
     quickest win, overtime, surrenders.
   - *Forecast and betting surprises:* a player well outside their forecast from
     the Forecasts tab, winning as underdogs or losing as favourites, long shots,
-    parlays, big wins, betting on yourself and cashing it, the full performance
-    bonus.
+    parlays, big wins, the full performance bonus.
 
   Records only count against games *before* this one, so an old game shows what
   was notable at the time. They need 10 earlier games, and 5 on an agent or map,

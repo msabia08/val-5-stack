@@ -656,11 +656,8 @@ table.match-table .c-time { width: 84px; } table.match-table .c-go { width: 64px
 .match-table .m-go { text-align: right; color: var(--muted); font-size: 12px; }
 @media (max-width: 640px) { table.match-table .c-mode { width: 0; } table.match-table td:nth-child(3) { display: none; } }
 /* Overview: who's trending, with a coloured change and an ACS sparkline per player. */
-table.ov-trending td, table.ov-trending th { padding: 7px 8px; }
+table.ov-trending td, table.ov-trending th { padding: 7px 6px; }
 table.ov-trending td.num b { font-variant-numeric: tabular-nums; }
-.trend-delta { display: inline-block; min-width: 52px; margin-left: 8px; padding: 1px 6px; border-radius: 999px; font-size: 11.5px; text-align: center;
-  font-variant-numeric: tabular-nums; background: color-mix(in srgb, currentColor 13%, transparent); }
-.trend-delta.up { color: var(--up); } .trend-delta.down { color: var(--down); } .trend-delta.flat { color: var(--muted); }
 .ov-spark { text-align: right; }
 .ov-trending th.ov-h { text-align: center; }
 .ov-trending th.ov-spark { font-weight: 400; color: var(--muted); font-size: 12px; }
@@ -850,34 +847,106 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 .how-body p { margin: 0 0 6px; }
 
 /* ---- Overview: the front page ---- */
-.ov-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+/* Overview top row: three tiles (record, form, last night) and the Next game strip, as wide as two of them. */
+.ov-top { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 2fr); gap: 16px; margin-bottom: 16px; }
+.ov-top > .tile { display: flex; flex-direction: column; justify-content: space-between; gap: 4px; }
+.ov-form { display: flex; gap: 4px; margin-top: 6px; }
+.ov-form .chip { margin: 0; text-decoration: none; font-size: 12px; }
+.ov-form .chip:hover { outline: 1px solid var(--accent); }
+.ov-next .tile-label { display: flex; justify-content: space-between; }
+.ov-next-picks { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px; }
+.ov-next-main, .ov-next-hot { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+.ov-next .odd { flex-direction: column; gap: 1px; justify-content: center; padding: 6px 8px; min-width: 0; }
+.ov-next .odd span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+/* The Betting card's leader: a banner in the accent tint, name large on the left, credits large on the right. */
+.ov-lead { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 10px; padding: 8px 14px;
+  border-radius: 10px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); color: inherit; text-decoration: none; }
+a.ov-lead:hover { border-color: var(--accent); }
+.ov-lead-label { font-size: 12px; color: var(--text-2); }
+.ov-lead-name { font-size: 20px; line-height: 1.3; }
+.ov-lead-num { text-align: right; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ov-lead-num b { font-size: 24px; color: var(--text); }
+.ov-trending tr.ov-player { cursor: pointer; }
+.ov-trending th, .ov-trending td { padding-top: 5px; padding-bottom: 5px; }
+.ov-trending tr.ov-player:hover { background: var(--surface-2); }
+.ov-trending tr.ov-player a { color: inherit; text-decoration: none; }
+/* Who's trending: the change beside each number (against the games before), and the verdict tag. */
+.ov-trending td.num { white-space: nowrap; }  /* the change stays beside its number */
+.trend-delta { display: inline-block; min-width: 44px; margin-left: 6px; padding: 1px 5px; border-radius: 999px; font-size: 11.5px; text-align: center;
+  font-variant-numeric: tabular-nums; background: color-mix(in srgb, currentColor 13%, transparent); }
+.trend-delta.up { color: var(--up); } .trend-delta.down { color: var(--down); } .trend-delta.flat { color: var(--muted); }
+.trend-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  background: var(--surface-2); color: var(--text-2); }
+.trend-tag.up { color: var(--up); background: color-mix(in srgb, var(--up) 14%, transparent); }
+.trend-tag.down { color: var(--down); background: color-mix(in srgb, var(--down) 14%, transparent); }
+.ov-trending thead th { font-weight: 400; color: var(--muted); font-size: 12px; }
+.ov-trending th, .ov-trending td { text-align: left; }
+.ov-trending .ov-c { text-align: center; }  /* ACS and K/D: the header centred over the number and its change */
+.ov-trending th.ov-spark, .ov-trending td.ov-spark { text-align: right; }
+.ov-trending td.ov-spark svg { margin-left: auto; }  /* the sparkline is a block: sit it at the right, under its header */
+/* Map performance rows: name, bar, win rate, W-L and average round difference; the whole row opens Matches. */
+.ov-map { display: grid; grid-template-columns: 90px minmax(0, 1fr) 48px 44px 48px; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 6px;
+  color: inherit; text-decoration: none; font-size: 14px; }
+a.ov-map:hover { background: var(--surface-2); }
+.ov-map.few { opacity: 0.5; }
+.ov-map-head { font-size: 12px; color: var(--muted); padding-top: 0; }
+.ov-map .num { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+.ov-map .hbar-fill { display: block; }
+.hbar-fill.good { background: var(--up); }
+.hbar-fill.bad { background: var(--down); }
+/* The Overview's 3 x 2 grid of cards. The first column (last game, who's trending) is the widest, since its tables
+   need the room; the third (riding on the next game, Onkey's) holds lists and is the narrowest. */
+.ov-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.85fr); gap: 0 16px; }
+.ov-sub { margin: 12px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+/* Riding on the next game. */
+.ov-open-total { font-size: 14px; color: var(--text-2); margin-bottom: 10px; }
+.ov-open-total b { font-size: 24px; color: var(--text); font-variant-numeric: tabular-nums; }
+.ov-open-top { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.ov-open-pick { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-open-list, .ov-pranks { list-style: none; margin: 0; padding: 0; }
+.ov-open-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 5px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px; }
+.ov-open-list li:last-child, .ov-pranks li:last-child { border-bottom: 0; }
+.ov-open-what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.ov-open-list .num { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.ov-open-list .num b { color: var(--text); }
+/* Onkey's: the top collector banner, pranks in play, arcade bests. */
+.ov-onkey-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border); color: inherit; text-decoration: none; }
+a.ov-onkey-top:hover { border-color: var(--accent); }
+.ov-onkey-name { font-size: 18px; font-weight: 600; }
+.ov-onkey-num { text-align: right; font-size: 12px; color: var(--text-2); }
+.ov-onkey-num b { font-size: 18px; color: var(--text); font-variant-numeric: tabular-nums; }
+.ov-pranks li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 4px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px; }
+.ov-prank-what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-arcades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ov-arcade { min-width: 0; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); color: inherit; text-decoration: none; }
+.ov-arcade:hover { border-color: var(--accent); }
+.ov-arcade .ov-tile-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-arcade-score { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ov-grid > .card { margin-bottom: 16px; }
 .ov-game { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 16px; }
 .ov-game b { font-size: 20px; font-variant-numeric: tabular-nums; }
 .ov-hl { display: grid; gap: 8px; }
-.ov-hl .hl-card { padding: 7px 12px; min-width: 0; }
-.ov-hl .hl-title { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.ov-hl-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; font-size: 12px; white-space: nowrap; }
+/* One line per highlight (title, then who and the detail, cut with an ellipsis; the whole text is in the tooltip), so
+   the card stays short enough for the Overview to fit one screen. */
+.ov-hl .hl-card { display: flex; align-items: baseline; gap: 12px; padding: 7px 12px; min-width: 0; }
+.ov-hl .hl-title { flex: none; max-width: 60%; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-hl-meta { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; white-space: nowrap; }
 .ov-hl-meta .hl-who { flex: none; margin: 0; }
 .ov-hl-meta .hl-detail { margin: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .ov-hl-meta .hl-detail::before { content: "·"; margin-right: 8px; }
 /* Overview betting: tiles (your balance, the last games' standout bets) and leaderboard rows share one look. */
-.ov-betting .ov-sub { display: flex; justify-content: space-between; margin: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ov-betting .ov-sub { display: flex; justify-content: space-between; margin: 4px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .ov-betting .ov-sub span { font-weight: 400; }
-.ov-tile { min-width: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+.ov-tile { min-width: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; }
 .ov-tile-label { font-size: 12px; color: var(--muted); }
 .ov-tile-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
-.ov-balance .ov-tile-value { font-size: 26px; }
 .ov-unit { font-size: 14px; font-weight: 400; color: var(--text-2); }
 .ov-tile-sub { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-tile-sub .swatch { margin-right: 4px; }
 .ov-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.ov-leaders { list-style: none; padding: 0; margin: 0; }
-.ov-leaders li { display: grid; grid-template-columns: 26px minmax(0, 1fr) 70px 60px; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border); font-size: 14px; }
-.ov-leaders li:last-child { border-bottom: 0; }
-.ov-leaders li.me { background: var(--accent-soft); border-radius: 6px; }
-.ov-leaders .ov-name .swatch { margin-right: 6px; }
-.ov-leaders .num { text-align: right; font-variant-numeric: tabular-nums; }
 .ov-medal { font-size: 16px; text-align: center; }
 @media (max-width: 860px) { .ov-grid { grid-template-columns: 1fr; } }
 .viz-genres { margin-bottom: 14px; }

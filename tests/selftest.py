@@ -1080,8 +1080,7 @@ def recap(shared):
     assert hl[("streak", None)]["title"] == "Snapped a 3-game losing streak"
     assert hl[("upset", None)]["detail"] == "The odds gave the squad 30%"
     assert hl[("longshot", "puuid-5")]["title"] == "P5 hit a +500 long shot" and hl[("parlay", "puuid-2")]
-    assert hl[("self_bet", "puuid-1")]  # P1's over on their own kills; P5's pick on P1 isn't betting on yourself
-    assert ("self_bet", "puuid-5") not in hl
+    assert not any(h["kind"] == "self_bet" for h in r["highlights"])  # betting on yourself isn't a highlight any more
     scores = [h["score"] for h in r["highlights"]]
     assert scores == sorted(scores, reverse=True) and r["highlights"][0]["kind"] == "ace", r["highlights"][:3]
     # Round by round, and the scoreboard against each player's usual game and forecast.
