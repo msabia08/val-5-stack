@@ -341,14 +341,18 @@
       </section>`;
   }
 
-  // The latest game's result and its top 3 highlights (from /api/recap), linking to the full recap on Matches.
+  // The latest game's result and its top OV_HIGHLIGHTS highlights (from /api/recap), linking to the full recap on Matches.
+  // Compact cards (title, then player · detail on one line; long text is cut and shown whole on hover), so five of
+  // them stay about as tall as the Betting card beside them.
+  const OV_HIGHLIGHTS = 5;
   function overviewLastGame(idx) {
     const r = state.overviewRecap;
     if (!r) return '';
     const m = r.match;
     const who = (h) => (h.puuid ? `<span class="swatch s${idx.get(h.puuid)?.slot || 1}"></span>${esc(h.nickname || '')}` : '<span class="muted">Squad</span>');
-    const cards = r.highlights.slice(0, 3).map((h) => `<div class="hl-card tone-${esc(h.tone)}"><div class="hl-who">${who(h)}</div>` +
-      `<div class="hl-title">${esc(h.title)}</div>${h.detail ? `<div class="hl-detail">${esc(h.detail)}</div>` : ''}</div>`).join('');
+    const cards = r.highlights.slice(0, OV_HIGHLIGHTS).map((h) => `<div class="hl-card tone-${esc(h.tone)}" title="${esc(h.detail ? `${h.title}: ${h.detail}` : h.title)}">` +
+      `<div class="hl-title">${esc(h.title)}</div><div class="ov-hl-meta"><span class="hl-who">${who(h)}</span>` +
+      `${h.detail ? `<span class="hl-detail">${esc(h.detail)}</span>` : ''}</div></div>`).join('');
     return `<section class="card"><div class="section-head"><h2>Last game</h2><a class="recap-latest small" href="#matches">Full recap ›</a></div>
       <div class="ov-game"><span class="chip ${esc(m.result || '')}">${fmt.res(m.result)}</span><b>${m.rounds_won}–${m.rounds_lost}</b>` +
       `<span>${esc(m.map || '')}</span><span class="muted small">${esc(m.mode_label || '')} · ${fmt.date(m.started_ts ? m.started_ts * 1000 : null)}</span></div>

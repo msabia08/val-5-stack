@@ -45,7 +45,7 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   match record is fetched) game length, ranks and whether all five shared a party.
   The **Matches** tab opens with a recap of the latest game (see below); click
   any game in the list, or use *Older* / *Newer*, to recap another.
-- **Overview:** the front page. Squad totals, the last game with its top three
+- **Overview:** the front page. Squad totals, the last game with its top five
   highlights (linking to the full recap), your balance and the top bettors, the
   standout bets of the last 5 games (biggest win and loss, longest odds won,
   shortest odds lost), who's trending (each player's ACS and K/D over their last 5 games

@@ -689,6 +689,12 @@ tr.pl-row.on td, tr.pl-row.on th { background: var(--accent-soft); }
 .ov-game { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 16px; }
 .ov-game b { font-size: 20px; font-variant-numeric: tabular-nums; }
 .ov-hl { display: grid; gap: 8px; }
+.ov-hl .hl-card { padding: 7px 12px; min-width: 0; }
+.ov-hl .hl-title { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ov-hl-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; font-size: 12px; white-space: nowrap; }
+.ov-hl-meta .hl-who { flex: none; margin: 0; }
+.ov-hl-meta .hl-detail { margin: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.ov-hl-meta .hl-detail::before { content: "·"; margin-right: 8px; }
 /* Overview betting: tiles (your balance, the last games' standout bets) and leaderboard rows share one look. */
 .ov-betting .ov-sub { display: flex; justify-content: space-between; margin: 14px 0 6px; font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
