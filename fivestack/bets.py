@@ -7,6 +7,7 @@ import time
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, rounds_to_win, went_to_overtime
 from .odds import STAT_DEFS, alt_family, find_market, margin_key, parse_alt, score_key
+from .parlay import LOOKBACK, correlation, price, score_conflict
 from .stats import aggregate, player_metrics
 
 # Stats that only ever go up during a game: an over that cleared the line before a surrender is already won.
@@ -172,24 +173,7 @@ class BetManager:
             raise BetError(self._unavailable(board, market_id, sel_key) or "That market is no longer available. Refresh the odds board.")
 
         mtype = market["type"]
-        if mtype in ("ou", "exact"):
-            desc = f"{market['member']} {market['stat_label']} {sel['label']}"
-            meta = {"stat": market["stat"], "puuid": market["puuid"], **({"custom": True} if market.get("custom") else {})}
-        elif mtype == "top":
-            desc = f"{market['label']}: {sel['label']}"
-            meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
-        elif mtype == "team_win":
-            desc = f"Match result: {sel['label']}"
-            meta = {}
-        elif mtype == "team_ot":
-            desc = f"Overtime: {sel['label']}"
-            meta = {}
-        elif mtype == "team_ou":
-            desc = f"Total rounds {sel['label']}"
-            meta = {}
-        else:  # rounds won / lost, winning margin, exact score
-            desc = f"{market['label']}: {sel['label']}"
-            meta = {}
+        desc, meta = self._describe(market, sel)
         meta["ctx"] = board.get("context")
         meta["fair_prob"] = sel["fair_prob"]  # the model's own chance, for the odds accuracy card
 
@@ -222,29 +206,39 @@ class BetManager:
                 return (sel or {}).get("reason") or mk.get("reason")
         return None
 
-    def place_parlay(self, bettor_name, legs, stake, context):
-        """Combine 2+ selections (from different markets) into a single all-or-nothing bet."""
-        try:
-            stake = round(float(stake), 2)
-        except (TypeError, ValueError):
-            raise BetError("Invalid stake.")
-        if stake < 1:
-            raise BetError("Minimum stake is 1 credit.")
+    @staticmethod
+    def _describe(market, sel):
+        """(description, meta) for a pick on the board; meta is what _evaluate needs to settle it."""
+        mtype = market["type"]
+        if mtype in ("ou", "exact"):
+            return (f"{market['member']} {market['stat_label']} {sel['label']}",
+                    {"stat": market["stat"], "puuid": market["puuid"], **({"custom": True} if market.get("custom") else {})})
+        if mtype == "top":
+            return f"{market['label']}: {sel['label']}", {"stat": market["stat"], "direction": market.get("direction", "high")}
+        if mtype == "team_win":
+            return f"Match result: {sel['label']}", {}
+        if mtype == "team_ot":
+            return f"Overtime: {sel['label']}", {}
+        if mtype == "team_ou":
+            return f"Total rounds {sel['label']}", {}
+        return f"{market['label']}: {sel['label']}", {}  # rounds won / lost, winning margin, exact score
+
+    def quote_parlay(self, legs, context):
+        """Price 2-10 picks (each from a different market) as one parlay without placing it. Returns (the legs as
+        they're stored on the bet, the board, the price: odds_decimal, independent_decimal, factor, games, linked).
+
+        Legs that decide each other are refused (parlay.score_conflict); legs that tend to land together have their
+        multiplied odds cut by how much more often they won together on recent games (parlay.correlation)."""
         if not isinstance(legs, list) or len(legs) < 2:
             raise BetError("A parlay needs at least 2 legs.")
         if len(legs) > 10:
             raise BetError("A parlay can have at most 10 legs.")
-        bettor = self.db.get_bettor(self._valid_name(bettor_name))
-        if not bettor:
-            raise BetError("Sign in as a bettor first.")
-        if stake > bettor["balance"] + 1e-9:
-            raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
         alts = [a for a in (parse_alt((leg or {}).get("market_id")) for leg in legs) if a]
         board = self.engine.build(self.db, context or {}, alts=alts)
         if not board.get("ready"):
             raise BetError(board.get("message", "Odds are not available yet."))
 
-        seen, built, odds_decimal = set(), [], 1.0
+        seen, built = set(), []
         for leg in legs:
             market_id, sel_key = (leg or {}).get("market_id"), (leg or {}).get("selection")
             if not market_id or not sel_key:
@@ -255,32 +249,40 @@ class BetManager:
             market, sel = find_market(board, market_id, sel_key)
             if not market or not sel:
                 raise BetError(self._unavailable(board, market_id, sel_key) or "One of the legs is no longer available. Refresh the odds board.")
-            mtype = market["type"]
-            if mtype in ("ou", "exact"):
-                desc = f"{market['member']} {market['stat_label']} {sel['label']}"
-                meta = {"stat": market["stat"], "puuid": market["puuid"], **({"custom": True} if market.get("custom") else {})}
-            elif mtype == "top":
-                desc = f"{market['label']}: {sel['label']}"
-                meta = {"stat": market["stat"], "direction": market.get("direction", "high")}
-            elif mtype == "team_win":
-                desc = f"Match result: {sel['label']}"
-                meta = {}
-            elif mtype == "team_ot":
-                desc = f"Overtime: {sel['label']}"
-                meta = {}
-            elif mtype == "team_ou":
-                desc = f"Total rounds {sel['label']}"
-                meta = {}
-            else:  # rounds won / lost, winning margin, exact score
-                desc = f"{market['label']}: {sel['label']}"
-                meta = {}
-            odds_decimal *= sel["decimal"]
+            desc, meta = self._describe(market, sel)
             built.append({
-                "market_id": market_id, "market_type": mtype, "description": desc,
+                "market_id": market_id, "market_type": market["type"], "description": desc,
                 "selection": sel_key, "selection_label": sel["label"], "line": market.get("line"),
                 "odds_decimal": sel["decimal"], "fair_prob": sel["fair_prob"], "meta": meta,
             })
-        odds_decimal = round(odds_decimal, 2)
+        conflict = score_conflict(built, self._evaluate)
+        if conflict:
+            raise BetError(conflict)
+        hists = self.leg_history(built)
+        for leg, hist in zip(built, hists):
+            leg["hist"] = hist  # kept on the bet, so settlement can re-price the legs that stood if some are voided
+        corr = correlation(hists)
+        decimals = [leg["odds_decimal"] for leg in built]
+        independent = 1.0
+        for d in decimals:
+            independent *= d
+        return built, board, {"odds_decimal": price(decimals, corr["factor"]),
+                              "independent_decimal": round(independent, 2), **corr}
+
+    def place_parlay(self, bettor_name, legs, stake, context):
+        """Combine 2+ selections (from different markets) into a single all-or-nothing bet, at quote_parlay's price."""
+        try:
+            stake = round(float(stake), 2)
+        except (TypeError, ValueError):
+            raise BetError("Invalid stake.")
+        if stake < 1:
+            raise BetError("Minimum stake is 1 credit.")
+        bettor = self.db.get_bettor(self._valid_name(bettor_name))
+        if not bettor:
+            raise BetError("Sign in as a bettor first.")
+        if stake > bettor["balance"] + 1e-9:
+            raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
+        built, board, quote = self.quote_parlay(legs, context)
 
         bet = {
             "bettor": bettor["name"],
@@ -290,10 +292,10 @@ class BetManager:
             "selection": "parlay",
             "selection_label": f"{len(built)}-leg parlay",
             "line": None,
-            "odds_decimal": odds_decimal,
+            "odds_decimal": quote["odds_decimal"],
             "stake": stake,
             "placed_ts": time.time(),
-            "context": json.dumps({"legs": built, "ctx": board.get("context")}),
+            "context": json.dumps({"legs": built, "ctx": board.get("context"), "corr": quote}),
             "status": "pending",
         }
         with self.db.lock:
@@ -373,13 +375,7 @@ class BetManager:
         each recent game, newest first; a void (a push, a surrender, a tie) neither counts nor breaks the run."""
         if not board.get("ready"):
             return board
-        rows = self.db.player_rows()
-        games = []
-        for match in self.db.matches(limit=STREAK_LOOKBACK):
-            rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
-            metrics = {p["puuid"]: player_metrics(p, rounds) for p in self.db.match_players(match["match_id"])}
-            self._add_relative_acs(metrics, match.get("started_ts") or 0, rows)
-            games.append((match, metrics))
+        games = self._recent_games(STREAK_LOOKBACK)
         for group in ("team", "player_props", "top_markets"):
             for mk in board.get(group, []):
                 meta = json.dumps({"stat": mk.get("stat"), "puuid": mk.get("puuid"), "direction": mk.get("direction", "high")})
@@ -401,9 +397,38 @@ class BetManager:
         board["streak_lookback"] = STREAK_LOOKBACK
         return board
 
+    def _recent_games(self, limit):
+        """The last `limit` games, newest first, as (match, metrics) pairs ready for _evaluate."""
+        rows = self.db.player_rows()
+        lines = {}
+        for r in rows:
+            lines.setdefault(r["match_id"], []).append(r)
+        games = []
+        for match in self.db.matches(limit=limit):
+            rounds = (match.get("rounds_won") or 0) + (match.get("rounds_lost") or 0)
+            metrics = {p["puuid"]: player_metrics(p, rounds) for p in lines.get(match["match_id"], [])}
+            self._add_relative_acs(metrics, match.get("started_ts") or 0, rows)
+            games.append((match, metrics))
+        return games
+
+    def leg_history(self, legs):
+        """Each parlay leg settled at its line on the last parlay.LOOKBACK games, newest first, as a string:
+        "1" won, "0" lost, "-" void (see parlay.correlation)."""
+        games = self._recent_games(LOOKBACK)
+        out = []
+        for leg in legs:
+            bet = {"market_type": leg["market_type"], "selection": leg["selection"], "line": leg.get("line"),
+                   "context": json.dumps(leg.get("meta") or {})}
+            out.append("".join({"won": "1", "lost": "0"}.get(self._evaluate(bet, m, metrics)[0], "-")
+                               for m, metrics in games))
+        return out
+
     def _evaluate_parlay(self, b, match, metrics):
-        """Every leg must win. A void leg is dropped (no action); if none are left, the whole parlay is void."""
-        legs = json.loads(b.get("context") or "{}").get("legs", [])
+        """Every leg must win. A void leg is dropped (no action); if none are left, the whole parlay is void. The legs
+        that stood are re-priced together (parlay.correlation on their saved histories), as if placed without the
+        void ones."""
+        ctx = json.loads(b.get("context") or "{}")
+        legs = ctx.get("legs", [])
         results = []
         for leg in legs:
             fake = {
@@ -421,11 +446,9 @@ class BetManager:
             won = [r for r in results if r["result"] == "won"]
             if not won:
                 overall, payout = "void", b["stake"]
-            elif voided:
-                eff = 1.0
-                for r in won:
-                    eff *= r["odds_decimal"]
-                overall, payout = "won", round(b["stake"] * eff, 2)
+            elif voided:  # bets from before leg histories were saved have none: plain multiplied odds
+                factor = correlation([r.get("hist") or "" for r in won])["factor"]
+                overall, payout = "won", round(b["stake"] * price([r["odds_decimal"] for r in won], factor), 2)
             else:
                 overall, payout = "won", round(b["stake"] * b["odds_decimal"], 2)
         surrendered = ending(match) == FORFEIT
@@ -438,7 +461,7 @@ class BetManager:
             note = f"{voided} leg(s) voided (no action); payout uses the remaining odds"
         else:
             note = None
-        return overall, payout, None, note, json.dumps({"legs": results})
+        return overall, payout, None, note, json.dumps({**ctx, "legs": results})
 
     def _evaluate(self, b, match, metrics):
         """Settle one bet on a recorded game.

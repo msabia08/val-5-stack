@@ -341,10 +341,26 @@ there are 2+ picks.
 
 - All legs settle off the same next 5-stack game. If every leg wins, the payout
   is the stake times the combined odds locked in at placement.
+- **Legs that decide each other are refused.** Team legs are all settled from
+  the final score, so a pair where one can only win when the other does
+  ("Exact score 13–5" and "Win", "Win by 6+" and "Win", "Overtime: Yes" and
+  "Rounds won over 10.5") or where both can never win ("Loss" and "Win by 1–2")
+  can't share a parlay. The slip says which pair and greys out the button.
+- **Legs that tend to land together are priced together.** The combined odds
+  are normally the legs' odds multiplied, which assumes they're unrelated. The
+  slip replays every leg at today's line on the last 60 games; when legs won
+  together clearly more often than chance (a player's kills and ACS overs, an
+  over on kills and the same player topping the scoreboard, total rounds over
+  with everyone's kills overs), they're marked **linked** and the odds are cut by
+  how much more often they all landed together. A few games can't swing it
+  much (the estimate is pulled toward "unrelated"), odds are only ever cut,
+  never raised, and a parlay never pays less than its longest leg alone. The
+  ticket shows what the odds were cut from.
 - If any leg loses, the whole parlay loses.
 - If a leg is voided (push, tie for the top, a draw) it's dropped with no
-  effect: the payout is recalculated from the odds of the legs that stood. If
-  every leg is voided, the stake is refunded.
+  effect: the payout is recalculated from the odds of the legs that stood
+  (priced together again if some of them are linked). If every leg is voided,
+  the stake is refunded.
 - If the game is **surrendered**, each leg is judged by the surrender rule
   above: the match-result leg stands, a leg that was already decided keeps its
   result, and an undecided leg is dropped like any other void leg. So a leg
