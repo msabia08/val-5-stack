@@ -3,6 +3,7 @@ import json
 import secrets
 import time
 
+from . import house
 from .bets import BetError
 
 STAKES = (5, 10, 25, 50, 100, 250, 500)
@@ -116,6 +117,7 @@ class SlotManager:
                     "INSERT INTO slot_spins(bettor, machine, stake, reels, multiplier, payout, created_ts, request_id, rtp) "
                     "VALUES(?,?,?,?,?,?,?,?,?)",
                     (name, machine, stake, json.dumps(reels), mult, payout, time.time(), request_id, rtp(m)))
+                house.record(self.db.conn, "slots", f"spin:{cur.lastrowid}", name, stake, stake - payout, stake * (1 - rtp(m)))
                 self.db.conn.commit()
             except Exception:
                 self.db.conn.rollback()

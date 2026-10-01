@@ -6,6 +6,7 @@ import secrets
 import time
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, rounds_to_win, went_to_overtime
+from .house import casino_nets
 from .moments import game_facts
 from .odds import STAT_DEFS, alt_family, find_market, margin_key, parse_alt, score_key
 from .parlay import LOOKBACK, correlation, price, score_conflict
@@ -147,17 +148,16 @@ class BetManager:
                 s[st] = s.get(st, 0) + 1
         rewards = self.db.reward_totals()
         transfers = self.db.transfer_totals()
-        slots = {r["bettor"].lower(): r["net"] for r in self.db.query(
-            "SELECT bettor, SUM(payout-stake) AS net FROM slot_spins WHERE season_id IS NULL GROUP BY bettor")}
+        casino = casino_nets(self.db)
         out = []
         for b in self.db.bettors():
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
             earned = rewards.get(b["name"].lower(), 0.0)
             received = transfers.get(b["name"].lower(), 0.0)
-            # Match-betting profit only: game rewards, transfers and slots change the balance too, but they
+            # Match-betting profit only: game rewards, transfers and the casino change the balance too, but they
             # are reported separately.
-            slot_profit = slots.get(b["name"].lower(), 0.0)
-            profit = b["balance"] + s["pending_stake"] - self.starting - earned - received - slot_profit
+            nets = casino.get(b["name"].lower(), {})
+            profit = b["balance"] + s["pending_stake"] - self.starting - earned - received - nets.get("total", 0.0)
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
@@ -165,7 +165,8 @@ class BetManager:
                 "profit": round(profit, 2),
                 "rewards": round(earned, 2),
                 "transfers": round(received, 2),
-                "slots": round(slot_profit, 2),
+                "casino": round(nets.get("total", 0.0), 2),  # every casino game this season
+                "slots": round(nets.get("slots", 0.0), 2),
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }
             for k, v in s.items():
