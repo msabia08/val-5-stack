@@ -1410,8 +1410,10 @@
 
   function route() {
     // #monkeys/<name> opens that bettor's profile on the Monkeys tab (the view is still called troop; #troop works too).
+    // #casino opens Slots.
     let [v, arg] = (location.hash || '#overview').slice(1).split('/');
     if (v === 'monkeys') v = 'troop';
+    if (v === 'casino') v = 'slots'; // the Casino menu's first page
     state.view = VIEWS.includes(v) ? v : 'overview';
     if (state.view === 'troop') {
       try { state.troopPick = arg ? decodeURIComponent(arg) : ''; } catch (e) { state.troopPick = ''; }

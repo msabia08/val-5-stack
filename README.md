@@ -17,12 +17,12 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards; **Slots**: instant spins with betting credits) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**: instant spins with betting credits) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
 
-Open **Betting → Slots** and sign in with your betting account. Pick a stake of
+Open **Casino → Slots** and sign in with your betting account. Pick a stake of
 5, 10, 25, 50, 100, 250 or 500 virtual credits, then spin. Three matching
 symbols on the centre line pay, and the bigger the payout the rarer the line:
 
@@ -64,8 +64,10 @@ you win against the odds, spins since your last win and your biggest win) and th
 squad's five biggest wins this season. When a tease reaches the line it teeters
 half on and half off the matching symbol, then snaps one way or the other: onto it
 for a win, or back short of it or forward past it for a loss. Slots affect your
-credit balance and have a separate **Slots** column in Standings; match-betting
-profit, ROI and records exclude them. Slots do not earn bananas. A season reset
+credit balance and count in the separate **Casino** column in Standings (every
+casino game's payouts minus stakes this season); match-betting profit, ROI and
+records exclude them. The casino has nothing to do with bananas: it never earns
+or costs any. A season reset
 keeps the spin records with that season and starts fresh slot totals.
 
 ## Quick start

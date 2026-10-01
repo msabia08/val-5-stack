@@ -40,8 +40,8 @@ retire an old one, update this file in the same pull request.
 
 ## Navigation
 
-- The top bar holds 🏠 **Overview** on its own, then three dropdown groups (`.nav-group` in `index.html`):
-  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings, Slots) and 🐒 **Onkey's**
+- The top bar holds 🏠 **Overview** on its own, then four dropdown groups (`.nav-group` in `index.html`):
+  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings), 🃏 **Casino** (Slots) and 🐒 **Onkey's**
   (Shop, Arcade, Monkeys). A new page joins the group it belongs to, as a menu row with an emoji, a name and a
   one-line description; don't add another top-level entry without a good reason.
 - A group's button shows the name and emoji of the page you're on (`syncNavGroups()`), so you always know where you
@@ -119,7 +119,7 @@ Reuse these before inventing new ones.
 
 ### Slots
 
-`#slots` lives under Betting, labelled Slots. One machine, no names or picker, and
+`#slots` lives under Casino, labelled Slots (`#casino` opens it too). One machine, no names or picker, and
 no page title or links above it: the cabinet starts the page.
 `.slots-layout` pairs a wide arcade cabinet with a 300px pay table, exactly as tall
 as the cabinet (`contain: size`, prize rows sharing the height; an opened "How this
@@ -170,7 +170,7 @@ Balance stays in the top bar. Below the machine, three cards side by side
 Your season (`season()`: tiles for spins, net, wins against the expected rate,
 spins since your last win, and your biggest win with its reels) and the squad's
 Biggest wins this season (`bigWins()`, top five, bettors as `plainName()`).
-Standings has a separate Slots column.
+Standings has a separate Casino column (every casino game, slots included).
 
 Reels use continuous symbol strips moved with `translate3d` in requestAnimationFrame.
 Each strip matches the machine's display weights (`show`, `stripsNow()`): a

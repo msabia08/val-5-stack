@@ -542,7 +542,7 @@ window.FiveBets = (() => {
         `<td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +
         `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td>` +
         `<td class="num">${b.transfers ? fmt.signed(b.transfers, 0) : '–'}</td>` +
-        `<td class="num ${b.slots > 0 ? 'up' : b.slots < 0 ? 'down' : ''}">${b.slots ? fmt.signed(b.slots, 0) : '–'}</td>` +
+        `<td class="num ${b.casino > 0 ? 'up' : b.casino < 0 ? 'down' : ''}">${b.casino ? fmt.signed(b.casino, 0) : '–'}</td>` +
         `<td class="num">${b.won}-${b.lost}${b.void ? '-' + b.void : ''}</td>` +
         `<td class="num">${settled ? fmt.pct(b.won / settled) : '–'}</td>` +
         `<td class="num">${b.roi != null ? fmt.signed(b.roi * 100, 0) + '%' : '–'}</td>` +
@@ -552,8 +552,8 @@ window.FiveBets = (() => {
     // Laid out like Place bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
       <div class="odds-layout bettors-layout"><div>
-      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers and slot results (shown separately). Transfers is what they received minus what they sent, generosity tax included. Slots is payouts minus stakes this season.`)}
-        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Slot payouts minus stakes this season">Slots</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers and casino results (shown separately). Transfers is what they received minus what they sent, generosity tax included. Casino is payouts minus stakes this season across the casino games.`)}
+        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Casino payouts minus stakes this season">Casino</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
       ${settledSection()}
@@ -671,7 +671,7 @@ window.FiveBets = (() => {
     return `<div class="reset-panel" role="group" aria-labelledby="reset-title">
       <h3 id="reset-title">End the season?</h3>
       <p>This season's final standings, ${fmt.n0(cur.bets || 0)} bet${cur.bets === 1 ? '' : 's'}, ${fmt.n0(cur.rewards || 0)} game reward${cur.rewards === 1 ? '' : 's'} and ${fmt.n0(cur.transfers || 0)} transfer${cur.transfers === 1 ? '' : 's'} are saved as <b>${esc(next)}</b> under Past seasons.
-        Slot history is also kept with this season. Then every bettor goes back to ${start} credits, open bets are closed, and a new season starts. Accounts and passwords stay.</p>
+        Casino history is also kept with this season. Then every bettor goes back to ${start} credits, open bets are closed, and a new season starts. Accounts and passwords stay.</p>
       <label><span>Type <b>RESET</b> to confirm</span><input id="reset-confirm-text" autocomplete="off" spellcheck="false"></label>
       ${admin ? '<label><span>Admin password</span><input id="reset-admin" type="password" autocomplete="off"></label>' : ''}
       <div class="btn-row"><button class="btn danger small" id="reset-go" disabled>End season</button><button class="btn ghost small" id="reset-cancel">Cancel</button></div>
@@ -685,10 +685,10 @@ window.FiveBets = (() => {
       const st = s.standings || [];
       const champ = st[0];
       const table = `<div class="table-wrap"><table class="compact"><thead><tr><th>#</th><th>Bettor</th><th class="num">Final credits</th>` +
-        '<th class="num">Betting profit</th><th class="num">Rewards</th><th class="num">Slots</th><th class="num">W-L</th></tr></thead><tbody>' +
+        '<th class="num">Betting profit</th><th class="num">Rewards</th><th class="num">Casino</th><th class="num">W-L</th></tr></thead><tbody>' +
         st.map((b, i) => `<tr><td>${i + 1}</td><td><span class="swatch s${bettorSlot(b.name)}"></span>${esc(b.name)}</td>` +
           `<td class="num">${fmt.credits(b.balance)}</td><td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +
-          `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td><td class="num">${b.slots ? fmt.signed(b.slots, 0) : '–'}</td><td class="num">${b.won}-${b.lost}</td></tr>`).join('') +
+          `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td><td class="num">${(b.casino ?? b.slots) ? fmt.signed(b.casino ?? b.slots, 0) : '–'}</td><td class="num">${b.won}-${b.lost}</td></tr>`).join('') +
         '</tbody></table></div>';
       const dates = `${s.started_ts ? fmt.date(s.started_ts * 1000) : '?'} – ${fmt.date(s.ended_ts * 1000)}`;
       return `<details class="season"><summary><b>${esc(s.name)}</b><span class="muted small">${esc(dates)}</span>` +

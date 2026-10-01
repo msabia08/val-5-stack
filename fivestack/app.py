@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .arcade import ArcadeManager
+from .house import HouseManager
 from .slots import SlotManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bananas import BananaManager
@@ -76,6 +77,7 @@ class App:
         self.bananas = BananaManager(cfg, self.db, self.bets)
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db)
+        self.house = HouseManager(self.db)  # the casino's take; scaffolding for what the house will do with it
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
@@ -437,6 +439,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(app.arcade.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/slots":
             return self._json(app.slots.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
+        if path == "/api/house":
+            return self._json(app.house.summary())
         if path == "/api/troop":
             return self._json(app.bananas.troop())
         if path == "/api/troop/profile":

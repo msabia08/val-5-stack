@@ -274,6 +274,21 @@ CREATE TABLE IF NOT EXISTS slot_spins (
     UNIQUE(bettor, request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_slots_season ON slot_spins(season_id, bettor);
+
+-- The house's side of every casino round (house.py): kept through resets, season_id NULL means the current season.
+CREATE TABLE IF NOT EXISTS house_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    bettor TEXT,
+    staked REAL NOT NULL,
+    take REAL NOT NULL,
+    expected REAL,
+    created_ts REAL NOT NULL,
+    season_id INTEGER REFERENCES seasons(id),
+    UNIQUE(game, ref)
+);
+CREATE INDEX IF NOT EXISTS idx_house_season ON house_ledger(season_id, game);
 """
 
 MATCH_FIELDS = [
@@ -634,6 +649,7 @@ class DB:
                 self.conn.execute("DELETE FROM rewards")
                 self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
+                self.conn.execute("UPDATE house_ledger SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.
                 self.conn.execute(

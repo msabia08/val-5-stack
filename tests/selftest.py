@@ -871,7 +871,7 @@ def slots(shared):
     db.execute("DROP TRIGGER fail_slot")
     assert db.get_bettor("Spinner")["balance"] == before
     row = next(r for r in bets.leaderboard() if r["name"] == "Spinner")
-    assert row["profit"] == 0 and row["roi"] is None and row["slots"] == before - 1000
+    assert row["profit"] == 0 and row["roi"] is None and row["slots"] == row["casino"] == before - 1000
     assert db.banana_wallet("Spinner") == 0 and not db.bets()
     assert manager.summary()["me"] is None and manager.summary()["history"] == []
     summary = manager.summary(db.get_bettor("Spinner"))
@@ -884,6 +884,14 @@ def slots(shared):
     house = summary["house"]
     assert house["spins"] == 8 and house["staked"] == 800 and house["paid"] == 101430 and house["actual_take"] == -100630
     assert house["secret_paid"] == 100000 and house["expected_take"] == round(800 * (1 - rtp(m)), 2) == 40.0
+    # The house ledger has a row per spin (none for the retries or the failed one), matching slots' own take.
+    from fivestack.house import HouseManager, casino_nets
+    house_mgr = HouseManager(db)  # its backfill finds every spin already recorded
+    ledger = house_mgr.summary()
+    assert [g["game"] for g in ledger["games"]] == ["slots"]
+    assert ledger["games"][0]["season"] == {"rounds": 8, "staked": 800, "take": house["actual_take"], "expected": house["expected_take"]}
+    assert ledger["season_take"] == ledger["all_time_take"] == house["actual_take"]
+    assert casino_nets(db)["spinner"] == {"total": before - 1000, "slots": before - 1000}
     # Season stats: 5 wins in 7 spins, the Golden Onkey the biggest, and the last spin (the concurrent banana) a win.
     assert summary["me"]["wins"] == 5 and summary["me"]["since_win"] == 0
     assert summary["me"]["best"]["payout"] == 100000 and summary["me"]["best"]["reels"] == [6, 6, 6]
@@ -898,6 +906,8 @@ def slots(shared):
     # Old retry keys survive a reset, and reopening an existing database preserves history.
     assert manager.spin("Spinner", "jackpot", 10, "test-spin-0000000000000000")["balance"] == 1000
     assert next(r for r in bets.leaderboard() if r["name"] == "Spinner")["slots"] == 0
+    # The reset moved the house's rows to the old season; all time is unchanged.
+    assert house_mgr.summary()["season_take"] == 0 and house_mgr.summary()["all_time_take"] == house["actual_take"]
     db.conn.close()
     reopened = DB(os.path.join(shared.tmp, "slots.db"))
     assert reopened.query_one("SELECT COUNT(*) AS n FROM slot_spins")["n"] == 8
@@ -907,6 +917,10 @@ def slots(shared):
     assert old["spin"]["payout"] == 180 and old["balance"] == 1000
     # Spins from before tracking began (no rtp) count in neither the line stats nor the house's take.
     assert SlotManager(reopened).house() == house and SlotManager(reopened).lines("Spinner") == summary["lines"]
+    # The house ledger backfills spins it never saw (here the legacy one, with no expected take).
+    backfilled = HouseManager(reopened).summary()["games"][0]
+    assert backfilled["all_time"]["rounds"] == 9 and backfilled["season"] == {"rounds": 1, "staked": 10, "take": -170, "expected": 0}
+    assert reopened.query_one("SELECT expected FROM house_ledger WHERE ref='spin:9'")["expected"] is None
     reopened.conn.close()
     # A database whose slot_spins predates the rtp column gets it on open.
     import sqlite3
