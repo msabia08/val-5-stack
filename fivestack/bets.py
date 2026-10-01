@@ -6,6 +6,7 @@ import secrets
 import time
 
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, rounds_to_win, went_to_overtime
+from .house import casino_nets
 from .moments import game_facts
 from .odds import STAT_DEFS, alt_family, decimal_to_american, fair_chance, find_market, margin_key, parse_alt, score_key
 from .parlay import LOOKBACK, correlation, price, score_conflict
@@ -187,8 +188,7 @@ class BetManager:
                 s[st] = s.get(st, 0) + 1
         rewards = self.db.reward_totals()
         transfers = self.db.transfer_totals()
-        slots = {r["bettor"].lower(): r["net"] for r in self.db.query(
-            "SELECT bettor, SUM(payout-stake) AS net FROM slot_spins WHERE season_id IS NULL GROUP BY bettor")}
+        casino = casino_nets(self.db)
         house = {r["k"]: r["total"] for r in self.db.query(
             "SELECT lower(bettor) AS k, SUM(amount) AS total FROM house_payouts WHERE season_id IS NULL GROUP BY k")}
         out = []
@@ -196,11 +196,12 @@ class BetManager:
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
             earned = rewards.get(b["name"].lower(), 0.0)
             received = transfers.get(b["name"].lower(), 0.0)
-            # Match-betting profit only: game rewards, transfers, slots and the house's giveaways change the
+            # Match-betting profit only: game rewards, transfers, the casino and the house's giveaways change the
             # balance too, but they are reported separately.
-            slot_profit = slots.get(b["name"].lower(), 0.0)
+            nets = casino.get(b["name"].lower(), {})
             given = house.get(b["name"].lower(), 0.0)
-            profit = b["balance"] + s["pending_stake"] - self.starting - earned - received - slot_profit - given
+            profit = (b["balance"] + s["pending_stake"] - self.starting - earned - received - nets.get("total", 0.0)
+                      - given)
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
@@ -208,7 +209,8 @@ class BetManager:
                 "profit": round(profit, 2),
                 "rewards": round(earned, 2),
                 "transfers": round(received, 2),
-                "slots": round(slot_profit, 2),
+                "casino": round(nets.get("total", 0.0), 2),  # every casino game this season
+                "slots": round(nets.get("slots", 0.0), 2),
                 "giveaways": round(given, 2),
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }

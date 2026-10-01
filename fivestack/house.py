@@ -1,12 +1,20 @@
-"""The house: its pot and what it gives back.
+"""The house: what it takes from bettors, and what it gives back.
 
-The house takes a cut of every match bet and slot spin (the edge). The pot is that take, estimated from the edge each
-bet and spin was priced at (BetManager.house(), SlotManager.house(); steady, never negative, unlike the actual take,
-which swings with luck), every season: JACKPOT_SHARE of it builds the progressive jackpot and the rest is given back
-as secret objectives and bad-beat refunds, and the jackpot is paid only by the daily wheel's jackpot slice. Every credit
-given back is a row in `house_payouts`; the pot is the take minus the objectives and refunds paid (`POT_KINDS`), and the
-jackpot its share minus the jackpots paid. The daily wheel's other credit prizes (kind `wheel`) and its insurance
-refunds (kind `insurance`) are recorded there too, but they're free: neither comes out of the pot.
+The take. Every casino round (slots, blackjack, poker) writes one `house_ledger` row inside its own transaction
+(`record()`): the credits staked against the house (0 for a poker pot, where the players bet against each other), the
+house's `take` (stakes minus payouts for a house-banked game, so negative when a bettor wins big; the rake for poker)
+and the `expected` take from the game's edge when it has one. Rows are unique by (game, ref), so a retried round never
+counts twice. Match bets aren't in the ledger: BetManager.house() estimates their take from each bet's price.
+Casino results stay out of match-betting profit: `casino_nets()` is each bettor's season net per game, which the
+leaderboard reports as its own column. Casino play never earns or costs bananas.
+
+What it gives back. The pot is the house's take, estimated from the edge every bet and round was priced at (steady and
+never negative, unlike the actual take, which swings with luck; poker counts its rake), every season: JACKPOT_SHARE of it
+builds the progressive jackpot and the rest is given back as secret objectives and bad-beat refunds, and the jackpot is
+paid only by the daily wheel's jackpot slice. Every credit given back is a row in `house_payouts`; the pot is the take
+minus the objectives and refunds paid (`POT_KINDS`), and the jackpot its share minus the jackpots paid. The daily
+wheel's other credit prizes (kind `wheel`) and its insurance refunds (kind `insurance`) are recorded there too, but
+they're free: neither comes out of the pot.
 
 Secret objectives: a set of three is drawn for the next game, one of each scope, and stays hidden until that game is
 recorded: a personal goal for one squad member (measured against their own earlier games, so the chance is about the
@@ -84,10 +92,72 @@ def _player_value(stat, metrics):
     v = metrics.get(stat)
     return None if v is None else float(v)
 
+# Each casino game's season net per bettor (payouts minus stakes, current season only). A new game adds its query.
+CASINO_NET_SQL = {
+    "slots": "SELECT bettor, SUM(payout - stake) AS net FROM slot_spins WHERE season_id IS NULL GROUP BY bettor",
+    "blackjack": "SELECT bettor, SUM(payout - stake) AS net FROM blackjack_hands "
+                 "WHERE season_id IS NULL AND status='settled' GROUP BY bettor",
+    "poker": "SELECT bettor, SUM(net) AS net FROM poker_results WHERE season_id IS NULL GROUP BY bettor",
+}
+
+
+def record(conn, game, ref, bettor, staked, take, expected=None, now=None):
+    """Write one round's house row on `conn` without committing: call it inside the transaction that settles the
+    round, under `db.lock`. A ref already recorded for the game is ignored."""
+    conn.execute(
+        "INSERT OR IGNORE INTO house_ledger(game, ref, bettor, staked, take, expected, created_ts) VALUES(?,?,?,?,?,?,?)",
+        (game, str(ref), bettor, round(staked, 2), round(take, 2),
+         None if expected is None else round(expected, 4), now or time.time()))
+
+
+def casino_nets(db):
+    """{lower-cased bettor: {"total": net, <game>: net}} for the current season, every casino game."""
+    out = {}
+    for game, sql in CASINO_NET_SQL.items():
+        for r in db.query(sql):
+            row = out.setdefault(r["bettor"].lower(), {"total": 0.0})
+            row[game] = round(r["net"] or 0.0, 2)
+            row["total"] = round(row["total"] + (r["net"] or 0.0), 2)
+    return out
+
 
 class HouseManager:
-    def __init__(self, db, bets, slots, rewards):
-        self.db, self.bets, self.slots, self.rewards = db, bets, slots, rewards
+    def __init__(self, db, bets=None, rewards=None):
+        """`bets` (BetManager) and `rewards` (RewardManager) are only needed for the giving back; the ledger works
+        without them."""
+        self.db, self.bets, self.rewards = db, bets, rewards
+        self.backfill()
+
+    # ---- the take ----------------------------------------------------------------------------------------------------
+    def backfill(self):
+        """Ledger rows for slot spins from before the ledger existed (safe to rerun). Spins from before slots
+        recorded their return have no expected take."""
+        with self.db.lock:
+            self.db.conn.execute(
+                "INSERT OR IGNORE INTO house_ledger(game, ref, bettor, staked, take, expected, created_ts, season_id) "
+                "SELECT 'slots', 'spin:' || id, bettor, stake, stake - payout, "
+                "CASE WHEN rtp IS NULL THEN NULL ELSE ROUND(stake * (1 - rtp), 4) END, created_ts, season_id "
+                "FROM slot_spins")
+            self.db.conn.commit()
+
+    def summary(self):
+        """The house's take per game: this season and all time (rounds, staked, take, expected)."""
+        rows = self.db.query(
+            "SELECT game, season_id IS NULL AS current, COUNT(*) AS rounds, COALESCE(SUM(staked),0) AS staked, "
+            "COALESCE(SUM(take),0) AS take, COALESCE(SUM(expected),0) AS expected "
+            "FROM house_ledger GROUP BY game, season_id IS NULL")
+        games = {}
+        for r in rows:
+            g = games.setdefault(r["game"], {"game": r["game"],
+                                             "season": {"rounds": 0, "staked": 0.0, "take": 0.0, "expected": 0.0},
+                                             "all_time": {"rounds": 0, "staked": 0.0, "take": 0.0, "expected": 0.0}})
+            for scope in (("season", "all_time") if r["current"] else ("all_time",)):
+                for k in ("rounds", "staked", "take", "expected"):
+                    g[scope][k] = round(g[scope][k] + r[k], 2)
+        out = sorted(games.values(), key=lambda g: g["game"])
+        return {"games": out,
+                "season_take": round(sum(g["season"]["take"] for g in out), 2),
+                "all_time_take": round(sum(g["all_time"]["take"] for g in out), 2)}
 
     # ---- the pot -----------------------------------------------------------------------------------------------------
     def paid(self):
@@ -96,12 +166,23 @@ class HouseManager:
             f"COALESCE(SUM(CASE WHEN kind IN {POT_KINDS!r} THEN amount END), 0) AS pot FROM house_payouts")
         return r["pot"], r["jackpot"]
 
-    def summary(self):
-        """The house's take from bets and slots (estimated and actual, every season), the pot and jackpot it funds,
-        what has been given back, the next game's objectives (how many and their prizes, never what they are) and the
-        latest giveaways."""
-        bets, slots = self.bets.house(), self.slots.house()
-        expected = bets["expected_take"] + slots["expected_take"]
+    def casino_take(self):
+        """The casino's take from the ledger, every season: rounds, staked, the actual take, and the expected take (each
+        round's edge where its game has one, poker's rake, nothing for slot spins from before they recorded their
+        return)."""
+        r = self.db.query_one(
+            "SELECT COUNT(*) AS rounds, COALESCE(SUM(staked), 0) AS staked, COALESCE(SUM(take), 0) AS take, "
+            "COALESCE(SUM(CASE WHEN expected IS NOT NULL THEN expected WHEN game='poker' THEN take ELSE 0 END), 0) "
+            "AS expected FROM house_ledger")
+        return {"rounds": r["rounds"], "staked": round(r["staked"], 2), "actual_take": round(r["take"], 2),
+                "expected_take": round(r["expected"], 2)}
+
+    def report(self):
+        """Everything /api/house serves: the ledger's take per game (summary()), the take from bets and the casino
+        (estimated and actual, every season), the pot and jackpot it funds, what has been given back, the next game's
+        objectives (how many and their prizes, never what they are) and the latest giveaways."""
+        bets, casino = self.bets.house(), self.casino_take()
+        expected = bets["expected_take"] + casino["expected_take"]
         pot_paid, jackpot_paid = self.paid()
         rewards = self.db.query_one(
             "SELECT COALESCE(SUM(base + bonus), 0) AS paid FROM (SELECT base, bonus FROM rewards "
@@ -110,8 +191,9 @@ class HouseManager:
         by_kind = {r["kind"]: r["total"] for r in self.db.query(
             "SELECT kind, SUM(amount) AS total FROM house_payouts GROUP BY kind")}
         return {
-            "bets": bets, "slots": slots, "rewards_paid": round(rewards, 2),
-            "expected_take": round(expected, 2), "actual_take": round(bets["actual_take"] + slots["actual_take"], 2),
+            **self.summary(),
+            "bets": bets, "casino": casino, "rewards_paid": round(rewards, 2),
+            "expected_take": round(expected, 2), "actual_take": round(bets["actual_take"] + casino["actual_take"], 2),
             "pot": round(expected * (1 - JACKPOT_SHARE) - pot_paid, 2),
             "jackpot": round(expected * JACKPOT_SHARE - jackpot_paid, 2),
             "given": {k: round(v, 2) for k, v in by_kind.items()},
@@ -124,8 +206,7 @@ class HouseManager:
 
     def summary_pots(self):
         """(pot, jackpot) right now."""
-        bets, slots = self.bets.house(), self.slots.house()
-        take = bets["expected_take"] + slots["expected_take"]
+        take = self.bets.house()["expected_take"] + self.casino_take()["expected_take"]
         pot_paid, jackpot_paid = self.paid()
         return take * (1 - JACKPOT_SHARE) - pot_paid, take * JACKPOT_SHARE - jackpot_paid
 

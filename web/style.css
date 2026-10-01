@@ -29,6 +29,10 @@
   /* charts (Visualizations tab) */
   --axis: #383835; --div-pos: #3987e5; --div-neg: #e66767; --div-mid: #383835;
   --aim-1: #9ec5f4; --aim-2: #3987e5; --aim-3: #184f95; --pair-lo: #184f95; --pair-hi: #86b6ef;
+  /* casino tables (blackjack.js, poker.js): the same felt and cards in every theme */
+  --felt: #0b4d2c; --felt-2: #13703f; --felt-edge: #3b2414; --felt-ink: #f3f1e8; --felt-dim: rgba(243, 241, 232, 0.62);
+  --card-face: #fbfaf6; --card-ink: #1b1b1b; --card-red: #c8202f; --card-back: #9c1f2e; --card-back-2: #c23447;
+  --chip: #f2c94c; --chip-ink: #3a2a00; --turn: #ffd23f;
 }
 :root[data-theme="light"], :root[data-theme="greg"] {
   color-scheme: light;
@@ -1773,4 +1777,247 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
   .wheel-bulb, .wheel-jp-halo, .wheel-box.shaking { animation: none !important; }
   .wheel-banner { animation: wheel-fade 3.6s ease-out forwards; transform: translate(-50%, -50%); }
   @keyframes wheel-fade { 0% { opacity: 0; } 15%, 80% { opacity: 1; } 100% { opacity: 0; } }
+}
+
+/* ---- Casino tables: blackjack (blackjack.js) and poker (poker.js), with casino.js's cards and Onkey ---- */
+.casino-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.casino-bar .casino-mute { margin-left: auto; }
+.seg-count { margin-left: 6px; font-weight: 500; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.casino-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.casino-side .card h2 { margin-top: 0; }
+.casino-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.casino-tiles .tile { box-shadow: none; background: var(--surface-2); }
+.casino-tiles .tile-value { font-size: 22px; }
+.casino-tiles .tile-value.small { font-size: 16px; padding-top: 4px; }
+.casino-names, .casino-rules { margin: 0; padding-left: 18px; }
+.casino-names li, .casino-rules li { margin: 4px 0; }
+.casino-error { color: var(--down); font-weight: 600; }
+.felt .casino-error { color: #ffb3b3; }
+
+.felt { position: relative; color: var(--felt-ink); background: radial-gradient(ellipse at 50% 35%, var(--felt-2), var(--felt) 70%);
+  border: 12px solid var(--felt-edge); border-radius: 28px; padding: 20px 24px 24px; box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45), var(--shadow); }
+.felt .muted { color: var(--felt-dim); }
+.felt-top { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.felt-print { text-align: center; font-style: italic; letter-spacing: 0.04em; color: var(--felt-dim); margin: 14px 0 18px; font-size: 13px; }
+.felt-status { text-align: center; min-height: 24px; margin: 16px 0 12px; font-variant-numeric: tabular-nums; }
+.felt-controls { display: flex; justify-content: center; min-height: 64px; align-items: center; }
+.countdown { font-variant-numeric: tabular-nums; }
+.countdown.urgent { color: var(--turn); }
+.timer-bar { display: block; height: 4px; width: 100%; border-radius: 2px; background: rgba(255, 255, 255, 0.15); margin-top: 6px; overflow: hidden; position: relative; }
+.timer-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--left, 1) * 100%); background: var(--turn); transition: width 0.25s linear; }
+.timer-bar.urgent::after { background: #ff6b6b; }
+
+/* Cards: a white face with the rank and suit in the corner and a big pip, or a patterned back. */
+.pcard { --w: 44px; position: relative; display: inline-flex; flex: none; width: var(--w); height: calc(var(--w) * 1.4); border-radius: calc(var(--w) * 0.12);
+  background: var(--card-face); color: var(--card-ink); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45); vertical-align: middle; user-select: none; }
+.pcard.xs { --w: 22px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
+.pcard.sm { --w: 34px; }
+.pcard.md { --w: 52px; }
+.pcard.lg { --w: 64px; }
+.pcard.red { color: var(--card-red); }
+.pc-corner { position: absolute; top: 6%; left: 9%; display: flex; flex-direction: column; align-items: center; line-height: 1; font-size: calc(var(--w) * 0.3); }
+.pc-corner b { font-weight: 800; letter-spacing: -0.04em; }
+.pc-corner i { font-style: normal; font-size: 0.85em; }
+.pc-pip { position: absolute; right: 10%; bottom: 6%; font-size: calc(var(--w) * 0.55); line-height: 1; }
+.pcard.xs .pc-pip { display: none; }
+.pcard.xs .pc-corner { font-size: 9px; top: 3px; left: 3px; }
+.pcard.back { background: repeating-linear-gradient(45deg, var(--card-back) 0 4px, var(--card-back-2) 4px 8px); border: 3px solid var(--card-face); }
+.pcard.empty { background: transparent; box-shadow: none; border: 2px dashed rgba(255, 255, 255, 0.22); }
+.pcard.shown { box-shadow: 0 0 0 2px var(--turn), 0 2px 6px rgba(0, 0, 0, 0.45); }
+
+/* Onkey, the dealer: his picture, and a speech bubble with his monkey noises and what they mean. */
+.onkey-dealer { position: relative; display: flex; flex-direction: column; align-items: center; z-index: 3; }
+.onkey-face { width: 88px; height: auto; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5)); transform-origin: 50% 90%; }
+.onkey-dealer.talking .onkey-face { animation: onkey-jabber 0.18s ease-in-out 8 alternate; }
+@keyframes onkey-jabber { from { transform: rotate(-4deg) scale(1); } to { transform: rotate(4deg) scale(1.06); } }
+.onkey-bubble { position: absolute; left: calc(100% + 14px); top: -4px; width: max-content; max-width: 300px; min-width: 160px; background: var(--card-face); color: var(--card-ink);
+  border-radius: 14px; padding: 8px 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); opacity: 0; transform: translateY(4px) scale(0.96);
+  transform-origin: 0 50%; transition: opacity 0.2s, transform 0.2s; pointer-events: none; font-size: 14px; line-height: 1.35; }
+.onkey-bubble::before { content: ""; position: absolute; left: -8px; top: 16px; border: 8px solid transparent; border-left: 0; border-right-color: var(--card-face); }
+.onkey-dealer.talking .onkey-bubble { opacity: 1; transform: none; }
+.onkey-bubble .ook { display: block; font-style: italic; font-size: 12px; color: #6b6a64; margin-bottom: 2px; }
+.onkey-bubble .say { display: block; font-weight: 600; }
+
+/* Chips and buttons on the felt. */
+.casino-deck, .casino-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.casino-stakes { display: flex; gap: 6px; }
+.stake-key { width: 46px; height: 46px; border-radius: 50%; border: 3px dashed rgba(255, 255, 255, 0.75); background: var(--chip); color: var(--chip-ink);
+  font: 700 14px var(--font); cursor: pointer; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); font-variant-numeric: tabular-nums; }
+.stake-key[aria-pressed="true"] { outline: 3px solid var(--turn); outline-offset: 2px; transform: translateY(-2px); }
+.stake-key:disabled { opacity: 0.4; cursor: not-allowed; }
+.stake-key:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn.casino-cta { min-width: 180px; padding: 10px 18px; font-size: 16px; width: auto; margin-top: 0; }
+.btn.casino-act { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.casino-act { min-width: 112px; padding: 9px 16px; font-size: 16px; font-weight: 700; display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.casino-act small { font-size: 12px; font-weight: 500; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.btn.casino-act.act-fold { color: var(--down); }
+.btn.casino-act.act-raise, .btn.casino-act.act-hit { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.chip-stake { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 15px;
+  background: var(--chip); color: var(--chip-ink); font-weight: 700; font-size: 12px; border: 2px dashed rgba(255, 255, 255, 0.7); font-variant-numeric: tabular-nums; }
+.chip-stake.big { min-width: 44px; height: 44px; border-radius: 22px; font-size: 14px; }
+
+/* Blackjack */
+.bj-dealer { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 120px; }
+.bj-cards { display: flex; justify-content: center; }
+.bj-cards .pcard + .pcard { margin-left: -22px; }
+.bj-total { display: flex; align-items: center; gap: 8px; }
+.hand-total { display: inline-block; min-width: 30px; text-align: center; padding: 2px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.hand-total.bust { background: var(--down); }
+.hand-total.bj { background: var(--chip); color: var(--chip-ink); }
+.hand-result { padding: 2px 9px; border-radius: 999px; font-weight: 700; font-size: 13px; background: rgba(0, 0, 0, 0.5); }
+.hand-result.win, .hand-result.blackjack { background: var(--up); color: #fff; }
+.hand-result.lose, .hand-result.bust { background: var(--down); color: #fff; }
+.bj-spots { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.bj-spot { min-width: 190px; padding: 12px; border-radius: 14px; border: 1px dashed rgba(255, 255, 255, 0.2); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bj-spots.solo .bj-spot { min-width: 320px; }
+.bj-spot.open { justify-content: center; min-height: 150px; }
+.bj-spot.me { background: rgba(255, 255, 255, 0.05); }
+.bj-spot.turn { border: 2px solid var(--turn); box-shadow: 0 0 18px rgba(255, 210, 63, 0.35); }
+.bj-hands { display: flex; gap: 14px; }
+.bj-hand { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px; border-radius: 10px; }
+.bj-hand.active { background: rgba(255, 210, 63, 0.12); }
+.bj-hand.waiting { min-height: 120px; justify-content: center; }
+.bj-hand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.bj-spot-name { font-weight: 600; }
+
+/* Poker: an oval table with eight seats round the rail; your seat is turned to the bottom. */
+.pk-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pk-phase { padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+.pk-phase.lobby { background: var(--accent-soft); color: var(--accent); }
+.pk-phase.live { background: rgba(12, 163, 12, 0.18); color: var(--up); }
+.pk-rules { font-weight: 600; }
+.pk-felt { height: 600px; margin: 40px 84px 64px; padding: 0; border: 0; background: none; box-shadow: none; border-radius: 0; }
+.pk-rail { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(ellipse at 50% 40%, var(--felt-2), var(--felt) 70%);
+  border: 16px solid var(--felt-edge); box-shadow: inset 0 0 70px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.35); }
+.pk-onkey { position: absolute; left: 50%; top: 26px; transform: translateX(-50%); }
+.pk-center { position: absolute; left: 50%; top: 53%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 1; }
+.pk-pot { font-size: 15px; color: var(--felt-dim); min-height: 22px; }
+.pk-pot b { color: var(--felt-ink); font-size: 18px; font-variant-numeric: tabular-nums; }
+.pk-board { display: flex; gap: 8px; }
+.pk-result { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 40px; color: var(--turn); font-weight: 600; text-align: center; }
+.pk-seats { position: absolute; inset: 0; }
+.pk-seat { position: absolute; transform: translate(-50%, -50%); width: 150px; display: flex; flex-direction: column; align-items: center; z-index: 2; color: var(--felt-ink); }
+.pk-seat.empty { width: 110px; height: 44px; justify-content: center; border: 1px dashed rgba(255, 255, 255, 0.28); border-radius: 12px; background: rgba(12, 12, 12, 0.62); }
+.pk-cards { display: flex; gap: 3px; justify-content: center; margin-bottom: -10px; min-height: 20px; position: relative; z-index: 1; }
+.pk-plate { width: 100%; text-align: center; background: rgba(12, 12, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 12px; padding: 12px 10px 7px; }
+.pk-seat.me .pk-plate { border-color: var(--accent); }
+.pk-seat.turn .pk-plate { border-color: var(--turn); box-shadow: 0 0 0 2px var(--turn), 0 0 18px rgba(255, 210, 63, 0.35); }
+.pk-seat.winner .pk-plate { box-shadow: 0 0 0 2px var(--up), 0 0 20px rgba(12, 163, 12, 0.45); }
+.pk-seat.folded, .pk-seat.out { opacity: 0.55; }
+.pk-name { display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; }
+.pk-stack { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pk-allin { color: var(--turn); }
+.pk-btn { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; color: #111; font-size: 11px; font-weight: 800; }
+.pk-blind { font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.16); }
+.pk-ready, .pk-label { display: block; font-size: 12px; color: var(--felt-dim); }
+.pk-ready.on { color: #6fdc6f; font-weight: 600; }
+.pk-label.folded { font-style: italic; }
+.pk-hand-name { display: block; font-size: 12px; color: var(--turn); font-weight: 600; }
+.pk-bet { position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 3px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; font-weight: 700; font-size: 13px; z-index: 1; font-variant-numeric: tabular-nums; }
+.chip-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--chip); border: 2px dashed rgba(255, 255, 255, 0.8); }
+.pk-status { margin-top: 0; }
+.pk-controls { min-height: 72px; }
+.pk-raise { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pk-raise input[type="range"] { width: 200px; accent-color: var(--accent); padding: 0; }
+.pk-raise input[type="number"] { width: 90px; }
+.pk-presets { display: flex; gap: 4px; }
+.pk-field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.pk-field input, .pk-field select { width: 100%; }
+.pk-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pk-check { grid-column: span 2; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; font-size: 14px; text-align: left; }
+.pk-check input { width: auto; flex: none; margin: 0; padding: 0; }
+.pk-mini { display: inline-flex; gap: 2px; }
+.pk-form-foot { display: flex; gap: 8px; margin: 12px 0 4px; }
+.pk-form-foot .btn { width: auto; margin-top: 0; }
+.pk-rules-list { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 8px; }
+.pk-rules-list dt { color: var(--muted); }
+.pk-rules-list dd { margin: 0; }
+.pk-seat-actions { display: flex; gap: 8px; margin: 12px 0; }
+.pk-seat-actions .btn { flex: 1; margin-top: 0; }
+.pk-topup { display: flex; gap: 8px; align-items: end; }
+.pk-topup .pk-field { flex: 1; }
+.pk-log { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+.pk-log li { padding: 5px 0; border-bottom: 1px solid var(--grid); }
+.pk-log li:last-child { border-bottom: 0; }
+.pk-last-board { display: flex; gap: 3px; margin-bottom: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .onkey-dealer.talking .onkey-face { animation: none; }
+  .onkey-bubble, .timer-bar::after { transition: none; }
+}
+
+
+/* ---- Onkey's Casino items (bananas.py, slots card_back / chips / seat): how a player looks at the tables ---- */
+/* Card backs: your face-down poker cards, and Onkey's hole card at your solo blackjack table. */
+.pcard.back.cbk-banana { background: repeating-linear-gradient(45deg, #f5c518 0 5px, #3f8f3a 5px 10px); }
+.pcard.back.cbk-jungle { background: radial-gradient(circle at 30% 30%, #7ac943 0 18%, transparent 19%), radial-gradient(circle at 70% 70%, #7ac943 0 18%, transparent 19%), #1e6b30; background-size: 12px 12px; }
+.pcard.back.cbk-midnight { background: radial-gradient(#fff 0.8px, transparent 1.4px) 0 0 / 7px 7px, radial-gradient(#9ec5f4 0.6px, transparent 1.2px) 3px 4px / 9px 9px, #13204a; }
+.pcard.back.cbk-onkey { background: url("/assets/onkey-logo.png") center / 82% no-repeat, radial-gradient(circle, #a8703f, #6b3f1d); }
+.pcard.back.cbk-neon { background: repeating-linear-gradient(135deg, #ff2fa0 0 4px, #1a0b2e 4px 7px, #1fe0ff 7px 11px, #1a0b2e 11px 14px); }
+.pcard.back.cbk-gold { background: linear-gradient(120deg, #a87600, #ffd700 30%, #fff3c4 45%, #ffd700 60%, #a87600); background-size: 250% 100%; animation: cbk-shimmer 3s linear infinite; }
+@keyframes cbk-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+
+/* Chips: your bets at poker, your stake chips at blackjack. */
+.chp-jungle { --chip-bg: #2f9a45; --chip-fg: #fff; }
+.chp-ice { --chip-bg: #8fd3ff; --chip-fg: #0b3550; }
+.chp-ruby { --chip-bg: #c8202f; --chip-fg: #fff; }
+.chp-banana { --chip-bg: radial-gradient(#6b3f1d 1.4px, transparent 2px) 0 0 / 9px 9px, #f5c518; --chip-fg: #3a2a00; }
+.chp-onyx { --chip-bg: #151515; --chip-fg: #ffd700; }
+.chp-rainbow { --chip-bg: conic-gradient(#ff4d6d, #ffd23f, #3bceac, #4f8cff, #b86bff, #ff4d6d); --chip-fg: #fff; }
+.chip-stake[class*="chp-"], .chip-dot[class*="chp-"], .stake-key[class*="chp-"] { background: var(--chip-bg); color: var(--chip-fg); }
+.chp-onyx.chip-stake, .chp-onyx.chip-dot, .chp-onyx.stake-key { border: 2px solid #ffd700; }
+.chp-rainbow.chip-stake, .chp-rainbow.stake-key { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); }
+.chp-rainbow.chip-dot, .chp-rainbow.chip-stake, .chp-rainbow.stake-key { animation: chp-spin 6s linear infinite; }
+@keyframes chp-spin { to { filter: hue-rotate(360deg); } }
+
+/* Seat style: your poker nameplate and your blackjack spot. */
+.pk-seat.st-wood .pk-plate, .bj-spot.st-wood { background: linear-gradient(#6b3a1e, #4a2611); border: 1px solid #a0673a; }
+.pk-seat.st-vines .pk-plate, .bj-spot.st-vines { border: 2px solid #2f9a45; background: linear-gradient(rgba(30, 107, 48, 0.55), rgba(12, 12, 12, 0.85)); position: relative; }
+.pk-seat.st-vines .pk-plate::after, .bj-spot.st-vines::after { content: "🌿"; position: absolute; top: -10px; right: -8px; font-size: 18px; transform: rotate(20deg); }
+.pk-seat.st-velvet .pk-plate, .bj-spot.st-velvet { background: linear-gradient(#4b1d6b, #2c0f44); border: 1px solid #c9a0ff; }
+.pk-seat.st-neon .pk-plate, .bj-spot.st-neon { border: 2px solid #ff2fa0; box-shadow: 0 0 12px #ff2fa0, inset 0 0 8px rgba(255, 47, 160, 0.5); }
+.pk-seat.st-gold .pk-plate, .bj-spot.st-gold { background: linear-gradient(#5a4300, #2e2200); border: 2px solid #ffd700; box-shadow: 0 0 14px rgba(255, 215, 0, 0.45); }
+.bj-spot[class*="st-"] { border-radius: 14px; }
+/* Whose turn it is still shows over any seat style. */
+.pk-seat.turn[class*="st-"] .pk-plate, .bj-spot.turn[class*="st-"] { border-color: var(--turn); box-shadow: 0 0 0 2px var(--turn), 0 0 18px rgba(255, 210, 63, 0.35); }
+.pk-title { margin-top: 1px; }
+.pk-title .btitle { font-size: 10px; margin: 0; }
+.bj-spot-name { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+
+/* In the shop: item cards and before / after samples drawn on a small felt. */
+.shop-felt { display: inline-flex; gap: 6px; align-items: center; justify-content: center; padding: 10px 14px; border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 35%, var(--felt-2), var(--felt) 75%); color: var(--felt-ink); }
+.shop-felt .pcard + .pcard { margin-left: -14px; }
+.shop-quote { display: block; font-size: 13px; font-style: italic; line-height: 1.35; padding: 4px 6px; }
+.pk-seat.static { position: relative; transform: none; left: auto; top: auto; display: inline-flex; width: 150px; }
+.pk-bet.static { position: relative; transform: none; }
+.casino-sample { display: flex; align-items: center; justify-content: center; gap: 18px; min-height: 150px; padding: 18px; border-width: 8px; border-radius: 18px; margin-bottom: 8px; }
+.casino-sample-chips { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.casino-sample.entrance { justify-content: flex-start; padding-left: 28px; }
+.onkey-dealer.static .onkey-face { animation: none; }
+.shop-group-head { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 16px; align-items: center;
+  background: linear-gradient(90deg, rgba(19, 112, 63, 0.22), transparent 60%), var(--surface); }
+.shop-group-art { width: 72px; height: 72px; display: grid; place-items: center; font-size: 40px; border-radius: 50%;
+  background: radial-gradient(circle, var(--felt-2), var(--felt)); border: 4px solid var(--felt-edge); }
+.shop-group-head h2 { margin: 0 0 4px; }
+.cm-groups { display: flex; flex-direction: column; gap: 12px; }
+.cm-group { display: flex; flex-direction: column; gap: 6px; }
+.cm-group-label { align-self: flex-start; background: none; border: 0; padding: 2px 0; font: 600 13px var(--font); color: var(--text-2); cursor: pointer; }
+.cm-group-label:hover, .cm-group-label.on { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .pcard.back.cbk-gold, .chp-rainbow.chip-dot, .chp-rainbow.chip-stake, .chp-rainbow.stake-key { animation: none; }
+}
+
+/* Dealing (casino.js deal()): a new card flies in from Onkey at its turn in the deal; a face-down card turns over;
+   totals, results and the status line (.after-deal) wait until the last card has landed. */
+.pcard.deal-in { animation: card-deal 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both; animation-delay: var(--deal-delay, 0ms); }
+@keyframes card-deal { from { opacity: 0; transform: translateY(-150px) rotate(-14deg) scale(0.75); } 60% { opacity: 1; } }
+.pcard.flip-in { animation: card-flip 0.5s ease-in-out both; animation-delay: var(--deal-delay, 0ms); }
+@keyframes card-flip { 0% { transform: scaleX(1); filter: brightness(0.35); } 50% { transform: scaleX(0); filter: brightness(0.35); } 100% { transform: scaleX(1); } }
+.after-deal { animation: after-deal 0.25s ease-out both; animation-delay: var(--after, 0ms); pointer-events: none; }
+.casino-controls { display: contents; }
+.casino-controls.after-deal { display: block; }
+@keyframes after-deal { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .pcard.deal-in, .pcard.flip-in, .after-deal { animation: none; }
 }

@@ -1,4 +1,4 @@
-/* 5-Stack Tracker: the daily wheel (Betting's Daily wheel page; data from /api/wheel, spins from /api/wheel/spin, both
+/* 5-Stack Tracker: the daily wheel (the Casino's Daily wheel page; data from /api/wheel, spins from /api/wheel/spin, both
  * in fivestack/wheel.py).
  *
  * One spin a day per bettor, resetting at midnight Pacific (3 AM Eastern); unlimited in demo mode. Each slice's size is

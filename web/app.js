@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'blackjack', 'poker', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -1150,6 +1150,8 @@
         case 'troop': view.innerHTML = window.FiveShop.viewTroop(); break;
         case 'arcade': view.innerHTML = window.FiveArcade.viewArcade(); break;
         case 'slots': view.innerHTML = window.FiveSlots.view(); break;
+        case 'blackjack': view.innerHTML = window.FiveBlackjack.view(); break;
+        case 'poker': view.innerHTML = window.FivePoker.view(); break;
         case 'wheel': view.innerHTML = window.FiveWheel.view(); break;
         case 'matches': view.innerHTML = viewMatches(); break;
         default: view.innerHTML = viewSetup();
@@ -1179,6 +1181,8 @@
         case 'troop': await Promise.all([window.FiveShop.loadTroop(), window.FiveShop.loadProfile(), state.shop ? null : window.FiveShop.loadShop()]); break;
         case 'arcade': await window.FiveArcade.load(); break;
         case 'slots': await window.FiveSlots.load(); break;
+        case 'blackjack': await window.FiveBlackjack.load(); break;
+        case 'poker': await window.FivePoker.load(); break;
         case 'wheel': await window.FiveWheel.load(); break;
         case 'matches': await Promise.all([loadMatches(), loadRecap()]); break;
         default: await loadStatus();
@@ -1234,6 +1238,8 @@
     window.FiveShop.bind(view);
     window.FiveArcade.bind(view);
     window.FiveSlots.bind(view);
+    window.FiveBlackjack.bind(view);
+    window.FivePoker.bind(view);
     window.FiveWheel.bind(view);
     $('#copy-url')?.addEventListener('click', async (e) => {
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
@@ -1445,8 +1451,10 @@
 
   function route() {
     // #monkeys/<name> opens that bettor's profile on the Monkeys tab (the view is still called troop; #troop works too).
+    // #casino opens Slots.
     let [v, arg] = (location.hash || '#overview').slice(1).split('/');
     if (v === 'monkeys') v = 'troop';
+    if (v === 'casino') v = 'slots'; // the Casino menu's first page
     state.view = VIEWS.includes(v) ? v : 'overview';
     if (state.view === 'troop') {
       try { state.troopPick = arg ? decodeURIComponent(arg) : ''; } catch (e) { state.troopPick = ''; }
@@ -1617,6 +1625,9 @@
     window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, plainName, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
     window.FiveArcade.init({ state, $, $$, api, draw, esc, fmt, toast, nameHtml: shop.nameHtml, loadMe });
     window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName });
+    window.FiveCasino.init({ esc, state, nameHtml: shop.nameHtml, confetti });
+    window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
+    window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast });
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
     // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms

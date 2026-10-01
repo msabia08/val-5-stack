@@ -275,6 +275,81 @@ CREATE TABLE IF NOT EXISTS slot_spins (
 );
 CREATE INDEX IF NOT EXISTS idx_slots_season ON slot_spins(season_id, bettor);
 
+-- The house's side of every casino round (house.py): kept through resets, season_id NULL means the current season.
+CREATE TABLE IF NOT EXISTS house_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    bettor TEXT,
+    staked REAL NOT NULL,
+    take REAL NOT NULL,
+    expected REAL,
+    created_ts REAL NOT NULL,
+    season_id INTEGER REFERENCES seasons(id),
+    UNIQUE(game, ref)
+);
+CREATE INDEX IF NOT EXISTS idx_house_season ON house_ledger(season_id, game);
+
+-- Blackjack (blackjack.py): one row per bettor per round, all their hands (two after a split). Kept through resets.
+CREATE TABLE IF NOT EXISTS blackjack_hands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL REFERENCES bettors(name),
+    tbl TEXT NOT NULL,           -- solo or shared
+    round INTEGER NOT NULL,
+    stake REAL NOT NULL,         -- everything staked, doubles and splits included
+    payout REAL NOT NULL,        -- stakes included; the refund for a void round
+    hands TEXT NOT NULL,         -- JSON: each hand's cards, stake, doubled, split, result, payout
+    dealer TEXT NOT NULL,        -- JSON: the dealer's cards
+    status TEXT NOT NULL,        -- playing, settled or void
+    note TEXT,
+    created_ts REAL NOT NULL,
+    settled_ts REAL,
+    request_id TEXT NOT NULL,
+    edge REAL,
+    season_id INTEGER REFERENCES seasons(id),
+    UNIQUE(bettor, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_blackjack_season ON blackjack_hands(season_id, bettor);
+
+-- Poker (poker.py): the chips at the table (the escrow, one row per seated bettor), every buy-in, top-up and
+-- cash-out, every finished hand and each player's net from it. All but the seats are kept through resets.
+CREATE TABLE IF NOT EXISTS poker_seats (
+    bettor TEXT PRIMARY KEY REFERENCES bettors(name),
+    seat INTEGER NOT NULL,
+    stack INTEGER NOT NULL,
+    joined_ts REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS poker_buyins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    kind TEXT NOT NULL,          -- buyin, topup or cashout
+    amount INTEGER NOT NULL,
+    created_ts REAL NOT NULL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE TABLE IF NOT EXISTS poker_hands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_ts REAL NOT NULL,
+    ended_ts REAL NOT NULL,
+    settings TEXT NOT NULL,
+    board TEXT NOT NULL,
+    players TEXT NOT NULL,
+    pots TEXT NOT NULL,
+    pot INTEGER NOT NULL,
+    rake INTEGER NOT NULL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE TABLE IF NOT EXISTS poker_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hand_id INTEGER NOT NULL REFERENCES poker_hands(id),
+    bettor TEXT NOT NULL,
+    start INTEGER NOT NULL,
+    end INTEGER NOT NULL,
+    net INTEGER NOT NULL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE INDEX IF NOT EXISTS idx_poker_results_season ON poker_results(season_id, bettor);
+
 -- The house giving back (see house.py). Secret objectives: a set is drawn for the game after `after_match` and stays
 -- `open` (hidden) until a complete game that started after `drawn_ts` is recorded, then `met` / `missed` / `void`.
 CREATE TABLE IF NOT EXISTS house_objectives (
@@ -294,14 +369,14 @@ CREATE TABLE IF NOT EXISTS house_objectives (
     winners TEXT,  -- JSON {bettor: credits paid}
     created_ts REAL
 );
--- Every credit the house gives back: objective prizes, bad-beat refunds and (later) the jackpot. Kept through resets:
--- season_id NULL means the current season.
+-- Every credit the house gives back: objective prizes and bad-beat refunds (from the pot), the daily wheel's credits and
+-- insurance (free) and its jackpot. Kept through resets: season_id NULL means the current season.
 CREATE TABLE IF NOT EXISTS house_payouts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bettor TEXT NOT NULL,
     amount REAL NOT NULL,
-    kind TEXT NOT NULL,  -- objective / refund / jackpot
-    ref TEXT NOT NULL UNIQUE,  -- objective:<id>:<bettor> or refund:<bet id>, so nothing is paid twice
+    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot
+    ref TEXT NOT NULL UNIQUE,  -- objective:<id>:<bettor>, refund:<bet id>, insurance:<bet id> or wheel:<spin id>: paid once
     match_id TEXT,
     note TEXT,
     created_ts REAL NOT NULL,
@@ -691,7 +766,9 @@ class DB:
                 self.conn.execute("DELETE FROM rewards")
                 self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
-                self.conn.execute("UPDATE house_payouts SET season_id=? WHERE season_id IS NULL", (sid,))
+                for table in ("house_ledger", "house_payouts", "blackjack_hands", "poker_buyins", "poker_hands",
+                              "poker_results"):
+                    self.conn.execute(f"UPDATE {table} SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.
                 self.conn.execute(

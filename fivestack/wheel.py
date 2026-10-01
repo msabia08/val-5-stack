@@ -1,4 +1,4 @@
-"""The daily wheel (Betting's Wheel page): one free spin a day per bettor, paid by the house.
+"""The daily wheel (the Casino's Daily wheel page): one free spin a day per bettor, paid by the house.
 
 The day turns over at midnight Pacific time (3 AM Eastern), so a late night on the East Coast still counts as the
 same day, and it follows daylight saving time (computed here, since Windows has no time zone database in the standard

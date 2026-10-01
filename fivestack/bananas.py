@@ -10,21 +10,33 @@ and at start-up; the ledger's unique (reason, ref) keeps it from paying twice. A
 (db.archive_and_reset) but owned items stay.
 
 The catalogue is code, not data: CATALOG lists every item with its slot, price and `look` (what the page needs to
-draw it). Cosmetic slots hold one worn item each; SOCIAL items are used on another bettor and wear off.
+draw it). Cosmetic slots hold one worn item each; SOCIAL items are used on another bettor and wear off. Slots come in
+groups (GROUPS): your looks across the site, and Onkey's Casino, which everyone at the casino tables sees (card backs,
+chips, seat style, the line Onkey announces you with, and what bursts from your seat when you win).
 """
 import time
 
 from .bets import BetError
 
+GROUPS = [
+    # key, label, what the group is for
+    ("looks", "Your looks", "How you show up across the site."),
+    ("casino", "Onkey's Casino", "Your style at the casino tables. Everyone sitting with you sees it."),
+]
 SLOTS = [
-    # key, label, what it changes
-    ("name_color", "Name colour", "How your name is written everywhere: rankings, tickets, the Monkeys page."),
-    ("badge", "Badge", "An emoji next to your name."),
-    ("title", "Title", "A title under your name on the Monkeys page and your profile."),
-    ("banner", "Profile banner", "The header of your profile page."),
-    ("ticket", "Ticket style", "Your bet tickets on Odds & Bets and Bettors, for everyone to see."),
-    ("celebration", "Win celebration", "What bursts out of your balance when a bet wins."),
-    ("theme", "Site theme", "Unlocks a theme for the ◐ button (on your devices)."),
+    # key, label, what it changes, group
+    ("name_color", "Name colour", "How your name is written everywhere: rankings, tickets, the casino tables, the Monkeys page.", "looks"),
+    ("badge", "Badge", "An emoji next to your name.", "looks"),
+    ("title", "Title", "A title under your name on the Monkeys page, your profile and your casino seat.", "looks"),
+    ("banner", "Profile banner", "The header of your profile page.", "looks"),
+    ("ticket", "Ticket style", "Your bet tickets on Odds & Bets and Bettors, for everyone to see.", "looks"),
+    ("celebration", "Win celebration", "What bursts out of your balance when a bet wins.", "looks"),
+    ("theme", "Site theme", "Unlocks a theme for the ◐ button (on your devices).", "looks"),
+    ("card_back", "Card backs", "Your face-down cards at the poker table, and Onkey's hole card at your solo blackjack table.", "casino"),
+    ("chips", "Chips", "Your chips at the tables: your bets at poker, your stake at blackjack.", "casino"),
+    ("seat", "Seat style", "Your nameplate at the poker table and your spot at the blackjack table.", "casino"),
+    ("entrance", "Entrance", "What Onkey announces when you sit down at a shared table, for the whole table to hear.", "casino"),
+    ("table_win", "Table win", "What bursts out of your seat when you win a pot or a blackjack hand, for everyone watching.", "casino"),
 ]
 SLOT_KEYS = [s[0] for s in SLOTS]
 
@@ -110,6 +122,48 @@ CATALOG = [
     _item("th-midnight", "theme", "Midnight", 900, "Deep navy with ice-blue accents.", theme="midnight"),
     _item("th-terminal", "theme", "Terminal", 1000, "Green on black. You're in.", theme="terminal"),
     _item("th-synthwave", "theme", "Synthwave", 1200, "Purple night, hot-pink neon.", theme="synthwave"),
+
+    # Onkey's Casino. cls: a class on your cards, chips or seat (style.css); text: Onkey's line ({name} is you);
+    # emoji / colors: the burst from your seat.
+    _item("cbk-banana", "card_back", "Banana Leaf", 150, "Yellow and green, like a fresh bunch.", cls="cbk-banana"),
+    _item("cbk-jungle", "card_back", "Canopy", 150, "Deep green leaves.", cls="cbk-jungle"),
+    _item("cbk-midnight", "card_back", "Midnight", 200, "Navy, with a sprinkle of stars.", cls="cbk-midnight"),
+    _item("cbk-onkey", "card_back", "Onkey Original", 350, "Onkey's face on every card. He's watching.", cls="cbk-onkey"),
+    _item("cbk-neon", "card_back", "Neon", 300, "Hot pink and cyan stripes.", cls="cbk-neon"),
+    _item("cbk-gold", "card_back", "Gold Leaf", 600, "A gold back that shimmers when it moves.", cls="cbk-gold"),
+
+    _item("chp-jungle", "chips", "Jungle Chips", 100, "Green and cream.", cls="chp-jungle"),
+    _item("chp-ice", "chips", "Ice Chips", 120, "Frosted blue.", cls="chp-ice"),
+    _item("chp-ruby", "chips", "Ruby Chips", 150, "Deep red, white edge.", cls="chp-ruby"),
+    _item("chp-banana", "chips", "Banana Chips", 200, "Yellow with brown spots. Not edible.", cls="chp-banana"),
+    _item("chp-onyx", "chips", "Onyx and Gold", 400, "Black chips with a gold rim. High roller only.", cls="chp-onyx"),
+    _item("chp-rainbow", "chips", "Rainbow Chips", 700, "Every colour, always turning.", cls="chp-rainbow"),
+
+    _item("st-wood", "seat", "Mahogany", 150, "A polished wooden plate.", cls="st-wood"),
+    _item("st-vines", "seat", "Overgrown", 200, "Vines creeping round your seat.", cls="st-vines"),
+    _item("st-velvet", "seat", "Velvet Rope", 250, "Plush purple, VIP section.", cls="st-velvet"),
+    _item("st-neon", "seat", "Neon Sign", 350, "Your seat lit up in pink neon.", cls="st-neon"),
+    _item("st-gold", "seat", "Gold Throne", 800, "Gold all round. Nobody else gets this seat.", cls="st-gold"),
+
+    _item("en-bananas", "entrance", "Banana Delivery", 80, "Onkey thanks you for the snacks.",
+          text="{name} brought bananas for the whole table. Onkey approves."),
+    _item("en-shark", "entrance", "Shark Warning", 120, "Everyone checks their wallet.",
+          text="Careful, everybody. A shark just sat down. Hello, {name}."),
+    _item("en-highroller", "entrance", "High Roller", 200, "Make way.",
+          text="Make way! The high roller {name} has arrived."),
+    _item("en-fish", "entrance", "Fresh Fish", 60, "Lean into it.",
+          text="Fresh fish at the table! Go easy on {name}. Or don't."),
+    _item("en-royal", "entrance", "Royal Arrival", 400, "All rise.",
+          text="All rise for their Royal Highness, {name}, ruler of the jungle."),
+    _item("en-legend", "entrance", "Living Legend", 600, "Onkey loses his mind a little.",
+          text="Is that... it is! {name}! The legend! Onkey needs an autograph!"),
+
+    _item("tw-coins", "table_win", "Coin Shower", 150, "A shower of gold coins.", emoji=["🪙", "💰"]),
+    _item("tw-bananas", "table_win", "Banana Split", 200, "Bananas everywhere.", emoji=["🍌"]),
+    _item("tw-fire", "table_win", "On Fire", 250, "The seat is too hot to touch.", emoji=["🔥", "💥"]),
+    _item("tw-confetti", "table_win", "Gold Confetti", 300, "Gold and cream confetti.",
+          colors=["#ffd700", "#ffe082", "#fff3c4", "#e6a800", "#ffffff"]),
+    _item("tw-crown", "table_win", "Crowned", 500, "Crowns and diamonds, for royalty.", emoji=["👑", "💎", "✨"]),
 ]
 
 # Used on another bettor. games: wears off once that many 5-stack games have started since (or after `hours`,
@@ -197,7 +251,8 @@ class BananaManager:
 
     def shop(self, me=None):
         """The catalogue, plus the signed-in bettor's wallet, items and recent history."""
-        out = {"rate": self.rate, "slots": [{"key": k, "label": l, "desc": d} for k, l, d in SLOTS],
+        out = {"rate": self.rate, "groups": [{"key": k, "label": l, "desc": d} for k, l, d in GROUPS],
+               "slots": [{"key": k, "label": l, "desc": d, "group": g} for k, l, d, g in SLOTS],
                "catalog": CATALOG, "social": SOCIAL, "me": None}
         if me:
             owned = {r["item_id"] for r in self.db.banana_items(me["name"])}

@@ -17,12 +17,12 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards; **Slots**: instant spins with betting credits) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack** and **Poker**, played with betting credits) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
 
-Open **Betting → Slots** and sign in with your betting account. Pick a stake of
+Open **Casino → Slots** and sign in with your betting account. Pick a stake of
 5, 10, 25, 50, 100, 250 or 500 virtual credits, then spin. Three matching
 symbols on the centre line pay, and the bigger the payout the rarer the line:
 
@@ -64,9 +64,62 @@ you win against the odds, spins since your last win and your biggest win) and th
 squad's five biggest wins this season. When a tease reaches the line it teeters
 half on and half off the matching symbol, then snaps one way or the other: onto it
 for a win, or back short of it or forward past it for a loss. Slots affect your
-credit balance and have a separate **Slots** column in Standings; match-betting
-profit, ROI and records exclude them. Slots do not earn bananas. A season reset
+credit balance and count in the separate **Casino** column in Standings (every
+casino game's payouts minus stakes this season); match-betting profit, ROI and
+records exclude them. The casino has nothing to do with bananas: it never earns
+or costs any. A season reset
 keeps the spin records with that season and starts fresh slot totals.
+
+## Blackjack
+
+Open **Casino → Blackjack**, sign in, and pick a table:
+
+- **Solo table**: just you and Onkey. Pick a stake (5 to 500 credits) and deal; the deal waits for you.
+- **Shared table**: the one table everyone shares, five seats. Sit down, and every seated player bets on the same
+  round and plays against the same dealer hand. Betting closes 15 seconds after the first bet, or as soon as
+  everyone seated has bet. Players act in seat order with 30 seconds each (time out and Onkey stands for you), and
+  the results stay up for 5 seconds before the next round opens. Leave between rounds; a bet placed but not dealt
+  yet comes back.
+
+The rules are fixed: six decks, reshuffled when less than a quarter is left; the dealer stands on every 17;
+blackjack pays 3 to 2; double down on any first two cards (after a split too, except split aces); split once, and
+split aces take one card each; the dealer checks for blackjack under an ace or a ten, so a dealer blackjack only
+takes your original stake; no insurance or surrender. That leaves the house about 0.5% over time, which is its cut.
+Keys: H hit, S stand, D double, P split, Enter deals. Onkey deals each card in turn and turns his hole card over
+before he draws, and the result shows once the last card is down. A hand still open when the server restarts or the
+season ends is refunded.
+
+## Poker
+
+Open **Casino → Poker** for Texas Hold'em with the squad, Onkey dealing. There's one shared table with eight seats
+and no host:
+
+1. **Sit down** with a buy-in from your balance (the table's range, at most 1,000 credits). Those chips stay at the
+   table until you leave, and whatever's in front of you then comes back to your balance.
+2. **Set the rules** while the table is in the lobby. Anyone seated can change them: no limit, pot limit or fixed
+   limit; the blinds (1/2 up to 25/50); the buy-in range (at least ten big blinds, at most 1,000); the turn timer
+   (15 to 60 seconds); and whether players can top up between hands. Any change un-readies everyone, so all agree
+   before a hand is dealt.
+3. **Ready up.** Onkey deals once at least two players are seated and every one of them is ready. Hands then follow
+   each other with a short pause between them. The blinds are the only forced bets.
+
+Join or leave between hands. Players who join mid-game ready up to be dealt in at the next hand; un-ready to sit out
+from the next hand. When fewer than two are ready, the game stops and the table is back in the lobby, where the
+rules can change again. Leaving during a hand folds your cards (unless you're all in) and cashes you out when it
+ends. If your turn times out, you check if you can and fold if not; two timeouts in a row sit you out. Side pots,
+split pots and uncalled bets work as in any card room. Keys: F fold, C check or call, R raise.
+
+The house takes 1% of each pot, at most 5 credits, rounded down, and nothing from a hand that ends before the flop.
+If the server restarts mid-hand, that hand is cancelled and everyone is cashed out at their stack from before it; a
+season reset cashes everyone out too.
+
+## The house and your credits
+
+The casino plays for betting credits only. Slots, blackjack and poker results count in the **Casino** column in
+Standings (this season's payouts minus stakes across all three), never in match-betting profit, ROI or records. The
+casino has nothing to do with bananas: it never earns or costs any. Every round's house cut (the slots and
+blackjack edge, the poker rake) is recorded, so the house's take per game is at `/api/house`. That take, with the
+house's cut of match bets, is what the house gives back: see [The house gives back](#the-house-gives-back).
 
 ## Quick start
 
@@ -590,17 +643,30 @@ hands everyone a fresh 50; items you bought stay yours.
 
 | Slot | What it changes | Price |
 | --- | --- | --- |
-| Name colour | how your name is written on rankings, tickets and the Monkeys page (12, from Ripe to an animated Rainbow) | 120-1200 |
+| Name colour | how your name is written on rankings, tickets, the casino tables and the Monkeys page (12, from Ripe to an animated Rainbow) | 120-1200 |
 | Badge | an emoji next to your name, and your avatar (17) | 40-500 |
-| Title | a line under your name on the Monkeys page and your profile (17) | 100-800 |
+| Title | a line under your name on the Monkeys page, your profile and your casino seat (17) | 100-800 |
 | Profile banner | the header of your profile (9) | 300-600 |
 | Ticket style | your bet tickets on Place bets and Standings, for everyone | 300-600 |
 | Win celebration | what bursts out of your balance when a bet wins | 250-350 |
 | Site theme | unlocks Greg Mode, Onkey Mode, Jungle Mode, Sakura, Midnight, Terminal or Synthwave (dark and light are free). With only those two, ◐ toggles between them; once you own a theme, ◐ opens a picker | 750-1200 |
 
+**Onkey's Casino** is the shop's second section: your style at the casino
+tables, seen by everyone sitting with you. Your name colour, badge and title come
+to the tables too.
+
+| Slot | What it changes | Price |
+| --- | --- | --- |
+| Card backs | your face-down cards at the poker table, and Onkey's hole card at your solo blackjack table (6, up to a shimmering Gold Leaf) | 150-600 |
+| Chips | your bets at poker and your stake chips at blackjack (6) | 100-700 |
+| Seat style | your nameplate at the poker table and your spot at blackjack (5, up to the Gold Throne) | 150-800 |
+| Entrance | what Onkey announces when you sit down at a shared table (6) | 60-600 |
+| Table win | what bursts out of your seat when you win a pot or a blackjack hand (5) | 150-500 |
+
 Click any item for a **preview** of your profile card and bet tickets as they
-are now and with the item (a theme shows a small page in its colours, and a
-celebration can be played). Owned items can be worn or taken off at any time.
+are now and with the item (a theme shows a small page in its colours, a
+celebration or Table win can be played, and casino items show your seat on a
+little felt). Owned items can be worn or taken off at any time.
 
 **Monkey business** items are used on someone else and wear off by
 themselves. Everyone sees who sent what.
@@ -697,9 +763,9 @@ win.
 
 ## The house gives back
 
-The house keeps a small edge on every match bet and slot spin. What that edge
-has taken (estimated from the price of each bet and spin, every season) is the
-house's money, and it goes back to the squad and the bettors. 75% of it is the
+The house keeps a small edge on every match bet and casino round (the slots and
+blackjack edge, the poker rake). What that has taken (estimated from the price of
+each bet and round, every season) is the house's money, and it goes back to the squad and the bettors. 75% of it is the
 **pot**, which pays for secret objectives and bad-beat refunds, and 25% builds the
 **jackpot**, which the daily wheel pays out. The Standings page's sidebar shows both, along with the next game's
 objectives (how many and what they're worth, not what they are), the last
@@ -740,7 +806,7 @@ The bet's ticket says so. Refunds stop when the pot runs dry.
 
 ### The daily wheel
 
-Betting's **Daily wheel** page has a prize wheel every bettor can spin **once a
+The Casino's **Daily wheel** page has a prize wheel every bettor can spin **once a
 day** for free. The day turns over at **midnight Pacific, which is 3 AM
 Eastern**, so a late night on the East Coast still counts as the same day. Each
 slice's size on the wheel is its chance:
@@ -900,9 +966,16 @@ fivestack/             the backend package
   wheel.py             the daily wheel: one spin a day (midnight Pacific), prizes, tokens
   bananas.py           Onkey's Shop: bananas earned from credit gains, the catalogue, buying and wearing items
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
+  slots.py             Casino: slots
+  blackjack.py         Casino: blackjack, solo tables and the shared table
+  poker.py             Casino: the Texas Hold'em table (lobby, betting, side pots, rake)
+  cards.py             decks, shuffling and poker hand ranking
+  tables.py            what the live tables share: locking, long-polling, the action log
+  house.py             the house's ledger of every casino round, and casino results per bettor
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
 web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), shop.js (Onkey's Shop and Monkeys), arcade.js (Onkey's Arcade),
+                       slots.js, blackjack.js, poker.js and casino.js (the Casino: cards, Onkey the dealer),
                        recap.js (match recap), style.css,
                        assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
                        onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song) (no build step)

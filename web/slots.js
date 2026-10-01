@@ -470,7 +470,7 @@ window.FiveSlots = (() => {
   function bigWins() {
     const rows = data.big_wins || [];
     return `<section class="card slots-big"><h2>Biggest wins this season</h2>
-      ${rows.length ? `<ol class="slots-big-list">${rows.map((w, k) => `<li><span class="slots-big-rank">${k + 1}</span><span class="slots-big-who">${plainName ? plainName(w.bettor) : esc(w.bettor)}</span><span class="slots-mini-reels" aria-label="${esc(w.reels.map((r) => data.symbols[r].name).join(', '))}">${w.reels.map(glyph).join('')}</span><span class="slots-big-pay"><b>+${money(w.net)}</b><small>${w.multiplier}× on ${money(w.stake)} · ${esc(fmt.date(w.created_ts * 1000))}</small></span></li>`).join('')}</ol>` : '<p class="muted">No wins yet this season.</p>'}
+      ${rows.length ? `<ol class="slots-big-list">${rows.map((w, k) => `<li><span class="slots-big-rank">${k + 1}</span><span class="slots-big-who">${window.FiveCasino ? window.FiveCasino.who(w.bettor) : plainName(w.bettor)}</span><span class="slots-mini-reels" aria-label="${esc(w.reels.map((r) => data.symbols[r].name).join(', '))}">${w.reels.map(glyph).join('')}</span><span class="slots-big-pay"><b>+${money(w.net)}</b><small>${w.multiplier}× on ${money(w.stake)} · ${esc(fmt.date(w.created_ts * 1000))}</small></span></li>`).join('')}</ol>` : '<p class="muted">No wins yet this season.</p>'}
     </section>`;
   }
   // The pay table: every symbol but the secret one, largest payout first, with its chance and how often you've hit it.
