@@ -55,10 +55,11 @@ class RewardManager:
         return self.game > 0 or self.win > 0 or self.bonus_max > 0
 
     def account_name(self, member):
-        """The name of the member's bettor account. First match wins: `bettor` on the member in config.json, then
-        bettor_names.json keyed by nickname, then the nickname (or Riot name) itself."""
+        """The name of the member's bettor account. First match wins: the account linked on the Squad tab (the
+        member's `bettor` column), then `bettor` on the member in config.json, then bettor_names.json keyed by
+        nickname, then the nickname (or Riot name) itself."""
         nickname = member.get("nickname") or member["name"]
-        name = (self.overrides.get((member["name"].lower(), member["tag"].lower()))
+        name = (member.get("bettor") or self.overrides.get((member["name"].lower(), member["tag"].lower()))
                 or self.names.get(nickname.lower()) or nickname)
         return name.strip()[:32]
 

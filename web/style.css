@@ -533,6 +533,25 @@ table.rankings tr.me td { background: var(--accent-soft); }
 .tax-chip.paid { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--text); font-weight: 600; }
 .reward b { color: var(--text); font-weight: 500; }
 
+/* ---- squad roster ------------------------------------------------------ */
+.roster-add { display: grid; grid-template-columns: 1fr 200px auto; gap: 8px; align-items: end; }
+.roster-add label, .roster-add input { width: 100%; }
+table.roster td.actions { white-space: nowrap; text-align: right; }
+table.roster tr.me td { background: var(--accent-soft); }
+/* Drag rows between the Active squad and Bench tables (tbody.drop-target); the grip marks a draggable row. */
+table.roster tr[draggable="true"] { cursor: grab; }
+table.roster tr.dragging { opacity: 0.45; }
+table.roster .grip { color: var(--muted); margin-right: 8px; letter-spacing: -3px; user-select: none; }
+table.roster tbody.drop-target.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; background: var(--accent-soft); }
+table.roster tbody.drop-target.drag-over tr td { background: transparent; }
+table.roster tr.slot-empty td { color: var(--muted); text-align: center; font-size: 13px; border: 1px dashed var(--border); padding: 12px; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.squad-line { margin-top: 4px; }
+@media (max-width: 600px) {
+  .roster-add { grid-template-columns: 1fr; }
+  table.roster td.actions { white-space: normal; }
+}
+
 /* ---- matches & setup -------------------------------------------------- */
 .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .log { font-family: ui-monospace, Consolas, monospace; font-size: 12px; max-height: 320px; overflow: auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }

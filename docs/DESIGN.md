@@ -41,7 +41,7 @@ retire an old one, update this file in the same pull request.
 ## Navigation
 
 - The top bar holds 🏠 **Overview** on its own, then three dropdown groups (`.nav-group` in `index.html`):
-  📊 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings, Slots) and 🐒 **Onkey's**
+  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings, Slots) and 🐒 **Onkey's**
   (Shop, Arcade, Monkeys). A new page joins the group it belongs to, as a menu row with an emoji, a name and a
   one-line description; don't add another top-level entry without a good reason.
 - A group's button shows the name and emoji of the page you're on (`syncNavGroups()`), so you always know where you
@@ -108,12 +108,14 @@ Reuse these before inventing new ones.
 | Tables | `table`, `.table-wrap`, `th.num` / `td.num` | Row names are `<th scope="row">` (full-colour, weight 600); headers are muted 12px |
 | Tooltips | `data-tip` JSON, drawn by `FiveViz.mount` (`.viz-tip`) | Rendered with `textContent`; call `FiveViz.mount(view)` on any tab that uses them |
 | Toasts | `toast(msg, 'good' \| 'bad')` | Short, past tense for what just happened ("Sent 50 credits to Matt") |
-| Top-bar chips | `renderMe()` → `#me-credits`, `#me-bananas`, `#me-chip` | Signed out, only the Sign in chip shows. The profile chip opens the account menu (`#account-menu`: the sign-in form, or profile / password / sign out); the credits chip is the one place the balance shows, and it ticks and throws the win confetti. Anything with `data-signin` opens the menu |
+| Top-bar chips | `renderMe()` → `#me-credits`, `#me-bananas`, `#me-chip` | Signed out, only the Sign in chip shows. The profile chip opens the account menu (`#account-menu`: the sign-in form, whose optional Riot ID field puts a new account on the squad, or profile / password / sign out plus your squad entry with Sit out / Join, Change Riot ID and Leave the squad); the credits chip is the one place the balance shows, and it ticks and throws the win confetti. Anything with `data-signin` opens the menu |
 | Better / worse than expected | `.fc-bar-row` (Forecasts, `fcGridCard()`) | A bar either side of a zero line, better to the right, paler with fewer games; rows sorted best to worst and clickable to filter. Use this, not a shaded grid, for "how far off expected" per group |
 | A forecast on a number line | `.fc-next-line` (Forecasts, `fcNextCard()`) | Range band, typical-game tick, dashed betting line, end labels |
 | A market group as questions | `.tm-match`, `.tm-form`, `.tm-qgrid` / `.tm-q`, `.tm-mountain` (Place bets, team markets) | The main bet first and bigger, its bar centred and split by chance, recent form as small W / L chips under the middle, a nudge below the chances either side, and the two buttons centred vertically on the bar and that line; every other market a card asked as a plain question with its picks (the fact line under each is off, `TM_FACTS = false` in `app.js`, to keep the section short); a many-pick market (final score) as one row of columns whose height is the chance, the likeliest outlined |
 | Cards of different heights | `.bettor-slips` (CSS columns) | Stacks cards without holes; `break-inside: avoid` on each card |
 | One list per player | `.ap-grid` > `.ap-col` (Charts, agent pool) | A column per player listing only what they have, instead of a sparse player × item grid |
+| Line-up tables | `table.roster`, `tbody.drop-target[data-zone]`, `.grip`, `tr.slot-empty`, `tr.me` (Squad, `viewSquad()`) | Two tables with the same columns, Active squad above Bench. Rows drag between them (a ⋮⋮ grip in the first cell, the target tbody outlined with a dashed accent while a row is over it) and every row also has a Bench / Swap in button, so the page works without a mouse. The squad's open spots are dashed `slot-empty` rows that say what to do; a button that can't apply (full squad, minimum size) stays visible but disabled with a `title` saying why. Your own row is tinted like your Standings row. A line-up change posts the whole order, so dropping a row also reorders the colours |
+| Inline add form | `.roster-add` (Squad) | One row: labelled inputs (Riot ID, nickname) ending in a button, with the explanation in a `.muted.small` line under it. The admin form sits folded in a `details.how` so the page stays about the tables |
 
 ### Slots
 
@@ -151,6 +153,10 @@ existing account menu.
 - Errors say what went wrong and how to fix it, without apologising.
 - Meta lines may join short facts with " · " (`Abyss · Sep 26 5:00 PM · recap`); don't use it in headings or labels.
 - Casual is fine (it's a friends' site: "the generous monkey gets rewarded"), but numbers and rules stay exact.
+- The squad's size is a setting, not a fact: write `${stackWord()}` (`web/common.js`, from `FiveRoster.size`) where a
+  sentence names it ("5-stack", "3-stack", or "squad" before the roster has loaded), never a literal "5-stack". The
+  site's name and the nav keep "5-Stack"; page copy follows the roster. "Squad" is the active players, "bench" the rest
+  of the pool, and "pool" everyone the tracker knows; buttons use those words ("Bench", "Swap in", "Remove me").
 
 ## Charts
 
@@ -199,3 +205,6 @@ map, a readable chart that opens recaps). Still open:
   better and worse tiles into one with an above / inside / below bar; a last 20 / 50 / all toggle on the chart.
 - Not yet reviewed: the signed-in top bar and bet slip (the demo has no account to sign in with), and the shop themes
   after the width change. Light mode has been checked on Forecasts and Charts.
+- The Squad page (2026-09-30) was checked in dark at 1920×1080 with a headless browser against the fake API, and its
+  drag and drop only through the buttons that do the same thing; a real mouse drag, touch, and light mode are still to
+  be checked. The demo squad is fixed, so the editable page needs a real API key (or the self-test's fake client).

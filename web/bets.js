@@ -213,7 +213,7 @@ window.FiveBets = (() => {
   function betsSection() {
     const pending = state.bets.filter((b) => b.status === 'pending');
     return `<section class="card"><div class="section-head"><h2>Open bets</h2>${pending.length ? `<span class="muted small">${betTotals(pending, false)}</span>` : ''}</div>
-        ${pending.length ? bettorSlips(pending) : '<p class="muted">No open bets. Bets settle automatically when the next 5-stack game is synced.</p>'}
+        ${pending.length ? bettorSlips(pending) : `<p class="muted">No open bets. Bets settle automatically when the next ${stackWord()} game is synced.</p>`}
         <p class="muted small">Settled bets, balances and rankings live on <a href="#bettors">Standings</a>.</p></section>`;
   }
 
@@ -241,7 +241,7 @@ window.FiveBets = (() => {
   function settledSection() {
     const groups = settledGames();
     if (!groups.size) {
-      return '<section class="card"><h2>Settled bets</h2><p class="muted">Nothing settled yet. Bets settle when the next 5-stack game is recorded.</p></section>';
+      return `<section class="card"><h2>Settled bets</h2><p class="muted">Nothing settled yet. Bets settle when the next ${stackWord()} game is recorded.</p></section>`;
     }
     const keys = [...groups.keys()];
     const picked = keys.includes(state.settledGame) ? state.settledGame : keys[0];
@@ -477,7 +477,7 @@ window.FiveBets = (() => {
         });
         state.slip = [];
         stampPlaced([res.bet.id]);
-        toast('Parlay placed. It settles after the next 5-stack game.', 'good');
+        toast(`Parlay placed. It settles after the next ${stackWord()} game.`, 'good');
       } catch (e) {
         toast(e.message, 'bad');
       }
@@ -500,7 +500,7 @@ window.FiveBets = (() => {
     state.slip = remaining;
     stampPlaced(placed);
     if (failures.length) toast(failures.join(' · '), 'bad');
-    else toast('Bets placed. They settle after the next 5-stack game.', 'good');
+    else toast(`Bets placed. They settle after the next ${stackWord()} game.`, 'good');
     await loadBets();
     draw();
   }
@@ -702,8 +702,8 @@ window.FiveBets = (() => {
   function rewardsCard() {
     const s = state.status, game = s.game_reward || 0, win = s.win_reward || 0, bonus = s.performance_bonus_max || 0;
     if (!game && !win && !bonus) return '';
-    const rule = `Every squad member earns ${fmt.credits(game)} credits for each 5-stack game${win ? ` (${fmt.credits(game + win)} for a win)` : ''}, ` +
-      `plus a performance bonus of up to ${fmt.credits(bonus)} based on how their ACS compares with their own previous 5-stack games: ` +
+    const rule = `Every squad member earns ${fmt.credits(game)} credits for each ${stackWord()} game${win ? ` (${fmt.credits(game + win)} for a win)` : ''}, ` +
+      `plus a performance bonus of up to ${fmt.credits(bonus)} based on how their ACS compares with their own previous ${stackWord()} games: ` +
       'beat 80% of them and the bonus is 80%, rounded to the nearest 5. With fewer than 5 of those games to compare against, the bonus is half.';
     const byGame = new Map();
     (state.rewards || []).forEach((r) => {
@@ -713,7 +713,7 @@ window.FiveBets = (() => {
     const games = [...byGame.values()].slice(0, REWARD_GAMES).map((rs) => {
       const g = rs[0], won = g.result === 'win';
       const people = rs.map((r) => {
-        const why = r.beat_share == null ? 'fewer than 5 earlier 5-stack games' : `beat ${fmt.pct(r.beat_share)} of their earlier 5-stack games`;
+        const why = r.beat_share == null ? `fewer than 5 earlier ${stackWord()} games` : `beat ${fmt.pct(r.beat_share)} of their earlier ${stackWord()} games`;
         return `<span class="reward" title="${esc(`${r.nickname || r.bettor}: ACS ${fmt.n0(r.acs)}, ${why}`)}"><b>${esc(r.bettor)}</b><span>+${fmt.credits(r.base + r.bonus)}</span></span>`;
       }).join('');
       return `<li class="recent-row reward-row"><span class="chip ${won ? 'win' : 'loss'}">${won ? 'W' : 'L'}</span>` +
@@ -721,7 +721,7 @@ window.FiveBets = (() => {
         `<span class="rewards-list">${people}</span><span class="muted small">${fmt.date(g.started_ts ? g.started_ts * 1000 : null)}</span></li>`;
     }).join('');
     return `<section class="card rewards-card"><h2>Game rewards</h2>${how(`${fmt.credits(game)} a game each, plus up to ${fmt.credits(bonus)} for playing well.`, `${rule} Hover a name for the details.`)}` +
-      (games ? `<ul class="recent">${games}</ul>` : '<p class="muted">No rewards yet. They are paid when the next 5-stack game is recorded.</p>') + '</section>';
+      (games ? `<ul class="recent">${games}</ul>` : `<p class="muted">No rewards yet. They are paid when the next ${stackWord()} game is recorded.</p>`) + '</section>';
   }
 
   // ---- events -------------------------------------------------------------------

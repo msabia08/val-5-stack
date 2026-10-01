@@ -131,7 +131,7 @@
       ${tile('First game / later games', `${recOr(m.first_of_session)} <span class="muted">/</span> ${recOr(m.later_in_session)}`, `of a night · ${pct(m.first_of_session.win_rate)} / ${pct(m.later_in_session.win_rate)} won · ${plural(m.sessions, 'night')}`)}
     </section>`;
     const early = g.length < SMALL_SAMPLE
-      ? `<p class="viz-note">Only ${plural(g.length, '5-stack game')} so far, so treat these as early reads: one more win or loss can move a percentage a lot. Records are shown next to rates for that reason.</p>`
+      ? `<p class="viz-note">Only ${plural(g.length, `${stackWord()} game`)} so far, so treat these as early reads: one more win or loss can move a percentage a lot. Records are shown next to rates for that reason.</p>`
       : '';
 
     const cols = (a, b) => `<div class="viz-cols">${a}${b}</div>`;
@@ -925,12 +925,12 @@
         seg('fc-stat', d.stats.filter((s) => s.group === g).map((s) => ({ v: s.key, label: s.short, on: s.key === d.stat }))) + '</div>').join('') +
       '</section>';
     const intro = how('Each game\'s forecast, made beforehand from earlier games only, next to what really happened.',
-      `Before every game, the odds engine would have predicted a range for each player from their earlier 5-stack games only, ` +
+      `Before every game, the odds engine would have predicted a range for each player from their earlier ${stackWord()} games only, ` +
       `weighting recent games and games on the same map and agent more, exactly like the player-prop lines. ` +
       `About ${pct(d.coverage)} of games should land inside the range, which is lopsided when the stat is (a few big games stretch the top); ` +
       `the tick marks the typical game, where a betting line would sit.`);
     if (!p || !p.overall) {
-      return intro + pickers + `<section class="card"><h2>No forecasts yet</h2><p class="muted">A game gets a forecast once the player has ${d.min_prior} earlier 5-stack games` +
+      return intro + pickers + `<section class="card"><h2>No forecasts yet</h2><p class="muted">A game gets a forecast once the player has ${d.min_prior} earlier ${stackWord()} games` +
         ` (surrenders aren't forecast).</p></section>`;
     }
     // The tiles count the games the chart shows: all of them, or the map / role picked below.
@@ -1135,7 +1135,7 @@
     h = helpers;
     pt = { tl, members, pick };
     withYear = tl.games.some((g) => new Date(g.ts * 1000).getFullYear() !== new Date().getFullYear());
-    if (tl.games.length < 2) return card('trends', 'Trends', '', '<p class="muted">Trends appear after a couple of complete 5-stack games.</p>');
+    if (tl.games.length < 2) return card('trends', 'Trends', '', `<p class="muted">Trends appear after a couple of complete ${stackWord()} games.</p>`);
     const seg = (cls, items) => `<div class="seg" role="tablist">${items.map(([v, label]) =>
       `<button type="button" class="seg-btn ${cls} ${String(v) === String(cls === 'tr-stat' ? pick.stat : pick.range) ? 'on' : ''}" data-v="${h.esc(v)}">${h.esc(label)}</button>`).join('')}</div>`;
     const players = members.map((m) => {
@@ -1154,7 +1154,7 @@
     const rows = ranked.map(({ m, avg, last }) => [m.nickname, ptVal(avg, pick.stat), ptVal(last, pick.stat)]);
     return card('trends', `Trends: ${label}`, take,
       `<div class="tr-controls">${seg('tr-stat', TREND_STATS)}${seg('tr-range', TREND_RANGES)}</div><div class="tr-legend">${players}</div>` + slot('trends', 290) +
-      `<p class="muted small">${pick.range === 'all' ? 'Every complete 5-stack game' : `The last ${games.length} complete 5-stack games`}, oldest to newest; each point is one game. The player picked above stands out; click a name to hide or show that player, and hover for everyone's value at a game.</p>`,
+      `<p class="muted small">${pick.range === 'all' ? `Every complete ${stackWord()} game` : `The last ${games.length} complete ${stackWord()} games`}, oldest to newest; each point is one game. The player picked above stands out; click a name to hide or show that player, and hover for everyone's value at a game.</p>`,
       table(['Player', `Average over ${span}`, 'Latest game'], rows));
   }
 

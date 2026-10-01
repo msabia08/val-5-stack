@@ -16,7 +16,7 @@ import webbrowser
 from email.utils import formatdate, parsedate_to_datetime
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .arcade import ArcadeManager
 from .slots import SlotManager
@@ -27,13 +27,13 @@ from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, 
 from .db import DB
 from .forecasts import build_forecasts
 from .gamestate import ending
-from .henrik import HenrikClient
+from .henrik import HenrikClient, HenrikError
 from .insights import betting_report, build_insights
 from .odds import OddsEngine
 from .recap import build_recap
 from .rewards import RewardManager
 from .stats import build_stats
-from .tracker import Tracker
+from .tracker import ROSTER_MAX, ROSTER_MIN, Tracker, TrackerError
 from .tunnel import Tunnel
 
 KNOWN_MAPS = ["Abyss", "Ascent", "Bind", "Breeze", "Corrode", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset"]
@@ -103,12 +103,49 @@ class App:
         self.bananas.earn()  # bananas for the bets just won and the rewards just paid
         return settled
 
+    def _member_public(self, m):
+        return {"puuid": m["puuid"], "name": m["name"], "tag": m["tag"], "nickname": m.get("nickname") or m["name"],
+                "bettor": self.rewards.account_name(m),  # their betting account, so bettors share the member's colour
+                "linked": bool(m.get("bettor")),  # that account is the one they signed up / linked with themselves
+                "active": bool(m.get("active", 1)), "previous_name": m.get("previous_name"),
+                "added_at": m.get("added_at"), "name_checked_ts": m.get("name_checked_ts")}
+
+    def members_public(self):
+        """The active squad as the page sees it: each member's current Riot ID, nickname and betting account."""
+        return [self._member_public(m) for m in self.db.members()]
+
+    def pool_public(self):
+        """Everyone in the pool: the active squad first, then the bench."""
+        return [self._member_public(m) for m in self.db.pool()]
+
+    def own_member(self, bettor):
+        """The pool entry a betting account owns, as the page sees it."""
+        m = self.db.member_by_bettor(bettor["name"])
+        return {"puuid": m["puuid"], "name": m["name"], "tag": m["tag"], "nickname": m.get("nickname") or m["name"],
+                "active": bool(m.get("active", 1))} if m else None
+
+    def link_riot_id(self, bettor, riot_id, nickname=""):
+        """Put a betting account's Riot ID on the squad (see Tracker.set_riot_id); starts a re-scan if the games
+        that count may have changed. Returns the tracker's result, or {warning} when it can't be done here."""
+        if self.demo:
+            return {"warning": "Riot IDs can't be linked in demo mode."}
+        if not self.tracker:
+            return {"warning": "Riot IDs can be linked once the HenrikDev API key is set."}
+        try:
+            r = self.tracker.set_riot_id(bettor["name"], riot_id, nickname)
+        except (TrackerError, HenrikError) as e:
+            return {"warning": getattr(e, "message", None) or str(e)}
+        if r.get("changes"):  # the active squad changed: pick up anything the stored lines couldn't prove
+            self.tracker.request_sync(full=True)
+            self.tracker.wake()
+        return r
+
+    def roster_info(self):
+        return {"min": ROSTER_MIN, "max": ROSTER_MAX, "size": self.db.count_members(), "pool": self.db.count_pool(),
+                "editable": bool(self.tracker) and not self.demo, "admin_required": bool(self.auth.admin_password)}
+
     def status(self):
-        members = [
-            {"puuid": m["puuid"], "name": m["name"], "tag": m["tag"], "nickname": m.get("nickname") or m["name"],
-             "bettor": self.rewards.account_name(m)}  # their betting account, so bettors share the member's colour
-            for m in self.db.members()
-        ]
+        members = self.members_public()
         log = list(self.tunnel.logs)
         st = {
             "configured": not self.problems,
@@ -118,7 +155,8 @@ class App:
             "modes": self.cfg.get("modes") or [],
             "poll_interval_minutes": self.cfg.get("poll_interval_minutes", 10),
             "members": members,
-            "expected_members": len(self.cfg.get("members") or []),
+            "expected_members": len(members),
+            "roster": self.roster_info(),
             "games": self.db.count_matches(),
             "record": self.db.record(),
             "api_key_masked": mask(self.cfg.get("api_key")),
@@ -317,6 +355,10 @@ class Handler(BaseHTTPRequestHandler):
                                              app.engine.edge))
         if path == "/api/content":
             return self._json(app.content())
+        if path == "/api/roster":
+            pool = app.pool_public()
+            return self._json({"members": [m for m in pool if m["active"]], "bench": [m for m in pool if not m["active"]],
+                               "roster": app.roster_info()})
         if path == "/api/matches":
             matches = app.db.matches(int(qs.get("limit") or 300))
             by = defaultdict(list)
@@ -387,7 +429,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"bettor": {**app.bets.public(me), "open_bets": len(pending), "bananas": app.bananas.wallet(me["name"]),
                                           "open_stake": round(sum(b["stake"] for b in pending), 2), "recent_wins": wins,
                                           "recent_received": received,
-                                          "recent_taxes": app.db.taxes_collected(me["name"], 20)}})
+                                          "recent_taxes": app.db.taxes_collected(me["name"], 20),
+                                          "member": app.own_member(me)}})
         if path == "/api/shop":
             return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/arcade":
@@ -402,6 +445,30 @@ class Handler(BaseHTTPRequestHandler):
             except BetError as e:
                 return self._json({"error": str(e)}, 404)
         return self._json({"error": "Not found"}, 404)
+
+    # ---- the squad roster ---------------------------------------------------
+    def _roster_blocked(self):
+        """Answer (and return True) when the roster can't be edited: demo mode, no API key, or no admin password."""
+        app = self.app
+        if app.demo:
+            self._json({"error": "Demo mode: the demo squad is fixed."}, 400)
+        elif not app.tracker:
+            self._json({"error": "Add your HenrikDev API key first (see Setup)."}, 400)
+        elif not app.auth.is_admin(self.headers.get("X-Admin-Password")):
+            self._json({"error": "Admin password required for that."}, 403)
+        else:
+            return False
+        return True
+
+    def _roster_reply(self, extra, resync):
+        """The squad after a change; a full re-scan is started when the games that count may have changed."""
+        app = self.app
+        if resync:
+            app.tracker.request_sync(full=True)
+            app.tracker.wake()
+        pool = app.pool_public()
+        return self._json({"ok": True, "members": [m for m in pool if m["active"]], "bench": [m for m in pool if not m["active"]],
+                           "roster": app.roster_info(), **extra})
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -435,11 +502,59 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "busy": True}, 202)
                 app.tracker.request_sync(full=bool(body.get("full")))
                 return self._json({"ok": True, "started": True}, 202)
+            if path == "/api/roster":  # a new player joins the bench unless `active` is asked for and there's room
+                if self._roster_blocked():
+                    return
+                r = app.tracker.add_member(body.get("riot_id"), body.get("nickname"), active=bool(body.get("active")))
+                return self._roster_reply({"member": r["member"], "added": r["added"], "renamed": r["renamed"],
+                                           "changes": r.get("changes")}, resync=bool(r.get("changes")))
+            if path == "/api/roster/active":  # the whole line-up at once (drag and drop lands here)
+                if self._roster_blocked():
+                    return
+                r = app.tracker.set_active_list(body.get("puuids") or [])
+                return self._roster_reply({"changed": r["changed"], "changes": r["changes"]}, resync=r["changed"])
+            if path == "/api/bettor/riot-id/active":  # your own entry: onto the squad or onto the bench
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor first."}, 403)
+                if app.demo or not app.tracker:
+                    return self._json({"error": "The squad can't be changed here (demo mode or no API key)."}, 400)
+                r = app.tracker.set_own_active(me["name"], bool(body.get("active")))
+                return self._roster_reply({"changed": r["changed"], "changes": r["changes"], "member": app.own_member(me)},
+                                          resync=r["changed"])
+            if path == "/api/roster/refresh":
+                if app.demo or not app.tracker:
+                    return self._json({"error": "Renames are only checked with live tracking."}, 400)
+                return self._json({"ok": True, "renamed": app.tracker.refresh_names(force=True),
+                                   "members": app.members_public()})
+            if path.startswith("/api/roster/"):
+                if self._roster_blocked():
+                    return
+                m = app.tracker.set_nickname(unquote(path.rsplit("/", 1)[1]), body.get("nickname"))
+                return self._roster_reply({"member": m}, resync=False)
             if path == "/api/bettor/register":
                 b = app.bets.register(body.get("name"), body.get("password"))
                 app.bananas.earn()  # a new account's starting bananas
                 cookie = auth.bettor_cookie(b, self.is_https())
-                return self._json({"bettor": app.bets.public(b)}, 201, extra=[("Set-Cookie", cookie)])
+                reply = {"bettor": app.bets.public(b)}
+                riot = (body.get("riot_id") or "").strip()
+                if riot:  # signing up with a Riot ID puts the new account's owner on the squad
+                    r = app.link_riot_id(b, riot, b["name"])
+                    if "warning" in r:
+                        reply["warning"] = "Account created, but the Riot ID was not added: " + r["warning"]
+                    else:
+                        reply["member"] = app.own_member(b)
+                return self._json(reply, 201, extra=[("Set-Cookie", cookie)])
+            if path == "/api/bettor/riot-id":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor first."}, 403)
+                r = app.link_riot_id(me, body.get("riot_id"), body.get("nickname") or "")
+                if "warning" in r:
+                    return self._json({"error": r["warning"]}, 400)
+                return self._json({"ok": True, "member": app.own_member(me), "added": r["added"], "renamed": r["renamed"],
+                                   "replaced": r["replaced"], "active": r["active"], "changes": r.get("changes"),
+                                   "members": app.members_public()})
             if path == "/api/bettor/login":
                 name = (body.get("name") or "").strip()
                 key = f"bettor|{self.client_ip()}|{name.lower()}"
@@ -521,8 +636,10 @@ class Handler(BaseHTTPRequestHandler):
                 app.bananas.earn()  # the new season's starting bananas (the reset zeroed every wallet)
                 return self._json({"ok": True, "season": season, "bettors": app.bets.leaderboard()})
             return self._json({"error": "Not found"}, 404)
-        except BetError as e:
+        except (BetError, TrackerError) as e:
             return self._json({"error": str(e)}, 400)
+        except HenrikError as e:
+            return self._json({"error": f"HenrikDev: {e.message}"}, 400)
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
@@ -532,6 +649,20 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.app.auth.enabled and not self._authed():
                 return self._json({"error": "Login required"}, 401)
+            if path == "/api/bettor/riot-id":  # leave the squad
+                app, auth = self.app, self.app.auth
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor first."}, 403)
+                if app.demo or not app.tracker:
+                    return self._json({"error": "The squad can't be changed here (demo mode or no API key)."}, 400)
+                changes = app.tracker.unlink_member(me["name"])
+                return self._roster_reply({"changes": changes}, resync=changes["was_active"])
+            if path.startswith("/api/roster/"):
+                if self._roster_blocked():
+                    return
+                changes = self.app.tracker.remove_member(unquote(path.rsplit("/", 1)[1]))
+                return self._roster_reply({"changes": changes}, resync=changes["was_active"])
             if path.startswith("/api/bets/"):
                 auth = self.app.auth
                 me = auth.current_bettor(self.headers.get("Cookie"), self.app.db)
@@ -539,7 +670,7 @@ class Handler(BaseHTTPRequestHandler):
                 bet = self.app.bets.cancel(int(path.rsplit("/", 1)[1]), by=me["name"] if me else None, admin=admin)
                 return self._json({"bet": bet, "bettors": self.app.bets.leaderboard()})
             return self._json({"error": "Not found"}, 404)
-        except BetError as e:
+        except (BetError, TrackerError) as e:
             return self._json({"error": str(e)}, 400)
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()

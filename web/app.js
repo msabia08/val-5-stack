@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -92,7 +92,11 @@
     }
     return data;
   }
-  const loadStatus = async () => { state.status = await api('/api/status'); renderHeader(); };
+  const loadStatus = async () => {
+    state.status = await api('/api/status');
+    window.FiveRoster.size = (state.status.members || []).length; // "5-stack" wording follows the squad size
+    renderHeader();
+  };
   // The signed-in bettor (balance and open bets) for the top-bar chip; bets.js's loadBets refreshes it too.
   const loadMe = async () => {
     try { state.me = (await api('/api/bettor/me')).bettor; } catch (e) { return; }
@@ -305,9 +309,9 @@
     const rec = s.record || {};
     const el = $('#team-record');
     if (rec.games) {
-      el.textContent = `${rec.wins}-${rec.losses}${rec.draws ? '-' + rec.draws : ''} as a 5-stack · ${Math.round((rec.wins / rec.games) * 100)}% win rate`;
+      el.textContent = `${rec.wins}-${rec.losses}${rec.draws ? '-' + rec.draws : ''} as a ${stackWord()} · ${Math.round((rec.wins / rec.games) * 100)}% win rate`;
     } else {
-      el.textContent = s.configured ? 'No 5-stack games tracked yet' : 'Setup needed';
+      el.textContent = s.configured ? `No ${stackWord()} games tracked yet` : 'Setup needed';
     }
     const pill = $('#status-pill');
     if (s.demo) {
@@ -376,7 +380,7 @@
       return `<div class="card empty"><h2>Let's get set up</h2><p>${esc(s.problems.join(' '))}</p><p><a href="#setup">Open the setup guide →</a></p></div>`;
     }
     const t = s.tracker || {};
-    return `<div class="card empty"><h2>No 5-stack games yet</h2>` +
+    return `<div class="card empty"><h2>No ${stackWord()} games yet</h2>` +
       `<p>${t.syncing ? 'Scanning everyone\'s match history now…' : 'Games where all five of you were on the same team will show up here after the next sync.'}</p>` +
       `<p class="muted small">Tracked modes: ${esc((s.modes || []).join(', ') || 'all')}. Play a game together, then hit Sync now.</p></div>`;
   }
@@ -647,15 +651,15 @@
 
   function devBlock(m) {
     const dv = m.deviation;
-    if (!dv) return '<h3>Compared with their other games</h3><p class="muted small">No non-5-stack games stored for this player yet.</p>';
+    if (!dv) return `<h3>Compared with their other games</h3><p class="muted small">No non-${stackWord()} games stored for this player yet.</p>`;
     const rows = dv.metrics.map((mt) =>
       `<tr><td>${esc(mt.label)} <span class="muted small">${mt.better === 'lower' ? '(lower is better)' : ''}</span></td>` +
       `<td class="num">${devValue(mt.key, mt.stack)}</td><td class="num">${devValue(mt.key, mt.usual)}</td>` +
       `<td class="num">${devDiff(mt)}</td><td>${devBadge(mt.verdict)}</td></tr>`).join('');
     const note = dv.enough ? '' : ` Differences are judged once both sides have ${dv.min_games} games.`;
     return `<h3>Compared with their other games</h3>
-      <p class="muted small">${dv.stack_games} 5-stack games vs. ${dv.usual_games} other games (${esc(dv.usual_modes.join(', ') || 'tracked modes')}).${note}</p>
-      <div class="table-wrap"><table class="compact"><thead><tr><th>Stat</th><th class="num">5-stack</th><th class="num">Other games</th><th class="num">Difference</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      <p class="muted small">${dv.stack_games} ${stackWord()} games vs. ${dv.usual_games} other games (${esc(dv.usual_modes.join(', ') || 'tracked modes')}).${note}</p>
+      <div class="table-wrap"><table class="compact"><thead><tr><th>Stat</th><th class="num">${stackWord()}</th><th class="num">Other games</th><th class="num">Difference</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   // ---- players ----------------------------------------------------------------
@@ -737,11 +741,11 @@
       return `<tr class="pl-row${m.puuid === pick ? ' on' : ''}" data-puuid="${esc(m.puuid)}"><th scope="row"><span class="swatch s${slot}"></span>${esc(m.nickname)}</th>${cells}${vs}</tr>`;
     }).join('');
     return `<section class="card"><h2>Squad comparison</h2>
-      ${how(`Per-game averages over the squad's ${fmt.n0(members[0].overall.games)} 5-stack games. Click a row for that player's detail.`,
+      ${how(`Per-game averages over the squad's ${fmt.n0(members[0].overall.games)} ${stackWord()} games. Click a row for that player's detail.`,
         `The best in each column is highlighted. ▲ / ▼ mark a stat trending up or down: the player's last ${TREND_RECENT} games against the ${TREND_BEFORE} before them, 5% or more apart (green is good; for deaths, fewer is good). Hover a number for the two figures.` +
-        (PLAYER_TABLE_OTHER_GAMES ? ` <b>5-stack vs. their other games</b> compares each player's 5-stack games with their games outside the stack (solo queue or smaller parties): "better" or "worse" means the gap is about two standard errors or more, "slightly" one to two.` : ''))}
+        (PLAYER_TABLE_OTHER_GAMES ? ` <b>${stackWord()} vs. their other games</b> compares each player's ${stackWord()} games with their games outside the stack (solo queue or smaller parties): "better" or "worse" means the gap is about two standard errors or more, "slightly" one to two.` : ''))}
       <div class="table-wrap"><table class="pl-table"><thead>
-        ${PLAYER_TABLE_OTHER_GAMES ? `<tr><th></th><th colspan="${PLAYER_COLS.length}" class="pl-group">This 5-stack</th><th colspan="4" class="pl-group pl-split">5-stack vs. their other games</th></tr>` : ''}
+        ${PLAYER_TABLE_OTHER_GAMES ? `<tr><th></th><th colspan="${PLAYER_COLS.length}" class="pl-group">This ${stackWord()}</th><th colspan="4" class="pl-group pl-split">${stackWord()} vs. their other games</th></tr>` : ''}
         <tr><th>Player</th>${PLAYER_COLS.map(([label]) => `<th class="num">${label}</th>`).join('')}${PLAYER_TABLE_OTHER_GAMES ? '<th class="num pl-split">ACS</th><th class="num">K/D</th><th class="num">Win %</th><th>Biggest change</th>' : ''}</tr>
       </thead><tbody>${rows}</tbody></table></div></section>`;
   }
@@ -776,7 +780,7 @@
       <div class="pl-picker">${picker}</div>
       <header class="player-head"><span class="swatch s${slot} lg"></span><div><h2>${esc(m.nickname)}</h2><div class="muted small">${esc(m.name)}#${esc(m.tag)}${m.tier_name ? ' · ' + esc(m.tier_name) : ''}</div></div>` +
         `${PLAYER_CARD_FORM ? `<div class="form">${form}</div>` : ''}<div class="pl-links"><a href="#forecasts" class="go-link" data-forecast-player="${esc(m.puuid)}">${esc(m.nickname)}'s forecasts ›</a><a href="#viz" class="go-link">Charts ›</a></div></header>
-      <p class="muted small">Per-game averages; the lines show the last ${m.form.length} games, and High / Low are their best and worst complete 5-stack games (click one for its recap).</p>
+      <p class="muted small">Per-game averages; the lines show the last ${m.form.length} games, and High / Low are their best and worst complete ${stackWord()} games (click one for its recap).</p>
       <div class="kpis small pl-tiles">${tiles}${bestTile}</div>
       <div class="grid-2"><div><h3>By agent</h3>${table(m.by_agent, 'agent')}</div><div><h3>By map</h3>${table(m.by_map, 'map')}</div></div>
       ${PLAYER_CARD_OTHER_GAMES ? devBlock(m) : ''}
@@ -989,6 +993,78 @@
       ${groups || '<p class="muted">No games match these filters.</p>'}</section>`;
   }
 
+  // ---- squad roster ----------------------------------------------------------------
+  // The pool is everyone the tracker knows; the active squad (2 to 5 of them) is who it follows: games count when
+  // every active player was on the same team. Rows drag between the Active squad and Bench tables (the buttons do
+  // the same, for touch screens), the whole line-up is posted to /api/roster/active, and the history is re-derived.
+  // New players join the bench; each signed-in bettor manages their own entry through /api/bettor/riot-id.
+  const loadRoster = async () => { state.roster = await api('/api/roster'); };
+
+  function viewSquad() {
+    const s = state.status, me = state.me, roster = state.roster || {};
+    const active = roster.members || s.members || [], bench = roster.bench || [];
+    const ro = s.roster || { min: 2, max: 5, size: active.length, pool: active.length + bench.length, editable: false, admin_required: false };
+    const idx = memberIndex();
+    const mine = me && me.member ? me.member.puuid : null;
+    const full = active.length >= ro.max, atMin = active.length <= ro.min, canEdit = ro.editable;
+    const row = (m, isActive) => {
+      const slot = isActive ? (idx.get(m.puuid)?.slot || 1) : 0;
+      const own = m.puuid === mine;
+      let actions = !canEdit ? '' : isActive
+        ? `<button class="btn ghost small squad-swap" data-puuid="${esc(m.puuid)}" data-to="bench" ${atMin ? `disabled title="The squad needs at least ${ro.min} players"` : ''}>Bench</button> `
+        : `<button class="btn ghost small squad-swap" data-puuid="${esc(m.puuid)}" data-to="active" ${full ? `disabled title="The squad is full (${ro.max}); bench someone first"` : ''}>Swap in</button> `;
+      if (canEdit && own) {
+        actions += `<button class="btn ghost small squad-edit" data-current="${esc(m.name)}#${esc(m.tag)}">Change Riot ID</button> ` +
+          `<button class="btn ghost small roster-nick" data-puuid="${esc(m.puuid)}" data-nick="${esc(m.nickname)}" data-own="1" data-riot="${esc(m.name)}#${esc(m.tag)}">Nickname</button> ` +
+          `<button class="btn ghost small squad-leave" ${isActive && atMin ? `disabled title="The squad needs at least ${ro.min} players"` : ''}>Remove me</button>`;
+      } else if (canEdit) {
+        if (!m.linked && me && !mine) actions += `<button class="btn ghost small squad-claim" data-riot="${esc(m.name)}#${esc(m.tag)}">This is me</button> `;
+        actions += `<button class="btn ghost small roster-nick" data-puuid="${esc(m.puuid)}" data-nick="${esc(m.nickname)}">Nickname</button> ` +
+          `<button class="btn ghost small roster-remove" data-puuid="${esc(m.puuid)}" data-name="${esc(m.name)}#${esc(m.tag)}" ${isActive && atMin ? `disabled title="The squad needs at least ${ro.min} players"` : ''}>${ro.admin_required ? 'Admin remove' : 'Remove'}</button>`;
+      }
+      return `<tr class="${own ? 'me' : ''}" ${canEdit ? 'draggable="true"' : ''} data-puuid="${esc(m.puuid)}" data-name="${esc(m.nickname)}">` +
+        `<td>${canEdit ? '<span class="grip" aria-hidden="true" title="Drag to the other table">⋮⋮</span>' : ''}${slot ? `<span class="swatch s${slot}"></span>` : ''}<b>${esc(m.nickname)}</b>${own ? ' <span class="muted small">(you)</span>' : ''}</td>` +
+        `<td>${esc(m.name)}#${esc(m.tag)}${m.previous_name ? `<div class="muted small">was ${esc(m.previous_name)}</div>` : ''}</td>` +
+        `<td class="muted small">${m.linked ? esc(m.bettor) : `<span title="Nobody has claimed this entry from their betting account yet">${esc(m.bettor)} · unclaimed</span>`}</td>` +
+        `<td class="muted small">${m.name_checked_ts ? fmt.ago(m.name_checked_ts) : 'not yet'}</td>` +
+        `<td class="actions">${actions}</td></tr>`;
+    };
+    const head = '<thead><tr><th>Nickname</th><th>Riot ID</th><th>Account</th><th>Name checked</th><th></th></tr></thead>';
+    const spots = Array.from({ length: Math.max(0, ro.max - active.length) }, () =>
+      `<tr class="slot-empty"><td colspan="5">${canEdit ? 'Open spot: drag a player here, or Swap in from the bench' : 'Open spot'}</td></tr>`).join('');
+    const activeTable = `<div class="table-wrap"><table class="roster">${head}<tbody class="drop-target" data-zone="active">${active.map((m) => row(m, true)).join('')}${spots}</tbody></table></div>`;
+    const benchRows = bench.map((m) => row(m, false)).join('') ||
+      `<tr class="slot-empty"><td colspan="5">${canEdit ? 'Nobody on the bench. Drag a player here to sit them out, or add one below.' : 'Nobody on the bench.'}</td></tr>`;
+    const benchTable = `<div class="table-wrap"><table class="roster">${head}<tbody class="drop-target" data-zone="bench">${benchRows}</tbody></table></div>`;
+    const why = s.demo ? 'Demo mode: the demo squad is fixed.' : !canEdit ? 'Add your HenrikDev API key first (see Setup, the ⚙ button).' : '';
+    let joinCard;
+    if (why) joinCard = `<p class="muted">${esc(why)}</p>`;
+    else if (!me) joinCard = '<p class="muted">Sign in (the profile chip, top right) or create an account with your Riot ID to put yourself in the pool.</p>';
+    else if (me.member) joinCard = `<p class="muted">You're ${me.member.active ? 'on the squad' : 'on the bench'} as <b>${esc(me.member.name)}#${esc(me.member.tag)}</b>. Use <em>Change Riot ID</em> on your row if you renamed or want another account counted, <em>Bench</em> / <em>Swap in</em> to sit out or play, or <em>Remove me</em> to leave the pool.</p>`;
+    else joinCard = `<div class="roster-add"><label>Your Riot ID<input id="squad-join-riot" placeholder="Name#TAG" maxlength="40" autocomplete="off"></label>` +
+        `<label>Nickname (optional)<input id="squad-join-nick" placeholder="What the squad calls you" maxlength="32" autocomplete="off" value="${esc(me.name)}"></label>` +
+        `<button class="btn" id="squad-join">Join as ${esc(me.name)}</button></div>` +
+        `<p class="muted small">Looked up on HenrikDev, so use your current Riot ID. You go straight onto the squad when there's a spot, otherwise onto the bench. Your rewards go to this account.</p>`;
+    const adminCard = !canEdit ? '' :
+      `<details class="how"><summary>Add someone else to the bench${ro.admin_required ? ' (admin)' : ''}</summary><div class="how-body">` +
+      `<div class="roster-add"><label>Riot ID<input id="roster-riot" placeholder="Name#TAG" maxlength="40" autocomplete="off"></label>` +
+      `<label>Nickname (optional)<input id="roster-nickname" placeholder="What the squad calls them" maxlength="32" autocomplete="off"></label>` +
+      `<button class="btn" id="roster-add">Add</button></div>` +
+      `<p class="muted small">For a player without a betting account. They land on the bench; drag them into the squad when they're playing. They can claim the entry later with <em>This is me</em> after signing in.</p></div></details>`;
+    return `<section class="card"><h2>Active squad <span class="muted">${active.length} of ${ro.max}</span></h2>
+      ${how(`Games count when every player in this table was on the same team. Between ${ro.min} and ${ro.max} players; drag rows in from the bench (or use the buttons) when the line-up changes.`,
+        `<p>The tracker follows the active squad, whoever else they queue with. A game is recorded when all of them played it on the same team, so a squad of two counts every game those two played together and a squad of five only counts games with all five.</p>` +
+        `<p>Everyone the tracker knows is in the pool; whoever isn't playing sits on the bench below. Changing the line-up re-derives the recorded games from the match lines already stored (no extra API calls): games the new player wasn't in stop counting, games the current squad all played start counting. A full re-scan then runs for anything only the full match records can prove. Open bets settle on the next recorded game as usual; rewards go to the account that owns each entry.</p>` +
+        `<p>Your entry is yours: create your betting account with your Riot ID or add it later, change it if you rename or switch accounts, sit out or swap in, and remove it when you want out. Players are tracked by their Riot account, not their name; renames are picked up on their own (once a day, and on every sync when the API includes the name) and the old name is shown.</p>` +
+        (ro.admin_required ? '<p>Changing the line-up, removing someone else or adding a player without an account asks for the admin password.</p>' : ''))}
+      ${activeTable}
+      ${canEdit ? '<div class="btn-row"><button class="btn ghost small" id="roster-refresh">Check for renames now</button></div>' : ''}</section>
+      <section class="card"><h2>Bench <span class="muted">${bench.length}</span></h2>
+      <p class="muted small">In the pool but not playing right now. Their games aren't tracked until they're swapped in.</p>
+      ${benchTable}</section>
+      <section class="card"><h2>Your place in the pool</h2>${joinCard}${adminCard}</section>`;
+  }
+
   // ---- setup -----------------------------------------------------------------------
   function viewSetup() {
     const s = state.status, t = s.tracker || {}, rl = s.ratelimit || {};
@@ -1010,18 +1086,18 @@
         <li>Config: ${s.demo ? '<span class="status pending">demo mode</span>' : s.configured ? '<span class="status won">ready</span>' : `<span class="status lost">needs attention</span> ${esc((s.problems || []).join(' '))}`}</li>
         <li>API key: ${esc(s.api_key_masked || 'not set')}</li>
         <li>Region: ${esc(s.region || '–')} · Modes: ${esc((s.modes || []).join(', ') || 'all')} · Poll every ${esc(s.poll_interval_minutes)} min</li>
-        <li>Members resolved: ${(s.members || []).length} of ${s.expected_members}</li>
+        <li>Squad: ${(s.members || []).length} player${(s.members || []).length === 1 ? '' : 's'} (<a href="#squad">manage on the Squad tab</a>)</li>
         <li>Last sync: ${t.last_sync ? fmt.ago(t.last_sync) : 'never'}${r ? ` · ${r.new_matches} new game(s), ${r.candidates} candidates checked, ${r.api_calls} API calls` : ''}${t.last_error ? ` · <span class="down">${esc(t.last_error)}</span>` : ''}</li>
         <li>Rate limit: ${rl.remaining != null ? `${rl.remaining} of ${rl.limit} requests left in the current window` : 'unknown until the first request'}</li>
-        <li>5-stack games stored: ${s.games}</li></ul>
+        <li>${stackWord()} games stored: ${s.games}</li></ul>
         <div class="btn-row"><button class="btn" id="sync-now" ${!s.configured || s.demo ? 'disabled' : ''}>Sync now</button><button class="btn ghost" id="sync-full" ${!s.configured || s.demo ? 'disabled' : ''}>Full re-scan</button></div></section>
       ${onlineCard}
-      <section class="card"><h2>Squad</h2>${members ? `<ul class="plain">${members}</ul>` : '<p class="muted">No members resolved yet.</p>'}</section>
+      <section class="card"><h2>Squad</h2>${members ? `<ul class="plain">${members}</ul>` : '<p class="muted">Nobody on the squad yet.</p>'}<p class="muted small">Add or remove players on the <a href="#squad">Squad tab</a>.</p></section>
       <section class="card"><h2>How to set up</h2><ol>
         <li>Get a free HenrikDev API key: open <a href="https://api.henrikdev.xyz/dashboard/" target="_blank" rel="noopener">api.henrikdev.xyz/dashboard</a>, sign in with Discord, and generate a <em>Basic</em> key.</li>
-        <li>Open <code>config.json</code> next to <code>server.py</code>. Paste the key into <code>api_key</code>, set your <code>region</code>, and list all five Riot IDs (Name#TAG) under <code>members</code>. Nicknames are optional.</li>
-        <li>Restart the server (<code>python server.py</code> or <code>run.bat</code>). The first sync scans everyone's stored match history and keeps only games where all five of you were on the same team.</li>
-        <li>Leave it running. It re-checks every few minutes, records new 5-stack games and settles open bets automatically. Set <code>host</code> to <code>0.0.0.0</code> to let friends on your network open it too.</li></ol>
+        <li>Open <code>config.json</code> next to <code>server.py</code>. Paste the key into <code>api_key</code>, set your <code>region</code>, and (optionally) list your squad's Riot IDs (Name#TAG) under <code>members</code> to seed the squad; the Squad tab manages it from then on.</li>
+        <li>Restart the server (<code>python server.py</code> or <code>run.bat</code>). The first sync scans everyone's stored match history and keeps only games where everyone on the squad was on the same team.</li>
+        <li>Leave it running. It re-checks every few minutes, records new ${stackWord()} games and settles open bets automatically. Set <code>host</code> to <code>0.0.0.0</code> to let friends on your network open it too.</li></ol>
         <p class="muted small">Only game modes listed in <code>modes</code> count (default: competitive, unrated, premier). HenrikDev's stored history can have gaps; a game that is missing for one player is verified through the full match record.</p></section>
       <section class="card"><h2>Sync log</h2><div class="log">${log || '<span class="muted">Nothing yet.</span>'}</div></section>`;
   }
@@ -1033,6 +1109,7 @@
       switch (state.view) {
         case 'overview': view.innerHTML = viewOverview(); break;
         case 'players': view.innerHTML = viewPlayers(); break;
+        case 'squad': view.innerHTML = viewSquad(); break;
         case 'forecasts': view.innerHTML = viewForecasts(); break;
         case 'viz': view.innerHTML = viewViz(); break;
         case 'odds': view.innerHTML = viewOdds(); break;
@@ -1060,6 +1137,7 @@
       switch (state.view) {
         case 'overview': await Promise.all([loadStats(), loadOverview()]); break;
         case 'players': await loadStats(); break;
+        case 'squad': await Promise.all([loadStatus(), loadMe(), loadRoster()]); break;
         case 'forecasts': await loadForecasts(); break;
         case 'viz': await loadInsights(); break;
         case 'odds': await Promise.all([loadOdds(), loadBets()]); break;
@@ -1132,6 +1210,131 @@
     ['map', 'result', 'mode'].forEach((k) => $('#f-' + k)?.addEventListener('change', (e) => { state.matchFilter[k] = e.target.value; draw(); }));
     $('#sync-now')?.addEventListener('click', () => sync(false));
     $('#sync-full')?.addEventListener('click', () => sync(true));
+    // Squad tab: line-up, add, remove, nickname, rename check. Edits ask for the admin password when one is set.
+    const squadReload = async () => {
+      await Promise.all([loadStatus(), loadMe(), state.view === 'squad' ? loadRoster() : Promise.resolve()]);
+      draw();
+      if (state.status.tracker?.syncing) pollUntilIdle();
+    };
+    const rosterCall = async (path, opts, done) => {
+      const headers = {};
+      if (state.status.roster && state.status.roster.admin_required) {
+        const pw = window.prompt('Admin password');
+        if (pw == null) return;
+        headers['X-Admin-Password'] = pw;
+      }
+      try {
+        const r = await api(path, { ...opts, headers });
+        toast(done(r), 'good');
+        await squadReload();
+      } catch (e) {
+        toast(e.message, 'bad');
+      }
+    };
+    // The line-up: move one player onto the squad (before `before`, if given) or onto the bench, then post the
+    // whole active list. Drag and drop and the Bench / Swap in buttons both end up here.
+    const applyLineup = (puuid, toActive, before) => {
+      const ro = state.status.roster || { min: 2, max: 5 };
+      const current = ((state.roster && state.roster.members) || state.status.members || []).map((m) => m.puuid);
+      const next = current.filter((p) => p !== puuid);
+      if (toActive) {
+        const at = before ? next.indexOf(before) : -1;
+        if (at >= 0) next.splice(at, 0, puuid); else next.push(puuid);
+      }
+      if (next.length < ro.min) { toast(`The squad needs at least ${ro.min} players; swap someone in first`, 'bad'); return; }
+      if (next.length > ro.max) { toast(`The squad is full (${ro.max}); bench someone first`, 'bad'); return; }
+      if (next.join() === current.join()) return;
+      rosterCall('/api/roster/active', { method: 'POST', body: JSON.stringify({ puuids: next }) },
+        (r) => (r.changed ? 'Line-up changed. Re-checking the history…' : 'Order saved'));
+    };
+    $$('.squad-swap', view).forEach((b) => b.addEventListener('click', () => applyLineup(b.dataset.puuid, b.dataset.to === 'active')));
+    let dragging = null;
+    $$('tr[draggable="true"]', view).forEach((tr) => {
+      tr.addEventListener('dragstart', (e) => {
+        dragging = tr.dataset.puuid;
+        tr.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', dragging); } catch (err) { /* not supported */ }
+      });
+      tr.addEventListener('dragend', () => { tr.classList.remove('dragging'); $$('.drop-target.drag-over', view).forEach((z) => z.classList.remove('drag-over')); });
+    });
+    $$('.drop-target', view).forEach((zone) => {
+      zone.addEventListener('dragover', (e) => { if (!dragging) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave', (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over'); });
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        const puuid = dragging || e.dataTransfer.getData('text/plain');
+        dragging = null;
+        if (!puuid) return;
+        const over = e.target.closest('tr[data-puuid]');
+        const before = over && over.dataset.puuid !== puuid ? over.dataset.puuid : undefined;
+        applyLineup(puuid, zone.dataset.zone === 'active', before);
+      });
+    });
+    $('#roster-add')?.addEventListener('click', () => {
+      const riot = ($('#roster-riot')?.value || '').trim(), nickname = ($('#roster-nickname')?.value || '').trim();
+      if (!riot.includes('#')) { toast('Enter a Riot ID like Name#TAG', 'bad'); return; }
+      rosterCall('/api/roster', { method: 'POST', body: JSON.stringify({ riot_id: riot, nickname }) }, (r) =>
+        r.added ? `${r.member.nickname} added to the bench. Drag them into the squad when they're playing.`
+          : r.renamed ? `${r.member.nickname} is already in the pool; updated to ${r.member.name}#${r.member.tag}`
+          : `${r.member.nickname} is already in the pool`);
+    });
+    $('#roster-riot')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#roster-add')?.click(); });
+    $$('.roster-remove', view).forEach((b) => b.addEventListener('click', () => {
+      if (!window.confirm(`Remove ${b.dataset.name} from the pool? If they're on the squad, games that needed them stop counting.`)) return;
+      rosterCall('/api/roster/' + encodeURIComponent(b.dataset.puuid), { method: 'DELETE' }, (r) => (r.changes && r.changes.was_active ? 'Removed. Re-checking the history…' : 'Removed from the bench'));
+    }));
+    $$('.roster-nick', view).forEach((b) => b.addEventListener('click', () => {
+      const nick = window.prompt('Nickname', b.dataset.nick);
+      if (nick == null) return;
+      if (b.dataset.own) {  // your own entry: no admin password needed
+        selfCall('/api/bettor/riot-id', { method: 'POST', body: JSON.stringify({ riot_id: b.dataset.riot, nickname: nick }) }, (r) => `Nickname set to ${r.member.nickname}`);
+        return;
+      }
+      rosterCall('/api/roster/' + encodeURIComponent(b.dataset.puuid), { method: 'POST', body: JSON.stringify({ nickname: nick }) }, (r) => `Nickname set to ${r.member.nickname}`);
+    }));
+    // Your own entry (no admin password): join, change Riot ID, claim an unclaimed entry, leave.
+    const selfCall = async (path, opts, done) => {
+      try {
+        const r = await api(path, opts);
+        toast(done(r), 'good');
+        await squadReload();
+      } catch (e) {
+        toast(e.message, 'bad');
+      }
+    };
+    const joinMsg = (r) => r.added ? (r.active ? `You're on the squad as ${r.member.name}#${r.member.tag}. Re-checking the history…`
+        : `You're in the pool as ${r.member.name}#${r.member.tag}, on the bench: the squad is full. Swap in when a spot opens.`)
+      : r.replaced ? `Switched to ${r.member.name}#${r.member.tag}.${r.changes ? ' Re-checking the history…' : ''}`
+      : r.renamed ? `Updated to ${r.member.name}#${r.member.tag}` : `${r.member.name}#${r.member.tag} is yours`;
+    $('#squad-join')?.addEventListener('click', () => {
+      const riot = ($('#squad-join-riot')?.value || '').trim(), nickname = ($('#squad-join-nick')?.value || '').trim();
+      if (!riot.includes('#')) { toast('Enter your Riot ID like Name#TAG', 'bad'); return; }
+      selfCall('/api/bettor/riot-id', { method: 'POST', body: JSON.stringify({ riot_id: riot, nickname }) }, joinMsg);
+    });
+    $('#squad-join-riot')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#squad-join')?.click(); });
+    $$('.squad-edit', view).forEach((b) => b.addEventListener('click', () => {
+      const riot = window.prompt('Your Riot ID (Name#TAG)', b.dataset.current);
+      if (riot == null) return;
+      if (!riot.includes('#')) { toast('Enter a Riot ID like Name#TAG', 'bad'); return; }
+      selfCall('/api/bettor/riot-id', { method: 'POST', body: JSON.stringify({ riot_id: riot.trim() }) }, joinMsg);
+    }));
+    $$('.squad-claim', view).forEach((b) => b.addEventListener('click', () => {
+      if (!window.confirm(`Claim ${b.dataset.riot} as your Riot ID? Rewards for its games go to your account from now on.`)) return;
+      selfCall('/api/bettor/riot-id', { method: 'POST', body: JSON.stringify({ riot_id: b.dataset.riot }) }, joinMsg);
+    }));
+    $$('.squad-leave', view).forEach((b) => b.addEventListener('click', () => {
+      if (!window.confirm('Remove your Riot ID from the pool? If you\'re on the squad, games that needed you stop counting and your rewards stop.')) return;
+      selfCall('/api/bettor/riot-id', { method: 'DELETE' }, (r) => (r.changes && r.changes.was_active ? 'You left the squad. Re-checking the history…' : 'Removed your Riot ID from the pool'));
+    }));
+    $('#roster-refresh')?.addEventListener('click', async () => {
+      try {
+        const r = await api('/api/roster/refresh', { method: 'POST', body: '{}' });
+        toast(r.renamed.length ? r.renamed.map((x) => `${x.from} → ${x.to}`).join(', ') : 'No renames found', 'good');
+        await squadReload();
+      } catch (e) { toast(e.message, 'bad'); }
+    });
   }
 
   async function sync(full) {
@@ -1230,14 +1433,24 @@
     if (me) {
       return `<div class="acct-head">Signed in as <b>${window.FiveShop.nameHtml(me.name)}</b></div>` +
         `<a class="acct-item" role="menuitem" href="#monkeys/${encodeURIComponent(me.name)}">Your profile</a>` +
+        // Your place on the squad (the Squad page has the same controls): your Riot ID, or a way to add it.
+        (me.member
+          ? `<div class="acct-head muted small">${me.member.active ? 'On the squad' : 'On the bench'} as <b>${esc(me.member.name)}#${esc(me.member.tag)}</b></div>` +
+            (me.member.active
+              ? '<button type="button" class="acct-item" role="menuitem" id="bettor-riot-active" data-active="0">Sit out (move to the bench)</button>'
+              : '<button type="button" class="acct-item" role="menuitem" id="bettor-riot-active" data-active="1">Join the squad</button>') +
+            `<button type="button" class="acct-item" role="menuitem" id="bettor-riot-edit" data-current="${esc(me.member.name)}#${esc(me.member.tag)}">Change Riot ID</button>` +
+            '<button type="button" class="acct-item" role="menuitem" id="bettor-riot-leave">Remove my Riot ID</button>'
+          : '<button type="button" class="acct-item" role="menuitem" id="bettor-riot-edit" data-current="">Join the squad with your Riot ID</button>') +
         '<button type="button" class="acct-item" role="menuitem" id="bettor-password">Change password</button>' +
         '<button type="button" class="acct-item" role="menuitem" id="bettor-signout">Sign out</button>';
     }
     return '<form class="acct-form" id="acct-form"><label>Name<input id="bettor-name" placeholder="Your name" ' +
       `value="${esc(state.bettor)}" autocomplete="username" maxlength="32"></label>` +
       '<label>Betting password<input id="bettor-pass" type="password" placeholder="Yours alone, not the site password" autocomplete="current-password"></label>' +
+      '<label>Riot ID <span class="muted">(optional, new accounts)</span><input id="bettor-riot" placeholder="Name#TAG, to be on the squad" maxlength="40" autocomplete="off"></label>' +
       '<div class="btn-row"><button class="btn primary small" id="bettor-signin">Sign in</button><button type="button" class="btn ghost small" id="bettor-register">Create account</button></div>' +
-      `<p class="muted small">Your own password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits.</p></form>`;
+      `<p class="muted small">Your own password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits; add your Riot ID and you're on the squad, so your games count and your rewards land here.</p></form>`;
   }
   function accountMenu(open) {
     const menu = $('#account-menu'), chip = $('#me-chip');
@@ -1264,23 +1477,72 @@
   async function bettorSession(path) {
     const name = ($('#bettor-name')?.value || '').trim();
     const password = $('#bettor-pass')?.value || '';
+    const registering = path.endsWith('register');
+    const riot = registering ? ($('#bettor-riot')?.value || '').trim() : '';
     if (!name) { toast('Enter your name', 'bad'); return; }
     if (!password) { toast('Enter your betting password', 'bad'); return; }
+    if (riot && !riot.includes('#')) { toast('Enter a Riot ID like Name#TAG, or leave it empty', 'bad'); return; }
     try {
-      const r = await api(path, { method: 'POST', body: JSON.stringify({ name, password }) });
+      const r = await api(path, { method: 'POST', body: JSON.stringify(registering ? { name, password, riot_id: riot } : { name, password }) });
       state.bettor = r.bettor.name;
       localStorage.setItem('fs.bettor', state.bettor);
-      toast(path.endsWith('register') ? `Account created. Welcome, ${r.bettor.name}.` : `Signed in as ${r.bettor.name}`, 'good');
+      if (r.warning) toast(r.warning, 'bad');
+      else if (registering) toast(r.member ? `Welcome, ${r.bettor.name}. You're on the squad as ${r.member.name}#${r.member.tag}; re-checking the history…` : `Account created. Welcome, ${r.bettor.name}.`, 'good');
+      else toast(`Signed in as ${r.bettor.name}`, 'good');
       accountMenu(false);
-      await loadBets();
+      await Promise.all([loadStatus(), loadBets()]);
       draw();
     } catch (e) {
       toast(e.message, 'bad');
     }
   }
+
+  // Set or change the signed-in bettor's Riot ID (their squad entry), or leave the squad; the server re-checks the
+  // history. The Squad page offers the same through its own buttons.
+  async function changeRiotId(current) {
+    const riot = window.prompt('Your Riot ID (Name#TAG). Games count when everyone on the squad is on the same team.', current || '');
+    if (riot == null) return;
+    if (!riot.includes('#')) { toast('Enter a Riot ID like Name#TAG', 'bad'); return; }
+    try {
+      const r = await api('/api/bettor/riot-id', { method: 'POST', body: JSON.stringify({ riot_id: riot.trim() }) });
+      toast(r.added ? (r.active ? `You're on the squad as ${r.member.name}#${r.member.tag}. Re-checking the history…`
+          : `You're in the pool as ${r.member.name}#${r.member.tag}, on the bench: the squad is full.`)
+        : r.replaced ? `Switched to ${r.member.name}#${r.member.tag}.${r.changes ? ' Re-checking the history…' : ''}`
+        : r.renamed ? `Updated to ${r.member.name}#${r.member.tag}` : `${r.member.name}#${r.member.tag} is yours`, 'good');
+      await Promise.all([loadStatus(), loadBets(), loadMe()]);
+      if (state.view === 'squad') await loadRoster();
+      draw();
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  async function leaveSquad() {
+    if (!window.confirm('Remove your Riot ID from the pool? If you\'re on the squad, games that needed you stop counting and your rewards stop.')) return;
+    try {
+      const r = await api('/api/bettor/riot-id', { method: 'DELETE' });
+      toast(r.changes && r.changes.was_active ? 'You left the squad. Re-checking the history…' : 'Removed your Riot ID from the pool', 'good');
+      await Promise.all([loadStatus(), loadBets(), loadMe()]);
+      if (state.view === 'squad') await loadRoster();
+      draw();
+    } catch (e) { toast(e.message, 'bad'); }
+  }
+
+  // Sit out (bench) or join the squad from your own entry, without touching anyone else's.
+  async function toggleOwnActive(active) {
+    try {
+      const r = await api('/api/bettor/riot-id/active', { method: 'POST', body: JSON.stringify({ active }) });
+      toast(active ? "You're on the squad. Re-checking the history…" : "You're on the bench. Re-checking the history…", 'good');
+      await Promise.all([loadStatus(), loadBets(), loadMe()]);
+      if (state.view === 'squad') await loadRoster();
+      draw();
+      if (r.changed && state.status.tracker?.syncing) pollUntilIdle();
+    } catch (e) { toast(e.message, 'bad'); }
+  }
   function bindAccount(menu) {
     $('#acct-form', menu)?.addEventListener('submit', (e) => { e.preventDefault(); bettorSession('/api/bettor/login'); });
     $('#bettor-register', menu)?.addEventListener('click', () => bettorSession('/api/bettor/register'));
+    $('#bettor-riot-edit', menu)?.addEventListener('click', (e) => { accountMenu(false); changeRiotId(e.currentTarget.dataset.current); });
+    $('#bettor-riot-leave', menu)?.addEventListener('click', () => { accountMenu(false); leaveSquad(); });
+    $('#bettor-riot-active', menu)?.addEventListener('click', (e) => { accountMenu(false); toggleOwnActive(e.currentTarget.dataset.active === '1'); });
     $('#bettor-signout', menu)?.addEventListener('click', async () => {
       accountMenu(false);
       try { await api('/api/bettor/logout', { method: 'POST', body: '{}' }); } catch (e) { /* cookie is cleared anyway */ }

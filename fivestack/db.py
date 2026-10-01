@@ -5,6 +5,7 @@ import threading
 import time
 
 SCHEMA = """
+-- The squad (2 to 5 players), managed on the Squad tab; a player keeps their row (puuid) through Riot ID renames.
 CREATE TABLE IF NOT EXISTS members (
     puuid TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -13,7 +14,11 @@ CREATE TABLE IF NOT EXISTS members (
     nickname TEXT,
     card TEXT,
     order_index INTEGER DEFAULT 0,
-    added_at REAL
+    added_at REAL,
+    previous_name TEXT,
+    name_checked_ts REAL,
+    bettor TEXT,
+    active INTEGER DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS matches (
     match_id TEXT PRIMARY KEY,
@@ -75,6 +80,7 @@ CREATE TABLE IF NOT EXISTS member_games (
     legshots INTEGER,
     damage_dealt INTEGER,
     damage_received INTEGER,
+    team TEXT,
     PRIMARY KEY (match_id, puuid)
 );
 CREATE INDEX IF NOT EXISTS idx_member_games_puuid ON member_games(puuid, started_ts);
@@ -281,8 +287,14 @@ PLAYER_FIELDS = [
 MEMBER_GAME_FIELDS = [
     "match_id", "puuid", "map", "mode", "mode_label", "started_at", "started_ts", "rounds_won",
     "rounds_lost", "result", "agent", "score", "kills", "deaths", "assists", "headshots",
-    "bodyshots", "legshots", "damage_dealt", "damage_received",
+    "bodyshots", "legshots", "damage_dealt", "damage_received", "team",
 ]
+# Columns added after a table first shipped; databases from before get them on startup.
+MIGRATIONS = {
+    "bettors": (("salt", "TEXT"), ("password_hash", "TEXT")),
+    "members": (("previous_name", "TEXT"), ("name_checked_ts", "REAL"), ("bettor", "TEXT"), ("active", "INTEGER DEFAULT 1")),
+    "member_games": (("team", "TEXT"),),
+}
 ARCHIVED_BET_COLUMNS = [
     "id", "bettor", "market_id", "market_type", "description", "selection", "selection_label", "line", "odds_decimal",
     "stake", "placed_ts", "context", "status", "settled_match_id", "settled_ts", "payout", "actual_value", "note",
@@ -310,10 +322,11 @@ class DB:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.executescript(SCHEMA)
             # Migrations for databases created by earlier versions.
-            cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(bettors)").fetchall()}
-            for col in ("salt", "password_hash"):
-                if col not in cols:
-                    self.conn.execute(f"ALTER TABLE bettors ADD COLUMN {col} TEXT")
+            for table, columns in MIGRATIONS.items():
+                have = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()}
+                for col, ctype in columns:
+                    if col not in have:
+                        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}")
             self.conn.commit()
 
     # ---- low level -------------------------------------------------------
@@ -344,7 +357,21 @@ class DB:
         )
 
     def members(self):
-        return self.query("SELECT * FROM members ORDER BY order_index, name")
+        """The active squad: the players whose games are tracked (the rest of the pool is on the bench)."""
+        return self.query("SELECT * FROM members WHERE active=1 ORDER BY order_index, name")
+
+    def pool(self):
+        """Every known player, the active squad first, then the bench."""
+        return self.query("SELECT * FROM members ORDER BY active DESC, order_index, name")
+
+    def count_pool(self):
+        return self.query_one("SELECT COUNT(*) AS n FROM members")["n"]
+
+    def set_active(self, puuid, active, order_index=None):
+        if order_index is None:
+            self.execute("UPDATE members SET active=? WHERE puuid=?", (1 if active else 0, puuid))
+        else:
+            self.execute("UPDATE members SET active=?, order_index=? WHERE puuid=?", (1 if active else 0, order_index, puuid))
 
     def member_by_riot_id(self, name, tag):
         return self.query_one(
@@ -354,11 +381,26 @@ class DB:
     def member(self, puuid):
         return self.query_one("SELECT * FROM members WHERE puuid=?", (puuid,))
 
-    def remove_members_not_in(self, puuids):
-        keep = list(puuids)
-        if not keep:
+    def member_by_bettor(self, name):
+        """The squad entry a betting account owns (its Riot ID), if any."""
+        return self.query_one("SELECT * FROM members WHERE lower(bettor)=lower(?)", (name,))
+
+    def count_members(self):
+        """How many players are on the active squad."""
+        return self.query_one("SELECT COUNT(*) AS n FROM members WHERE active=1")["n"]
+
+    def next_member_order(self):
+        return self.query_one("SELECT COALESCE(MAX(order_index), -1) + 1 AS n FROM members")["n"]
+
+    def update_member(self, puuid, **fields):
+        if not fields:
             return
-        self.execute(f"DELETE FROM members WHERE puuid NOT IN ({_placeholders(len(keep))})", keep)
+        sets = ", ".join(f"{k}=?" for k in fields)
+        self.execute(f"UPDATE members SET {sets} WHERE puuid=?", list(fields.values()) + [puuid])
+
+    def remove_member(self, puuid):
+        """Take a player off the squad. Their lines stay in match_players / member_games."""
+        self.execute("DELETE FROM members WHERE puuid=?", (puuid,))
 
     # ---- matches ---------------------------------------------------------
     def has_match(self, match_id):
@@ -459,8 +501,36 @@ class DB:
         row = self.query_one("SELECT COUNT(*) AS n FROM member_games")
         return row["n"] if row else 0
 
+    def member_games_of(self, puuids):
+        """Every stored line of these members, oldest first (the roster re-evaluation reads them)."""
+        if not puuids:
+            return []
+        return self.query(
+            f"SELECT * FROM member_games WHERE puuid IN ({_placeholders(len(puuids))}) ORDER BY started_ts",
+            list(puuids),
+        )
+
+    def matches_missing_any(self, puuids):
+        """Ids of recorded games in which at least one of these members has no line."""
+        if not puuids:
+            return []
+        rows = self.query(
+            f"""SELECT m.match_id FROM matches m
+                WHERE (SELECT COUNT(*) FROM match_players mp
+                       WHERE mp.match_id = m.match_id AND mp.puuid IN ({_placeholders(len(puuids))})) < ?""",
+            list(puuids) + [len(puuids)],
+        )
+        return [r["match_id"] for r in rows]
+
+    def delete_match(self, match_id):
+        """Forget a recorded game (its lines, players and timeline); bets and rewards that settled on it stay."""
+        with self.lock:
+            for table in ("match_players", "match_timelines", "matches"):
+                self.conn.execute(f"DELETE FROM {table} WHERE match_id=?", (match_id,))
+            self.conn.commit()
+
     def baseline_rows(self):
-        """Member lines from games that were NOT 5-stack games, newest first."""
+        """Member lines from games that were NOT squad games, newest first."""
         return self.query(
             """SELECT * FROM member_games
                WHERE match_id NOT IN (SELECT match_id FROM matches)

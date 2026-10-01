@@ -49,13 +49,7 @@ def config_problems(cfg):
     key = (cfg.get("api_key") or "").strip()
     if not key or "PASTE" in key.upper() or "YOUR" in key.upper():
         problems.append("Add your HenrikDev API key to config.json (api_key).")
-    members = cfg.get("members") or []
-    ids = [(m.get("riot_id") if isinstance(m, dict) else m) or "" for m in members]
-    bad = [i for i in ids if "#" not in str(i) or str(i).strip().lower() in PLACEHOLDER_IDS]
-    if len(members) < 2:
-        problems.append("List your squad's Riot IDs (Name#TAG) under members in config.json.")
-    elif bad:
-        problems.append("Replace the placeholder members in config.json with real Riot IDs: " + ", ".join(str(b) for b in bad))
+    # `members` is optional: it only seeds an empty squad; the Squad tab manages it from then on.
     if (cfg.get("region") or "").lower() not in {"na", "eu", "ap", "kr", "latam", "br"}:
         problems.append("region must be one of na, eu, ap, kr, latam, br.")
     return problems
