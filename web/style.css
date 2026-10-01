@@ -1479,7 +1479,8 @@ body.modal-open { overflow: hidden; }
 .slots-payline { position: absolute; top: calc(50% - 70px); left: 20px; right: 20px; height: 140px; border-top: 1px solid color-mix(in srgb, var(--slot-gold) 65%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--slot-gold) 65%, transparent); pointer-events: none; }
 .slots-line-arrow { position: absolute; top: 50%; transform: translateY(-50%); color: var(--slot-gold); font-size: 32px; }
 .slots-line-arrow.left { left: -3px; } .slots-line-arrow.right { right: -3px; }
-.slots-result { display: flex; flex-direction: column; justify-content: center; gap: 4px; height: 100px; text-align: center; }
+/* Spans the stage's full width (past its lopsided padding for the lever) so it centres under the reels and marquee. */
+.slots-result { display: flex; flex-direction: column; justify-content: center; gap: 4px; height: 100px; margin: 0 -24px 0 -108px; text-align: center; }
 .slots-result b { font: 700 24px/1.2 ui-monospace, Consolas, monospace; color: var(--slot-paper); }
 .slots-result span { font-size: 13px; color: var(--slot-muted); }
 .slots-win .slots-glass { box-shadow: 0 0 0 3px var(--slot-gold), 0 0 28px color-mix(in srgb, var(--slot-gold) 25%, transparent); }
