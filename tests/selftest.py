@@ -2300,17 +2300,32 @@ def daily_wheel(shared):
     assert jackpot > 1 and won["amount"] == int(jackpot) and 0 <= house.report()["jackpot"] < 1, (jackpot, won)
     assert house.report()["given"]["jackpot"] == int(jackpot)
 
-    # Tokens go on the next single: a boost token raises its price, an insurance token refunds it if it loses.
+    # Tokens are used from the bet slip, on the single the bettor picks: a boost token raises its price, an insurance
+    # token refunds it if it loses. A bet that doesn't ask for them leaves them be.
     wheel.spin("Wes", now=day + 4 * 86400, segment=at["boost"])
     wheel.spin("Wes", now=day + 5 * 86400, segment=at["insure"])
     assert sorted(p["kind"] for p in wheel.perks("Wes")) == ["boost", "insurance"]
     board = hbets.apply_boost(env.engine.build(hdb))
     pick = "loss" if board["boost"]["market_id"] != "team:win" or board["boost"]["selection"] != "loss" else "win"
     price = find_market(board, "team:win", pick)[1]["decimal"]
-    bet = hbets.place("Wes", "team:win", pick, TOKEN_MAX_STAKE, {})
+    plain = hbets.place("Wes", "team:win", pick, 5, {})
+    assert plain["odds_decimal"] == price and "insured" not in json.loads(plain["context"]) and len(wheel.perks("Wes")) == 2
+    for tokens, why in (({"boost": True}, "covers a single of up to"), ({"boost": True, "insurance": True}, "covers a single of up to")):
+        try:
+            hbets.place("Wes", "team:win", pick, TOKEN_MAX_STAKE + 1, {}, tokens=tokens)
+            raise AssertionError("the boost token has a stake cap")
+        except BetError as e:
+            assert why in str(e), e
+    assert len(wheel.perks("Wes")) == 2  # a refused bet uses nothing
+    bet = hbets.place("Wes", "team:win", pick, TOKEN_MAX_STAKE, {}, tokens={"boost": True, "insurance": True})
     ctx = json.loads(bet["context"])
     assert bet["odds_decimal"] == hbets.boosted(price, TOKEN_BOOST) and ctx["boost"] == price and ctx["insured"]["max"] == TOKEN_MAX_STAKE
     assert wheel.perks("Wes") == [] and hbets.place("Wes", "team:win", pick, 5, {})["odds_decimal"] == price  # used up
+    try:
+        hbets.place("Wes", "team:win", pick, 5, {}, tokens={"insurance": True})
+        raise AssertionError("no token left")
+    except BetError as e:
+        assert "don't have an insurance token" in str(e), e
     game = {"match_id": "h-wheel", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 30,
             "rounds_won": 13 if pick == "loss" else 2, "rounds_lost": 2 if pick == "loss" else 13,
             "result": "win" if pick == "loss" else "loss"}

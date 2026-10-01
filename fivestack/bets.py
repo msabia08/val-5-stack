@@ -40,11 +40,12 @@ TAX_MIN_TRANSFER = 250
 BOOST = 0.5
 BOOST_MAX_STAKE = 100
 BOOST_CHANCE = (0.3, 0.6)
-# The daily wheel's tokens (wheel.py, table wheel_perks), used up by the bettor's next single: a boost token adds
-# TOKEN_BOOST profit to one of up to TOKEN_MAX_STAKE credits (not on top of the odds boost of the game), and an insurance
-# token gets the stake back, up to TOKEN_MAX_STAKE, if it loses (paid by HouseManager.refunds).
+# The daily wheel's tokens (wheel.py, table wheel_perks), used on a single when the bettor asks for them from the bet
+# slip (place()'s `tokens`): a boost token adds TOKEN_BOOST profit to a single of up to TOKEN_MAX_STAKE credits (not on
+# top of the odds boost of the game), and an insurance token gets the stake back, up to TOKEN_MAX_STAKE, if it loses
+# (paid by HouseManager.refunds).
 TOKEN_BOOST = 0.5
-TOKEN_MAX_STAKE = 100
+TOKEN_MAX_STAKE = 200
 
 
 def _credits(v):
@@ -247,7 +248,7 @@ class BetManager:
         return self.db.query_one("SELECT * FROM transfers WHERE id=?", (transfer_id,))
 
     # ---- placement -------------------------------------------------------
-    def place(self, bettor_name, market_id, sel_key, stake, context):
+    def place(self, bettor_name, market_id, sel_key, stake, context, tokens=None):
         try:
             stake = round(float(stake), 2)
         except (TypeError, ValueError):
@@ -279,15 +280,25 @@ class BetManager:
 
         price = sel["decimal"]
         with self.db.lock:
-            # The daily wheel's tokens go on this single if the bettor has any ready (see TOKEN_BOOST).
+            # The daily wheel's tokens the bettor asked to use on this single (`tokens`: {"boost": true, "insurance":
+            # true}, from the bet slip; see TOKEN_BOOST).
+            tokens = tokens if isinstance(tokens, dict) else {}
             ready = {p["kind"]: p for p in self.db.query(
-                "SELECT * FROM wheel_perks WHERE lower(bettor)=lower(?) AND status='ready' ORDER BY id DESC", (bettor["name"],))}
+                "SELECT * FROM wheel_perks WHERE lower(bettor)=lower(?) AND status='ready' ORDER BY id", (bettor["name"],))}
             used = []
-            if ready.get("boost") and not sel.get("boost") and stake <= TOKEN_MAX_STAKE:
+            if tokens.get("boost"):
+                if not ready.get("boost"):
+                    raise BetError("You don't have a boost token. Win one on the daily wheel.")
+                if sel.get("boost"):
+                    raise BetError("This pick already has the odds boost of the game. Keep your token for another one.")
+                if stake > TOKEN_MAX_STAKE:
+                    raise BetError(f"A boost token covers a single of up to {TOKEN_MAX_STAKE} credits.")
                 meta["boost"], meta["boost_token"] = price, ready["boost"]["id"]
                 price = self.boosted(price, TOKEN_BOOST)
                 used.append(ready["boost"]["id"])
-            if ready.get("insurance"):
+            if tokens.get("insurance"):
+                if not ready.get("insurance"):
+                    raise BetError("You don't have an insurance token. Win one on the daily wheel.")
                 meta["insured"] = {"perk": ready["insurance"]["id"], "max": TOKEN_MAX_STAKE}
                 used.append(ready["insurance"]["id"])
             bet = {

@@ -125,8 +125,8 @@ window.FiveWheel = (() => {
     const what = {
       credits: `You won ${esc(result.label)}.`,
       bananas: `You won ${esc(result.label)}. They're in your banana wallet.`,
-      boost: `Boost token! Your next single of up to ${fmt.credits(data.token.max_stake)} credits pays ${fmt.pct(data.token.boost)} more profit.`,
-      insurance: `Insurance token! If your next single loses, you get the stake back (up to ${fmt.credits(data.token.max_stake)} credits).`,
+      boost: `Boost token! Put it on a single of up to ${fmt.credits(data.token.max_stake)} credits from your bet slip for ${fmt.pct(data.token.boost)} more profit.`,
+      insurance: `Insurance token! Put it on a single from your bet slip: if it loses, you get the stake back (up to ${fmt.credits(data.token.max_stake)} credits).`,
       nothing: 'Onkey ate it. Nothing this time.',
       again: 'Spin again!',
       item: `${esc(result.label)}. Wear it from <a href="#shop">Onkey's Shop</a>.`,
@@ -148,15 +148,15 @@ window.FiveWheel = (() => {
       `<tr><th scope="row">${ICONS[s.kind] || ''} ${esc(s.label)}</th><td class="num">${chance(s.weight)}</td></tr>`).join('');
     return `<section class="card"><h2>Prizes</h2><p class="muted small">Rarest first. A slice's size on the wheel is its chance.</p>` +
       `<table class="compact wheel-prizes"><tbody>${rows}</tbody></table>` +
-      `<details class="how"><summary>Where the prizes come from</summary><div class="how-body">Credits and insurance refunds are on the house, free; only the jackpot slice is paid from the house's money: it's the whole progressive jackpot, which grows with every bet and spin. Bananas go to your banana wallet for Onkey's Shop. A free cosmetic is one you don't own yet (100 bananas if you own them all). A boost token gives your next single of up to ${fmt.credits(data.token.max_stake)} credits ${fmt.pct(data.token.boost)} more profit (not on top of the odds boost of the game); an insurance token refunds your next single if it loses, up to ${fmt.credits(data.token.max_stake)} credits. Tokens are used by your next single bet, never a parlay. The wheel resets at midnight Pacific, which is 3 AM Eastern. Where the wheel stops is decided before it starts turning; the slow finish is only for show.</div></details></section>`;
+      `<details class="how"><summary>Where the prizes come from</summary><div class="how-body">Credits and insurance refunds are on the house, free; only the jackpot slice is paid from the house's money: it's the whole progressive jackpot, which grows with every bet and spin. Bananas go to your banana wallet for Onkey's Shop. A free cosmetic is one you don't own yet (100 bananas if you own them all). A boost token gives a single of up to ${fmt.credits(data.token.max_stake)} credits ${fmt.pct(data.token.boost)} more profit (not on top of the odds boost of the game); an insurance token refunds a single if it loses, up to ${fmt.credits(data.token.max_stake)} credits. You choose the single: tap Boost or Insure on it in your bet slip. Tokens work on singles, never a parlay, and keep until you use them. The wheel resets at midnight Pacific, which is 3 AM Eastern. Where the wheel stops is decided before it starts turning; the slow finish is only for show.</div></details></section>`;
   }
 
   function tokens() {
     const me = data.me;
     if (!me) return '';
     const list = me.perks.map((p) => `<li>${ICONS[p.kind]} <b>${p.kind === 'boost' ? 'Boost token' : 'Insurance token'}</b> <span class="muted small">${p.kind === 'boost'
-      ? `+${fmt.pct(data.token.boost)} profit on your next single up to ${fmt.credits(data.token.max_stake)} credits` : `stake back if your next single loses, up to ${fmt.credits(data.token.max_stake)}`}</span></li>`).join('');
-    return `<section class="card"><h2>Your tokens</h2>${list ? `<ul class="wheel-tokens">${list}</ul>` : '<p class="muted small">None waiting. Win one on the wheel and your next single uses it.</p>'}</section>`;
+      ? `+${fmt.pct(data.token.boost)} profit on a single up to ${fmt.credits(data.token.max_stake)} credits` : `stake back if a single loses, up to ${fmt.credits(data.token.max_stake)}`}</span></li>`).join('');
+    return `<section class="card"><h2>Your tokens</h2>${list ? `<ul class="wheel-tokens">${list}</ul><p class="muted small">To use one, add a pick on <a href="#odds">Place bets</a> and tap Boost or Insure on it in your bet slip.</p>` : '<p class="muted small">None waiting. Win one on the wheel, then use it from your bet slip.</p>'}</section>`;
   }
 
   function spinList(title, rows, empty, who) {
@@ -521,6 +521,7 @@ window.FiveWheel = (() => {
       bulbs('');
       releaseBalance(); // landed: the credits count to the real balance
       celebrate(s, r);
+      window.FiveOnkey?.note('wheel', { kind: s.kind, amount: r.amount, label: r.label });
       try { await Promise.all([load(), loadMe(), after]); } catch (e) { /* the result is already shown */ }
       pointerDeg = restTilt(angle);
       draw();

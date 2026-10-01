@@ -317,6 +317,6 @@ window.FiveCasino = (() => {
   const countdown = (deadline) => (deadline ? `<b class="countdown" data-deadline="${deadline}">${Math.ceil(secondsLeft(deadline))}s</b>` : '');
   const ref = () => (crypto.randomUUID ? crypto.randomUUID() : `r${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9-]/g, '').padEnd(16, '0');
 
-  return { init, card, cards, dealer, say, react, quip, sound, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref, reduced,
+  return { init, card, cards, dealer, say, react, quip, sound, chatter, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref, reduced,
     absorb, wornBy, style, who, title, seatBurst, deal, dealReset, landing, after };
 })();

@@ -818,8 +818,8 @@ slice's size on the wheel is its chance:
 | 50 credits | 1 in 5 |
 | 100 credits | 1 in 7 |
 | 50 bananas | 1 in 8 |
-| Boost token: your next single of up to 100 credits pays 50% more profit | 1 in 11 |
-| Insurance token: if your next single loses, you get the stake back (up to 100) | 1 in 13 |
+| Boost token: a single of up to 200 credits pays 50% more profit | 1 in 11 |
+| Insurance token: if a single loses, you get the stake back (up to 200) | 1 in 13 |
 | 200 credits | 1 in 13 |
 | 100 bananas | 1 in 14 |
 | Onkey ate it (nothing) | 1 in 18 |
@@ -831,8 +831,10 @@ slice's size on the wheel is its chance:
 Credit prizes and insurance refunds are free: they don't come out of the
 house's pot, so they never eat into the secret objectives or bad-beat refunds.
 Only the jackpot slice is paid from the house's money: the whole progressive
-jackpot. Tokens are used by your next single bet, never a parlay; a
-boost token doesn't stack with the odds boost of the game. The server picks the
+jackpot. Tokens keep until you use them: add a pick on Place bets and tap
+**Boost** or **Insure** on it in your bet slip (singles only, never a parlay; a
+boost token doesn't stack with the odds boost of the game). The ticket says
+which token it carries. The server picks the
 slice, and the page only animates the wheel to it: the pointer clicks over each
 peg, and sometimes the wheel crawls up to a peg next to a big prize, balances
 there, and tips over or rolls back (that's for show; the result was already
@@ -859,6 +861,16 @@ own House column, and a season reset clears that column but not the pot or
 jackpot, which carry across seasons. The rules live in `fivestack/house.py`
 (`JACKPOT_SHARE`, `GAME_SHARE`, `REFUND_RATE`, `REFUND_MAX`, ...) and
 `fivestack/bets.py` (`BOOST`, `BOOST_MAX_STAKE`, `TOKEN_BOOST`, `TOKEN_MAX_STAKE`).
+
+## Onkey talks
+
+Onkey, the monkey in the top-left corner, chats like the dealer at the casino tables: a speech bubble with his monkey
+noises and what they mean, with a hop while he talks. Every minute or two he says something, sometimes about you (your
+balance, your place in the standings, a daily spin waiting), and he reacts to what you do: bets you place, bets that win
+or lose (and losing streaks), slot spins (dry runs and big wins), wheel prizes, credits you send and things you buy. He
+walks over to deal at the blackjack and poker tables (leaving the logo empty) and walks back when you leave; he
+keeps quiet there, where the dealer does the talking, and clicking his bubble hushes him
+for 15 minutes. His lines are in `web/onkey.js`.
 
 ## Going online (share it with the squad)
 

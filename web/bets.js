@@ -104,6 +104,31 @@ window.FiveBets = (() => {
     if (place && state.me) place.disabled = !!next.error;
   }
 
+  // The daily wheel's tokens (bets.py TOKEN_BOOST / TOKEN_MAX_STAKE, counts in /api/bettor/me tokens): each single in
+  // the slip can take one boost and one insurance token, as many as you hold, toggled on the pick itself.
+  const TOKEN_BOOST = 0.5, TOKEN_CAP = 200;
+  const tokensHeld = (kind) => (state.me && state.me.tokens ? state.me.tokens[kind] || 0 : 0);
+  const tokensFree = (kind, except) => tokensHeld(kind) - state.slip.filter((x, i) => i !== except && x[kind]).length;
+  const tokenPrice = (x) => (x.boost ? Math.round((1 + (x.decimal - 1) * (1 + TOKEN_BOOST)) * 100) / 100 : x.decimal);
+  function toWin(x) {
+    const win = `To win ${fmt.credits(x.stake * (tokenPrice(x) - 1))}${x.boost ? ' with the boost' : ''}`;
+    const notes = [];
+    if (x.boost && x.stake > TOKEN_CAP) notes.push(`<span class="token-warn">A boost token covers up to ${fmt.credits(TOKEN_CAP)} credits</span>`);
+    if (x.insurance) notes.push(`stake back if it loses, up to ${fmt.credits(TOKEN_CAP)}`);
+    return [win, ...notes].join(' · ');
+  }
+  function tokenRow(x, i) {
+    if (!tokensHeld('boost') && !tokensHeld('insurance')) return '';
+    const btn = (kind, label, why) => {
+      const on = !!x[kind], free = tokensFree(kind, i) > 0;
+      const off = !on && (!free || why);
+      return `<button type="button" class="token-btn${on ? ' on' : ''}" data-token="${kind}" data-i="${i}" aria-pressed="${on}" ${off ? 'disabled' : ''}` +
+        ` title="${esc(why || (free || on ? '' : `No ${kind} tokens left for this slip`))}">${label}</button>`;
+    };
+    return `<div class="slip-tokens">${tokensHeld('boost') ? btn('boost', `⚡ Boost ${tokensHeld('boost') > 1 ? `(${tokensHeld('boost')})` : ''}`, x.gameBoost ? 'This pick already has the odds boost of the game' : '') : ''}` +
+      `${tokensHeld('insurance') ? btn('insurance', `🛡️ Insure ${tokensHeld('insurance') > 1 ? `(${tokensHeld('insurance')})` : ''}`, '') : ''}</div>`;
+  }
+
   function slipHtml() {
     // Only the picks: signing in lives in the account menu (the profile chip, top right) and the balance in the
     // credits chip beside it.
@@ -126,14 +151,15 @@ window.FiveBets = (() => {
         <label>Stake<input type="number" min="1" step="1" value="${stake}" id="parlay-stake" aria-label="Parlay stake"></label>
         <div class="muted small parlay-towin">${parlayToWin(stake)}</div>
         <div class="small slip-after">${afterStake(stake)}</div>
-        <p class="muted small">All ${state.slip.length} legs must win. If one is voided (a push), the payout uses the odds of the legs that stood.</p>`;
+        <p class="muted small">All ${state.slip.length} legs must win. If one is voided (a push), the payout uses the odds of the legs that stood.</p>
+        ${tokensHeld('boost') || tokensHeld('insurance') ? '<p class="muted small">Wheel tokens work on singles only: switch to Singles to use them.</p>' : ''}`;
       placeLabel = 'Place parlay';
     } else {
       const items = state.slip.map((x, i) =>
-        `<div class="slip-item"><div><div class="slip-desc">${esc(x.desc)}</div><div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)} (${Number(x.decimal).toFixed(2)})</div></div>` +
+        `<div class="slip-item"><div><div class="slip-desc">${esc(x.desc)}</div><div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)} (${Number(x.decimal).toFixed(2)})${x.boost ? ` <b class="token-price">⚡ ${tokenPrice(x).toFixed(2)}</b>` : ''}</div></div>` +
         `<input type="number" min="1" step="1" value="${x.stake}" data-i="${i}" class="stake" aria-label="Stake">` +
         `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button>` +
-        `<div class="muted small towin">To win ${fmt.credits(x.stake * (x.decimal - 1))}</div></div>`).join('');
+        `<div class="muted small towin">${toWin(x)}</div>${tokenRow(x, i)}</div>`).join('');
       const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
       body = `${items}<div class="slip-total">Total stake ${fmt.credits(total)}</div><div class="small slip-after">${afterStake(total)}</div>`;
       placeLabel = `Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}`;
@@ -147,6 +173,16 @@ window.FiveBets = (() => {
   }
 
   // ---- bet tickets (slip-style rendering, grouped by bettor) --------------------
+  // A single's boosts and insurance, from its context: a daily wheel token or the odds boost of the game.
+  function perkNote(b) {
+    if (b.market_type === 'parlay') return '';
+    let ctx = {};
+    try { ctx = JSON.parse(b.context || '{}'); } catch (e) { return ''; }
+    const notes = [];
+    if (ctx.boost) notes.push(`${ctx.boost_token ? '⚡ Boost token' : '⚡ Odds boost of the game'}: up from ${fmt.oddsDec(ctx.boost)}`);
+    if (ctx.insured) notes.push(`🛡️ Insured: stake back if it loses, up to ${fmt.credits(ctx.insured.max)}`);
+    return notes.length ? `<div class="small bet-note bet-perk">${notes.join('<br>')}</div>` : '';
+  }
   // stamp: a ticket placed a moment ago lands with a "Placed" stamp (only in the sidebar's "Your open bets").
   function betTicket(b, stamp = false) {
     const ctx = b.market_type === 'parlay' ? JSON.parse(b.context || '{}') : null;
@@ -175,6 +211,7 @@ window.FiveBets = (() => {
           <span>${b.status === 'pending' ? `To win ${fmt.credits(b.stake * (b.odds_decimal - 1))}` : `Return ${fmt.credits(b.payout || 0)}`}</span>
         </div>
         ${cut}
+        ${perkNote(b)}
         ${b.note ? `<div class="muted small bet-note">${esc(b.note)}</div>` : ''}
         ${b.status === 'pending' && cancelBtn ? `<div class="bet-ticket-row">${cancelBtn}</div>` : ''}
       </div>`;
@@ -293,7 +330,7 @@ window.FiveBets = (() => {
       state.slip.push({
         market_id: marketId, selection: selKey, selLabel: sel.label,
         desc: mk.type === 'ou' ? `${mk.member} ${mk.stat_label}` : mk.label,
-        american: sel.american, decimal: sel.decimal, line: mk.line, stake: state.stake,
+        american: sel.american, decimal: sel.decimal, line: mk.line, stake: state.stake, gameBoost: !!sel.boost,
       });
     }
     drawSlip();
@@ -434,7 +471,7 @@ window.FiveBets = (() => {
       state.stake = it.stake || state.stake;
       localStorage.setItem('fs.stake', String(state.stake));
       const tw = e.target.parentElement.querySelector('.towin');
-      if (tw) tw.textContent = `To win ${fmt.credits(it.stake * (it.decimal - 1))}`;
+      if (tw) tw.innerHTML = toWin(it);
       const total = state.slip.reduce((a, x) => a + (Number(x.stake) || 0), 0);
       const tot = $('.slip-total', slip);
       if (tot) tot.textContent = `Total stake ${fmt.credits(total)}`;
@@ -451,6 +488,10 @@ window.FiveBets = (() => {
       if (after) after.innerHTML = afterStake(stake);
     });
     $$('.mode-btn', slip).forEach((b) => b.addEventListener('click', () => { state.slipMode = b.dataset.mode; drawSlip(); }));
+    $$('.token-btn', slip).forEach((b) => b.addEventListener('click', () => {
+      const it = state.slip[Number(b.dataset.i)];
+      if (it) { it[b.dataset.token] = !it[b.dataset.token]; drawSlip(); }
+    }));
     bindRemove(slip);
     $('#clear-slip')?.addEventListener('click', () => { state.slip = []; drawSlip(); syncOddButtons(); });
     $('#place-bets')?.addEventListener('click', placeSlip);
@@ -479,6 +520,7 @@ window.FiveBets = (() => {
         });
         state.slip = [];
         stampPlaced([res.bet.id]);
+        window.FiveOnkey?.note('bet', { parlay: true, legs: (JSON.parse(res.bet.context || '{}').legs || []).length, stake });
         toast(`Parlay placed. It settles after the next ${stackWord()} game.`, 'good');
       } catch (e) {
         toast(e.message, 'bad');
@@ -489,11 +531,13 @@ window.FiveBets = (() => {
     }
     const failures = [];
     const remaining = [];
-    const placed = [];
+    const placed = [], placedBets = [];
     for (const it of state.slip) {
       try {
-        const res = await api('/api/bets', { method: 'POST', body: JSON.stringify({ market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx }) });
+        const tokens = it.boost || it.insurance ? { boost: !!it.boost, insurance: !!it.insurance } : undefined;
+        const res = await api('/api/bets', { method: 'POST', body: JSON.stringify({ market_id: it.market_id, selection: it.selection, stake: it.stake, context: state.ctx, tokens }) });
         placed.push(res.bet.id);
+        placedBets.push(res.bet);
       } catch (e) {
         failures.push(`${it.desc}: ${e.message}`);
         remaining.push(it);
@@ -503,6 +547,11 @@ window.FiveBets = (() => {
     stampPlaced(placed);
     if (failures.length) toast(failures.join(' · '), 'bad');
     else toast(`Bets placed. They settle after the next ${stackWord()} game.`, 'good');
+    if (placedBets.length) {
+      const b = placedBets[0];
+      window.FiveOnkey?.note('bet', { count: placedBets.length, stake: b.stake, desc: b.description, odds: b.odds_decimal.toFixed(2),
+        token: /"(boost_token|insured)"/.test(b.context || '') });
+    }
     await loadBets();
     draw();
   }
@@ -653,6 +702,7 @@ window.FiveBets = (() => {
       e.currentTarget.disabled = true;
       try {
         const r = await api('/api/transfers', { method: 'POST', body: JSON.stringify({ to: t.to, amount: Number(t.amount), note: t.note }) });
+        window.FiveOnkey?.note('transfer', { amount: r.transfer.amount, to: r.transfer.recipient });
         toast(`Sent ${fmt.credits(r.transfer.amount)} credits to ${r.transfer.recipient}` +
           (r.transfer.tax_status === 'open' ? `. You'll collect ${taxPct()} of their next win.` : ''), 'good');
         state.transfer = { to: '', amount: '', note: '', confirm: false };

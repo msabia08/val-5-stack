@@ -151,6 +151,7 @@
     if (chipBalance && was !== null && Math.abs(was - bal) >= 0.5) tickBalance(chipBalance, was, bal);
     shownBalance = { name: me.name, balance: bal };
     celebrateWins(me);
+    window.FiveOnkey.settled(me);
     announceTransfers(me);
     announceTaxes(me);
     announceGiveaways(me);
@@ -1491,6 +1492,7 @@
     if (v === 'monkeys') v = 'troop';
     if (v === 'casino') v = 'slots'; // the Casino menu's first page
     state.view = VIEWS.includes(v) ? v : 'overview';
+    window.FiveOnkey?.note('view', { view: state.view });
     if (state.view === 'troop') {
       try { state.troopPick = arg ? decodeURIComponent(arg) : ''; } catch (e) { state.troopPick = ''; }
       if (arg) window.scrollTo(0, 0);
@@ -1664,6 +1666,8 @@
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance });
+    window.FiveOnkey.init({ state, fmt, esc });
+    window.FiveOnkey.start();
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
     // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms
     // it's owned (checkTheme, after every shop load), so a saved or ?theme= one waits, and one you don't own is dropped.

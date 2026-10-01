@@ -501,6 +501,13 @@ class Handler(BaseHTTPRequestHandler):
                                           "recent_giveaways": app.house.payouts(me["name"], 20),
                                           # The daily wheel: whether a spin is waiting (the page's nav dot and chip).
                                           "wheel_ready": app.wheel.spins_left(me["name"]) > 0,
+                                          "tokens": app.wheel.token_counts(me["name"]),  # the bet slip's Boost / Insure toggles
+                                          # Their last settled bets, newest first: Onkey reacts to new ones and losing runs.
+                                          "recent_settled": [{k: b.get(k) for k in ("id", "status", "description", "stake", "payout",
+                                                                                    "odds_decimal", "settled_ts")}
+                                                             for b in sorted((b for b in app.db.bets(bettor=me["name"], limit=200)
+                                                                              if b["status"] in ("won", "lost", "void")),
+                                                                             key=lambda b: b.get("settled_ts") or 0, reverse=True)[:12]],
                                           "member": app.own_member(me)}})
         if path == "/api/shop":
             return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
@@ -697,7 +704,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     bet = app.bets.place(
                         me["name"], body.get("market_id"), body.get("selection"),
-                        body.get("stake"), body.get("context") or {},
+                        body.get("stake"), body.get("context") or {}, tokens=body.get("tokens"),
                     )
                 return self._json({"bet": bet, "bettors": app.bets.leaderboard()}, 201)
             if path == "/api/wheel/spin":

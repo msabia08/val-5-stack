@@ -412,6 +412,7 @@ window.FiveShop = (() => {
         previewTarget.text = '';
         if (item.slot === 'theme') setTheme(item.look.theme);
         toast(item.slot ? `${item.name} is yours, and you're wearing it.` : `${item.name} used on ${r.target}.`, 'good');
+        window.FiveOnkey?.note('buy', { item: item.name });
         if (item.slot === 'celebration' || item.price >= 600) confetti($('#me-bananas') || e.currentTarget, item.price >= 600, myCelebration());
         state.me && (state.me.bananas = r.wallet);
         draw();

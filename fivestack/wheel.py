@@ -9,9 +9,9 @@ library). Each slice's size on the wheel is its chance (`SEGMENTS` weights out o
 - the progressive jackpot, the whole of it, as the rarest slice: the only prize paid from the house's money;
 - bananas (Onkey's Shop money; ledger reason `wheel`, not counted as earned);
 - a free shop cosmetic the bettor doesn't own yet (bananas instead if they own them all);
-- a boost token (their next single of up to TOKEN_MAX_STAKE credits pays TOKEN_BOOST more profit) or an insurance
-  token (their next single, if it loses, gets its stake back up to TOKEN_MAX_STAKE credits, also free): `wheel_perks`,
-  used by BetManager.place() and paid by HouseManager.refunds();
+- a boost token (a single of up to TOKEN_MAX_STAKE credits pays TOKEN_BOOST more profit) or an insurance token (a
+  single that loses gets its stake back, up to TOKEN_MAX_STAKE credits, also free): `wheel_perks`, used from the bet
+  slip on the single the bettor picks (BetManager.place()'s `tokens`) and paid by HouseManager.refunds();
 - another spin today, or nothing at all ("Onkey ate it").
 
 The server picks the slice (`secrets`); the page only animates to it. In demo mode (`unlimited`) there's no daily
@@ -102,6 +102,13 @@ class WheelManager:
         day = wheel_day(now or time.time())
         rows = self.db.query("SELECT prize FROM wheel_spins WHERE lower(bettor)=lower(?) AND day=?", (name, day))
         return max(0, 1 + sum(r["prize"] == "again" for r in rows) - len(rows))
+
+    def token_counts(self, name):
+        """How many of each token the bettor has ready: {"boost": n, "insurance": n}."""
+        counts = {"boost": 0, "insurance": 0}
+        for p in self.perks(name):
+            counts[p["kind"]] = counts.get(p["kind"], 0) + 1
+        return counts
 
     def perks(self, name):
         return self.db.query("SELECT id, kind, created_ts FROM wheel_perks WHERE lower(bettor)=lower(?) AND status='ready' "

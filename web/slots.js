@@ -561,7 +561,12 @@ window.FiveSlots = (() => {
       if (state.view === 'slots') {
         draw(); $('#slot-spin')?.focus();
         if (landed && teased) $$('.slots-reel')[2]?.classList.add(teased.won ? 'tease-won' : 'tease-lost');
-        if (landed) celebrate(landed);
+        if (landed) {
+          celebrate(landed);
+          const sym = data.symbols[landed.reels[0]] || {};
+          window.FiveOnkey?.note('slots', { stake: landed.stake, payout: landed.payout, multiplier: landed.multiplier,
+            symbol: sym.name, golden: !!sym.secret && landed.payout > 0 });
+        }
       }
     }
   }
