@@ -576,7 +576,7 @@ class BetManager:
             low = meta.get("direction") == "low"  # bets from before counter markets existed are all "high"
             vals = {p: m.get(stat) for p, m in metrics.items() if m.get(stat) is not None}
             if stat == "acs_rel" and len(vals) < len(metrics):
-                return "void", None, "Not everyone has earlier 5-stack games to compare against"
+                return "void", None, "Not everyone has earlier squad games to compare against"
             if len(vals) < 2:
                 return "void", None, "Not enough data to settle"
             best = min(vals.values()) if low else max(vals.values())

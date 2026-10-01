@@ -489,7 +489,7 @@ class OddsEngine:
             "market_id": "team:win",
             "type": "team_win",
             "label": "Match result",
-            "desc": "Does the 5-stack win?",
+            "desc": "Does the squad win?",
             # recent: the last five results, newest first, for the form guide under the match result.
             "basis": {"games": len(matches), "win_rate": round(raw_wr, 3), "map_games": map_games,
                       "recent": [m.get("result") for m in matches[:5]]},
@@ -537,7 +537,7 @@ class OddsEngine:
         order = ["l6+", "l3-5", "l1-2", "w1-2", "w3-5", "w6+"]
         label = {key: lbl for key, lbl, _, _ in MARGIN_BANDS}
         out.append({"market_id": "team:margin", "type": "team_margin", "label": "Margin",
-                    "desc": "How much the 5-stack wins or loses by · OT counts as 1–2", "model": basis,
+                    "desc": "How much the squad wins or loses by · OT counts as 1–2", "model": basis,
                     "selections": [selection(key, label[key], margin[key], multi) for key in order]})
         keys = [f"{x}-13" for x in range(12)] + ["ot-loss", "ot-win"] + [f"13-{x}" for x in range(11, -1, -1)]
         names = {"ot-loss": "Overtime loss", "ot-win": "Overtime win"}
@@ -595,7 +595,7 @@ class OddsEngine:
         if not members or not matches:
             return {
                 "ready": False,
-                "message": "No 5-stack games recorded yet. Odds appear after the first tracked game.",
+                "message": "No squad games recorded yet. Odds appear after the first tracked game.",
                 "generated_at": time.time(),
                 "house_edge": self.edge,
             }

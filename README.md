@@ -154,14 +154,60 @@ Only modes listed under `modes` count. The default is `competitive`, `unrated`
 and `premier`; deathmatch and other non-5v5 modes are ignored so averages stay
 comparable.
 
-## How 5-stack detection works
+## The squad (2 to 5 players)
+
+The **Squad** tab has two tables. **Active squad** is who the tracker follows
+right now: between two and five Riot IDs. A game counts when **every** active
+player was on the same team, whoever else was in the lobby, so a squad of two
+counts every game those two played together and a squad of five only counts
+games with all five. The rest of the site says "3-stack", "5-stack" and so on
+to match the active size. **Bench** is everyone else the tracker knows: a
+friend group of six or seven keeps all of them in the pool and swaps the
+line-up as it changes.
+
+- **Changing the line-up.** Drag a row from one table to the other (or use
+  the *Bench* / *Swap in* buttons on phones). The whole line-up is saved at
+  once, open spots are shown in the active table, and the history is
+  re-derived for the new squad (see below). Reordering within the active table
+  only changes the display order.
+- **New players** (*Add someone else to the bench*, by Riot ID and tag) land on
+  the bench; drag them in when they're playing. A benched player's games are
+  not tracked and they earn no rewards until they're swapped in.
+
+- **Each of you manages your own entry from your betting account.** Create
+  your account with your Riot ID (the sign-in form under the profile chip has
+  a Riot ID field) and you're on the squad if there's a spot, otherwise on the
+  bench. Signed in, you can add your Riot ID later, change it (a rename, or
+  another account you want counted), claim an entry nobody owns yet with
+  *This is me*, sit out or swap yourself in, or *Remove me* from the pool.
+  Rewards for your games go to the account that owns your entry. Removing
+  someone else, or adding a player who has no account, is the commissioner's
+  job (the *Add someone else* panel and *Remove* buttons, behind the admin
+  password when one is set, as is changing the line-up).
+- **Joining or leaving** re-derives the recorded games from the match lines
+  already stored (no extra API calls): games the new player wasn't in stop
+  counting, games the remaining players all played start counting. A full
+  re-scan then runs for anything only the full match records can prove. Open
+  bets settle on the next recorded game as usual, and rewards are only paid for
+  games that start after the change.
+- **Renames.** Players are tracked by their Riot account, not their name. The
+  tracker looks up each member's current Riot ID once a day (and on every sync
+  when the API includes the name with a game), updates it, and shows the old
+  one on the Squad tab. Typing a member's new Riot ID into the *Add a player*
+  form also just updates that member. *Check for renames now* forces a lookup.
+- The `members` list in `config.json` only seeds an empty squad the first time
+  the tracker runs; after that the tab is the source of truth. With an
+  `admin_password` set, squad changes ask for it.
+
+## How squad-game detection works
 
 HenrikDev's *stored matches* endpoint returns a player's own line for every
 match the API has stored, and it costs one request per member. A match id that
-shows up for **every** member, with everyone on the same team, is a 5-stack
+shows up for **every** member, with everyone on the same team, is a squad
 game. Stored history can have holes, so when a match shows up for all but one
 member the full match record is fetched to check whether the missing member was
-in it too. Anything else is remembered as rejected so it is never re-checked.
+in it too. Anything else is remembered as rejected so it is never re-checked
+(until the squad changes).
 
 ## 5-stack vs. their other games
 
@@ -388,7 +434,9 @@ distribution at low weight and are flagged *low confidence*.
   signs you in on another device, and once you're signed in it has your
   profile, *Change password* and *Sign out*. From then on only someone signed
   in with that password can bet as that name or cancel its bets. Accounts
-  start with `starting_balance` credits (default 1000).
+  start with `starting_balance` credits (default 1000). Add your Riot ID when
+  you create the account (or later) and you're on the squad: your games count
+  and your game rewards land in this account (see "The squad").
 - Forgot a password? With `admin_password` set, the commissioner can free the
   name again via `POST /api/bettor/clear-password` with the `X-Admin-Password`
   header, after which it can be re-claimed with a new password.
@@ -693,7 +741,7 @@ time you log in.
 | `api_key` | – | HenrikDev key. Can also be given as the `HENRIK_API_KEY` environment variable. |
 | `region` | `na` | Riot affinity of the squad: `na`, `eu`, `ap`, `kr`, `latam`, `br`. |
 | `platform` | `pc` | Game platform (`pc` or `console`) for the HenrikDev endpoints that take one. Reserved: nothing uses it yet. |
-| `members` | – | List of `"Name#TAG"` strings or `{ "riot_id": "Name#TAG", "nickname": "Matt", "bettor": "Matty" }` objects. `bettor` (optional) is the betting account that receives this member's game rewards; it defaults to the nickname. |
+| `members` | – | Seeds the squad the first time the tracker runs (up to 5); afterwards the **Squad** tab manages it and this list is ignored. `"Name#TAG"` strings or `{ "riot_id": "Name#TAG", "nickname": "Matt", "bettor": "Matty" }` objects. `bettor` (optional) is the betting account that receives this member's game rewards; it defaults to the nickname. |
 | `modes` | competitive, unrated, premier | Modes that count. Empty list = every mode. |
 | `poll_interval_minutes` | 10 | How often to check for new games. |
 | `poll_size` | 40 | Stored matches fetched per member on a regular sync (the first sync fetches everything). |

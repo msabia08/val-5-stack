@@ -89,6 +89,10 @@ def _game_times(rng, games):
 def _seed_stack(db, rng, games):
     for i, (name, tag, nick, *_rest) in enumerate(MEMBERS):
         db.upsert_member(str(uuid.UUID(int=rng.getrandbits(128))), name, tag, "na", nick, None, i)
+    # A sixth friend on the bench: in the pool, not playing right now, so the Squad tab has someone to swap in.
+    casey = str(uuid.UUID(int=rng.getrandbits(128)))
+    db.upsert_member(casey, "Casey", "SUBS", "na", "Casey", None, len(MEMBERS))
+    db.update_member(casey, active=0)
     members = db.members()
     profile = {m[0]: m for m in MEMBERS}
 
@@ -186,6 +190,8 @@ def _seed_bets(db, rng, games=10):
     for i, name in enumerate(names):
         if not db.get_bettor(name):
             db.execute("INSERT INTO bettors(name, balance, created_at) VALUES(?,?,?)", (name, 1000, base + i))
+        if not members[i].get("bettor"):  # in the demo everyone signed up with their own Riot ID
+            db.update_member(members[i]["puuid"], bettor=name)
 
     # Lines near each player's averages, so roughly half the overs win.
     rows = db.player_rows()
