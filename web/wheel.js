@@ -38,10 +38,7 @@ window.FiveWheel = (() => {
 
   const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const mod = (a, n) => ((a % n) + n) % n;
-  const chance = (w) => {
-    const p = w / data.total_weight;
-    return p >= 0.1 ? fmt.pct(p) : `1 in ${Math.round(1 / p)}`;
-  };
+  const chance = (w) => `1 in ${Math.round(data.total_weight / w)}`; // every chance the same way, rounded
 
   // Each slice's start and end, in degrees clockwise from the top.
   function slices() {
@@ -148,7 +145,7 @@ window.FiveWheel = (() => {
 
   function prizes() {
     const rows = slices().slice().sort((a, b) => a.weight - b.weight).map((s) =>
-      `<tr><th scope="row"><span class="wheel-key wk-${esc(s.kind)}" aria-hidden="true"></span>${ICONS[s.kind] || ''} ${esc(s.label)}</th><td class="num">${chance(s.weight)}</td></tr>`).join('');
+      `<tr><th scope="row">${ICONS[s.kind] || ''} ${esc(s.label)}</th><td class="num">${chance(s.weight)}</td></tr>`).join('');
     return `<section class="card"><h2>Prizes</h2><p class="muted small">Rarest first. A slice's size on the wheel is its chance.</p>` +
       `<table class="compact wheel-prizes"><tbody>${rows}</tbody></table>` +
       `<details class="how"><summary>Where the prizes come from</summary><div class="how-body">Credits and insurance refunds are on the house, free; only the jackpot slice is paid from the house's money: it's the whole progressive jackpot, which grows with every bet and spin. Bananas go to your banana wallet for Onkey's Shop. A free cosmetic is one you don't own yet (100 bananas if you own them all). A boost token gives your next single of up to ${fmt.credits(data.token.max_stake)} credits ${fmt.pct(data.token.boost)} more profit (not on top of the odds boost of the game); an insurance token refunds your next single if it loses, up to ${fmt.credits(data.token.max_stake)} credits. Tokens are used by your next single bet, never a parlay. The wheel resets at midnight Pacific, which is 3 AM Eastern. Where the wheel stops is decided before it starts turning; the slow finish is only for show.</div></details></section>`;

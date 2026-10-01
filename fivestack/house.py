@@ -36,7 +36,7 @@ from .gamestate import COMPLETE, ending, went_to_overtime
 from .moments import game_facts
 from .stats import player_metrics
 
-JACKPOT_SHARE = 0.25  # of the house's take, into the progressive jackpot; the rest is the giveaway pot
+JACKPOT_SHARE = 0.5  # of the house's take, into the progressive jackpot; the rest is the giveaway pot
 POT_KINDS = ("objective", "refund")  # the payouts the pot pays for; the daily wheel's credits and insurance are free
 GAME_SHARE = 0.10  # of the pot, offered across one game's objectives (a rarer goal gets more of it)
 PRIZE_STEP = 5  # prizes are whole multiples of this

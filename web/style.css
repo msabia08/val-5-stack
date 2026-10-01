@@ -342,6 +342,15 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .confetti { position: fixed; width: 7px; height: 11px; margin: -5px 0 0 -3px; border-radius: 2px; pointer-events: none; z-index: 1000; }
 .confetti.round { width: 8px; height: 8px; border-radius: 50%; }
 .me-chip b.tick-up { animation: tick-up 1.4s ease-out; }
+/* The daily wheel's reminder (wheelReady() in app.js): a gold chip in the top bar and a glowing dot on the Casino menu
+   and its Daily wheel entry while a spin is waiting. */
+.topbar .topbar-right > .me-chip.me-wheel { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.topbar .topbar-right > .me-chip.me-wheel:hover { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 30%, transparent); }
+.nav-trigger.nav-alert, .nav-menu a.nav-alert b { position: relative; }
+.nav-trigger.nav-alert::after, .nav-menu a.nav-alert b::after { content: ""; position: absolute; top: 2px; right: -9px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 60%, transparent); animation: nav-alert 1.8s ease-out infinite; }
+@keyframes nav-alert { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .nav-trigger.nav-alert::after, .nav-menu a.nav-alert b::after { animation: none; } }
 .me-chip b.tick-down { animation: tick-down 1.4s ease-out; }
 @keyframes tick-up { from { color: var(--up); text-shadow: 0 0 10px var(--up); } }
 @keyframes tick-down { from { color: var(--down); text-shadow: 0 0 10px var(--down); } }
@@ -1762,11 +1771,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .wheel-error { margin: 4px 0 0; color: var(--bad); }
 .wheel-side .card { margin-bottom: 16px; }
 .wheel-prizes th { font-weight: 500; }
-.wheel-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: baseline; background: currentColor; }
-.wheel-key.wk-credits { background: var(--wheel-credits); } .wheel-key.wk-bananas { background: var(--wheel-bananas); }
-.wheel-key.wk-boost { background: var(--wheel-boost); } .wheel-key.wk-insurance { background: var(--wheel-insurance); }
-.wheel-key.wk-nothing { background: var(--wheel-nothing); } .wheel-key.wk-again { background: var(--wheel-again); }
-.wheel-key.wk-item { background: var(--wheel-item); } .wheel-key.wk-jackpot { background: var(--wheel-jackpot); }
 .wheel-tokens, .wheel-spins { list-style: none; margin: 0; padding: 0; }
 .wheel-tokens li { padding: 6px 0; border-bottom: 1px solid var(--grid); }
 .wheel-spins li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }

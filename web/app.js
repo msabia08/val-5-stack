@@ -111,6 +111,7 @@
     shop.syncMe(); // a new sign-in brings its own bananas, items and themes
     credits.classList.toggle('hidden', !me);
     bananas.classList.toggle('hidden', !me);
+    wheelReady(me);
     credits.innerHTML = `<b>${me ? fmt.credits(me.balance) : '–'}</b><span class="me-unit">credits</span>`;
     credits.title = me ? `${fmt.credits(me.balance)} credits${me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on open bets` : ''}. Open the rankings.` : 'Sign in to see your credits';
     const nb = me && me.bananas != null ? shop.bn(me.bananas) : '–';
@@ -130,6 +131,17 @@
     announceTransfers(me);
     announceTaxes(me);
     announceGiveaways(me);
+  }
+
+  // The daily wheel's reminder: while the signed-in bettor has a spin waiting (/api/bettor/me wheel_ready), a "Spin
+  // ready" chip in the top bar and a glowing dot on the Casino menu and its Daily wheel entry. It's refreshed with every
+  // redraw and the 20-second status poll, so it turns on at midnight Pacific and off once they spin. The chip hides on
+  // the wheel itself.
+  function wheelReady(me) {
+    const ready = !!(me && me.wheel_ready);
+    $('#me-wheel')?.classList.toggle('hidden', !ready || state.view === 'wheel');
+    $('.nav-group[data-label="Casino"] .nav-trigger')?.classList.toggle('nav-alert', ready);
+    $('.nav-menu a[data-view="wheel"]')?.classList.toggle('nav-alert', ready);
   }
 
   // A toast for credits the house gave this bettor (a secret objective met, a bad beat refunded) since this browser last

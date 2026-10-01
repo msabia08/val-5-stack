@@ -499,6 +499,8 @@ class Handler(BaseHTTPRequestHandler):
                                           "recent_received": received,
                                           "recent_taxes": app.db.taxes_collected(me["name"], 20),
                                           "recent_giveaways": app.house.payouts(me["name"], 20),
+                                          # The daily wheel: whether a spin is waiting (the page's nav dot and chip).
+                                          "wheel_ready": app.wheel.spins_left(me["name"]) > 0,
                                           "member": app.own_member(me)}})
         if path == "/api/shop":
             return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))

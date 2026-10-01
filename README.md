@@ -765,8 +765,8 @@ win.
 
 The house keeps a small edge on every match bet and casino round (the slots and
 blackjack edge, the poker rake). What that has taken (estimated from the price of
-each bet and round, every season) is the house's money, and it goes back to the squad and the bettors. 75% of it is the
-**pot**, which pays for secret objectives and bad-beat refunds, and 25% builds the
+each bet and round, every season) is the house's money, and it goes back to the squad and the bettors. Half of it is
+the **pot**, which pays for secret objectives and bad-beat refunds, and half builds the
 **jackpot**, which the daily wheel pays out. The Standings page's sidebar shows both, along with the next game's
 objectives (how many and what they're worth, not what they are), the last
 game's objectives revealed, and the latest giveaways.
@@ -813,9 +813,9 @@ slice's size on the wheel is its chance:
 
 | Prize | Chance |
 |---|---|
-| 50 credits | 21% |
-| 100 credits | 15% |
-| 50 bananas | 13% |
+| 50 credits | 1 in 5 |
+| 100 credits | 1 in 7 |
+| 50 bananas | 1 in 8 |
 | Boost token: your next single of up to 100 credits pays 50% more profit | 1 in 11 |
 | Insurance token: if your next single loses, you get the stake back (up to 100) | 1 in 13 |
 | 200 credits | 1 in 13 |
