@@ -282,6 +282,21 @@ DEMO_SHOPPING = {
 }
 
 
+def seed_house(db, house):
+    """The house's giveaways on the latest game (its secret objectives revealed and paid, its bad beats refunded), then
+    the next game's set, so the Standings card and the recap have something to show."""
+    if db.query_one("SELECT 1 AS x FROM house_objectives"):
+        return
+    latest = db.matches(1)
+    if not latest:
+        return
+    match = latest[0]
+    house.ensure_objectives(for_match=match)
+    house.refunds(match, [b for b in db.bets() if b.get("settled_match_id") == match["match_id"]])
+    house.settle_objectives(match, db.match_players(match["match_id"]))
+    house.ensure_objectives()
+
+
 def seed_shop(db, bananas):
     """A few shop purchases and one of each prank, paid for with the demo's earned bananas plus a starter grant."""
     if db.banana_items():

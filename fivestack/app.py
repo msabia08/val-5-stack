@@ -28,6 +28,8 @@ from .db import DB
 from .forecasts import build_forecasts
 from .gamestate import ending
 from .henrik import HenrikClient, HenrikError
+from .house import HouseManager
+from .wheel import WheelManager
 from .insights import betting_report, build_insights
 from .odds import OddsEngine
 from .recap import build_recap
@@ -76,6 +78,8 @@ class App:
         self.bananas = BananaManager(cfg, self.db, self.bets)
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db)
+        self.house = HouseManager(self.db, self.bets, self.slots, self.rewards)
+        self.wheel = WheelManager(self.db, self.house, unlimited=demo)  # demo: spin as often as you like
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
@@ -86,20 +90,26 @@ class App:
             demo_seed.seed(self.db)
             self.bananas.earn()
             demo_seed.seed_shop(self.db, self.bananas)
+            demo_seed.seed_house(self.db, self.house)
         elif not self.problems:
             self.client = HenrikClient(cfg["api_key"].strip(), min_interval=float(cfg.get("min_request_interval_s", 1.5)))
             self.tracker = Tracker(cfg, self.db, self.client, on_new_matches=self.on_new_matches)
         self.bananas.earn()  # credit gains from before the shop existed (or from a sync that stopped part-way)
+        self.house.ensure_objectives()  # the next game's secret objectives, once the pot can pay for them
         self.started = time.time()
 
     def on_new_matches(self, matches):
         settled = []
         for m in matches:
             players = self.db.match_players(m["match_id"])
-            settled.extend(self.bets.settle_for_match(m, players))
+            done = self.bets.settle_for_match(m, players)
+            settled.extend(done)
             paid = self.rewards.pay_for_match(m, players)
             if paid:
                 print(f"[rewards] {m['map']} {m['result']}: " + ", ".join(f"{r['bettor']} +{r['base'] + r['bonus']:.0f}" for r in paid), flush=True)
+            given = self.house.after_match(m, players, done)  # bad-beat refunds and the secret objectives
+            if given:
+                print(f"[house] {m['map']}: " + ", ".join(f"{g['bettor']} +{g['amount']:g} ({g['kind']})" for g in given), flush=True)
         self.bananas.earn()  # bananas for the bets just won and the rewards just paid
         return settled
 
@@ -370,7 +380,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"matches": matches})
         if path == "/api/recap":
             bettor_of = {m["puuid"]: app.rewards.account_name(m) for m in app.db.members()}
-            return self._json(build_recap(app.db, app.engine, qs.get("match") or None, bettor_of, app.rewards.bonus_max))
+            recap = build_recap(app.db, app.engine, qs.get("match") or None, bettor_of, app.rewards.bonus_max)
+            if recap:
+                recap["house"] = app.house.for_match(recap["match"]["match_id"])
+            return self._json(recap)
         if path.startswith("/api/match/"):
             mid = path.rsplit("/", 1)[1]
             m = app.db.match(mid)
@@ -390,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
                             k, v = part.split(":", 1)
                             ctx["agents"][k] = v
             if path == "/api/odds":
-                return self._json(app.bets.mark_streaks(app.engine.build(app.db, ctx)))
+                return self._json(app.bets.apply_boost(app.bets.mark_streaks(app.engine.build(app.db, ctx))))
             # A custom line's price and reasonable range: ?puuid=&stat=&line=24.5, or an exact number: &exact=25
             # (plus the same map / agents).
             try:
@@ -430,11 +443,16 @@ class Handler(BaseHTTPRequestHandler):
                                           "open_stake": round(sum(b["stake"] for b in pending), 2), "recent_wins": wins,
                                           "recent_received": received,
                                           "recent_taxes": app.db.taxes_collected(me["name"], 20),
+                                          "recent_giveaways": app.house.payouts(me["name"], 20),
                                           "member": app.own_member(me)}})
         if path == "/api/shop":
             return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/arcade":
             return self._json(app.arcade.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
+        if path == "/api/house":
+            return self._json(app.house.summary())
+        if path == "/api/wheel":
+            return self._json(app.wheel.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/slots":
             return self._json(app.slots.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/troop":
@@ -606,6 +624,11 @@ class Handler(BaseHTTPRequestHandler):
                         body.get("stake"), body.get("context") or {},
                     )
                 return self._json({"bet": bet, "bettors": app.bets.leaderboard()}, 201)
+            if path == "/api/wheel/spin":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to spin the wheel."}, 403)
+                return self._json(app.wheel.spin(me["name"], force=body.get("segment")))  # honoured in demo mode only
             if path == "/api/slots/spin":
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

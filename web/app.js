@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -129,6 +129,26 @@
     celebrateWins(me);
     announceTransfers(me);
     announceTaxes(me);
+    announceGiveaways(me);
+  }
+
+  // A toast for credits the house gave this bettor (a secret objective met, a bad beat refunded) since this browser last
+  // looked (fs.seenHouse.<name>: the newest payout id shown). The first visit only sets the marker.
+  function announceGiveaways(me) {
+    const key = `fs.seenHouse.${me.name.toLowerCase()}`, got = me.recent_giveaways || [];
+    if (document.hidden) return;
+    const newest = got.reduce((a, g) => Math.max(a, g.id), 0);
+    let seen = null;
+    try { seen = localStorage.getItem(key); localStorage.setItem(key, String(Math.max(newest, Number(seen) || 0))); }
+    catch (e) { return; }
+    if (seen === null) return;
+    // The daily wheel shows its own prizes as they land, so only objectives, refunds and insurance get a toast.
+    const fresh = got.filter((g) => g.id > Number(seen) && !['wheel', 'jackpot'].includes(g.kind));
+    if (!fresh.length) return;
+    const total = fresh.reduce((a, g) => a + g.amount, 0);
+    const what = (g) => (g.kind === 'objective' ? `secret objective met: ${g.note}` : g.note);
+    toast(fresh.length === 1 ? `The house paid you ${fmt.credits(total)} credits (${what(fresh[0])})`
+      : `The house paid you ${fmt.credits(total)} credits for ${fresh.length} giveaways`, 'good');
   }
 
   // The generous monkey gets rewarded: a toast for generosity tax collected (a cut of the next win of someone this
@@ -818,8 +838,9 @@
   function oddBtn(mk, s, label, extra = '') { // extra: more classes for the button (e.g. 'win' / 'loss' to colour its label)
     const on = state.slip.some((x) => x.market_id === mk.market_id && x.selection === s.key);
     const runOf = (n) => (n >= state.odds.streak_lookback ? `${n}+` : n);
-    const note = s.streak ? `Hit ${runOf(s.streak)} games in a row` : s.cold ? `Missed ${runOf(s.cold)} games in a row` : '';
-    const cls = (s.streak ? ' hot' : s.cold ? ' cold' : '') + (extra ? ` ${extra}` : '');
+    const note = [s.boost ? `Odds boost: was ${fmt.odds({ decimal: s.boost.from_decimal, american: s.boost.from_american })}, singles up to ${fmt.credits(s.boost.max_stake)} credits` : '',
+      s.streak ? `Hit ${runOf(s.streak)} games in a row` : s.cold ? `Missed ${runOf(s.cold)} games in a row` : ''].filter(Boolean).join(' · ');
+    const cls = (s.streak ? ' hot' : s.cold ? ' cold' : '') + (s.boost ? ' boosted' : '') + (extra ? ` ${extra}` : '');
     return `<button class="odd ${on ? 'on' : ''}${cls}" data-m="${esc(mk.market_id)}" data-s="${esc(s.key)}" aria-pressed="${on}" title="${Math.round(s.fair_prob * 100)}% fair probability${note ? ` · ${note}` : ''}">` +
       `${label ? `<span>${esc(label)}</span>` : ''}<b>${fmt.odds(s)}</b>${note ? `<span class="sr-only">, ${note}</span>` : ''}</button>`;
   }
@@ -893,6 +914,17 @@
         `${TM_FACTS ? `<div class="tm-axis">overtime</div><div class="tm-fact">Likeliest: ${esc(likeliest.label)} (${fmt.pct(likeliest.fair_prob)}), outlined. Hover a bar for its chance.</div>` : ''}</div>`;
     }
     const team = hero + `<div class="tm-qgrid">${cards}${finalScore}</div>`;
+    // The odds boost of the game (bets.py BOOST): one pick at a better price until the next game is recorded.
+    let boostCard = '';
+    const bo = od.boost;
+    const boMarket = bo && [...od.team, ...od.player_props, ...od.top_markets].find((mk) => mk.market_id === bo.market_id);
+    const boSel = boMarket && boMarket.selections.find((x) => x.key === bo.selection);
+    if (boSel) {
+      boostCard = `<section class="card boost-card"><h2>Odds boost of the game</h2>` +
+        `<p class="boost-pick">${esc(bo.description)}</p>` +
+        `<div class="boost-price"><s aria-label="usual price">${fmt.odds({ decimal: bo.from_decimal, american: bo.from_american })}</s>${oddBtn(boMarket, boSel, 'Boosted')}</div>` +
+        `<p class="muted small">${fmt.pct(bo.pct)} more profit than the usual price, on singles up to ${fmt.credits(bo.max_stake)} credits. A new pick is boosted after every game.</p></section>`;
+    }
     const props = new Map(od.player_props.map((p) => [p.market_id, p]));
     const propRows = od.members.map((m) => {
       const slot = idx.get(m.puuid)?.slot || 1;
@@ -933,7 +965,7 @@
           <div class="table-wrap"><table class="props"><thead><tr><th>Player</th>${od.stat_defs.map((s) => `<th>${esc(s.label)}</th>`).join('')}</tr></thead><tbody>${propRows}</tbody></table></div></section>
         <section class="card"><h2>Top and bottom of the scoreboard</h2>${how('Pick who finishes first in a stat, or flip a card for who finishes last.', '"Popped off" and "Got diff\'d" rank everyone against their own average ACS instead of against each other, so anyone can win them. A tie refunds the stake.')}<div class="markets">${tops}</div></section>
         ${betsSection()}
-      </div><aside class="odds-side">${fmtBar}<div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}${myBetsCard()}</aside></div>`;
+      </div><aside class="odds-side">${fmtBar}${boostCard}<div class="slip card" id="slip">${slipHtml()}</div>${customLineCard()}${myBetsCard()}</aside></div>`;
   }
 
 
@@ -1118,6 +1150,7 @@
         case 'troop': view.innerHTML = window.FiveShop.viewTroop(); break;
         case 'arcade': view.innerHTML = window.FiveArcade.viewArcade(); break;
         case 'slots': view.innerHTML = window.FiveSlots.view(); break;
+        case 'wheel': view.innerHTML = window.FiveWheel.view(); break;
         case 'matches': view.innerHTML = viewMatches(); break;
         default: view.innerHTML = viewSetup();
       }
@@ -1146,6 +1179,7 @@
         case 'troop': await Promise.all([window.FiveShop.loadTroop(), window.FiveShop.loadProfile(), state.shop ? null : window.FiveShop.loadShop()]); break;
         case 'arcade': await window.FiveArcade.load(); break;
         case 'slots': await window.FiveSlots.load(); break;
+        case 'wheel': await window.FiveWheel.load(); break;
         case 'matches': await Promise.all([loadMatches(), loadRecap()]); break;
         default: await loadStatus();
       }
@@ -1200,6 +1234,7 @@
     window.FiveShop.bind(view);
     window.FiveArcade.bind(view);
     window.FiveSlots.bind(view);
+    window.FiveWheel.bind(view);
     $('#copy-url')?.addEventListener('click', async (e) => {
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
       catch (err) { toast('Could not copy; select the link and copy it manually', 'bad'); }
@@ -1579,9 +1614,10 @@
   async function init() {
     const shop = window.FiveShop;
     shop.init({ state, $, $$, api, draw, esc, fmt, kpi, toast, confetti, onShop: () => checkTheme() });
-    window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
+    window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, plainName, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
     window.FiveArcade.init({ state, $, $$, api, draw, esc, fmt, toast, nameHtml: shop.nameHtml, loadMe });
     window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName });
+    window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast });
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
     // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms
     // it's owned (checkTheme, after every shop load), so a saved or ?theme= one waits, and one you don't own is dropped.

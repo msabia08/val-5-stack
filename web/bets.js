@@ -8,7 +8,7 @@ window.FiveBets = (() => {
   'use strict';
 
   // Shared with app.js (set by init): the page state object and its helpers.
-  let state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast;
+  let state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, plainName, toast;
   // From Onkey's Shop (web/shop.js): a bettor's name in their bought colours and badge, and their ticket style.
   let nameHtml, ticketClass, ticketExtras;
   // A one-line explanation with the rest folded behind "How this works" (the full text is still one click away).
@@ -16,6 +16,7 @@ window.FiveBets = (() => {
 
   function init(ctx) {
     ({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast } = ctx);
+    plainName = ctx.plainName || ((name) => esc(name));
     nameHtml = ctx.nameHtml || ((name) => esc(name));
     ticketClass = ctx.ticketClass || (() => '');
     ticketExtras = ctx.ticketExtras || (() => '');
@@ -26,9 +27,10 @@ window.FiveBets = (() => {
   const loadBettingReport = async () => { state.bettingReport = await api('/api/betting-report'); };
   const loadSeasons = async () => { state.seasons = await api('/api/seasons'); };
   const loadBets = async () => {
-    const [b, l, m, r, t] = await Promise.all([api('/api/bets?limit=600'), api('/api/bettors'), api('/api/bettor/me'),
-      api('/api/rewards?limit=60'), api('/api/transfers?limit=30')]);
+    const [b, l, m, r, t, h] = await Promise.all([api('/api/bets?limit=600'), api('/api/bettors'), api('/api/bettor/me'),
+      api('/api/rewards?limit=60'), api('/api/transfers?limit=30'), api('/api/house').catch(() => null)]);
     state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null; state.rewards = r.rewards; state.transfers = t.transfers;
+    state.house = h;
     if (state.me) { state.bettor = state.me.name; localStorage.setItem('fs.bettor', state.bettor); }
   };
   const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
@@ -521,7 +523,8 @@ window.FiveBets = (() => {
     });
     const inPlay = bettors.reduce((a, b) => a + b.balance + (b.pending_stake || 0), 0);
     const rewarded = bettors.reduce((a, b) => a + (b.rewards || 0), 0);
-    const issued = bettors.length * start + rewarded;
+    const given = bettors.reduce((a, b) => a + (b.giveaways || 0), 0);
+    const issued = bettors.length * start + rewarded + given;
     const house = issued - inPlay;
     const leader = bettors[0];
     const kpis = [
@@ -543,6 +546,7 @@ window.FiveBets = (() => {
         `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td>` +
         `<td class="num">${b.transfers ? fmt.signed(b.transfers, 0) : '–'}</td>` +
         `<td class="num ${b.slots > 0 ? 'up' : b.slots < 0 ? 'down' : ''}">${b.slots ? fmt.signed(b.slots, 0) : '–'}</td>` +
+        `<td class="num">${b.giveaways ? '+' + fmt.credits(b.giveaways) : '–'}</td>` +
         `<td class="num">${b.won}-${b.lost}${b.void ? '-' + b.void : ''}</td>` +
         `<td class="num">${settled ? fmt.pct(b.won / settled) : '–'}</td>` +
         `<td class="num">${b.roi != null ? fmt.signed(b.roi * 100, 0) + '%' : '–'}</td>` +
@@ -552,14 +556,14 @@ window.FiveBets = (() => {
     // Laid out like Place bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
       <div class="odds-layout bettors-layout"><div>
-      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers and slot results (shown separately). Transfers is what they received minus what they sent, generosity tax included. Slots is payouts minus stakes this season.`)}
-        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Slot payouts minus stakes this season">Slots</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers, slot results and what the house gave back (shown separately). Transfers is what they received minus what they sent, generosity tax included. Slots is payouts minus stakes this season. House is secret objectives met and bad beats refunded this season.`)}
+        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Slot payouts minus stakes this season">Slots</th><th class="num" title="Credits from the house this season: secret objectives met and bad beats refunded">House</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
       ${settledSection()}
       ${pastSeasonsCard()}
       ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}
-      </div><aside class="odds-side bettors-side">${transferCard()}${rewardsCard()}</aside></div>`;
+      </div><aside class="odds-side bettors-side">${houseCard()}${transferCard()}${rewardsCard()}</aside></div>`;
   }
 
   // The generosity tax (bets.py TAX_RATE / TAX_MIN_TRANSFER, sent in /api/status): send someone enough credits and
@@ -698,6 +702,39 @@ window.FiveBets = (() => {
   }
 
   const REWARD_GAMES = 5; // the Game rewards card shows the last this many games
+
+  // The house (/api/house, fivestack/house.py): the pot its edge has built from bets and slots, the jackpot, the next
+  // game's secret objectives (only how many and their prizes), the last game's objectives revealed, and the latest
+  // giveaways.
+  function houseCard() {
+    const h = state.house;
+    if (!h) return '';
+    const r = h.rules, credits = (v) => fmt.credits(Math.max(0, v));
+    const rule = `The house keeps a small edge on every bet and slot spin. ${fmt.pct(1 - r.jackpot_share)} of what that edge has taken ` +
+      `fills the pot and ${fmt.pct(r.jackpot_share)} builds the jackpot, which the daily wheel's rarest slice pays out. Before each game the house hides three objectives: a personal goal ` +
+      `for one squad member, set from their own past games so it's as reachable for them as for anyone (and the squad's lower scorers are ` +
+      'picked more often), a goal the whole squad shares, and a goal any bettor can meet. Each is worth a share of the pot, more for a ' +
+      `rarer one, split evenly between everyone who meets it, and they're revealed once the game is recorded. A lost bet that only just ` +
+      `missed (an over / under by one, a parlay of 3 or more legs one leg short, a match result lost in overtime) gets ${fmt.pct(r.refund_rate)} ` +
+      `of its stake back, up to ${fmt.credits(r.refund_max)} credits. A surrender carries the objectives over to the next game.`;
+    const next = h.next.objectives
+      ? `<p class="house-next"><b>${h.next.objectives} secret objectives</b> for the next game, worth ${h.next.prizes.map((p) => fmt.credits(p)).join(', ')} credits.</p>`
+      : '<p class="muted small">No objectives yet: they start once the pot can pay for them.</p>';
+    const mark = { met: '✓', missed: '✗', void: '–' };
+    const last = h.last.length ? `<h3>Last game's objectives</h3><ul class="house-goals">${h.last.map((o) => {
+      const won = Object.entries(o.winners).filter(([, v]) => v > 0);
+      const who = o.status === 'void' ? 'No result: the game couldn\'t tell'
+        : won.length ? won.map(([n, v]) => `${plainName(n)} +${fmt.credits(v)}`).join(', ') : 'Nobody';
+      return `<li class="${esc(o.status)}"><span class="house-mark" aria-label="${esc(o.status)}">${mark[o.status] || ''}</span>` +
+        `<div><div>${esc(o.text)} <span class="muted small">${fmt.credits(o.prize)}</span></div><div class="muted small">${who}</div></div></li>`;
+    }).join('')}</ul>` : '';
+    const recent = h.recent.length ? `<h3>Latest giveaways</h3><ul class="house-recent">${h.recent.map((g) =>
+      `<li><span>${plainName(g.bettor)}</span><span class="muted small">${esc(g.note || '')}</span><span class="num up">+${fmt.credits(g.amount)}</span></li>`).join('')}</ul>` : '';
+    return `<section class="card house-card"><h2>The house</h2>${how('Some of what the house takes goes back to you.', rule)}` +
+      `<div class="house-pots"><div><span class="tile-label">Pot</span><b>${credits(h.pot)}</b></div>` +
+      `<div><span class="tile-label">Jackpot</span><b>${credits(h.jackpot)}</b><a class="muted small" href="#wheel">Win it on the daily wheel</a></div></div>` +
+      `${next}${last}${recent}</section>`;
+  }
 
   function rewardsCard() {
     const s = state.status, game = s.game_reward || 0, win = s.win_reward || 0, bonus = s.performance_bonus_max || 0;

@@ -5,6 +5,7 @@
 Runs the @section checks below in order and prints "ok: <name>" for each; a failure prints "FAIL: <name>" and stops.
 """
 import json
+import math
 import os
 import re
 import sys
@@ -133,6 +134,9 @@ def section(name):
 
 def setup():
     tmp = tempfile.mkdtemp()
+    # The odds boost lands on a random pick and would move the prices the checks expect; the "house" section turns
+    # it back on and checks it.
+    real_boost, BetManager.apply_boost = BetManager.apply_boost, lambda self, board: board
     db = DB(os.path.join(tmp, "t.db"))
     cfg = {"region": "na", "members": MEMBERS, "modes": ["competitive", "unrated"], "fetch_match_details": True,
            "details_per_sync": 5, "house_edge": 0.05, "starting_balance": 1000}
@@ -147,7 +151,8 @@ def setup():
         return out
 
     tracker = Tracker(cfg, db, client, on_new_matches=on_new)
-    return types.SimpleNamespace(tmp=tmp, db=db, cfg=cfg, client=client, engine=engine, bets=bets, tracker=tracker)
+    return types.SimpleNamespace(tmp=tmp, db=db, cfg=cfg, client=client, engine=engine, bets=bets, tracker=tracker,
+                                 real_boost=real_boost)
 
 
 @section("accounts")
@@ -430,6 +435,18 @@ def settlement(shared):
     assert tester_row["won"] == 2 and tester_row["cancelled"] == 2, tester_row
     parlay_row = next(r for r in lb if r["name"] == "Parlay")
     assert parlay_row["won"] == 1 and parlay_row["lost"] == 1, parlay_row
+    # The house's take from bets: stakes minus payouts on settled bets, and the estimate from each price and chance.
+    house = shared.house = bets.house()
+    done = [b for b in db.bets() if b["status"] in ("won", "lost")]
+    assert house["bets"] == len(done) == 4 and house["staked"] == sum(b["stake"] for b in done) == 190
+    assert abs(house["actual_take"] - (190 - sum(b["payout"] for b in done))) < 0.01, house
+
+    def priced(b):  # the return per credit the bet was priced at: under 1 by the house edge
+        ctx = json.loads(b["context"])
+        legs = ctx["legs"] if b["market_type"] == "parlay" else [{**ctx, "odds_decimal": b["odds_decimal"]}]
+        return math.prod(leg["odds_decimal"] * leg["fair_prob"] for leg in legs)
+    assert abs(house["expected_take"] - sum(b["stake"] * (1 - priced(b)) for b in done)) < 0.01, house
+    assert 0 < house["expected_take"] < 190 * 0.25, house
 
 
 @section("scoreboard markets")
@@ -1000,9 +1017,10 @@ def seasons(shared):
     db, bets = shared.db, shared.bets
     # Resetting the season archives it first: final standings, every bet and every reward.
     before = {"bets": len(db.bets()), "rewards": len(db.rewards()), "open": sum(b["status"] == "pending" for b in db.bets()),
-              "standings": {r["name"]: r for r in bets.leaderboard()}}
+              "standings": {r["name"]: r for r in bets.leaderboard()}, "house": bets.house()}
     assert db.season_counts()["bets"] == before["bets"] and db.seasons() == []
     season = bets.reset()
+    assert bets.house() == before["house"] and before["house"]["bets"] > 0  # archived bets still count for the house
     assert db.rewards() == [] and db.reward_totals() == {} and db.get_bettor("P2")["balance"] == 1000 and db.bets() == []
     assert season["name"] == "Season 1" and season["bets"] == before["bets"] and season["rewards"] == before["rewards"]
     saved = {r["name"]: r for r in season["standings"]}
@@ -1716,6 +1734,222 @@ def roster(shared):
     r = tracker.unlink_member("Six")
     assert r["was_active"] is True and db.count_members() == 4 and db.member_by_bettor("Six") is None
     assert tracker.sync()["ok"]
+
+
+@section("house")
+def house_giveaways(shared):
+    from fivestack.bets import BOOST_MAX_STAKE
+    from fivestack.house import JACKPOT_SHARE, MIN_PRIZE, PRIZE_STEP, REFUND_MAX, REFUND_RATE, HouseManager
+    from fivestack.odds import find_market
+    from fivestack.slots import SlotManager
+    hdb, engine = DB(os.path.join(shared.tmp, "house.db")), OddsEngine(shared.cfg)
+    hbets = BetManager(shared.cfg, hdb, engine)
+    house = HouseManager(hdb, hbets, SlotManager(hdb), RewardManager(shared.cfg, hdb))
+    for i, pu in enumerate(PUUIDS.values()):
+        hdb.upsert_member(pu, f"P{i + 1}", "TAG", "na", "", None, i)
+    assert house.ensure_objectives() == []  # no games and an empty pot: nothing to give
+
+    def line(kills):  # kills: {puuid: kills} (12 for anyone left out)
+        return [{"puuid": pu, "agent": "Omen", "kills": kills.get(pu, 12), "deaths": 14, "assists": 4,
+                 "score": kills.get(pu, 12) * 250, "damage_dealt": kills.get(pu, 12) * 150, "headshots": 5,
+                 "bodyshots": 20, "legshots": 1} for pu in PUUIDS.values()]
+    for k in range(8):  # won 13-9, or lost 7-13 every third game
+        hdb.insert_match({"match_id": f"h{k}", "map": "Bind", "mode": "competitive", "started_ts": 1000 + k,
+                          "rounds_won": 13 if k % 3 else 7, "rounds_lost": 9 if k % 3 else 13,
+                          "result": "win" if k % 3 else "loss"},
+                         line({pu: 8 + (k * (i + 2)) % 9 for i, pu in enumerate(PUUIDS.values())}))
+    assert house.ensure_objectives() == []  # games, but the pot is still empty
+
+    # The pot is the house's estimated take from bets and slots: a lost 20,000 stake priced at a 5% edge is 1,000.
+    funder = hdb.insert_bet({"bettor": "Whale", "market_id": "team:win", "market_type": "team_win", "selection": "win",
+                             "odds_decimal": 1.9, "stake": 20000, "placed_ts": 1, "context": json.dumps({"fair_prob": 0.5}),
+                             "status": "pending"})
+    hdb.update_bet(funder, status="lost", payout=0.0, settled_match_id="h0", settled_ts=2)
+    summary = house.summary()
+    assert abs(summary["expected_take"] - 1000) < 0.01 and abs(summary["pot"] - 1000 * (1 - JACKPOT_SHARE)) < 0.01, summary
+    assert abs(summary["jackpot"] - 1000 * JACKPOT_SHARE) < 0.01 and summary["given"] == {}, summary
+
+    # A secret set of three for the next game: one personal goal, one squad goal, one bettor goal, hidden until then.
+    picks = house.ensure_objectives()
+    assert sorted(p["scope"] for p in picks) == ["bettor", "player", "squad"], picks
+    assert house.ensure_objectives() == []  # one set at a time
+    rows = {r["scope"]: r for r in hdb.query("SELECT * FROM house_objectives WHERE status='open'")}
+    assert all(r["prize"] >= MIN_PRIZE and r["prize"] % PRIZE_STEP == 0 and r["drawn_ts"] == 1008 for r in rows.values()), rows
+    summary = house.summary()
+    assert summary["next"]["objectives"] == 3 and not any(r["text"] in json.dumps(summary) for r in rows.values())
+    goal = rows["player"]
+    assert isinstance(json.loads(goal["params"])["n"], int) and 0 < goal["chance"] < 1 and goal["text"].startswith("P"), goal
+    # Fixed goals from here, so the checks don't depend on the draw.
+    hdb.execute("UPDATE house_objectives SET kind='kills', target='puuid-1', params=?, text='P1: 12+ kills' WHERE id=?",
+                (json.dumps({"n": 12}), rows["player"]["id"]))
+    hdb.execute("UPDATE house_objectives SET kind='win', text='Win the game' WHERE id=?", (rows["squad"]["id"],))
+    hdb.execute("UPDATE house_objectives SET kind='show_up', target=NULL, text='Have a bet on this game' WHERE id=?",
+                (rows["bettor"]["id"],))
+
+    # Two bettors who aren't on the squad bet on the next game: Bea's over misses by one (a bad beat), Cal's loses.
+    hbets.register("Bea", "secret1")
+    hbets.register("Cal", "secret1")
+    over = hbets.place("Bea", "ou:kills:puuid-2", "over", 40, {})
+    loss = hbets.place("Cal", "team:win", "loss", 30, {})
+    match = {"match_id": "h-next", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 5,
+             "rounds_won": 13, "rounds_lost": 7, "result": "win"}
+    hdb.insert_match(match, line({"puuid-1": 14, "puuid-2": int(over["line"])}))
+    players = hdb.match_players("h-next")
+    before = {n: hdb.get_bettor(n)["balance"] for n in ("Bea", "Cal")}
+    settled = hbets.settle_for_match(hdb.match("h-next"), players)
+    given = house.after_match(hdb.match("h-next"), players, settled)
+    refund = min(REFUND_MAX, 40 * REFUND_RATE)
+    assert [g for g in given if g["kind"] == "refund"] == [{"bettor": "Bea", "amount": refund, "kind": "refund",
+                                                            "bet_id": over["id"], "why": "missed by one"}], given
+    assert "Bad beat (missed by one)" in hdb.bet(over["id"])["note"] and hdb.bet(loss["id"])["note"] is None
+    done = {r["scope"]: r for r in hdb.query("SELECT * FROM house_objectives WHERE match_id='h-next'")}
+    assert {r["status"] for r in done.values()} == {"met"}, done
+    assert json.loads(done["player"]["winners"]) == {"P1": rows["player"]["prize"]}
+    assert json.loads(done["squad"]["winners"]) == {f"P{i}": rows["squad"]["prize"] / 5 for i in range(1, 6)}
+    bettor_share = rows["bettor"]["prize"] / 2
+    assert json.loads(done["bettor"]["winners"]) == {"Bea": bettor_share, "Cal": bettor_share}
+    assert abs(hdb.get_bettor("Bea")["balance"] - (before["Bea"] + refund + bettor_share)) < 0.01
+    assert abs(hdb.get_bettor("Cal")["balance"] - (before["Cal"] + bettor_share)) < 0.01
+    revealed = house.for_match("h-next")
+    assert len(revealed["objectives"]) == 3 and revealed["refunds"][0]["bettor"] == "Bea", revealed
+    # Giveaways are kept out of betting profit, like rewards and slots.
+    bea = next(r for r in hbets.leaderboard() if r["name"] == "Bea")
+    assert bea["giveaways"] == refund + bettor_share and bea["profit"] == -40, bea
+    summary = house.summary()
+    paid = refund + bettor_share * 2 + rows["player"]["prize"] + rows["squad"]["prize"]
+    assert abs(summary["pot"] - (summary["expected_take"] * (1 - JACKPOT_SHARE) - paid)) < 0.01, summary
+    assert summary["last"] == revealed["objectives"] and summary["given"]["refund"] == refund, summary
+    # A new secret set for the game after, and nothing is paid twice.
+    new = hdb.query("SELECT * FROM house_objectives WHERE status='open'")
+    assert len(new) == 3 and all(r["after_match"] == "h-next" and r["drawn_ts"] == match["started_ts"] + 1 for r in new)
+    assert house.after_match(hdb.match("h-next"), players, settled) == []
+    # A surrender carries the set over to the next game.
+    hdb.insert_match({"match_id": "h-ff", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 10,
+                      "rounds_won": 3, "rounds_lost": 8, "result": "loss"}, line({}))
+    house.after_match(hdb.match("h-ff"), hdb.match_players("h-ff"), [])
+    assert [r["id"] for r in hdb.query("SELECT * FROM house_objectives WHERE status='open'")] == [r["id"] for r in new]
+
+    # What counts as a bad beat.
+    legs = lambda *rs: json.dumps({"legs": [{"result": r} for r in rs]})  # noqa: E731
+    assert house.bad_beat({"market_type": "parlay", "context": legs("won", "won", "lost")}, {}) == "one leg short of a 3-leg parlay"
+    assert house.bad_beat({"market_type": "parlay", "context": legs("won", "lost")}, {}) is None  # 2 legs: no
+    assert house.bad_beat({"market_type": "parlay", "context": legs("won", "lost", "lost")}, {}) is None
+    hs = {"market_type": "ou", "line": 24.5, "actual_value": 23.6, "context": json.dumps({"stat": "hs_pct"})}
+    assert house.bad_beat(hs, {}) == "missed by 0.9 points" and house.bad_beat({**hs, "actual_value": 22}, {}) is None
+    assert house.bad_beat({"market_type": "ou", "line": 16.5, "actual_value": 15, "context": json.dumps({"stat": "kills"})}, {}) is None
+    ot = {"mode": "competitive", "rounds_won": 14, "rounds_lost": 12}
+    assert house.bad_beat({"market_type": "team_win"}, ot) == "lost in overtime" and house.bad_beat({"market_type": "team_win"}, match) is None
+    # Bettor goals: small stakes, long shots, bets on a member.
+    won = lambda stake, ctx, mt="ou": {"status": "won", "stake": stake, "odds_decimal": 2, "market_type": mt, "context": json.dumps(ctx)}  # noqa: E731
+    assert house._counts({"kind": "small"}, won(25, {})) and not house._counts({"kind": "small"}, won(26, {}))
+    assert house._counts({"kind": "underdog"}, won(5, {"fair_prob": 0.3})) and not house._counts({"kind": "underdog"}, won(5, {"fair_prob": 0.4}))
+    assert house._counts({"kind": "on_player", "target": "puuid-3"}, won(5, {"puuid": "puuid-3"}))
+    assert house._counts({"kind": "on_player", "target": "puuid-3"}, won(5, {"legs": [{"meta": {"puuid": "puuid-3"}}]}, "parlay"))
+
+    # The odds boost of the game: one pick at a better price, the same one until the next game, singles up to a cap.
+    BetManager.apply_boost = shared.real_boost
+    board = hbets.apply_boost(engine.build(hdb))
+    boost = board["boost"]
+    market, sel = find_market(board, boost["market_id"], boost["selection"])
+    assert sel["decimal"] == hbets.boosted(boost["from_decimal"]) > boost["from_decimal"] and 0.3 <= sel["fair_prob"] <= 0.6
+    again = hbets.apply_boost(engine.build(hdb))["boost"]
+    assert (again["market_id"], again["selection"], again["decimal"]) == (boost["market_id"], boost["selection"], boost["decimal"])
+    try:
+        hbets.place("Bea", boost["market_id"], boost["selection"], BOOST_MAX_STAKE + 1, {})
+        raise AssertionError("the boost has a stake cap")
+    except BetError:
+        pass
+    boosted = hbets.place("Bea", boost["market_id"], boost["selection"], 20, {})
+    assert boosted["odds_decimal"] == boost["decimal"] and json.loads(boosted["context"])["boost"] == boost["from_decimal"]
+    assert hdb.get_meta("odds_boost")["after"] == "h-ff"
+    hdb.insert_match({"match_id": "h-later", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 20,
+                      "rounds_won": 13, "rounds_lost": 2, "result": "win"}, line({}))
+    assert hbets.apply_boost(engine.build(hdb))["boost"] and hdb.get_meta("odds_boost")["after"] == "h-later"  # drawn again
+
+    # A season reset keeps the pot (it spans seasons) and clears this season's giveaways from the standings.
+    pot = house.summary()["pot"]
+    hbets.reset()
+    assert house.summary()["pot"] == pot and house.totals() == {}
+    assert all(r["giveaways"] == 0 for r in hbets.leaderboard())
+    shared.house_env = types.SimpleNamespace(db=hdb, bets=hbets, house=house, engine=engine, line=line)
+
+
+@section("wheel")
+def daily_wheel(shared):
+    import datetime
+    from fivestack.bets import TOKEN_BOOST, TOKEN_MAX_STAKE
+    from fivestack.odds import find_market
+    from fivestack.wheel import SEGMENTS, TOTAL_WEIGHT, WheelManager, next_reset, wheel_day
+    env = shared.house_env
+    hdb, hbets, house = env.db, env.bets, env.house
+    wheel = WheelManager(hdb, house)
+    utc = lambda s: datetime.datetime.fromisoformat(s).replace(tzinfo=datetime.timezone.utc).timestamp()  # noqa: E731
+    # The day turns over at midnight Pacific (3 AM Eastern), daylight saving time included.
+    assert wheel_day(utc("2026-10-01T06:59:00")) == "2026-09-30" and wheel_day(utc("2026-10-01T07:00:00")) == "2026-10-01"
+    assert wheel_day(utc("2026-01-15T07:59:00")) == "2026-01-14" and wheel_day(utc("2026-01-15T08:00:00")) == "2026-01-15"
+    assert next_reset(utc("2026-03-08T12:00:00")) == utc("2026-03-09T07:00:00")  # the day the clocks go forward
+    assert next_reset(utc("2026-11-01T12:00:00")) == utc("2026-11-02T08:00:00")  # and back
+    assert TOTAL_WEIGHT == 1000 and SEGMENTS[[s["key"] for s in SEGMENTS].index("jackpot")]["weight"] == 5
+    at = {s["key"]: i for i, s in enumerate(SEGMENTS)}
+    day = utc("2026-10-02T18:00:00")
+
+    # One spin a day. Credit prizes are free: a giveaway in the standings, but nothing comes out of the pot.
+    hbets.register("Wes", "secret1")
+    before, pot = hdb.get_bettor("Wes")["balance"], house.pot()
+    r = wheel.spin("Wes", now=day, segment=at["c100"])
+    assert r["amount"] == 100 and r["spins_left"] == 0 and hdb.get_bettor("Wes")["balance"] == before + 100
+    assert abs(house.pot() - pot) < 0.01 and house.totals()["wes"] == 100
+    try:
+        wheel.spin("Wes", now=day + 3600)
+        raise AssertionError("one spin a day")
+    except BetError:
+        pass
+    assert wheel.summary({"name": "Wes"}, now=day)["me"]["spins_left"] == 0
+    # "Spin again" gives another spin the same day; the next day brings a fresh one.
+    assert wheel.spin("Wes", now=day + 86400, segment=at["again"])["spins_left"] == 1
+    bananas = hdb.banana_wallet("Wes")
+    assert wheel.spin("Wes", now=day + 86400, segment=at["b100"])["amount"] == 100 and hdb.banana_wallet("Wes") == bananas + 100
+    # A free cosmetic they didn't own, and the jackpot: all of it.
+    item = wheel.spin("Wes", now=day + 2 * 86400, segment=at["item"])
+    assert hdb.query_one("SELECT price FROM banana_items WHERE bettor='Wes' AND item_id=?", (json.loads(item["detail"])["item_id"],))["price"] == 0
+    jackpot = house.summary()["jackpot"]
+    won = wheel.spin("Wes", now=day + 3 * 86400, segment=at["jackpot"])
+    assert jackpot > 1 and won["amount"] == int(jackpot) and 0 <= house.summary()["jackpot"] < 1, (jackpot, won)
+    assert house.summary()["given"]["jackpot"] == int(jackpot)
+
+    # Tokens go on the next single: a boost token raises its price, an insurance token refunds it if it loses.
+    wheel.spin("Wes", now=day + 4 * 86400, segment=at["boost"])
+    wheel.spin("Wes", now=day + 5 * 86400, segment=at["insure"])
+    assert sorted(p["kind"] for p in wheel.perks("Wes")) == ["boost", "insurance"]
+    board = hbets.apply_boost(env.engine.build(hdb))
+    pick = "loss" if board["boost"]["market_id"] != "team:win" or board["boost"]["selection"] != "loss" else "win"
+    price = find_market(board, "team:win", pick)[1]["decimal"]
+    bet = hbets.place("Wes", "team:win", pick, TOKEN_MAX_STAKE, {})
+    ctx = json.loads(bet["context"])
+    assert bet["odds_decimal"] == hbets.boosted(price, TOKEN_BOOST) and ctx["boost"] == price and ctx["insured"]["max"] == TOKEN_MAX_STAKE
+    assert wheel.perks("Wes") == [] and hbets.place("Wes", "team:win", pick, 5, {})["odds_decimal"] == price  # used up
+    game = {"match_id": "h-wheel", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 30,
+            "rounds_won": 13 if pick == "loss" else 2, "rounds_lost": 2 if pick == "loss" else 13,
+            "result": "win" if pick == "loss" else "loss"}
+    hdb.insert_match(game, env.line({}))
+    settled = hbets.settle_for_match(hdb.match("h-wheel"), hdb.match_players("h-wheel"))
+    balance, pot = hdb.get_bettor("Wes")["balance"], house.pot()
+    given = house.refunds(hdb.match("h-wheel"), settled)
+    assert abs(house.pot() - pot) < 0.01  # insurance is free too
+    assert [g["kind"] for g in given if g["bettor"] == "Wes"] == ["insurance"] and given[0]["amount"] == TOKEN_MAX_STAKE, given
+    assert hdb.get_bettor("Wes")["balance"] == balance + TOKEN_MAX_STAKE and "Insured" in hdb.bet(bet["id"])["note"]
+    # A live server ignores a requested slice; demo mode honours it and has no daily limit.
+    try:
+        wheel.spin("Wes", now=day + 5 * 86400, force="c400")
+        raise AssertionError("still one spin a day")
+    except BetError:
+        pass
+    demo = WheelManager(hdb, house, unlimited=True)
+    hbets.register("Dee", "secret1")
+    spins = [demo.spin("Dee", now=day, force=key)["prize"] for key in ("ate", "ate", "c50", "nope")]
+    assert spins[:3] == ["ate", "ate", "c50"] and spins[3] in at and demo.summary({"name": "Dee"}, now=day)["unlimited"]
+    summary = wheel.summary({"name": "Wes"}, now=day + 5 * 86400)
+    assert not summary["unlimited"] and len(summary["me"]["history"]) == 7 and summary["recent"][0]["bettor"] == "Dee" and summary["segments"] == SEGMENTS
 
 
 def main():

@@ -123,10 +123,30 @@ window.FiveRecap = (() => {
     return `<section class="card"><h2>Betting and rewards</h2><div class="recap-cols">${bets}${rewards}</div></section>`;
   }
 
+  // What the house gave back on this game (fivestack/house.py): its secret objectives, revealed, and the bad beats it
+  // refunded. Nothing for a game the house had no objectives on.
+  function house(r) {
+    const hs = r.house;
+    if (!hs || (!hs.objectives.length && !hs.refunds.length)) return '';
+    const credits = (v) => Math.round(v).toLocaleString();
+    const label = { met: 'Met', missed: 'Missed', void: 'No result' };
+    const goals = hs.objectives.map((o) => {
+      const won = Object.entries(o.winners).filter(([, v]) => v > 0);
+      const who = won.length ? won.map(([n, v]) => `${h.esc(n)} +${credits(v)}`).join(', ') : o.status === 'void' ? 'The game couldn\'t tell' : 'Nobody';
+      return `<tr class="house-${h.esc(o.status)}"><td>${h.esc(o.text)}</td><td class="num muted">${credits(o.prize)}</td>` +
+        `<td><span class="status ${o.status === 'met' ? 'won' : o.status === 'missed' ? 'lost' : 'void'}">${label[o.status] || ''}</span></td><td>${who}</td></tr>`;
+    }).join('');
+    const beats = hs.refunds.map((x) => `<tr><td>${h.esc(x.bettor)}</td><td>${h.esc((x.note || '').replace(/^Bad beat: /, ''))}</td><td class="num up">+${credits(x.amount)}</td></tr>`).join('');
+    return `<section class="card"><h2>The house's secret objectives</h2><div class="recap-cols">` +
+      `<div>${goals ? `<table class="compact"><thead><tr><th>Objective</th><th class="num">Prize</th><th>Result</th><th>Paid</th></tr></thead><tbody>${goals}</tbody></table>`
+        : '<p class="muted">No objectives were set for this game.</p>'}</div>` +
+      `<div><h3>Bad beats refunded</h3>${beats ? `<table class="compact"><tbody>${beats}</tbody></table>` : '<p class="muted">None on this game.</p>'}</div></div></section>`;
+  }
+
   function html(r, helpers) {
     h = helpers;
     if (!r) return '';
-    return `<div id="recap">${header(r)}${highlights(r)}${scoreboard(r)}${rounds(r)}${betting(r)}</div>`;
+    return `<div id="recap">${header(r)}${highlights(r)}${scoreboard(r)}${rounds(r)}${betting(r)}${house(r)}</div>`;
   }
 
   return { html };
