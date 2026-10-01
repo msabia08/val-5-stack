@@ -1259,6 +1259,41 @@ def poker(shared):
     assert db.query_one("SELECT COUNT(*) AS n FROM poker_results WHERE season_id IS NULL")["n"] == 0
 
 
+@section("casino looks")
+def casino_looks(shared):
+    import types
+    from fivestack.app import App
+    from fivestack.bananas import GROUPS, ITEMS, SLOTS
+    db = shared.casino_db
+    bets = BetManager({"starting_balance": 1000}, db, shared.engine)
+    bm = BananaManager({"banana_rate": 0.1, "starting_bananas": 0}, db, bets)
+    # Onkey's Casino is its own group in the shop, with its own slots and items.
+    groups = {g[0] for g in GROUPS}
+    assert groups == {"looks", "casino"} and all(slot[3] in groups for slot in SLOTS)
+    casino_slots = {slot[0] for slot in SLOTS if slot[3] == "casino"}
+    assert casino_slots == {"card_back", "chips", "seat", "entrance", "table_win"}
+    assert all(any(i["slot"] == k for i in ITEMS.values()) for k in casino_slots)
+    assert all("{name}" in i["look"]["text"] for i in ITEMS.values() if i["slot"] == "entrance")
+    shop = bm.shop(db.get_bettor("Ace"))
+    assert [g["key"] for g in shop["groups"]] == ["looks", "casino"]
+    assert {x["key"]: x["group"] for x in shop["slots"]}["chips"] == "casino"
+    # Buying casino items is bananas only, like the rest of the shop: worn at once, in everyone's looks.
+    db.execute("INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES('Ace', 4000, 'demo', 'casino-test', 'test', 0)")
+    before = {r["name"]: (r["balance"], r["profit"]) for r in bets.leaderboard()}
+    for item in ("cbk-gold", "chp-onyx", "st-neon", "en-royal", "tw-crown", "nc-gold"):
+        bm.buy("Ace", item)
+    assert {r["name"]: (r["balance"], r["profit"]) for r in bets.leaderboard()} == before
+    worn = bm.looks()["ace"]["worn"]
+    assert worn["card_back"]["cls"] == "cbk-gold" and worn["chips"]["cls"] == "chp-onyx" and worn["seat"]["cls"] == "st-neon"
+    assert worn["entrance"]["text"].startswith("All rise") and worn["table_win"]["emoji"] == ["👑", "💎", "✨"]
+    # Casino tables send the looks of everyone at them (seats, the log, the viewer), so other players see them.
+    view = {"seats": [None, {"bettor": "Ace"}, {"bettor": "Bea"}], "log": [{"kind": "sit", "bettor": "Cy"}], "me": {"name": "Bea"}}
+    out = App.with_looks(types.SimpleNamespace(bananas=bm), view)
+    assert set(out["looks"]) == {"ace"} and out["looks"]["ace"]["worn"]["seat"]["cls"] == "st-neon"
+    bm.equip("Ace", "seat", "")
+    assert "seat" not in App.with_looks(types.SimpleNamespace(bananas=bm), view)["looks"]["ace"]["worn"]
+
+
 @section("transfers")
 def transfers(shared):
     db, bets = shared.db, shared.bets

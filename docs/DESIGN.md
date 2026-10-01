@@ -235,6 +235,15 @@ still until it's used, and reduced motion stops all of it. Results use a live st
 request locks stakes and offers "Check last spin"; "Sign in to spin" uses the
 existing account menu.
 
+### Onkey's Shop: the casino section
+
+The shop's catalogue comes in groups (`groups` from `/api/shop`): Your looks, then Onkey's Casino, which opens with a
+`.shop-group-head` card (a felt-coloured disc and a `how()` line) before its slots. The collection map shows a block
+per group (`.cm-group`), its label a filter for the whole group (`state.shopSlot` `g:casino`). Casino items are drawn
+on a small felt (`.shop-felt`) on their cards, and their preview is a before / after of your seat as the table sees
+it (`casinoSample()`: plate, face-down cards, a bet and a stake chip), Onkey announcing you (`entranceSample()`), or a
+Play button for a Table win.
+
 ### Blackjack and poker
 
 `#blackjack` and `#poker` live under Casino. Both are a `.casino-page`: a `.casino-bar` (the page's own controls, the
@@ -250,7 +259,15 @@ The table is the page's personality, like the slots cabinet; the side cards are 
 - **Cards** (`FiveCasino.card()`, `.pcard`): drawn in CSS, no images: rank and suit top left, a big pip bottom right,
   red for hearts and diamonds; sizes `xs` (logs and tables), `sm` (other players), `md` (your poker hand), `lg`
   (blackjack and the board). A face-down card is `.back`, an empty board slot `.empty`. Every card has an
-  `aria-label` ("Ace of spades"). No deal animation: regions re-render on every table change, which would replay it.
+  `aria-label` ("Ace of spades").
+- **Dealing** (`FiveCasino.deal()`): moves are settled on the server at once but played out on the page. Every
+  table card has a `key` (table, round or hand, seat, position) and a `seq` (its place in the real deal order:
+  two rounds round the table, then hits and splits, Onkey's hole card turning over, then his draws; at poker the
+  hole cards from the left of the button, a showdown's flips, then the board). New cards fly in from Onkey one at a
+  time (`.deal-in`, 380 ms apart) and a face-down card turns over (`.flip-in`); a card re-rendered mid-flight keeps
+  its place (a negative delay). Totals, results, hand names, the status line and the controls carry `.after-deal`
+  until the last card lands (`FiveCasino.after()`), and Onkey's line, sounds, Table win bursts and the credits chip
+  wait for it too. Opening a table shows what's on it without dealing it again. Reduced motion skips all of it.
 - **Onkey, the dealer** (`FiveCasino.dealer()` / `say()`): his picture with a white speech bubble to its right. When
   he speaks, the bubble's first line is his monkey noises ("Ook Eek Ook", with "!" when he's excited) and the second
   what they mean, while Web Audio plays matching ooks (low, falling) and eeks (high, rising); his picture jabbers
@@ -265,6 +282,13 @@ The table is the page's personality, like the slots cabinet; the side cards are 
 - **Live updates** (`FiveCasino.live()`): the shared tables long-poll, and `patch()` replaces only the regions whose
   HTML changed, keeping keyboard focus and a text field's caret, so a rules form or raise amount survives other
   players' moves. Results, errors and turns go through a `role="status"` line.
+- **What players bought** (Onkey's Shop, `FiveCasino.style()` / `who()`): names at the tables use `nameHtml()`
+  (name colour, badge, pranks, and the title on the seat), and each player's casino items style their own things:
+  card backs (`.cbk-*` on their face-down cards), chips (`.chp-*`, which set `--chip-bg` / `--chip-fg` on
+  `.chip-stake`, `.chip-dot` and your `.stake-key`s), seat style (`.st-*` on `.pk-seat` plates and `.bj-spot`s; the
+  turn outline always wins), Entrance (Onkey's line when they sit down) and Table win (a burst from their seat,
+  found by `data-bettor`). Table answers carry `looks`, merged into `state.looks`, so a purchase shows at the next
+  table update.
 - **Side cards**: Blackjack shows Your season (four tiles), the shared table's players and House rules. Poker shows
   Your seat (buy-in, or chips, Ready up / Not ready, leave, top up), Table rules (an editable form for seated players
   in the lobby, else a list), the last hand (board, each player's cards, hand and net), Your season, and Table talk

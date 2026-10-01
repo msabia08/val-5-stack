@@ -85,8 +85,9 @@ The rules are fixed: six decks, reshuffled when less than a quarter is left; the
 blackjack pays 3 to 2; double down on any first two cards (after a split too, except split aces); split once, and
 split aces take one card each; the dealer checks for blackjack under an ace or a ten, so a dealer blackjack only
 takes your original stake; no insurance or surrender. That leaves the house about 0.5% over time, which is its cut.
-Keys: H hit, S stand, D double, P split, Enter deals. A hand still open when the server restarts or the season ends
-is refunded.
+Keys: H hit, S stand, D double, P split, Enter deals. Onkey deals each card in turn and turns his hole card over
+before he draws, and the result shows once the last card is down. A hand still open when the server restarts or the
+season ends is refunded.
 
 ## Poker
 
@@ -641,17 +642,30 @@ hands everyone a fresh 50; items you bought stay yours.
 
 | Slot | What it changes | Price |
 | --- | --- | --- |
-| Name colour | how your name is written on rankings, tickets and the Monkeys page (12, from Ripe to an animated Rainbow) | 120-1200 |
+| Name colour | how your name is written on rankings, tickets, the casino tables and the Monkeys page (12, from Ripe to an animated Rainbow) | 120-1200 |
 | Badge | an emoji next to your name, and your avatar (17) | 40-500 |
-| Title | a line under your name on the Monkeys page and your profile (17) | 100-800 |
+| Title | a line under your name on the Monkeys page, your profile and your casino seat (17) | 100-800 |
 | Profile banner | the header of your profile (9) | 300-600 |
 | Ticket style | your bet tickets on Place bets and Standings, for everyone | 300-600 |
 | Win celebration | what bursts out of your balance when a bet wins | 250-350 |
 | Site theme | unlocks Greg Mode, Onkey Mode, Jungle Mode, Sakura, Midnight, Terminal or Synthwave (dark and light are free). With only those two, ◐ toggles between them; once you own a theme, ◐ opens a picker | 750-1200 |
 
+**Onkey's Casino** is the shop's second section: your style at the casino
+tables, seen by everyone sitting with you. Your name colour, badge and title come
+to the tables too.
+
+| Slot | What it changes | Price |
+| --- | --- | --- |
+| Card backs | your face-down cards at the poker table, and Onkey's hole card at your solo blackjack table (6, up to a shimmering Gold Leaf) | 150-600 |
+| Chips | your bets at poker and your stake chips at blackjack (6) | 100-700 |
+| Seat style | your nameplate at the poker table and your spot at blackjack (5, up to the Gold Throne) | 150-800 |
+| Entrance | what Onkey announces when you sit down at a shared table (6) | 60-600 |
+| Table win | what bursts out of your seat when you win a pot or a blackjack hand (5) | 150-500 |
+
 Click any item for a **preview** of your profile card and bet tickets as they
-are now and with the item (a theme shows a small page in its colours, and a
-celebration can be played). Owned items can be worn or taken off at any time.
+are now and with the item (a theme shows a small page in its colours, a
+celebration or Table win can be played, and casino items show your seat on a
+little felt). Owned items can be worn or taken off at any time.
 
 **Monkey business** items are used on someone else and wear off by
 themselves. Everyone sees who sent what.

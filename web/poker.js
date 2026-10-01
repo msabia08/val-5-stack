@@ -15,7 +15,7 @@ window.FivePoker = (() => {
 
   async function load() {
     const name = state.me?.name || null;
-    if (owner !== name) { owner = name; data = null; seen = null; draft = null; buyin = null; }
+    if (owner !== name) { owner = name; data = null; seen = null; draft = null; buyin = null; C.dealReset(); }
     apply(await api('/api/poker'));
   }
   function apply(d) {
@@ -23,22 +23,28 @@ window.FivePoker = (() => {
     const before = data;
     data = d;
     C.syncClock(d.server_time);
+    C.absorb(d.looks);
     const fresh = (d.log || []).filter((e) => seen != null && e.id > seen);
     seen = d.log?.length ? d.log[d.log.length - 1].id : seen ?? 0;
     if (state.view !== 'poker' || !$('#pk-root')) return;
     refresh();
-    if (fresh.length) {
-      C.react($('#pk-onkey'), fresh, kindOf, (e) => ({ name: e.bettor || 'Onkey', amount: fmt.credits(e.amount || 0) }));
-      if (fresh.some((e) => ['hand', 'flop', 'turn', 'river'].includes(e.kind))) C.sound('card');
-      if (fresh.some((e) => ['call', 'bet', 'raise', 'allin'].includes(e.kind))) C.sound('chips');
-      const won = fresh.find((e) => e.kind === 'win' && e.bettor === state.me?.name);
-      if (won) {
-        C.sound('win');
-        if (won.net >= 200) confetti($('#me-credits'), won.net >= 500);
-      }
-      // It just became your turn: a nudge.
-      const myTurn = d.me?.legal && !(before?.me?.legal);
-      if (myTurn && document.hidden) document.title = '♠ Your turn · 5-Stack Tracker';
+    const wait = C.landing();
+    if (wait > 0) setTimeout(() => { if (state.view === 'poker' && $('#pk-root')) refresh(); }, wait + 30); // winners show once the cards are down
+    if (fresh.some((e) => ['call', 'bet', 'raise', 'allin'].includes(e.kind))) C.sound('chips');
+    // It just became your turn: a nudge.
+    const myTurn = d.me?.legal && !(before?.me?.legal);
+    if (myTurn && document.hidden) document.title = '♠ Your turn · 5-Stack Tracker';
+    if (fresh.length) setTimeout(() => react(fresh), wait);
+  }
+  // What happened, once the cards are down: Onkey's line, Table win bursts, your win.
+  function react(fresh) {
+    if (state.view !== 'poker' || !$('#pk-root')) return;
+    C.react($('#pk-onkey'), fresh, kindOf, (e) => ({ name: e.bettor || 'Onkey', amount: fmt.credits(e.amount || 0) }));
+    fresh.filter((e) => e.kind === 'win' && e.bettor).forEach((e) => C.seatBurst($('#pk-seats'), e.bettor)); // bought Table wins
+    const won = fresh.find((e) => e.kind === 'win' && e.bettor === state.me?.name);
+    if (won) {
+      C.sound('win');
+      if (won.net >= 200) confetti($('#me-credits'), won.net >= 500);
     }
   }
   const kindOf = (e) => (e.kind === 'win' ? (e.split ? 'chop' : 'pwin') : e.kind === 'bust' ? 'bust_out' : e.kind);
@@ -61,6 +67,7 @@ window.FivePoker = (() => {
       });
       return '<section class="card" id="pk-loading">Onkey is shuffling…</section>';
     }
+    const felt = C.deal(() => ({ center: centerHtml(), seats: seatsHtml(), status: statusHtml() }));
     return `<div id="pk-root" class="casino-page">
       <div class="casino-bar"><div id="pk-head" class="pk-head">${headHtml()}</div>${C.speaker()}</div>
       <div class="casino-layout">
@@ -68,11 +75,11 @@ window.FivePoker = (() => {
           <section class="felt pk-felt" aria-label="Poker table">
             <div class="pk-rail" aria-hidden="true"></div>
             ${C.dealer('pk-onkey', { cls: 'pk-onkey' })}
-            <div class="pk-center" id="pk-center">${centerHtml()}</div>
-            <div class="pk-seats" id="pk-seats">${seatsHtml()}</div>
+            <div class="pk-center" id="pk-center">${felt.center}</div>
+            <div class="pk-seats" id="pk-seats">${felt.seats}</div>
           </section>
-          <div class="felt-status pk-status" id="pk-status" role="status" aria-live="polite">${statusHtml()}</div>
-          <div class="felt-controls pk-controls" id="pk-controls">${controlsHtml()}</div>
+          <div class="felt-status pk-status" id="pk-status" role="status" aria-live="polite">${felt.status}</div>
+          <div class="felt-controls pk-controls" id="pk-controls"><div class="casino-controls">${controlsHtml()}</div></div>
         </div>
         <aside class="casino-side" id="pk-side">${sideHtml()}</aside>
       </div>
@@ -80,10 +87,11 @@ window.FivePoker = (() => {
   }
   function refresh() {
     C.patch($('#pk-head'), headHtml());
-    C.patch($('#pk-center'), centerHtml());
-    C.patch($('#pk-seats'), seatsHtml());
-    C.patch($('#pk-status'), statusHtml());
-    C.patch($('#pk-controls'), controlsHtml());
+    const felt = C.deal(() => ({ center: centerHtml(), seats: seatsHtml(), status: statusHtml() }));
+    C.patch($('#pk-center'), felt.center);
+    C.patch($('#pk-seats'), felt.seats);
+    C.patch($('#pk-status'), felt.status);
+    C.patch($('#pk-controls'), `<div${C.after('casino-controls')}>${controlsHtml()}</div>`);
     C.patch($('#pk-side'), sideHtml());
   }
   const st = () => data.settings;
@@ -99,7 +107,7 @@ window.FivePoker = (() => {
   function centerHtml() {
     const h = data.hand;
     const board = h ? h.board : [];
-    const slots = [0, 1, 2, 3, 4].map((i) => C.card(board[i] || '', { size: 'lg', cls: board[i] ? 'deal-in' : '' })).join('');
+    const slots = [0, 1, 2, 3, 4].map((i) => C.card(board[i] || '', { size: 'lg', key: h ? `pk:${h.no}:board:${i}` : undefined, seq: 1000 + i })).join('');
     let line = '';
     if (h && h.street === 'done' && data.last) {
       line = data.last.pots.map((p) => `<span>${p.winners.map(esc).join(' and ')} ${p.winners.length > 1 ? 'split' : 'wins'} ${fmt.credits(p.amount)}${p.hand ? ` with ${esc(p.hand.toLowerCase())}` : ''}</span>`).join('') +
@@ -109,7 +117,7 @@ window.FivePoker = (() => {
     }
     return `<div class="pk-pot">${h ? `Pot <b>${fmt.credits(h.street === 'done' ? data.last?.pot : h.pot)}</b>` : '&nbsp;'}</div>
       <div class="pk-board">${slots}</div>
-      <div class="pk-result">${line}</div>`;
+      <div${C.after('pk-result')}>${line}</div>`;
   }
   function seatsHtml() {
     const mine = data.me?.seat;
@@ -117,26 +125,31 @@ window.FivePoker = (() => {
     const h = data.hand;
     const done = h && h.street === 'done';
     const best = new Map((done && data.last?.players || []).filter((p) => p.hand).map((p) => [p.seat, p]));
-    const winners = new Set((done && data.last?.players || []).filter((p) => p.won > 0).map((p) => p.seat));
+    const landed = C.landing() <= 0;
+    const winners = new Set((done && landed && data.last?.players || []).filter((p) => p.won > 0).map((p) => p.seat));
+    const button = data.seats.findIndex((x) => x && x.button);
+    const dealSeq = (seat, j) => (data.seats[seat]?.cards && done ? 500 + seat * 2 + j : j * 10 + ((seat - button - 1 + 16) % 8));
     return data.seats.map((s, i) => {
       const [x, y] = SPOTS[turnBy(i)];
       if (!s) {
         return `<div class="pk-seat empty" style="left:${x}%;top:${y}%"><span class="muted small">Open seat</span></div>`;
       }
       const isMe = s.seat === mine;
-      const cardsHtml = s.cards ? C.cards(s.cards, { size: isMe ? 'md' : 'sm', cls: best.has(i) ? 'shown' : '' })
-        : s.hidden ? C.card(null, { size: 'sm' }) + C.card(null, { size: 'sm' }) : '';
+      const back = C.style(s.bettor, 'card_back');  // the card backs they bought, for everyone at the table
+      const key = h ? `pk:${h.no}:s${i}` : undefined;
+      const cardsHtml = s.cards ? C.cards(s.cards, { size: isMe ? 'md' : 'sm', cls: best.has(i) ? 'shown' : '', key, seq: (j) => dealSeq(i, j) })
+        : s.hidden ? [0, 1].map((j) => C.card(null, { size: 'sm', cls: back, key: key && `${key}:${j}`, seq: dealSeq(i, j) })).join('') : '';
       const badges = `${s.button ? '<span class="pk-btn" title="Dealer button">D</span>' : ''}${s.sb ? '<span class="pk-blind">SB</span>' : ''}${s.bb ? '<span class="pk-blind">BB</span>' : ''}`;
       const sub = data.phase === 'lobby' || !s.dealt
         ? (s.ready ? '<span class="pk-ready on">Ready</span>' : '<span class="pk-ready">Not ready</span>')
         : s.label ? `<span class="pk-label ${s.folded ? 'folded' : ''}">${esc(s.label)}</span>` : '';
-      const handName = best.get(i)?.hand ? `<span class="pk-hand-name">${esc(best.get(i).hand)}</span>` : '';
+      const handName = best.get(i)?.hand ? `<span${C.after('pk-hand-name')}>${esc(best.get(i).hand)}</span>` : '';
       // The chips in front of a seat sit part-way to the middle.
       const bx = x + (50 - x) * 0.42, by = y + (50 - y) * 0.42;
-      const bet = s.bet ? `<div class="pk-bet" style="left:${bx}%;top:${by}%"><span class="chip-dot" aria-hidden="true"></span>${fmt.credits(s.bet)}</div>` : '';
-      return `${bet}<div class="pk-seat ${isMe ? 'me' : ''} ${s.to_act ? 'turn' : ''} ${s.folded ? 'folded' : ''} ${winners.has(i) ? 'winner' : ''} ${s.dealt ? '' : 'out'}" style="left:${x}%;top:${y}%">
+      const bet = s.bet ? `<div class="pk-bet" style="left:${bx}%;top:${by}%"><span class="chip-dot ${C.style(s.bettor, 'chips')}" aria-hidden="true"></span>${fmt.credits(s.bet)}</div>` : '';
+      return `${bet}<div class="pk-seat ${isMe ? 'me' : ''} ${s.to_act ? 'turn' : ''} ${s.folded ? 'folded' : ''} ${winners.has(i) ? 'winner' : ''} ${s.dealt ? '' : 'out'} ${C.style(s.bettor, 'seat')}" data-bettor="${esc(s.bettor)}" style="left:${x}%;top:${y}%">
         <div class="pk-cards">${cardsHtml}</div>
-        <div class="pk-plate"><div class="pk-name">${plainName(s.bettor)}${badges}</div>
+        <div class="pk-plate"><div class="pk-name">${C.who(s.bettor)}${badges}</div>${C.title(s.bettor) ? `<div class="pk-title">${C.title(s.bettor)}</div>` : ''}
           <div class="pk-stack">${s.allin ? '<b class="pk-allin">All in</b>' : fmt.credits(s.stack)}</div>${sub}${handName}
           ${s.to_act && h ? C.timer(h.deadline, st().turn_seconds) : ''}</div></div>`;
     }).join('');
@@ -248,7 +261,7 @@ window.FivePoker = (() => {
   function lastCard() {
     const l = data.last;
     if (!l) return '';
-    const rows = l.players.slice().sort((a, b) => b.net - a.net).map((p) => `<tr><th scope="row">${plainName(p.bettor)}</th>
+    const rows = l.players.slice().sort((a, b) => b.net - a.net).map((p) => `<tr><th scope="row">${C.who(p.bettor)}</th>
       <td>${p.cards ? `<span class="pk-mini">${C.cards(p.cards, { size: 'xs' })}</span>` : '<span class="muted small">–</span>'}</td>
       <td class="small">${p.hand ? esc(p.hand) : ''}</td><td class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${fmt.signed(p.net, 0)}</td></tr>`).join('');
     return `<section class="card"><h2>Hand #${l.no}</h2>
@@ -306,7 +319,7 @@ window.FivePoker = (() => {
     refresh();
     try {
       apply(await api(path, { method: 'POST', body: JSON.stringify(body) }));
-      loadMe();
+      setTimeout(loadMe, C.landing()); // the credits chip changes when the cards are down, not before
     } catch (e) {
       error = e.message;
       try { apply(await api('/api/poker')); } catch (_) { /* keep the old state */ }

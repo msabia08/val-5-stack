@@ -126,6 +126,11 @@ window.FiveShop = (() => {
       case 'ticket': return `<span class="shop-ticket bet-slip-card ${l.cls}"><span class="bet-ticket-row small"><b>Win</b><span class="status won">won</span></span></span>`;
       case 'celebration': return `<span class="shop-emoji">${l.emoji ? l.emoji.join('') : l.colors.map((c) => `<i class="shop-dot" style="background:${c}"></i>`).join('')}</span>`;
       case 'theme': return `<span class="shop-theme" data-theme-preview="${l.theme}"><i></i><i></i><i></i></span>`;
+      case 'card_back': return `<span class="shop-felt"><span class="pcard back md ${l.cls}"></span><span class="pcard back md ${l.cls}"></span></span>`;
+      case 'chips': return `<span class="shop-felt"><span class="chip-stake big ${l.cls}">25</span><span class="chip-stake big ${l.cls}">100</span></span>`;
+      case 'seat': return `<span class="shop-felt"><span class="pk-seat static ${l.cls}"><span class="pk-plate"><span class="pk-name">${nameHtml((state.me && state.me.name) || 'You')}</span><span class="pk-stack">500</span></span></span></span>`;
+      case 'entrance': return `<span class="shop-quote">“${esc(l.text.replace(/\{name\}/g, (state.me && state.me.name) || 'You'))}”</span>`;
+      case 'table_win': return `<span class="shop-emoji">${l.emoji ? l.emoji.join('') : l.colors.map((c) => `<i class="shop-dot" style="background:${c}"></i>`).join('')}</span>`;
       default: return `<span class="shop-emoji">${l.emoji || BANANA}</span>`;
     }
   }
@@ -148,6 +153,23 @@ window.FiveShop = (() => {
         <div class="bet-ticket-row muted small"><span>25 @ +320</span><span>Return 105</span></div></div></div>`;
   }
 
+  // A seat at Onkey's tables as everyone else sees it: your nameplate, face-down cards, a bet and a stake chip.
+  function casinoSample(name, look) {
+    const w = look.worn || {}, cls = (slot) => (w[slot] && w[slot].cls) || '';
+    return `<div class="casino-sample felt"><div class="pk-seat static ${cls('seat')}" data-bettor="${esc(name)}">
+        <div class="pk-cards"><span class="pcard back sm ${cls('card_back')}"></span><span class="pcard back sm ${cls('card_back')}"></span></div>
+        <div class="pk-plate"><div class="pk-name">${nameHtml(name, { look })}</div><div class="pk-stack">500</div></div></div>
+      <div class="casino-sample-chips"><span class="pk-bet static"><span class="chip-dot ${cls('chips')}"></span>40</span>
+        <span class="chip-stake big ${cls('chips')}">25</span></div></div>`;
+  }
+  // Onkey announcing someone as they sit down: their Entrance line, or his usual welcome.
+  function entranceSample(name, look) {
+    const e = (look.worn || {}).entrance;
+    const line = e ? e.text.replace(/\{name\}/g, name) : `Pull up a stool, ${name}.`;
+    return `<div class="casino-sample felt entrance"><div class="onkey-dealer talking static"><img class="onkey-face" src="/assets/onkey-logo.png" alt="" width="88" height="51">
+      <div class="onkey-bubble"><span class="ook">${e ? 'Eek! Eek! Ook! Eek!' : 'Ook Eek Ook'}</span><span class="say">${esc(line)}</span></div></div></div>`;
+  }
+
   // A look with one item swapped in (a worn slot, or a prank on top).
   function withItem(look, item, extra = {}) {
     const next = { worn: { ...(look.worn || {}) }, pranks: [...(look.pranks || [])] };
@@ -168,17 +190,30 @@ window.FiveShop = (() => {
       kpi('Spent in all', bananas(me.spent), 'on looks, pranks and the arcade'),
     ] : [];
     const signIn = me ? '' : '<div class="viz-note"><a href="#" data-signin>Sign in</a> to spend bananas. You can still preview everything.</div>';
-    const sections = s.slots.filter((x) => state.shopSlot === 'all' || state.shopSlot === x.key).map((slot) => {
+    const f = state.shopSlot;
+    const showSlot = (slot) => f === 'all' || f === slot.key || f === `g:${slot.group || 'looks'}`;
+    const slotCard = (slot) => {
       const items = s.catalog.filter((i) => i.slot === slot.key);
       const worn = me && me.worn[slot.key];
       return `<section class="card"><div class="section-head"><h2>${esc(slot.label)}</h2>` +
         `${worn ? `<button class="btn ghost small shop-unequip" data-slot="${slot.key}">Take off</button>` : ''}</div>
         <p class="muted small">${esc(slot.desc)}</p><div class="shop-grid">${items.map((i) => itemCard(i, me)).join('')}</div></section>`;
-    });
-    if (state.shopSlot === 'all' || state.shopSlot === 'social') {
-      sections.push(`<section class="card"><h2>Monkey business</h2>${how('Pranks for your friends. They wear off by themselves.',
-        'Most last for the next 3 5-stack games (a week at most). A Wall Note stays on their profile for 3 days; a Nickname or Title Swap lasts 24 hours. Everyone can see who sent what.')}
-        <div class="shop-grid">${s.social.map((i) => itemCard(i, me)).join('')}</div></section>`);
+    };
+    const sections = [];
+    for (const g of groupsOf(s)) {
+      const slots = s.slots.filter((x) => (x.group || 'looks') === g.key && showSlot(x));
+      const social = g.key === 'looks' && (f === 'all' || f === 'social' || f === 'g:looks');
+      if (!slots.length && !social) continue;
+      if (g.key === 'casino') {
+        sections.push(`<section class="card shop-group-head casino-head"><div class="shop-group-art" aria-hidden="true">🃏</div><div><h2>${esc(g.label)}</h2>
+          ${how(esc(g.desc), '<p>Card backs, chips and your seat style show on your seat at the poker table and your spot at blackjack. Your Entrance is what Onkey announces when you sit down at a shared table, and your Table win bursts out of your seat when you win a pot or a blackjack hand. Your name colour, badge and title come with you to the tables too.</p><p>Like everything in the shop, these are bought with bananas and never change your credits or your chances.</p>')}</div></section>`);
+      }
+      sections.push(...slots.map(slotCard));
+      if (social) {
+        sections.push(`<section class="card"><h2>Monkey business</h2>${how('Pranks for your friends. They wear off by themselves.',
+          'Most last for the next 3 5-stack games (a week at most). A Wall Note stays on their profile for 3 days; a Nickname or Title Swap lasts 24 hours. Everyone can see who sent what.')}
+          <div class="shop-grid">${s.social.map((i) => itemCard(i, me)).join('')}</div></section>`);
+      }
     }
     return `${tiles.length ? `<section class="kpis">${tiles.join('')}</section>` : ''}
       <section class="card shop-hero"><div class="shop-hero-art" aria-hidden="true"></div><div>
@@ -194,14 +229,15 @@ window.FiveShop = (() => {
 
   // The shop at a glance, and its filter: a ring of how much of the catalogue you own (click it for everything), then
   // one card per section with its icon, owned / total, a dot per item (filled = owned, ringed = worn) and its cheapest price.
-  const SLOT_ICONS = { name_color: '🎨', badge: '🏅', title: '🏷️', banner: '🖼️', ticket: '🎟️', celebration: '🎉', theme: '🌓', social: '🙈' };
+  const SLOT_ICONS = { name_color: '🎨', badge: '🏅', title: '🏷️', banner: '🖼️', ticket: '🎟️', celebration: '🎉', theme: '🌓', social: '🙈',
+    card_back: '🂠', chips: '🪙', seat: '🪑', entrance: '📣', table_win: '💰' };
+  // The shop's groups (your looks, Onkey's Casino); an older server sends no groups, which means one.
+  const groupsOf = (s) => s.groups || [{ key: 'looks', label: 'Your looks', desc: '' }];
   function collectionMap(s, me) {
     const owned = new Set(me ? me.owned : []), worn = new Set(me ? Object.values(me.worn) : []);
     const have = s.catalog.filter((i) => owned.has(i.id)).length, total = s.catalog.length;
     const pct = total ? have / total : 0;
-    const groups = [...s.slots.map((x) => ({ key: x.key, label: x.label, items: s.catalog.filter((i) => i.slot === x.key) })),
-      { key: 'social', label: 'Monkey business', items: s.social, social: true }];
-    const cards = groups.map((g) => {
+    const cardOf = (g) => {
       const n = g.social ? 0 : g.items.filter((i) => owned.has(i.id)).length;
       const dots = g.items.map((i) => `<i class="cm-dot ${owned.has(i.id) ? 'have' : ''} ${worn.has(i.id) ? 'worn' : ''}" title="${esc(`${i.name}: ${worn.has(i.id) ? 'wearing' : owned.has(i.id) ? 'owned' : `${i.price} bananas`}`)}"></i>`).join('');
       const low = Math.min(...g.items.map((i) => i.price));
@@ -213,13 +249,23 @@ window.FiveShop = (() => {
         <span class="cm-label">${esc(g.label)}</span>${count}
         <span class="cm-dots" aria-hidden="true">${dots}</span>
         <span class="cm-from">${done ? 'Complete ✓' : `from ${bn(low)} ${BANANA}`}</span></button>`;
-    }).join('');
+    };
+    const blocks = groupsOf(s).map((grp) => {
+      const slots = s.slots.filter((x) => (x.group || 'looks') === grp.key)
+        .map((x) => ({ key: x.key, label: x.label, items: s.catalog.filter((i) => i.slot === x.key) }));
+      if (grp.key === 'looks') slots.push({ key: 'social', label: 'Monkey business', items: s.social, social: true });
+      if (!slots.length) return '';
+      const on = state.shopSlot === `g:${grp.key}`;
+      return `<div class="cm-group"><button type="button" class="cm-group-label shop-slot ${on ? 'on' : ''}" data-v="g:${grp.key}" aria-pressed="${on}">${esc(grp.label)}</button>
+        <div class="cm-grid">${slots.map(cardOf).join('')}</div></div>`;
+    });
+    const cards = blocks.join('');
     const ring = `<button type="button" class="cm-ring shop-slot ${state.shopSlot === 'all' ? 'on' : ''}" data-v="all" aria-pressed="${state.shopSlot === 'all'}" style="--pct:${(pct * 100).toFixed(1)}%">
         <span class="cm-ring-in"><b>${have}<small>/${total}</small></b><span>${me ? 'collected' : 'items'}</span></span></button>`;
     return `<section class="card cm-card"><div class="section-head"><h2>${me ? 'Your collection' : 'In the shop'}</h2>
         <span class="muted small">${me ? `${Math.round(pct * 100)}% of the shop` : `${total} looks and ${s.social.length} pranks`}. ` +
         `${state.shopSlot === 'all' ? 'Pick a section to show just that one.' : 'Click the ring to show everything again.'}</span></div>
-      <div class="cm-wrap">${ring}<div class="cm-grid">${cards}</div></div></section>`;
+      <div class="cm-wrap">${ring}<div class="cm-groups">${cards}</div></div></section>`;
   }
 
   function itemCard(item, me) {
@@ -304,6 +350,17 @@ window.FiveShop = (() => {
       if (item.slot === 'theme') {
         body = `<div class="preview-label">The site in ${esc(item.name)}</div>${themeMock(item.look.theme)}` +
           '<p class="muted small">Themes are yours on every device you sign in on: once bought, the ◐ button cycles through them after Dark and Light.</p>';
+      } else if (item.slot === 'entrance') {
+        body = `<div class="preview-pair"><div><div class="preview-label">Now</div>${entranceSample(who, base)}</div>
+          <div><div class="preview-label">With ${esc(item.name)}</div>${entranceSample(who, after)}</div></div>
+          <p class="muted small">Onkey says this, with extra squeaks, whenever you sit down at the shared blackjack or poker table.</p>`;
+      } else if (item.slot === 'table_win') {
+        body = `<div class="preview-celebrate">${casinoSample(who, after)}
+          <p class="muted">This bursts out of your seat whenever you win a pot or a blackjack hand, for everyone at the table.</p><button class="btn modal-play">Play it ▶</button></div>`;
+      } else if (['card_back', 'chips', 'seat'].includes(item.slot)) {
+        body = `<div class="preview-pair"><div><div class="preview-label">Now</div>${casinoSample(who, base)}</div>
+          <div><div class="preview-label">With ${esc(item.name)}</div>${casinoSample(who, after)}</div></div>
+          <p class="muted small">This is how everyone at Onkey's tables sees you.</p>`;
       } else if (item.slot === 'celebration') {
         body = `<div class="preview-celebrate"><span class="shop-sample big">${sampleHtml(item)}</span>
           <p class="muted">This bursts out of your balance whenever a bet of yours wins.</p><button class="btn modal-play">Play it ▶</button></div>`;
@@ -341,7 +398,7 @@ window.FiveShop = (() => {
     };
     $('#modal-target', box)?.addEventListener('change', (e) => { previewTarget.name = e.target.value; redraw(); });
     $('#modal-text', box)?.addEventListener('input', (e) => { previewTarget.text = e.target.value; redraw(); });
-    $('.modal-play', box)?.addEventListener('click', (e) => confetti(e.currentTarget, false, { colors: item.look.colors, emoji: item.look.emoji }));
+    $('.modal-play', box)?.addEventListener('click', (e) => confetti($('.casino-sample .pk-seat', box) || e.currentTarget, false, { colors: item.look.colors, emoji: item.look.emoji }));
     $('.modal-buy', box)?.addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
       const body = { item: item.id };
