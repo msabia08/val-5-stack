@@ -16,7 +16,7 @@
 window.FiveWheel = (() => {
   'use strict';
 
-  let state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast;
+  let state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance;
   let data = null, owner = undefined;
   let angle = 0; // the wheel's rotation in degrees, kept across redraws so it never jumps back
   let spinning = false, result = null, error = '';
@@ -27,7 +27,7 @@ window.FiveWheel = (() => {
   const BULBS = 48;
   const R = 186; // the slices' radius in the SVG's 400 × 400 frame
 
-  function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast } = ctx); }
+  function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance } = ctx); }
 
   async function load() {
     const name = state.me?.name || null;
@@ -507,16 +507,19 @@ window.FiveWheel = (() => {
     if (live) live.innerHTML = resultLine();
     if (act) act.innerHTML = spinArea();
     ctx(); // start audio on the click itself, so the browser allows it
+    // The server pays the prize before the wheel stops: hold the balance shown in the top bar until it lands.
+    holdBalance(state.me.balance);
     let r;
     try {
       r = await api('/api/wheel/spin', { method: 'POST', body: JSON.stringify(typeof force === 'string' ? { segment: force } : {}) });
     } catch (e) {
-      spinning = false; error = e.message; draw(); return;
+      spinning = false; error = e.message; releaseBalance(); draw(); return;
     }
     const s = slices()[r.segment], rotor = $('#wheel-rotor');
     const finish = async (after) => {
       spinning = false; result = r;
       bulbs('');
+      releaseBalance(); // landed: the credits count to the real balance
       celebrate(s, r);
       try { await Promise.all([load(), loadMe(), after]); } catch (e) { /* the result is already shown */ }
       pointerDeg = restTilt(angle);

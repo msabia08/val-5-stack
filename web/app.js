@@ -103,17 +103,40 @@
     renderMe();
   };
   let shownBalance = null; // { name, balance } last shown, for the credits chip's ticker
+  // A balance held for a spin that's still turning (slots, the daily wheel). The server settles a spin before its
+  // animation ends, so a refresh of /api/bettor/me in the meantime (the 20-second poll) would show the result early in
+  // the top bar or on the machine. While a hold is on, both show the held value; releasing it counts the chip to the real
+  // balance. It lapses after HOLD_MAX_MS in case a page never lets go.
+  const HOLD_MAX_MS = 30000;
+  let held = null;
+  function holdBalance(value) {
+    if (!state.me) return;
+    held = { name: state.me.name, value, until: Date.now() + HOLD_MAX_MS };
+    renderMe();
+  }
+  function releaseBalance() {
+    if (!held) return;
+    held = null;
+    renderMe();
+  }
+  function displayBalance() {
+    const me = state.me;
+    if (!me) return null;
+    return held && held.name === me.name && Date.now() < held.until ? held.value : me.balance;
+  }
+
   // The top bar's three chips, on every page: credits (to Standings), bananas (to the Shop) and the signed-in
   // bettor's badge and name, which opens the account menu. Signed out, only that chip shows, saying Sign in.
   function renderMe() {
     const me = state.me, shop = window.FiveShop;
+    const bal = me ? displayBalance() : null;
     const credits = $('#me-credits'), bananas = $('#me-bananas'), chip = $('#me-chip');
     shop.syncMe(); // a new sign-in brings its own bananas, items and themes
     credits.classList.toggle('hidden', !me);
     bananas.classList.toggle('hidden', !me);
     wheelReady(me);
-    credits.innerHTML = `<b>${me ? fmt.credits(me.balance) : '–'}</b><span class="me-unit">credits</span>`;
-    credits.title = me ? `${fmt.credits(me.balance)} credits${me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on open bets` : ''}. Open the rankings.` : 'Sign in to see your credits';
+    credits.innerHTML = `<b>${me ? fmt.credits(bal) : '–'}</b><span class="me-unit">credits</span>`;
+    credits.title = me ? `${fmt.credits(bal)} credits${me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on open bets` : ''}. Open the rankings.` : 'Sign in to see your credits';
     const nb = me && me.bananas != null ? shop.bn(me.bananas) : '–';
     bananas.innerHTML = `<b>${nb}</b><span aria-hidden="true">🍌</span><span class="sr-only">bananas</span>`;
     bananas.title = me ? `${nb} bananas. Open Onkey's Shop.` : 'Sign in to see your bananas';
@@ -125,8 +148,8 @@
     // The credits chip counts to a new balance.
     const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
     const chipBalance = $('#me-credits b');
-    if (chipBalance && was !== null && Math.abs(was - me.balance) >= 0.5) tickBalance(chipBalance, was, me.balance);
-    shownBalance = { name: me.name, balance: me.balance };
+    if (chipBalance && was !== null && Math.abs(was - bal) >= 0.5) tickBalance(chipBalance, was, bal);
+    shownBalance = { name: me.name, balance: bal };
     celebrateWins(me);
     announceTransfers(me);
     announceTaxes(me);
@@ -1636,11 +1659,11 @@
     shop.init({ state, $, $$, api, draw, esc, fmt, kpi, toast, confetti, onShop: () => checkTheme() });
     window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, plainName, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
     window.FiveArcade.init({ state, $, $$, api, draw, esc, fmt, toast, nameHtml: shop.nameHtml, loadMe });
-    window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName });
+    window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance });
     window.FiveCasino.init({ esc, state, nameHtml: shop.nameHtml, confetti });
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
-    window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast });
+    window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance });
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
     // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms
     // it's owned (checkTheme, after every shop load), so a saved or ?theme= one waits, and one you don't own is dropped.

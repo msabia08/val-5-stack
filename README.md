@@ -46,8 +46,10 @@ next reel the bigger the symbol already showing; the readout under the reels sho
 your credits, the bet and the last win. Bigger wins get bigger celebrations: diamonds, then bananas, then
 Onkey each step it up. When the first two reels match, the third may keep
 spinning and creep up to the line so slowly you can't tell whether it will land,
-more often and for longer the bigger the pair; it happens on wins and losses
-alike, so it never gives the result away. The speaker button in the marquee
+more often and for longer the bigger the pair (never for cherries, bells or
+spikes); it happens on wins and losses alike, so it never gives the result away.
+Your credits (on the machine and in the top bar) show the stake taken until the
+reels stop, then count up to what you won, so they can't spoil it either. The speaker button in the marquee
 mutes the sounds and remembers your choice. Reduced motion shows the result immediately without rolling
 the reels or teasing, and keeps win celebrations to a glow and a banner.
 
@@ -836,7 +838,8 @@ peg, and sometimes the wheel crawls up to a peg next to a big prize, balances
 there, and tips over or rolls back (that's for show; the result was already
 decided). Every prize has its own sound and screen effect; the speaker button
 mutes them. In demo mode (`--demo`) there's no daily limit, so it can be tried
-out as often as you like. The odds are in `fivestack/wheel.py` (`SEGMENTS`).
+out as often as you like. Your credits in the top bar don't change until the wheel
+stops, so they never give the result away. The odds are in `fivestack/wheel.py` (`SEGMENTS`).
 
 ### The jackpot
 
