@@ -2,7 +2,7 @@
    and monkey chatter, the long-poll loop, countdowns and patching a region without losing focus. */
 window.FiveCasino = (() => {
   'use strict';
-  let esc = (s) => String(s);
+  let esc = (s) => String(s), state = null, nameHtml = null, confetti = null;
   const SUIT = { s: '♠', h: '♥', d: '♦', c: '♣' };
   const SUIT_NAME = { s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' };
   const RANK = { T: '10', J: 'J', Q: 'Q', K: 'K', A: 'A' };
@@ -10,14 +10,88 @@ window.FiveCasino = (() => {
   let muted = localStorage.getItem('fs.casinoMuted') === '1';
   let audio = null;
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function init(ctx) { ({ esc } = ctx); }
+  function init(ctx) { ({ esc, state, nameHtml, confetti } = ctx); }
+
+  // ---- what players bought (Onkey's Shop) ---------------------------------------------------
+  // Tables send the looks of everyone at them; they join the site-wide looks that nameHtml reads.
+  function absorb(looks) {
+    if (!looks || !state) return;
+    state.looks = { ...(state.looks || {}), ...looks };
+  }
+  const wornBy = (name, slot) => (((state && state.looks) || {})[String(name || '').toLowerCase()] || { worn: {} }).worn[slot] || null;
+  // The class an item adds to a player's cards, chips or seat ('' when they wear nothing there).
+  const style = (name, slot) => (wornBy(name, slot) || {}).cls || '';
+  // A player's name at the table: their name colour, badge and pranks; title on its own line when asked.
+  const who = (name, opts = {}) => (nameHtml ? nameHtml(name, opts) : esc(name));
+  // Just their title (bought, or a Title Swap prank), for a line of its own; '' when they have none.
+  const title = (name) => who(name, { title: true }).slice(who(name).length);
+  // Their Table win burst, out of their seat (any element with data-bettor), for everyone watching.
+  function seatBurst(root, name) {
+    const w = wornBy(name, 'table_win');
+    if (!w || !confetti || !root) return;
+    const seat = [...root.querySelectorAll('[data-bettor]')].find((el) => el.dataset.bettor.toLowerCase() === String(name).toLowerCase());
+    if (seat) confetti(seat, false, { colors: w.colors, emoji: w.emoji });
+  }
+
+  // ---- dealing ---------------------------------------------------------------------------
+  // The server settles a move at once; the page plays it out. Each card a page draws can carry a `key` (where it sits:
+  // table, round, seat, hand, position) and a `seq` (its place in the real deal order). `deal(render)` renders twice:
+  // a first pass collects the cards never seen before, sorts them by seq and gives each a start time DEAL_GAP after the
+  // last (a face-down card turning over is a flip, FLIP_GAP); the second pass draws them, each flying in from Onkey at
+  // its time. A card drawn again before it has landed keeps its place in the animation (a negative delay), so table
+  // updates mid-deal don't skip it. `after()` holds results (totals, wins, the status line) until the last card lands.
+  const DEAL_GAP = 380, FLIP_GAP = 520, DEAL_MS = 420;
+  const seen = new Map();          // card key -> { start } (performance.now() time it starts moving)
+  let planning = null, landAt = 0, quiet = true;
+  const now = () => performance.now();
+  function deal(render) {
+    planning = [];
+    render();
+    const fresh = planning.filter((p) => !seen.has(p.key)).sort((a, b) => a.seq - b.seq);
+    planning = null;
+    let t = now() + 60;
+    for (const p of fresh) {
+      if (quiet || reduced()) { seen.set(p.key, { start: -1e9 }); continue; } // first sight of a table: no replay
+      seen.set(p.key, { start: t, flip: p.flip });
+      setTimeout(() => sound('card'), Math.max(0, t - now()));
+      landAt = Math.max(landAt, t + (p.flip ? FLIP_GAP : DEAL_MS));
+      t += p.flip ? FLIP_GAP : DEAL_GAP;
+    }
+    quiet = false;
+    if (seen.size > 600) [...seen.keys()].slice(0, seen.size - 400).forEach((k) => seen.delete(k));
+    return render();
+  }
+  // A new table (another tab, a sign-in): its cards on screen now are shown, not dealt.
+  const dealReset = () => { quiet = true; };
+  // Milliseconds until the last card dealt so far lands.
+  const landing = () => Math.max(0, landAt - now());
+  // Attributes for something that should wait for the cards: a class and its delay, or nothing once they've landed.
+  const after = (cls = '') => {
+    const ms = Math.round(landing());
+    return ms > 0 ? ` class="${cls} after-deal" style="--after:${ms}ms"` : (cls ? ` class="${cls}"` : '');
+  };
+  function dealt(key, c, opts) {
+    const none = { cls: '', style: '' };
+    if (!key) return none;
+    const k = `${key}:${c || 'back'}`;
+    if (planning) {
+      planning.push({ key: k, seq: opts.seq || 0, flip: !!c && seen.has(`${key}:back`) });
+      return none;
+    }
+    const e = seen.get(k);
+    if (!e || e.start < 0) return none;
+    const delay = Math.round(e.start - now());
+    if (delay < -(e.flip ? FLIP_GAP : DEAL_MS)) return none;
+    return { cls: e.flip ? ' flip-in' : ' deal-in', style: ` style="--deal-delay:${delay}ms"` };
+  }
 
   // ---- cards -------------------------------------------------------------------------
-  // A face-up card ("As"), a face-down one (null), or an empty spot ('').
+  // A face-up card ("As"), a face-down one (null), or an empty spot (''). opts: size, cls, and key / seq to deal it.
   function card(c, opts = {}) {
     const size = opts.size ? ` ${opts.size}` : '';
-    const extra = opts.cls ? ` ${opts.cls}` : '';
-    const style = opts.delay != null ? ` style="--deal-delay:${opts.delay}ms"` : '';
+    const anim = c === '' ? { cls: '', style: '' } : dealt(opts.key, c, opts);
+    const extra = (opts.cls ? ` ${opts.cls}` : '') + anim.cls;
+    const style = anim.style;
     if (c === '') return `<span class="pcard empty${size}${extra}" aria-hidden="true"></span>`;
     if (!c) return `<span class="pcard back${size}${extra}"${style} role="img" aria-label="Face-down card"></span>`;
     const r = c[0], s = c[1];
@@ -26,7 +100,9 @@ window.FiveCasino = (() => {
     return `<span class="pcard${red ? ' red' : ''}${size}${extra}"${style} role="img" aria-label="${label}">` +
       `<span class="pc-corner"><b>${RANK[r] || r}</b><i>${SUIT[s]}</i></span><span class="pc-pip" aria-hidden="true">${SUIT[s]}</span></span>`;
   }
-  const cards = (list, opts = {}) => (list || []).map((c, i) => card(c, { ...opts, delay: opts.stagger != null ? i * opts.stagger : undefined })).join('');
+  // A row of cards; with opts.key each is dealt as `${key}:${i}`, seq from opts.seq(i).
+  const cards = (list, opts = {}) => (list || []).map((c, i) => card(c, { ...opts, key: opts.key ? `${opts.key}:${i}` : undefined,
+    seq: opts.seq ? opts.seq(i) : 0 })).join('');
 
   // ---- Onkey the dealer ------------------------------------------------------------------
   // What Onkey says, by log event. {name} and {amount} are filled in; one line is picked at random.
@@ -67,7 +143,7 @@ window.FiveCasino = (() => {
     topup: ['{name} reloads. Onkey approves.'],
   };
   // Lines that excite Onkey get more squeaks (eeks) than grunts (ooks).
-  const EXCITED = new Set(['blackjack', 'dealer_bust', 'allin', 'pwin', 'chop', 'win', 'start', 'double', 'split', 'bust']);
+  const EXCITED = new Set(['blackjack', 'dealer_bust', 'allin', 'pwin', 'chop', 'win', 'start', 'double', 'split', 'bust', 'entrance']);
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   function quip(kind, vars = {}) {
     const list = QUIPS[kind];
@@ -81,9 +157,9 @@ window.FiveCasino = (() => {
   }
   // Onkey speaks: the bubble shows the monkey noises, then what they mean, while the chatter plays.
   const timers = new WeakMap();
-  function say(el, kind, vars) {
+  function say(el, kind, vars, line) {
     if (!el) return;
-    const text = typeof kind === 'string' && QUIPS[kind] ? quip(kind, vars) : String(kind || '');
+    const text = line || (typeof kind === 'string' && QUIPS[kind] ? quip(kind, vars) : String(kind || ''));
     if (!text) return;
     const bubble = el.querySelector('.onkey-bubble');
     const words = text.split(/\s+/).length;
@@ -110,7 +186,11 @@ window.FiveCasino = (() => {
       const r = PRIORITY.indexOf(k);
       if (r >= 0 && r < rank) { best = e; rank = r; }
     }
-    if (best) say(el, kindOf(best), varsOf(best));
+    if (!best) return;
+    // Someone who bought an Entrance is announced with their own line.
+    const entrance = best.kind === 'sit' && best.bettor && wornBy(best.bettor, 'entrance');
+    if (entrance) say(el, 'entrance', {}, entrance.text.replace(/\{name\}/g, best.bettor));
+    else say(el, kindOf(best), varsOf(best));
   }
 
   // ---- monkey noises (Web Audio, nothing to download) ---------------------------------------------
@@ -237,5 +317,6 @@ window.FiveCasino = (() => {
   const countdown = (deadline) => (deadline ? `<b class="countdown" data-deadline="${deadline}">${Math.ceil(secondsLeft(deadline))}s</b>` : '');
   const ref = () => (crypto.randomUUID ? crypto.randomUUID() : `r${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9-]/g, '').padEnd(16, '0');
 
-  return { init, card, cards, dealer, say, react, quip, sound, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref, reduced };
+  return { init, card, cards, dealer, say, react, quip, sound, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref, reduced,
+    absorb, wornBy, style, who, title, seatBurst, deal, dealReset, landing, after };
 })();

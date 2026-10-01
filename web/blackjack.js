@@ -15,7 +15,7 @@ window.FiveBlackjack = (() => {
   const url = (since) => `/api/blackjack?table=${which}${since != null ? `&since=${since}` : ''}`;
   async function load() {
     const name = state.me?.name || null;
-    if (owner !== name) { owner = name; data.solo = data.shared = null; seen.solo = seen.shared = null; }
+    if (owner !== name) { owner = name; data.solo = data.shared = null; seen.solo = seen.shared = null; C.dealReset(); }
     apply(await api(url()));
   }
   // A fresh table state from the server: patch the regions that changed, and let Onkey react to what happened.
@@ -25,21 +25,27 @@ window.FiveBlackjack = (() => {
     if (old && d.version < old.version && t === 'shared') return; // an older answer arriving late
     data[t] = d;
     C.syncClock(d.server_time);
+    C.absorb(d.looks);
     const fresh = (d.log || []).filter((e) => seen[t] != null && e.id > seen[t]);
     seen[t] = d.log?.length ? d.log[d.log.length - 1].id : seen[t] ?? 0;
     if (state.view !== 'blackjack' || t !== which) return;
     if (!$('#bj-root')) return;
     refresh();
-    if (fresh.length) {
-      C.react($('#bj-onkey'), fresh, (e) => e.kind, (e) => ({ name: e.bettor || 'Onkey', amount: fmt.credits(Math.abs(e.amount || 0)) }));
-      if (fresh.some((e) => ['deal', 'hit', 'double', 'split'].includes(e.kind))) C.sound('card');
-      const mine = fresh.find((e) => e.bettor === state.me?.name && ['win', 'push', 'lose'].includes(e.kind));
-      if (mine?.kind === 'win') {
-        C.sound('win');
-        if (mine.blackjack || mine.amount >= 100) confetti($('#me-credits'), mine.amount >= 250);
-      }
-      if (mine) loadMe();
+    const wait = C.landing();
+    if (wait > 0) setTimeout(() => { if (state.view === 'blackjack' && $('#bj-root')) refresh(); }, wait + 30); // controls come back once the cards are down
+    if (fresh.length) setTimeout(() => react(fresh), wait);
+  }
+  // What happened, once the cards are down: Onkey's line, Table win bursts, your win.
+  function react(fresh) {
+    if (state.view !== 'blackjack' || !$('#bj-root')) return;
+    C.react($('#bj-onkey'), fresh, (e) => e.kind, (e) => ({ name: e.bettor || 'Onkey', amount: fmt.credits(Math.abs(e.amount || 0)) }));
+    fresh.filter((e) => e.kind === 'win' && e.bettor).forEach((e) => C.seatBurst($('#bj-spots'), e.bettor)); // bought Table wins
+    const mine = fresh.find((e) => e.bettor === state.me?.name && ['win', 'push', 'lose'].includes(e.kind));
+    if (mine?.kind === 'win') {
+      C.sound('win');
+      if (mine.blackjack || mine.amount >= 100) confetti($('#me-credits'), mine.amount >= 250);
     }
+    if (mine) loadMe();
   }
   function startLoop() {
     if (which !== 'shared' || (loop && loop.running)) return;
@@ -61,6 +67,7 @@ window.FiveBlackjack = (() => {
       return '<section class="card" id="bj-loading">Shuffling the shoe…</section>';
     }
     const seats = d.shared_seats;
+    const felt = C.deal(() => ({ dealer: dealerHtml(d), spots: spotsHtml(d), status: statusHtml(d) }));
     return `<div id="bj-root" class="casino-page">
       <div class="casino-bar">
         <div class="seg" role="tablist" aria-label="Table">
@@ -72,11 +79,11 @@ window.FiveBlackjack = (() => {
       </div>
       <div class="casino-layout">
         <section class="felt bj-felt" aria-label="Blackjack table">
-          <div class="felt-top">${C.dealer('bj-onkey')}<div class="bj-dealer" id="bj-dealer">${dealerHtml(d)}</div></div>
+          <div class="felt-top">${C.dealer('bj-onkey')}<div class="bj-dealer" id="bj-dealer">${felt.dealer}</div></div>
           <p class="felt-print" aria-hidden="true">Blackjack pays 3 to 2 · Dealer stands on all 17s</p>
-          <div class="bj-spots ${which}" id="bj-spots">${spotsHtml(d)}</div>
-          <div class="felt-status" id="bj-status" role="status" aria-live="polite">${statusHtml(d)}</div>
-          <div class="felt-controls" id="bj-controls">${controlsHtml(d)}</div>
+          <div class="bj-spots ${which}" id="bj-spots">${felt.spots}</div>
+          <div class="felt-status" id="bj-status" role="status" aria-live="polite">${felt.status}</div>
+          <div class="felt-controls" id="bj-controls"><div class="casino-controls">${controlsHtml(d)}</div></div>
         </section>
         <aside class="casino-side" id="bj-side">${sideHtml(d)}</aside>
       </div>
@@ -84,10 +91,11 @@ window.FiveBlackjack = (() => {
   }
   function refresh() {
     const d = data[which];
-    C.patch($('#bj-dealer'), dealerHtml(d));
-    C.patch($('#bj-spots'), spotsHtml(d));
-    C.patch($('#bj-status'), statusHtml(d));
-    C.patch($('#bj-controls'), controlsHtml(d));
+    const felt = C.deal(() => ({ dealer: dealerHtml(d), spots: spotsHtml(d), status: statusHtml(d) }));
+    C.patch($('#bj-dealer'), felt.dealer);
+    C.patch($('#bj-spots'), felt.spots);
+    C.patch($('#bj-status'), felt.status);
+    C.patch($('#bj-controls'), `<div${C.after('casino-controls')}>${controlsHtml(d)}</div>`);
     C.patch($('#bj-side'), sideHtml(d));
     const count = $('#bj-root .seg-count');
     if (count) count.textContent = `${d.shared_seats.taken}/${d.shared_seats.max}`;
@@ -99,26 +107,31 @@ window.FiveBlackjack = (() => {
     const cs = d.dealer.cards;
     if (!cs.length) return '<div class="bj-cards">' + C.card('') + C.card('') + '</div><span class="muted small">Onkey is waiting for bets</span>';
     const hidden = cs.includes(null);
-    return `<div class="bj-cards">${C.cards(cs, { size: 'lg', stagger: 60 })}</div>` +
-      `<div class="bj-total">${d.dealer.blackjack ? '<span class="hand-total bj">Blackjack</span>' : totalBadge(d.dealer.total, false, d.dealer.total > 21 ? 'bust' : '')}${hidden ? '<span class="muted small">showing</span>' : ''}</div>`;
+    const back = which === 'solo' && d.me ? C.style(d.me.name, 'card_back') : '';
+    const key = `bj:${d.table}:${d.round}:dealer`;
+    const seq = (i) => (i === 0 ? 99 : i === 1 ? (cs[1] ? 9000 : 199) : 10000 + i);
+    return `<div class="bj-cards">${cs.map((c, i) => C.card(c, { size: 'lg', cls: c ? '' : back, key: `${key}:${i}`, seq: seq(i) })).join('')}</div>` +
+      `<div${C.after('bj-total')}>${d.dealer.blackjack ? '<span class="hand-total bj">Blackjack</span>' : totalBadge(d.dealer.total, false, d.dealer.total > 21 ? 'bust' : '')}${hidden ? '<span class="muted small">showing</span>' : ''}</div>`;
   }
-  function handHtml(h) {
+  function handHtml(h, chips = '', key = '', seat = 0, hi = 0) {
     const res = h.result ? `<span class="hand-result ${h.result}">${RESULT[h.result]}${h.payout ? ` +${fmt.credits(h.payout)}` : ''}</span>` : '';
     const badge = h.blackjack ? '<span class="hand-total bj">21</span>' : totalBadge(h.total, h.soft, h.total > 21 ? 'bust' : '');
     return `<div class="bj-hand ${h.turn ? 'active' : ''} ${h.result || ''}">
-      <div class="bj-cards">${C.cards(h.cards, { size: 'lg' })}</div>
-      <div class="bj-hand-meta">${badge}<span class="chip-stake" title="Stake">${fmt.credits(h.stake)}${h.doubled ? ' ×2' : ''}</span>${res}</div></div>`;
+      <div class="bj-cards">${C.cards(h.cards, { size: 'lg', key: key && `${key}:${hi}`, seq: (i) => (hi === 0 && i < 2 ? i * 100 + seat : 5000 + hi * 10 + i) })}</div>
+      <div${C.after('bj-hand-meta')}>${badge}<span class="chip-stake ${chips}" title="Stake">${fmt.credits(h.stake)}${h.doubled ? ' ×2' : ''}</span>${res}</div></div>`;
   }
   function spotsHtml(d) {
     const meName = d.me?.name;
     const spots = d.seats.map((s) => {
       const turn = d.turn && d.turn.bettor === s.bettor;
-      const hands = s.hands.length ? s.hands.map(handHtml).join('')
-        : s.stake ? `<div class="bj-hand waiting"><span class="chip-stake big">${fmt.credits(s.stake)}</span><span class="muted small">Bet placed</span></div>`
+      const chips = C.style(s.bettor, 'chips');
+      const seat = d.seats.indexOf(s), key = `bj:${d.table}:${d.round}:${s.bettor}`;
+      const hands = s.hands.length ? s.hands.map((h, hi) => handHtml(h, chips, key, seat, hi)).join('')
+        : s.stake ? `<div class="bj-hand waiting"><span class="chip-stake big ${chips}">${fmt.credits(s.stake)}</span><span class="muted small">Bet placed</span></div>`
           : `<div class="bj-hand waiting"><span class="muted small">${d.phase === 'betting' ? 'No bet yet' : 'Sitting this one out'}</span></div>`;
-      return `<div class="bj-spot ${turn ? 'turn' : ''} ${s.bettor === meName ? 'me' : ''}">
+      return `<div class="bj-spot ${turn ? 'turn' : ''} ${s.bettor === meName ? 'me' : ''} ${C.style(s.bettor, 'seat')}" data-bettor="${esc(s.bettor)}">
         <div class="bj-hands">${hands}</div>
-        <div class="bj-spot-name">${plainName(s.bettor)}${turn && which === 'shared' ? `<span class="muted small">'s turn</span>` : ''}</div>
+        <div class="bj-spot-name">${C.who(s.bettor, { title: true })}${turn && which === 'shared' ? `<span class="muted small">${s.bettor === meName ? 'Your turn' : 'Their turn'}</span>` : ''}</div>
         ${turn ? C.timer(d.deadline, d.turn_s) : ''}</div>`;
     });
     if (which === 'shared') for (let i = d.seats.length; i < d.max_seats; i++) spots.push('<div class="bj-spot open"><span class="muted small">Open seat</span></div>');
@@ -126,6 +139,10 @@ window.FiveBlackjack = (() => {
     return spots.join('');
   }
   function statusHtml(d) {
+    const line = statusLine(d);
+    return line && !error ? `<span${C.after()}>${line}</span>` : line;
+  }
+  function statusLine(d) {
     if (error) return `<span class="casino-error">${esc(error)}</span>`;
     if (d.phase === 'playing' && d.turn) {
       const mine = d.turn.bettor === d.me?.name;
@@ -151,7 +168,7 @@ window.FiveBlackjack = (() => {
     return state.me ? 'Pick a stake and deal.' : 'Sign in to play blackjack with your credits.';
   }
   function stakeKeys(d, disabled) {
-    return `<div class="casino-stakes" role="group" aria-label="Stake">${d.stakes.map((s) => `<button type="button" class="stake-key" data-bj-stake="${s}" aria-pressed="${s === stake}" ${disabled || (d.me && d.me.balance < s) ? 'disabled' : ''}>${s}</button>`).join('')}</div>`;
+    return `<div class="casino-stakes" role="group" aria-label="Stake">${d.stakes.map((s) => `<button type="button" class="stake-key ${d.me ? C.style(d.me.name, 'chips') : ''}" data-bj-stake="${s}" aria-pressed="${s === stake}" ${disabled || (d.me && d.me.balance < s) ? 'disabled' : ''}>${s}</button>`).join('')}</div>`;
   }
   function controlsHtml(d) {
     const me = d.me;
@@ -186,7 +203,7 @@ window.FiveBlackjack = (() => {
       : '<p class="muted"><a href="#" data-signin>Sign in</a> to play and see your season.</p>';
     const at = d.shared_seats.names;
     return `<section class="card"><h2>Your season</h2>${tiles}</section>
-      <section class="card"><h2>The shared table</h2>${at.length ? `<ul class="casino-names">${at.map((n) => `<li>${plainName(n)}</li>`).join('')}</ul>` : '<p class="muted">Empty. Sit down and Onkey deals for whoever joins.</p>'}
+      <section class="card"><h2>The shared table</h2>${at.length ? `<ul class="casino-names">${at.map((n) => `<li>${C.who(n)}</li>`).join('')}</ul>` : '<p class="muted">Empty. Sit down and Onkey deals for whoever joins.</p>'}
         <p class="muted small">${d.shared_seats.taken} of ${d.shared_seats.max} seats taken.</p></section>
       <section class="card"><h2>House rules</h2><ul class="casino-rules">${d.rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
         <details class="how"><summary>The house keeps about ${(d.edge * 100).toFixed(1)}% over time.</summary><p>That edge is the house's cut. Results count in the Casino column in Standings, separate from match-betting profit, and the casino never earns or costs bananas. A hand still open when the server restarts or the season ends is refunded.</p></details></section>`;
@@ -199,7 +216,7 @@ window.FiveBlackjack = (() => {
     refresh();
     try {
       apply(await api(path, { method: 'POST', body: JSON.stringify({ table: which, ...body }) }));
-      loadMe();
+      setTimeout(loadMe, C.landing()); // the credits chip changes when the cards are down, not before
     } catch (e) {
       error = e.message;
       try { apply(await api(url())); } catch (_) { /* keep the old state */ }
@@ -216,7 +233,7 @@ window.FiveBlackjack = (() => {
       const t = e.target.closest('button');
       if (!t || t.disabled) return;
       if (t.dataset.bjTable && t.dataset.bjTable !== which) {
-        which = t.dataset.bjTable; error = '';
+        which = t.dataset.bjTable; error = ''; C.dealReset();
         try { localStorage.setItem('fs.bjTable', which); } catch (_) { /* unavailable */ }
         loop?.stop(); loop = null;
         draw();

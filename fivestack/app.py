@@ -110,6 +110,17 @@ class App:
                 time.sleep(interval)
         threading.Thread(target=loop, name="casino-clock", daemon=True).start()
 
+    def with_looks(self, view):
+        """A casino table's view plus the shop looks of everyone at it (and the viewer), so the page draws their
+        name colours, badges, card backs, chips and seats. Fresh with every answer, so a purchase shows at once."""
+        names = {s["bettor"].lower() for s in view.get("seats", []) if s}
+        names |= {e["bettor"].lower() for e in view.get("log", []) if e.get("bettor")}
+        if view.get("me"):
+            names.add(view["me"]["name"].lower())
+        looks = self.bananas.looks()
+        view["looks"] = {n: looks[n] for n in names if n in looks}
+        return view
+
     def reset_season(self):
         """End the season: the casino tables close first (open blackjack hands refunded, poker seats cashed out), with
         their locks held so nobody sits back down before the reset is done."""
@@ -495,15 +506,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/poker":
                 if since is not None:  # long-poll: answer when the table changes, or after 20 seconds
                     app.poker.wait(app.poker.table, since, 20)
-                return self._json(app.poker.view(name))
+                return self._json(app.with_looks(app.poker.view(name)))
             which = qs.get("table") or "solo"
             if which not in ("solo", "shared"):
                 return self._json({"error": "Pick the solo table or the shared table."}, 400)
             if since is not None and which == "shared":
                 app.blackjack.wait(app.blackjack.tables["shared"], since, 20)
             if which == "solo" and not name:
-                return self._json(app.blackjack.view(None, "shared") | {"table": "solo", "seats": [], "log": []})
-            return self._json(app.blackjack.view(name, which))
+                return self._json(app.blackjack.view(None, "shared") | {"table": "solo", "seats": [], "log": [], "looks": {}})
+            return self._json(app.with_looks(app.blackjack.view(name, which)))
         if path == "/api/troop":
             return self._json(app.bananas.troop())
         if path == "/api/troop/profile":

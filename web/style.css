@@ -1795,3 +1795,79 @@ body.modal-open { overflow: hidden; }
   .onkey-dealer.talking .onkey-face { animation: none; }
   .onkey-bubble, .timer-bar::after { transition: none; }
 }
+
+
+/* ---- Onkey's Casino items (bananas.py, slots card_back / chips / seat): how a player looks at the tables ---- */
+/* Card backs: your face-down poker cards, and Onkey's hole card at your solo blackjack table. */
+.pcard.back.cbk-banana { background: repeating-linear-gradient(45deg, #f5c518 0 5px, #3f8f3a 5px 10px); }
+.pcard.back.cbk-jungle { background: radial-gradient(circle at 30% 30%, #7ac943 0 18%, transparent 19%), radial-gradient(circle at 70% 70%, #7ac943 0 18%, transparent 19%), #1e6b30; background-size: 12px 12px; }
+.pcard.back.cbk-midnight { background: radial-gradient(#fff 0.8px, transparent 1.4px) 0 0 / 7px 7px, radial-gradient(#9ec5f4 0.6px, transparent 1.2px) 3px 4px / 9px 9px, #13204a; }
+.pcard.back.cbk-onkey { background: url("/assets/onkey-logo.png") center / 82% no-repeat, radial-gradient(circle, #a8703f, #6b3f1d); }
+.pcard.back.cbk-neon { background: repeating-linear-gradient(135deg, #ff2fa0 0 4px, #1a0b2e 4px 7px, #1fe0ff 7px 11px, #1a0b2e 11px 14px); }
+.pcard.back.cbk-gold { background: linear-gradient(120deg, #a87600, #ffd700 30%, #fff3c4 45%, #ffd700 60%, #a87600); background-size: 250% 100%; animation: cbk-shimmer 3s linear infinite; }
+@keyframes cbk-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+
+/* Chips: your bets at poker, your stake chips at blackjack. */
+.chp-jungle { --chip-bg: #2f9a45; --chip-fg: #fff; }
+.chp-ice { --chip-bg: #8fd3ff; --chip-fg: #0b3550; }
+.chp-ruby { --chip-bg: #c8202f; --chip-fg: #fff; }
+.chp-banana { --chip-bg: radial-gradient(#6b3f1d 1.4px, transparent 2px) 0 0 / 9px 9px, #f5c518; --chip-fg: #3a2a00; }
+.chp-onyx { --chip-bg: #151515; --chip-fg: #ffd700; }
+.chp-rainbow { --chip-bg: conic-gradient(#ff4d6d, #ffd23f, #3bceac, #4f8cff, #b86bff, #ff4d6d); --chip-fg: #fff; }
+.chip-stake[class*="chp-"], .chip-dot[class*="chp-"], .stake-key[class*="chp-"] { background: var(--chip-bg); color: var(--chip-fg); }
+.chp-onyx.chip-stake, .chp-onyx.chip-dot, .chp-onyx.stake-key { border: 2px solid #ffd700; }
+.chp-rainbow.chip-stake, .chp-rainbow.stake-key { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); }
+.chp-rainbow.chip-dot, .chp-rainbow.chip-stake, .chp-rainbow.stake-key { animation: chp-spin 6s linear infinite; }
+@keyframes chp-spin { to { filter: hue-rotate(360deg); } }
+
+/* Seat style: your poker nameplate and your blackjack spot. */
+.pk-seat.st-wood .pk-plate, .bj-spot.st-wood { background: linear-gradient(#6b3a1e, #4a2611); border: 1px solid #a0673a; }
+.pk-seat.st-vines .pk-plate, .bj-spot.st-vines { border: 2px solid #2f9a45; background: linear-gradient(rgba(30, 107, 48, 0.55), rgba(12, 12, 12, 0.85)); position: relative; }
+.pk-seat.st-vines .pk-plate::after, .bj-spot.st-vines::after { content: "🌿"; position: absolute; top: -10px; right: -8px; font-size: 18px; transform: rotate(20deg); }
+.pk-seat.st-velvet .pk-plate, .bj-spot.st-velvet { background: linear-gradient(#4b1d6b, #2c0f44); border: 1px solid #c9a0ff; }
+.pk-seat.st-neon .pk-plate, .bj-spot.st-neon { border: 2px solid #ff2fa0; box-shadow: 0 0 12px #ff2fa0, inset 0 0 8px rgba(255, 47, 160, 0.5); }
+.pk-seat.st-gold .pk-plate, .bj-spot.st-gold { background: linear-gradient(#5a4300, #2e2200); border: 2px solid #ffd700; box-shadow: 0 0 14px rgba(255, 215, 0, 0.45); }
+.bj-spot[class*="st-"] { border-radius: 14px; }
+/* Whose turn it is still shows over any seat style. */
+.pk-seat.turn[class*="st-"] .pk-plate, .bj-spot.turn[class*="st-"] { border-color: var(--turn); box-shadow: 0 0 0 2px var(--turn), 0 0 18px rgba(255, 210, 63, 0.35); }
+.pk-title { margin-top: 1px; }
+.pk-title .btitle { font-size: 10px; margin: 0; }
+.bj-spot-name { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+
+/* In the shop: item cards and before / after samples drawn on a small felt. */
+.shop-felt { display: inline-flex; gap: 6px; align-items: center; justify-content: center; padding: 10px 14px; border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 35%, var(--felt-2), var(--felt) 75%); color: var(--felt-ink); }
+.shop-felt .pcard + .pcard { margin-left: -14px; }
+.shop-quote { display: block; font-size: 13px; font-style: italic; line-height: 1.35; padding: 4px 6px; }
+.pk-seat.static { position: relative; transform: none; left: auto; top: auto; display: inline-flex; width: 150px; }
+.pk-bet.static { position: relative; transform: none; }
+.casino-sample { display: flex; align-items: center; justify-content: center; gap: 18px; min-height: 150px; padding: 18px; border-width: 8px; border-radius: 18px; margin-bottom: 8px; }
+.casino-sample-chips { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.casino-sample.entrance { justify-content: flex-start; padding-left: 28px; }
+.onkey-dealer.static .onkey-face { animation: none; }
+.shop-group-head { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 16px; align-items: center;
+  background: linear-gradient(90deg, rgba(19, 112, 63, 0.22), transparent 60%), var(--surface); }
+.shop-group-art { width: 72px; height: 72px; display: grid; place-items: center; font-size: 40px; border-radius: 50%;
+  background: radial-gradient(circle, var(--felt-2), var(--felt)); border: 4px solid var(--felt-edge); }
+.shop-group-head h2 { margin: 0 0 4px; }
+.cm-groups { display: flex; flex-direction: column; gap: 12px; }
+.cm-group { display: flex; flex-direction: column; gap: 6px; }
+.cm-group-label { align-self: flex-start; background: none; border: 0; padding: 2px 0; font: 600 13px var(--font); color: var(--text-2); cursor: pointer; }
+.cm-group-label:hover, .cm-group-label.on { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .pcard.back.cbk-gold, .chp-rainbow.chip-dot, .chp-rainbow.chip-stake, .chp-rainbow.stake-key { animation: none; }
+}
+
+/* Dealing (casino.js deal()): a new card flies in from Onkey at its turn in the deal; a face-down card turns over;
+   totals, results and the status line (.after-deal) wait until the last card has landed. */
+.pcard.deal-in { animation: card-deal 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both; animation-delay: var(--deal-delay, 0ms); }
+@keyframes card-deal { from { opacity: 0; transform: translateY(-150px) rotate(-14deg) scale(0.75); } 60% { opacity: 1; } }
+.pcard.flip-in { animation: card-flip 0.5s ease-in-out both; animation-delay: var(--deal-delay, 0ms); }
+@keyframes card-flip { 0% { transform: scaleX(1); filter: brightness(0.35); } 50% { transform: scaleX(0); filter: brightness(0.35); } 100% { transform: scaleX(1); } }
+.after-deal { animation: after-deal 0.25s ease-out both; animation-delay: var(--after, 0ms); pointer-events: none; }
+.casino-controls { display: contents; }
+.casino-controls.after-deal { display: block; }
+@keyframes after-deal { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .pcard.deal-in, .pcard.flip-in, .after-deal { animation: none; }
+}
