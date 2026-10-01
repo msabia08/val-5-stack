@@ -26,7 +26,7 @@ window.FiveRecap = (() => {
       when ? when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '',
       m.game_length_ms ? `${Math.round(m.game_length_ms / 60000)} min` : '',
       `game ${m.night_game} of the night (${m.night_record[0]}–${m.night_record[1]})`,
-      `${ordinal(m.number)} 5-stack game`,
+      `${ordinal(m.number)} ${stackWord()} game`,
       m.overtime ? 'overtime' : '',
       m.ending === 'forfeit' ? (m.result === 'win' ? 'the other team surrendered' : 'the squad surrendered') : '',
     ].filter(Boolean);
@@ -80,7 +80,7 @@ window.FiveRecap = (() => {
     return `<section class="card"><h2>Scoreboard</h2><div class="table-wrap"><table class="compact recap-board"><thead><tr><th>Player</th>` +
       '<th class="num">K</th><th class="num">D</th><th class="num">A</th><th class="num">K/D</th><th class="num">ACS</th><th class="num">ADR</th><th class="num">HS %</th>' +
       '<th class="num" title="Share of the squad\'s damage">Dmg</th><th class="num" title="Rounds opened with the first kill">FB</th><th>Big rounds</th></tr></thead>' +
-      `<tbody>${rows}</tbody></table></div>${how('▲ / ▼ mark a stat well above or below the player\'s usual game.', 'Green is good; for deaths, fewer is good. Hover a number for their usual 5-stack game and the forecast from the Forecasts tab.')}</section>`;
+      `<tbody>${rows}</tbody></table></div>${how('▲ / ▼ mark a stat well above or below the player\'s usual game.', `Green is good; for deaths, fewer is good. Hover a number for their usual ${stackWord()} game and the forecast from the Forecasts tab.`)}</section>`;
   }
 
   function rounds(r) {

@@ -150,22 +150,22 @@ def _player_highlights(p, row, earlier, all_rows_by_match, match, engine, full, 
             recorded.add(key)
             good = sign > 0
             what = f"{high if sign > 0 else low} {label}"
-            out.append(_hl(88 + min(10, len(hist) / 10), "record", f"{what} in a 5-stack game: {_fmt(key, v)}",
+            out.append(_hl(88 + min(10, len(hist) / 10), "record", f"{what} in a squad game: {_fmt(key, v)}",
                            f"Previous best {_fmt(key, best)} over {len(hist)} games", p, "good" if good else "bad"))
         elif v == best:
             recorded.add(key)
-            out.append(_hl(64, "record", f"Tied their 5-stack {'best' if sign > 0 else 'low'}: {_fmt(key, v)} {label}",
+            out.append(_hl(64, "record", f"Tied their squad {'best' if sign > 0 else 'low'}: {_fmt(key, v)} {label}",
                            f"{len(hist)} earlier games", p))
         elif better(worst, v) and key in LOW_RECORDS:
             recorded.add(key)
             what = f"{low if sign > 0 else high} {label}"
-            out.append(_hl(62, "record", f"{what} in a 5-stack game: {_fmt(key, v)}",
+            out.append(_hl(62, "record", f"{what} in a squad game: {_fmt(key, v)}",
                            f"Previous low {_fmt(key, worst)} over {len(hist)} games", p, "bad"))
         else:
             rank = 1 + sum(1 for x in hist if better(x, v))
             if 2 <= rank <= 3 and key in ("kills", "acs", "adr", "kd"):
                 recorded.add(key)
-                out.append(_hl(52 - 4 * (rank - 2), "near_record", f"{_ordinal(rank)}-best {label} in a 5-stack game: {_fmt(key, v)}",
+                out.append(_hl(52 - 4 * (rank - 2), "near_record", f"{_ordinal(rank)}-best {label} in a squad game: {_fmt(key, v)}",
                                f"Out of {len(hist) + 1} games", p))
     # Best (or worst) in a long run of recent games, for the headline stats not already called out.
     for key, label in (("acs", "ACS"), ("kills", "kills")):
@@ -189,7 +189,7 @@ def _player_highlights(p, row, earlier, all_rows_by_match, match, engine, full, 
                            f"Previous best {_fmt('acs', top)} over {len(same)} games", p))
     # Firsts.
     if len(earlier) >= MIN_SPLIT_GAMES and agent and agent not in {r.get("agent") for r in earlier}:
-        out.append(_hl(46, "first", f"First 5-stack game on {agent}", f"After {len(earlier)} games", p, "info"))
+        out.append(_hl(46, "first", f"First squad game on {agent}", f"After {len(earlier)} games", p, "info"))
     if len(earlier) >= MIN_RECORD_GAMES and role != "Unknown" and role not in {_role(r.get("agent")) for r in earlier}:
         out.append(_hl(52, "first", f"First time playing {role}", f"On {agent}", p, "info"))
     # Rank changes (the rank stored with each game).
@@ -206,10 +206,10 @@ def _player_highlights(p, row, earlier, all_rows_by_match, match, engine, full, 
     before = sum(r.get("kills") or 0 for r in earlier)
     after = before + (row.get("kills") or 0)
     if before // KILL_MILESTONE < after // KILL_MILESTONE:
-        out.append(_hl(58, "milestone", f"Passed {after // KILL_MILESTONE * KILL_MILESTONE:,} kills in 5-stacks", f"{after:,} in total", p, "info"))
+        out.append(_hl(58, "milestone", f"Passed {after // KILL_MILESTONE * KILL_MILESTONE:,} kills with the squad", f"{after:,} in total", p, "info"))
     games = len(earlier) + 1
     if games % GAME_MILESTONE == 0:
-        out.append(_hl(50, "milestone", f"{_ordinal(games)} 5-stack game", "", p, "info"))
+        out.append(_hl(50, "milestone", f"{_ordinal(games)} squad game", "", p, "info"))
     # Top-fragger streak (most kills among the squad), this game included.
     streak = 0
     for mid in [match["match_id"]] + [r["match_id"] for r in earlier]:
@@ -244,7 +244,7 @@ def _player_highlights(p, row, earlier, all_rows_by_match, match, engine, full, 
         earlier_aces = sum(1 for tl in seen if aced(tl, p))
         if pr["k5"]:
             first = len(seen) >= MIN_RECORD_GAMES and earlier_aces == 0
-            out.append(_hl(95 if first else 90, "ace", "First ace in a 5-stack game!" if first else ("Ace" if pr["k5"] == 1 else f"{pr['k5']} aces"),
+            out.append(_hl(95 if first else 90, "ace", "First ace in a squad game!" if first else ("Ace" if pr["k5"] == 1 else f"{pr['k5']} aces"),
                            "Killed all five in one round", p))
         if pr["k4"]:
             out.append(_hl(56 + 6 * (pr["k4"] - 1), "multikill", "4K" if pr["k4"] == 1 else f"{pr['k4']} 4Ks", "Four kills in one round", p))
@@ -392,7 +392,7 @@ def _squad_highlights(match, earlier_matches, rows, earlier_rows_by_match):
     map_ = match.get("map")
     on_map = [m for m in earlier_matches if m.get("map") == map_]
     if len(earlier_matches) >= MIN_SPLIT_GAMES and not on_map:
-        out.append(_hl(45, "map_first", f"First 5-stack game on {map_}", "", None, "info"))
+        out.append(_hl(45, "map_first", f"First squad game on {map_}", "", None, "info"))
     elif match.get("result") == "win" and len(on_map) >= 2 and not any(m.get("result") == "win" for m in on_map):
         out.append(_hl(55, "map_first", f"First win on {map_}", f"At the {_ordinal(len(on_map) + 1)} try"))
     else:
@@ -403,7 +403,7 @@ def _squad_highlights(match, earlier_matches, rows, earlier_rows_by_match):
                            "", None, "good" if map_results[0] == "win" else "bad"))
     n = len(earlier_matches) + 1
     if n % SQUAD_MILESTONE == 0:
-        out.append(_hl(56, "milestone", f"{_ordinal(n)} 5-stack game together", "", None, "info"))
+        out.append(_hl(56, "milestone", f"{_ordinal(n)} squad game together", "", None, "info"))
     if went_to_overtime(match):
         extra = total_rounds(match) - 24
         out.append(_hl(52 + 4 * max(0, extra - 2) if match.get("result") == "win" else 44, "overtime",

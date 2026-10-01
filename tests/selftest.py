@@ -32,7 +32,7 @@ from fivestack.recap import build_recap  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
 from fivestack.timeline import clutches_and_multikills, extract_timeline, spike_sites  # noqa: E402
-from fivestack.tracker import Tracker, parse_details  # noqa: E402
+from fivestack.tracker import Tracker, TrackerError, parse_details  # noqa: E402
 
 MEMBERS = [f"P{i}#TAG" for i in range(1, 6)]
 PUUIDS = {f"P{i}": f"puuid-{i}" for i in range(1, 6)}
@@ -63,12 +63,26 @@ class FakeClient:
         self.calls = 0
         self.ratelimit = {}
         self.details_calls = []
+        # Each account's current Riot ID; the "roster" section renames one and adds a sixth player.
+        self.names = {puuid: (name, "TAG") for name, puuid in PUUIDS.items()}
+        self.names["puuid-6"] = ("P6", "TAG")
+
+    def _account(self, puuid):
+        name, tag = self.names[puuid]
+        return {"puuid": puuid, "region": "na", "name": name, "tag": tag, "card": "c"}
 
     def account(self, name, tag):
         self.calls += 1
-        if name not in PUUIDS:
+        for puuid, (n, t) in self.names.items():
+            if (n.lower(), t.lower()) == (name.lower(), tag.lower()):
+                return self._account(puuid)
+        raise HenrikError(404, "Not found")
+
+    def account_by_puuid(self, puuid):
+        self.calls += 1
+        if puuid not in self.names:
             raise HenrikError(404, "Not found")
-        return {"puuid": PUUIDS[name], "region": "na", "name": name, "tag": tag, "card": "c"}
+        return self._account(puuid)
 
     def stored_matches(self, region, puuid, mode=None, size=None, page=None):
         self.calls += 1
@@ -1070,10 +1084,10 @@ def recap(shared):
     assert r["match"]["match_id"] == "final" and r["match"]["number"] == 13 and r["match"]["older"] == "g11" and r["match"]["newer"] is None
     hl = {(h["kind"], h["puuid"]): h for h in r["highlights"]}  # the first (highest-scoring) of each kind per player
     titles = {h["title"] for h in r["highlights"]}
-    assert "Most kills in a 5-stack game: 30" in titles, titles
-    assert "Lowest ACS in a 5-stack game: 200" in titles  # 4800 score over 24 rounds; averages say highest / lowest
+    assert "Most kills in a squad game: 30" in titles, titles
+    assert "Lowest ACS in a squad game: 200" in titles  # 4800 score over 24 rounds; averages say highest / lowest
     assert hl[("ace", "puuid-1")] and hl[("clutch", "puuid-2")]["title"] == "Won a 1v3 clutch"
-    assert {h["title"] for h in r["highlights"] if h["kind"] == "first"} == {"First 5-stack game on Clove", "First time playing Controller"}
+    assert {h["title"] for h in r["highlights"] if h["kind"] == "first"} == {"First squad game on Clove", "First time playing Controller"}
     assert hl[("rank", "puuid-3")]["title"] == "New peak rank: Platinum 1"
     assert hl[("knife", "puuid-4")]["detail"] == "Round 11" and hl[("team_kill", "puuid-5")]["detail"] == "Round 12"
     assert hl[("comeback", None)]["title"] == "Came back from 0–8 down"
@@ -1409,6 +1423,148 @@ def config_docs(shared):
     documented = {key for cell in first_cells for key in re.findall(r"`([a-z_]+)`", cell)}
     undocumented = sorted(example_keys - documented)
     assert not undocumented, f"add these config.example.json keys to the README's configuration table: {undocumented}"
+
+
+@section("roster")
+def roster(shared):
+    # The squad lives in the database (seeded from config.json by the first sync) and is edited at runtime.
+    client, tracker, db = shared.client, shared.tracker, shared.db
+    assert db.get_meta("roster_seeded") is True and db.count_members() == 5
+    # Renames keep the account: a check updates the Riot ID and remembers the old one; once a day is enough.
+    client.names["puuid-1"] = ("Pone", "NEW")
+    renamed = tracker.refresh_names(force=True)
+    assert [(r["from"], r["to"]) for r in renamed] == [("P1#TAG", "Pone#NEW")], renamed
+    m1 = db.member("puuid-1")
+    assert (m1["name"], m1["tag"], m1["previous_name"]) == ("Pone", "NEW", "P1#TAG"), m1
+    assert tracker.refresh_names() == []
+    # Entering a current member's new Riot ID updates them (and the nickname) instead of adding a second player.
+    r = tracker.add_member("Pone#NEW", "one")
+    assert r["added"] is False and db.count_members() == 5 and db.member("puuid-1")["nickname"] == "one", r
+    # Two to five players, and only real Riot IDs.
+    for bad, err in (("P6#TAG", "full"), ("nobody", "Riot ID"), ("Ghost#TAG", "Not found")):
+        try:
+            tracker.add_member(bad)
+            raise AssertionError(f"{bad} should be refused")
+        except (TrackerError, HenrikError) as e:
+            assert err in str(e), (bad, str(e))
+    games = db.count_matches()  # m1, m3, m9 and m10
+    assert games == 4
+    # Removing a player keeps every game the others all played (and finds the ones they played without them),
+    # forgets rejections and forces a full re-scan.
+    changes = tracker.remove_member("puuid-5")
+    assert db.count_members() == 4 and changes == {"removed": 0, "added": 1, "was_active": True}, changes  # m2: P5 was on the other team
+    assert db.get_meta("rejected_matches") == [] and db.get_meta("history_backfilled") is False
+    assert db.count_matches() == games + 1
+    # A newcomer was in none of the recorded games, so none count any more ...
+    r = tracker.add_member("P6#TAG", "six")
+    assert r["added"] and r["changes"] == {"removed": games + 1, "added": 0} and db.count_matches() == 0, r
+    # ... and the next sync (full, because the squad changed) records the games all five did play together:
+    # in the fake history P6 has m1, m2 and m3, and m2 only counts now because P5 (the one on the other team) is gone.
+    res = tracker.sync()
+    assert res["ok"] and res["full"] is True and res["members"] == 5, res
+    assert {m["match_id"] for m in db.matches()} == {"m1", "m2", "m3"}, db.matches()
+    # Back to the original five: what the stored lines prove comes back at once (m1), m2 is out again (P5 was on the
+    # other team) and m3, which needs the full record for P5, returns on the next sync.
+    tracker.remove_member("puuid-6")
+    r = tracker.add_member("P5#TAG", "five")
+    assert r["added"] and {m["match_id"] for m in db.matches()} == {"m1"}, r
+    res = tracker.sync()
+    assert res["ok"] and {m["match_id"] for m in db.matches()} == {"m1", "m3"}, db.matches()
+    assert "m2" in db.get_meta("rejected_matches")
+    # Down to a duo: their stored lines prove m2 and m5 too (both on the same team in each), and one is too few.
+    for puuid in ("puuid-5", "puuid-4", "puuid-3"):
+        tracker.remove_member(puuid)
+    assert db.count_members() == 2 and {m["match_id"] for m in db.matches()} == {"m1", "m2", "m3", "m5"}, db.matches()
+    try:
+        tracker.remove_member("puuid-2")
+        raise AssertionError("a squad of one should be refused")
+    except TrackerError as e:
+        assert "at least" in str(e)
+    assert tracker.sync()["ok"] and db.count_matches() == 4
+    # Squad games are never lost for good: the lines stay in member_games for whoever is on the squad next.
+    assert db.count_member_games() >= 17
+
+    # Self-service: a betting account carries its owner's Riot ID onto the squad, can change it, and can leave.
+    bets = shared.bets
+    bets.register("Newbie", "pw1234")
+    r = tracker.set_riot_id("Newbie", "P3#TAG", "three")
+    assert r["added"] and not r["replaced"] and db.member_by_bettor("Newbie")["puuid"] == "puuid-3", r
+    assert db.count_members() == 3 and db.member("puuid-3")["nickname"] == "three"
+    # A Riot ID linked to one account can't be taken by another.
+    bets.register("Copycat", "pw1234")
+    try:
+        tracker.set_riot_id("Copycat", "P3#TAG")
+        raise AssertionError("a linked Riot ID should be refused")
+    except TrackerError as e:
+        assert "linked to the account Newbie" in str(e), str(e)
+    # Switching to another Riot ID replaces the entry (the old one leaves the squad, no extra slot needed).
+    r = tracker.set_riot_id("Newbie", "P4#TAG")
+    assert r["added"] and r["replaced"] and db.member("puuid-3") is None, r
+    assert db.member_by_bettor("Newbie")["puuid"] == "puuid-4" and db.count_members() == 3
+    # Entering the renamed Riot ID of your own entry just updates it.
+    client.names["puuid-4"] = ("Pfour", "X")
+    r = tracker.set_riot_id("Newbie", "Pfour#X")
+    assert not r["added"] and r["renamed"] and not r["replaced"], r
+    assert db.member_by_bettor("Newbie")["name"] == "Pfour" and db.member("puuid-4")["previous_name"] == "P4#TAG"
+    # An entry nobody owns (seeded from config.json, or added by the admin) is claimed by entering its Riot ID,
+    # and rewards for its games then go to the claiming account.
+    assert db.member("puuid-1")["bettor"] is None
+    r = tracker.set_riot_id("Copycat", "Pone#NEW")
+    assert not r["added"] and db.member("puuid-1")["bettor"] == "Copycat", r
+    assert RewardManager(shared.cfg, db).account_name(db.member("puuid-1")) == "Copycat"
+    # Leaving, but never below two. (m5, which P4 wasn't in, counts again for the duo P1 and P2.)
+    assert tracker.unlink_member("Newbie") == {"removed": 0, "added": 1, "was_active": True} and db.count_members() == 2
+    assert db.member_by_bettor("Newbie") is None
+    for who, err in (("Copycat", "at least"), ("Nobody", "not in the pool")):
+        try:
+            tracker.unlink_member(who)
+            raise AssertionError(f"{who} should not be able to leave")
+        except TrackerError as e:
+            assert err in str(e), str(e)
+
+    # The pool can be bigger than the squad: newcomers join the bench, and the line-up is picked from the pool.
+    r = tracker.add_member("P3#TAG", "three", active=False)
+    assert r["added"] and r["member"]["active"] == 0 and "changes" not in r, r  # the bench changes no games
+    assert db.count_members() == 2 and db.count_pool() == 3 and [m["puuid"] for m in db.pool()] == ["puuid-1", "puuid-2", "puuid-3"]
+    r = tracker.set_active_list(["puuid-1", "puuid-2", "puuid-3"])
+    assert r["changed"] and db.count_members() == 3 and db.count_matches() == 4, (r, db.count_matches())  # P3 has the lines for all four
+    assert tracker.set_active_list(["puuid-3", "puuid-1", "puuid-2"])["changed"] is False  # same players: just the order
+    assert [m["puuid"] for m in db.members()] == ["puuid-3", "puuid-1", "puuid-2"]
+    for bad, err in (([], "at least"), (["puuid-1"], "at least"), (["puuid-1", "puuid-9"], "Not in the pool")):
+        try:
+            tracker.set_active_list(bad)
+            raise AssertionError(f"{bad} should be refused")
+        except TrackerError as e:
+            assert err in str(e), str(e)
+    # Bench P3 again (m5 and the rest still only need P1 and P2), then fill the squad and watch a newcomer
+    # take the bench because it's full.
+    r = tracker.set_active("puuid-3", False)
+    assert r["changed"] and db.count_members() == 2 and db.member("puuid-3")["active"] == 0
+    tracker.set_active("puuid-3", True)
+    tracker.add_member("Pfour#X", "four")  # P4's current Riot ID (renamed above)
+    tracker.add_member("P5#TAG", "five")
+    assert db.count_members() == 5
+    bets.register("Six", "pw1234")
+    r = tracker.set_riot_id("Six", "P6#TAG")
+    assert r["added"] and r["active"] is False and db.count_members() == 5 and db.count_pool() == 6, r
+    try:
+        tracker.set_own_active("Six", True)
+        raise AssertionError("joining a full squad should be refused")
+    except TrackerError as e:
+        assert "full" in str(e)
+    try:
+        tracker.add_member("Ghost#TAG", active=True)
+    except (TrackerError, HenrikError):
+        pass
+    tracker.set_active("puuid-5", False)
+    assert tracker.set_own_active("Six", True)["changed"] and db.member_by_bettor("Six")["active"] == 1
+    assert [m["puuid"] for m in db.members()] == ["puuid-1", "puuid-2", "puuid-3", "puuid-4", "puuid-6"]
+    # Removing a benched player never touches the games; removing an active one re-derives them.
+    r = tracker.remove_member("puuid-5")
+    assert r == {"removed": 0, "added": 0, "was_active": False} and db.count_pool() == 5
+    r = tracker.unlink_member("Six")
+    assert r["was_active"] is True and db.count_members() == 4 and db.member_by_bettor("Six") is None
+    assert tracker.sync()["ok"]
 
 
 def main():
