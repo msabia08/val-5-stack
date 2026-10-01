@@ -119,24 +119,118 @@ Reuse these before inventing new ones.
 
 ### Slots
 
-`#slots` lives under Betting, labelled Slots. One machine, no names or picker.
-`.slots-layout` pairs a wide arcade cabinet with a 348px pay table. Like the
+`#slots` lives under Betting, labelled Slots. One machine, no names or picker, and
+no page title or links above it: the cabinet starts the page.
+`.slots-layout` pairs a wide arcade cabinet with a 300px pay table, exactly as tall
+as the cabinet (`contain: size`, prize rows sharing the height; an opened "How this
+works" scrolls inside it). Like the
 Arcade, the cabinet stays dark in every theme: `--slot-*` tokens define plum
 housing, gold controls and ivory reels. Surrounding cards follow the theme.
-A monospace marquee with Onkey's logo, a recessed reel window and a raised Spin
-button give the cabinet its shape. The gold centre line marks the paying symbols;
-adjacent symbols remain partly visible above and below. Five stake buttons show
-the selection. Payouts list largest first, with multipliers and current credits.
-Balance stays in the top bar; recent spins and season net follow below, without
-a machine column. Standings has a separate Slots column.
+The cabinet is drawn as a physical machine; it's the page's one bold element, and
+everything around it stays quiet. An LED frame runs round the whole machine
+(`.slots-leds`: 206 lights at fixed spots on a rounded outline in the cabinet's
+16px edge, built once as `LEDS` in `slots.js`, clockwise from the top left, evenly
+spaced round the corners too). The lights never move; a
+chase runs round them, two thirds of each run of nine lit at a time, so long lit
+runs with short dark gaps (`--k` staggers each light's `animation-delay`): one light
+every 0.18 s at rest, every 0.06 s while the reels spin. A win stops the chase and
+every light flashes together for about three seconds; then all stay lit and each
+rejoins the chase at the start of its own lit run (`slots-led-again`, a fresh
+animation), so the gaps grow back in rather than snapping on. Bigger wins bring
+more colour into the frame until the next spin (`--led` per light, set by the
+`.slots-tier-*` classes): gold alone up to a spike, then a diamond mixes in ice
+blue, a banana magenta, Onkey green, and the Golden Onkey makes it a six-colour
+rainbow. The body sits inside the frame
+(`.slots-body`). A monospace "Slots"
+marquee with a round speaker toggle (`speaker()`, crossed out when muted), a reel
+window in a chrome bezel with a curved glass glare (`.slots-glass::after`), a pull
+lever inside the machine on its right (`lever()`, `.slots-lever`, midway between
+the reel window's chrome and the LEDs; the stage has the same 108px of extra room
+on the left, so the reels sit centred under the marquee: a bolted chrome plate with a slot,
+a tapered rod on a pivot hub and a red ball; pulling it spins, and on every spin
+the rod folds down through the pivot while the ball swings toward you, drops below
+and springs back), and the deck: one control panel (`.slots-deck`, lit from
+above, a chrome trim with screws at its corners and a lip in front) with three
+recessed wells (`.slots-well`) sharing its amber light: the bet keys (backlit push
+buttons reading "Bet 5", dim amber at rest and lit when chosen), the machine's
+readout (`readout()`: Credits, Bet and Win in amber digits) and the Spin button, a
+red domed arcade button reading just "Spin" (its label says the stake), with a
+glossy highlight in a stepped chrome bezel with an amber glow, which sinks a
+little when pressed. Chrome is `--slot-chrome` / `--slot-chrome-dark`. There's no footer. The gold centre line marks the paying symbols;
+adjacent symbols remain partly visible above and below. Seven stake buttons show
+the selection. Payouts list largest first, with multipliers and current credits,
+each line's chance ("1 in 20") and how often you've hit it, with a note on when
+your hits started counting. A `secret` symbol (the Golden Onkey) never appears in the pay
+table or on the strips (below). Onkey is a picture (`.slots-img`), sized to sit
+with the emoji symbols on the reels, in the pay table and in recent spins; the
+Golden Onkey is the same picture turned gold with a golden glow (`.golden`, a CSS
+filter, also on its banner and rain).
+Balance stays in the top bar. Below the machine, three cards side by side
+(`.slots-lower`, 1.3 : 1 : 1, equal heights): your recent spins (no machine column),
+Your season (`season()`: tiles for spins, net, wins against the expected rate,
+spins since your last win, and your biggest win with its reels) and the squad's
+Biggest wins this season (`bigWins()`, top five, bettors as `plainName()`).
+Standings has a separate Slots column.
 
 Reels use continuous symbol strips moved with `translate3d` in requestAnimationFrame.
+Each strip matches the machine's display weights (`show`, `stripsNow()`): a
+symbol gets a cell per share (10 cherries, 4 Onkeys in 42), spread evenly with no symbol
+next to itself, laid out differently on each reel, so rarer symbols pass by less.
+Secret symbols have no cells: when a reel stops on the Golden Onkey, it takes over
+the landing cell (`swapped`, `setCell()`) just before it rolls into view, and gives
+it back once it has rolled away on the next spin, so it's only seen where it lands
+(about 1 spin in 150).
 They accelerate, then decelerate with matching incoming velocity and stop left
-to right on the server's result, with no artificial near misses. Repaints retain
-their positions; leaving the tab cancels motion. Reduced motion skips rolling.
-Wins light the cabinet and the matching pay-table row; synthesized sounds mark
-the spin, each stop and a win, with a persistent Sound on/off control. No idle
-animation. Results use a live status region and errors appear inline. An uncertain
+to right on the server's result. Repaints retain their positions; leaving the tab
+cancels motion. Reduced motion skips rolling (and the tease).
+
+The tease: when the first two reels match, the third may keep spinning after the
+others stop, pulse gold (`.slots-reel.teasing`, the other two dimmed) over a
+rising drone, then slow to a crawl and creep the last cells with a tick per
+symbol, so you can't tell whether it will land. Whether it happens comes from the
+first two reels only (`TEASE`: 15% for a cherry pair up to 90% for Onkey and always
+for the Golden Onkey), never from the result, so a tease gives nothing away on
+wins or losses; `TEASE_LEVEL` makes it longer and slower for bigger pairs (about
+2.7 s for cherries to 5.5 s for Onkey), plus the ending (below).
+
+The stops slow down for bigger symbols (`PAUSE`): the wait before the second reel
+grows with the first reel's symbol (none for a cherry, 0.65 s for Onkey), and
+before the third with the second's, longer still after a matching pair; a tease
+replaces the third. They follow what's already on screen, so they come on losses
+too. The opening spin runs about a second longer on every banana, Onkey or Golden
+Onkey win and on one spin in ten besides (`BIG_OPENING`), so a long spin is no
+giveaway.
+
+The tease's ending: the creep stops half on
+the pair's symbol and half on its neighbour, teeters there for a second or so to a
+heartbeat while the payline flickers red (`.slots-glass.teetering`), then snaps a
+half cell with a little overshoot, a thump and a nudge of the cabinet. On a win it
+snaps onto the match from either side; on a loss the third reel lands on a cell of
+its real result next to the pair's symbol where the strip has one, and snaps back
+when the match was just short (below) or forward when it had crept just past
+(above): a deliberate near miss. It only picks between identical-looking cells,
+never changes a result or the odds. The reel then flashes gold with a crash and a
+rising sting, or red with a sad trombone (`.tease-won` / `.tease-lost`).
+Wins light the cabinet and the matching pay-table row. The marquee glows while
+the reels spin (`.slots-busy`). Synthesized sounds (`sound()`: tones and filtered
+noise) mark the spin (a lever and a whoosh), a ratchet clank as each symbol passes
+the line while the reels turn (one stream for the machine, at most every 70 ms
+across the reels), each stop (a thunk),
+the tease (a
+drone, ticks, heartbeats, the snap and its outcome) and a win (cymbals and a bass
+note on the bigger ones), with a persistent speaker toggle. Four
+symbols get celebrations that build on each other (`FX` and `celebrate()` in
+`slots.js`, `.slots-tier-1`…`4` for the glow): diamond adds an emoji confetti
+burst; banana a banana burst, a light shake and falling bananas; Onkey a gold
+flash, a harder shake, gold confetti, falling Onkeys and an "ONKEY!" banner; the
+Golden Onkey dims the page, flashes three times, shakes hardest, fires five
+confetti bursts, rains golden Onkeys and shows a "GOLDEN ONKEY!!!" banner. Each fanfare is longer than the last.
+The moving parts live in a fixed `.slots-fx-layer` that removes itself, so they
+play once and never replay on a redraw. Reduced motion keeps the glow, the sound
+and the banner (faded, not scaled) and drops the shake, flashes, rain and
+confetti. Idle animation is welcome on the cabinet, which should feel like a lit machine
+on a casino floor: the LED chase runs at rest. Everything else on the page stays
+still until it's used, and reduced motion stops all of it. Results use a live status region and errors appear inline. An uncertain
 request locks stakes and offers "Check last spin"; "Sign in to spin" uses the
 existing account menu.
 

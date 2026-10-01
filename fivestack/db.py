@@ -270,6 +270,7 @@ CREATE TABLE IF NOT EXISTS slot_spins (
     created_ts REAL NOT NULL,
     request_id TEXT NOT NULL,
     season_id INTEGER REFERENCES seasons(id),
+    rtp REAL,  -- the expected return the spin was played at; NULL before line stats and house tracking began
     UNIQUE(bettor, request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_slots_season ON slot_spins(season_id, bettor);
@@ -294,6 +295,7 @@ MIGRATIONS = {
     "bettors": (("salt", "TEXT"), ("password_hash", "TEXT")),
     "members": (("previous_name", "TEXT"), ("name_checked_ts", "REAL"), ("bettor", "TEXT"), ("active", "INTEGER DEFAULT 1")),
     "member_games": (("team", "TEXT"),),
+    "slot_spins": (("rtp", "REAL"),),
 }
 ARCHIVED_BET_COLUMNS = [
     "id", "bettor", "market_id", "market_type", "description", "selection", "selection_label", "line", "odds_decimal",

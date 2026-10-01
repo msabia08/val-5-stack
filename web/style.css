@@ -1399,18 +1399,78 @@ body.modal-open { overflow: hidden; }
   --slot-case: #21152d; --slot-inset: #090711; --slot-trim: #513654;
   --slot-gold: #f5c518; --slot-paper: #fff5dc; --slot-text: #f3e8ff;
   --slot-muted: #b6a7c7; --slot-shadow: #000; --slot-reel: #f2e8cf;
+  --slot-chrome: #c9c2d6; --slot-chrome-dark: #6f6880;
 }
-.slots-heading { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 20px; }
-.slots-heading h1 { margin: 0 0 4px; font-size: 24px; }
-.slots-heading p { margin: 0; color: var(--muted); }
-.slots-layout { display: grid; grid-template-columns: minmax(0, 1fr) 348px; gap: 24px; align-items: start; margin-bottom: 24px; }
-.slots-cabinet { position: relative; border-radius: 24px 24px 16px 16px; overflow: hidden; color: var(--slot-text); border: 2px solid var(--slot-trim); background: var(--slot-case); box-shadow: 0 12px 24px color-mix(in srgb, var(--slot-shadow) 24%, transparent); }
+.slots-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: stretch; margin-bottom: 24px; }
+.slots-cabinet { position: relative; padding: 16px; border-radius: 28px 28px 20px 20px; color: var(--slot-text); border: 2px solid var(--slot-trim); background: #140c1c; box-shadow: 0 12px 24px color-mix(in srgb, var(--slot-shadow) 24%, transparent); }
+.slots-body { position: relative; border-radius: 16px 16px 10px 10px; overflow: hidden; background: var(--slot-case); box-shadow: 0 0 0 2px var(--slot-chrome-dark); }
+/* The LED frame round the whole machine: lights fixed in the cabinet's edge (slots.js's LEDS) with a chase running
+   round them clockwise, two thirds of each run of 9 lit at a time (long lit runs, short dark gaps): unhurried at rest,
+   quicker while the reels spin, and every light flashing together after a win. */
+.slots-leds { position: absolute; inset: 0; pointer-events: none; --step: .18s; --dur: 1.62s; }
+.slots-busy .slots-leds { --step: .06s; --dur: .54s; }
+.slots-leds i { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; --led: #ffc021;
+  background: radial-gradient(circle at 40% 35%, #fff6cf, var(--led) 55%, color-mix(in srgb, var(--led) 55%, #000));
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--led) 85%, transparent);
+  animation: slots-led var(--dur) linear infinite; animation-delay: calc(var(--k) * var(--step) * -1); }
+/* A win stops the chase and every light flashes together. Then all stay lit, and each light rejoins the chase only
+   when its turn comes round (at the start of its lit run), so the dark gaps grow back in instead of snapping on. The
+   chase after a win has its own name so it starts fresh, rather than carrying on under the flash. */
+.slots-win .slots-leds i { animation: slots-led-flash .24s steps(1) 12, slots-led-again var(--dur) linear infinite;
+  animation-delay: 0s, calc(2.88s + var(--dur) - var(--k) * var(--step)); }
+@keyframes slots-led { 0%, 66% { filter: none; } 67%, 100% { filter: brightness(.32) saturate(.6); box-shadow: none; } }
+@keyframes slots-led-again { 0%, 66% { filter: none; } 67%, 100% { filter: brightness(.32) saturate(.6); box-shadow: none; } }
+@keyframes slots-led-flash { 50% { filter: brightness(.2); box-shadow: none; } }
+/* Bigger wins bring more colour into the frame (gold alone below a diamond), kept until the next spin: diamond adds
+   ice blue, banana magenta, Onkey green, and the Golden Onkey turns it into a rainbow. */
+.slots-tier-1 .slots-leds i:nth-child(2n) { --led: #4fd2ff; }
+.slots-tier-2 .slots-leds i:nth-child(3n+2) { --led: #4fd2ff; }
+.slots-tier-2 .slots-leds i:nth-child(3n) { --led: #ff4fd8; }
+.slots-tier-3 .slots-leds i:nth-child(4n+2) { --led: #4fd2ff; }
+.slots-tier-3 .slots-leds i:nth-child(4n+3) { --led: #ff4fd8; }
+.slots-tier-3 .slots-leds i:nth-child(4n) { --led: #5dff7a; }
+.slots-tier-4 .slots-leds i:nth-child(6n+2) { --led: #ff4545; }
+.slots-tier-4 .slots-leds i:nth-child(6n+3) { --led: #ff4fd8; }
+.slots-tier-4 .slots-leds i:nth-child(6n+4) { --led: #9b6bff; }
+.slots-tier-4 .slots-leds i:nth-child(6n+5) { --led: #4fd2ff; }
+.slots-tier-4 .slots-leds i:nth-child(6n) { --led: #5dff7a; }
 .slots-marquee { display: flex; position: relative; align-items: center; justify-content: center; gap: 20px; min-height: 108px; border-bottom: 2px solid var(--slot-shadow); background: linear-gradient(180deg, color-mix(in srgb, var(--slot-gold) 12%, var(--slot-case)), var(--slot-case)); }
 .slots-marquee h2 { margin: 0; font: 900 48px/1 ui-monospace, 'Cascadia Code', Consolas, monospace; letter-spacing: .08em; color: var(--slot-paper); text-shadow: 0 0 20px color-mix(in srgb, var(--slot-gold) 40%, transparent); }
-.slots-marquee img { width: 83px; height: 48px; object-fit: contain; }
-.slots-sound { position: absolute; right: 24px; top: 24px; padding: 8px 12px; font: inherit; font-size: 12px; border-radius: 20px; border: 1px solid var(--slot-trim); color: var(--slot-muted); background: var(--slot-inset); cursor: pointer; }
-.slots-stage { padding: 28px 32px 0; background: linear-gradient(90deg, var(--slot-case), color-mix(in srgb, var(--slot-trim) 28%, var(--slot-case)), var(--slot-case)); }
-.slots-glass { position: relative; padding: 16px 20px; border: 2px solid var(--slot-shadow); border-radius: 16px; background: var(--slot-inset); box-shadow: 0 0 0 5px var(--slot-trim), inset 0 0 24px var(--slot-shadow); }
+.slots-sound { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 1px solid var(--slot-trim); color: var(--slot-paper); background: var(--slot-inset); cursor: pointer; }
+.slots-sound[aria-pressed=false] { color: var(--slot-muted); }
+.slots-sound:hover { border-color: var(--slot-gold); color: var(--slot-gold); }
+/* The lever sits inside on the right (a 26px gap, 58px, then 24px), midway between the reel window's chrome and the
+   LEDs; the left side gets the same 108px, so the reel window stays centred in the machine, under the marquee. */
+.slots-stage { padding: 30px 24px 0 108px; background: linear-gradient(90deg, var(--slot-case), color-mix(in srgb, var(--slot-trim) 28%, var(--slot-case)), var(--slot-case)); }
+.slots-window { display: flex; align-items: center; gap: 26px; }
+/* The reel window: a chrome bezel, and a curved glass glare over the reels. */
+.slots-glass { flex: 1; min-width: 0; position: relative; padding: 16px 20px; border: 2px solid var(--slot-shadow); border-radius: 16px; background: var(--slot-inset);
+  box-shadow: 0 0 0 4px #2a1d36, 0 0 0 8px var(--slot-chrome), 0 0 0 9px var(--slot-chrome-dark), 0 10px 24px rgba(0, 0, 0, .55), inset 0 0 24px var(--slot-shadow); }
+.slots-glass::after { content: ''; position: absolute; inset: 16px 20px; border-radius: 8px; pointer-events: none; z-index: 1;
+  background: linear-gradient(112deg, rgba(255, 255, 255, .16) 0%, rgba(255, 255, 255, .05) 16%, transparent 28%, transparent 72%, rgba(255, 255, 255, .04) 86%, transparent); }
+/* The pull lever, seen from the front: a bolted chrome plate with a slot, a tapered rod on a pivot hub and a red
+   ball. Pulled, the rod folds down through the pivot while the ball comes toward you (bigger), drops below, and
+   springs back. */
+.slots-lever { position: relative; flex: 0 0 58px; height: 300px; padding: 0; border: 0; background: none; cursor: pointer; }
+.slots-lever:disabled { cursor: default; }
+.slots-lever-plate { position: absolute; left: 4px; top: 150px; width: 50px; height: 92px; border-radius: 12px;
+  background: linear-gradient(90deg, var(--slot-chrome-dark), var(--slot-chrome) 38%, #f6f3fb 52%, var(--slot-chrome) 66%, var(--slot-chrome-dark));
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .65), inset 0 0 0 1px rgba(0, 0, 0, .35), inset 0 2px 0 rgba(255, 255, 255, .5); }
+.slots-lever-plate i { position: absolute; left: 21px; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, #8c859c 60%, #4a4458); box-shadow: 0 1px 1px rgba(0, 0, 0, .5); }
+.slots-lever-plate i:first-child { top: 6px; } .slots-lever-plate i:nth-child(2) { bottom: 6px; }
+.slots-lever-slot { position: absolute; left: 20px; top: 20px; width: 10px; height: 52px; border-radius: 5px; background: #0d0712; box-shadow: inset 0 2px 4px #000; }
+.slots-lever-rod { position: absolute; left: 25px; top: 46px; width: 8px; height: 150px; border-radius: 4px 4px 2px 2px; transform-origin: 50% 100%;
+  background: linear-gradient(90deg, #5d5670, #e9e5f2 38%, #fff 48%, #9b94ab 70%, #4f4960); box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.slots-lever-hub { position: absolute; left: 18px; top: 185px; width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--slot-chrome) 45%, var(--slot-chrome-dark)); box-shadow: 0 2px 4px rgba(0, 0, 0, .6); }
+.slots-lever-knob { position: absolute; left: 10px; top: 16px; width: 38px; height: 38px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #fff 0 4%, #ffb3b3 9%, #e3232d 46%, #8f0d16 82%, #5a060c);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, .6), inset 0 -3px 6px rgba(0, 0, 0, .35); }
+.slots-lever:hover:not(:disabled) .slots-lever-knob { filter: brightness(1.12); }
+.slots-lever:disabled .slots-lever-knob { filter: saturate(.55) brightness(.8); }
+.slots-lever.pulled .slots-lever-rod { animation: slots-pull-rod 1s cubic-bezier(.35, .1, .4, 1); }
+.slots-lever.pulled .slots-lever-knob { animation: slots-pull-knob 1s cubic-bezier(.35, .1, .4, 1); }
+@keyframes slots-pull-rod { 14% { transform: scaleY(.45); } 28% { transform: scaleY(-.4); } 40%, 52% { transform: scaleY(-.82); } 70% { transform: scaleY(-.2); } 84% { transform: scaleY(.6); } 94% { transform: scaleY(1.05); } }
+@keyframes slots-pull-knob { 14% { transform: translateY(89px) scale(1.28); } 28% { transform: translateY(225px) scale(1.29); } 40%, 52% { transform: translateY(293px) scale(1.12); } 70% { transform: translateY(193px) scale(1.33); } 84% { transform: translateY(64px) scale(1.22); } 94% { transform: translateY(-8px) scale(1); } }
 .slots-reels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .slots-reel { position: relative; height: 280px; border-radius: 8px; overflow: hidden; isolation: isolate; background: var(--slot-reel); box-shadow: inset 0 0 0 1px var(--slot-shadow); }
 .slots-reel::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, color-mix(in srgb, var(--slot-shadow) 60%, transparent), transparent 34%, transparent 66%, color-mix(in srgb, var(--slot-shadow) 60%, transparent)); }
@@ -1419,29 +1479,69 @@ body.modal-open { overflow: hidden; }
 .slots-payline { position: absolute; top: calc(50% - 70px); left: 20px; right: 20px; height: 140px; border-top: 1px solid color-mix(in srgb, var(--slot-gold) 65%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--slot-gold) 65%, transparent); pointer-events: none; }
 .slots-line-arrow { position: absolute; top: 50%; transform: translateY(-50%); color: var(--slot-gold); font-size: 32px; }
 .slots-line-arrow.left { left: -3px; } .slots-line-arrow.right { right: -3px; }
-.slots-result { display: flex; flex-direction: column; justify-content: center; gap: 4px; height: 100px; text-align: center; }
+/* Spans the stage's full width (past its lopsided padding for the lever) so it centres under the reels and marquee. */
+.slots-result { display: flex; flex-direction: column; justify-content: center; gap: 4px; height: 100px; margin: 0 -24px 0 -108px; text-align: center; }
 .slots-result b { font: 700 24px/1.2 ui-monospace, Consolas, monospace; color: var(--slot-paper); }
 .slots-result span { font-size: 13px; color: var(--slot-muted); }
 .slots-win .slots-glass { box-shadow: 0 0 0 3px var(--slot-gold), 0 0 28px color-mix(in srgb, var(--slot-gold) 25%, transparent); }
 .slots-win .slots-result b { color: var(--slot-gold); }
-.slots-deck { display: flex; justify-content: space-between; align-items: center; gap: 32px; padding: 20px 40px 24px; border-top: 1px solid var(--slot-trim); background: linear-gradient(var(--slot-case), var(--slot-inset)); }
-.slots-controls > span { display: block; color: var(--slot-muted); font-size: 12px; margin-bottom: 12px; }
+/* The deck: one sloped control panel in a chrome trim with screws at its corners, lit from above, with a lip in front.
+   The bet keys, the readout and the Spin button each sit in a recessed well in it and share its amber light. */
+.slots-deck { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 24px; margin: 4px 22px 30px; padding: 22px 32px;
+  border-radius: 16px; background: linear-gradient(180deg, #3a2a45 0%, #261a30 50%, #1b1124 100%);
+  box-shadow: 0 0 0 2px var(--slot-chrome-dark), 0 0 0 3px rgba(255, 255, 255, .07), inset 0 2px 0 rgba(255, 255, 255, .14), inset 0 -2px 0 rgba(0, 0, 0, .4), 0 9px 0 #0e0814, 0 16px 22px rgba(0, 0, 0, .5); }
+.slots-screw { position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, transparent 44%, rgba(0, 0, 0, .55) 45% 55%, transparent 56%), radial-gradient(circle at 35% 35%, #fff, var(--slot-chrome) 50%, var(--slot-chrome-dark));
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .6); }
+.slots-screw:nth-child(1) { top: 8px; left: 8px; } .slots-screw:nth-child(2) { top: 8px; right: 8px; }
+.slots-screw:nth-child(3) { bottom: 8px; left: 8px; } .slots-screw:nth-child(4) { bottom: 8px; right: 8px; }
+.slots-well { padding: 10px; border-radius: 12px; background: #0b0610; box-shadow: inset 0 3px 8px #000, inset 0 0 0 1px rgba(0, 0, 0, .7), 0 1px 0 rgba(255, 255, 255, .1); }
 .slots-stakes { display: flex; gap: 8px; }
-.slots-stakes button { min-width: 60px; height: 44px; border: 1px solid var(--slot-trim); border-radius: 8px; color: var(--slot-text); background: var(--slot-case); font: 700 16px ui-monospace, Consolas, monospace; cursor: pointer; }
-.slots-stakes button[aria-pressed=true] { background: var(--slot-paper); color: var(--slot-inset); border-color: var(--slot-paper); box-shadow: 0 3px 0 color-mix(in srgb, var(--slot-gold) 50%, var(--slot-trim)); }
+.slots-spin-well { padding: 8px; border-radius: 50%; }
+/* The bet keys: backlit push buttons in a chrome edge, dim amber at rest and lit up when chosen. */
+.slots-stakes button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 60px; height: 56px; padding: 0 6px; border: 1px solid #000; border-radius: 7px; cursor: pointer;
+  color: #b08a45; background: linear-gradient(#4a3514, #2a1d0b); text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
+  box-shadow: 0 0 0 2px var(--slot-chrome-dark), 0 4px 0 2px #120a18, inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -4px 0 rgba(0, 0, 0, .35); transition: transform .06s; }
+.slots-stakes button small { font: 600 10px var(--font); }
+.slots-stakes button b { font: 800 18px/1 ui-monospace, Consolas, monospace; }
+.slots-stakes button:hover:not(:disabled) { color: #e0b763; }
+.slots-stakes button[aria-pressed=true] { color: #3b2400; text-shadow: 0 1px 0 rgba(255, 255, 255, .35); background: linear-gradient(#fff1b0, #ffc533 55%, #e89200);
+  box-shadow: 0 0 0 2px var(--slot-chrome), 0 4px 0 2px #120a18, 0 0 20px rgba(255, 190, 40, .75), inset 0 1px 0 rgba(255, 255, 255, .7), inset 0 -4px 0 rgba(150, 80, 0, .45); }
+.slots-stakes button:active:not(:disabled) { transform: translateY(3px); }
 .slots-stakes button:disabled { cursor: default; opacity: .55; }
-.slots-spin { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; min-width: 240px; min-height: 76px; padding: 12px 24px; border: 1px solid var(--slot-paper); border-radius: 40px; color: var(--slot-inset); background: linear-gradient(var(--slot-paper), var(--slot-gold)); box-shadow: 0 5px 0 color-mix(in srgb, var(--slot-gold) 42%, var(--slot-shadow)), 0 8px 14px color-mix(in srgb, var(--slot-shadow) 60%, transparent); cursor: pointer; }
-.slots-spin span { font: 900 24px/1 ui-monospace, Consolas, monospace; }
-.slots-spin small { font: 600 12px var(--font); }
-.slots-spin:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 2px 0 color-mix(in srgb, var(--slot-gold) 42%, var(--slot-shadow)); }
-.slots-spin:disabled { cursor: default; filter: saturate(.4); opacity: .7; }
+/* The Spin button: a domed arcade button in a chrome ring, pressing in when hit. */
+.slots-spin-ring { flex: 0 0 auto; padding: 11px; border-radius: 50%; background: conic-gradient(from 200deg, #f6f3fb, var(--slot-chrome-dark), var(--slot-chrome), #4f4960, var(--slot-chrome), #f6f3fb);
+  box-shadow: 0 0 22px rgba(255, 178, 26, .35), inset 0 0 0 4px #1d1426, inset 0 0 0 5px rgba(255, 190, 40, .55); }
+.slots-spin { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; width: 124px; height: 124px; border: 0; border-radius: 50%; color: var(--slot-paper); cursor: pointer;
+  position: relative; background: radial-gradient(circle at 50% 32%, #ff6b6b 0%, #e0232e 45%, #a0101a 80%, #64070e 100%);
+  box-shadow: inset 0 -12px 20px rgba(0, 0, 0, .4), inset 0 0 0 2px rgba(0, 0, 0, .25);
+  transition: transform .08s, box-shadow .08s; }
+/* The dome's glossy highlight. */
+.slots-spin::before { content: ''; position: absolute; top: 9%; left: 21%; width: 58%; height: 34%; border-radius: 50%; pointer-events: none;
+  background: linear-gradient(rgba(255, 255, 255, .6), rgba(255, 255, 255, .08) 80%, transparent); }
+.slots-spin span { position: relative; font: 800 26px/1 ui-monospace, Consolas, monospace; letter-spacing: .04em; color: #fff3ea; text-shadow: 0 -1px 0 rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .2); }
+.slots-spin small { position: relative; }
+.slots-spin small { font: 600 11px var(--font); opacity: .85; }
+.slots-spin:active:not(:disabled) { transform: scale(.96); box-shadow: inset 0 -6px 14px rgba(0, 0, 0, .5), inset 0 6px 14px rgba(0, 0, 0, .3), inset 0 0 0 2px rgba(0, 0, 0, .3); }
+.slots-spin:disabled { cursor: default; filter: saturate(.35) brightness(.75); }
+/* The machine's readout: credits, bet and last win in lit amber digits. */
+.slots-readout { display: flex; gap: 8px; }
+.slots-readout div { display: flex; flex-direction: column; gap: 2px; min-width: 96px; height: 56px; justify-content: center; padding: 0 10px; border-radius: 7px; background: #140c04;
+  box-shadow: 0 0 0 2px var(--slot-chrome-dark), inset 0 0 12px rgba(255, 150, 0, .12); }
+.slots-readout span { font-size: 11px; color: var(--slot-muted); }
+.slots-readout b { font: 700 24px/1.1 ui-monospace, Consolas, monospace; color: #ffb21a; text-align: right; text-shadow: 0 0 8px rgba(255, 178, 26, .7); }
 .slots-cabinet button:focus-visible { outline: 2px solid var(--slot-paper); outline-offset: 4px; }
-.slots-foot { display: flex; justify-content: space-between; padding: 0 40px 16px; font-size: 11px; color: var(--slot-muted); background: var(--slot-inset); }
-.slots-error { margin: 0; padding: 0 40px; background: var(--slot-inset); color: var(--slot-paper); font-size: 13px; }
+.slots-error { margin: -14px 0 0; padding: 0 40px; color: var(--slot-paper); font-size: 13px; text-align: center; }
 .slots-error:not(:empty) { padding-bottom: 16px; }
-.slots-paytable { margin: 0; }
+/* The pay table is exactly as tall as the cabinet: contain: size keeps it from setting the row's height, the prize
+   rows share what's left, and an opened "How this works" scrolls inside it. */
+.slots-paytable { margin: 0; display: flex; flex-direction: column; contain: size; overflow-y: auto; }
+.slots-prizes { flex: 1 0 auto; display: flex; flex-direction: column; }
 .slots-paytable > p { line-height: 1.7; }
-.slots-prize { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 20px 4px; border-bottom: 1px solid var(--border); }
+.slots-prize { flex: 1 0 auto; display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.slots-pay-left { display: flex; flex-direction: column; gap: 2px; }
+.slots-hits { color: var(--text); }
+.slots-lines-note { margin: 12px 4px 0; }
 .slots-prize:last-child { border-bottom: 0; }
 .slots-pay-symbol { font-size: 25px; letter-spacing: 4px; }
 .slots-prize > span:last-child { text-align: right; }
@@ -1449,4 +1549,77 @@ body.modal-open { overflow: hidden; }
 .slots-prize small { display: block; font-size: 12px; margin-top: 4px; color: var(--muted); }
 .slots-prize.won { background: var(--accent-soft); border-radius: 8px; }
 .slots-history-reels { font-size: 20px; letter-spacing: 8px; }
+/* Onkey and Greg are pictures, sized to sit with the emoji around them. */
+.slots-img { display: inline-block; vertical-align: middle; object-fit: contain; pointer-events: none; }
+.slots-symbol .slots-img { width: 124px; height: 112px; }
+.slots-pay-symbol .slots-img { width: 30px; height: 28px; margin-right: 4px; }
+.slots-history-reels .slots-img { width: 26px; height: 22px; margin-right: 8px; }
+/* Bigger wins glow harder (diamond, banana, Onkey, Greg); the moving parts are in slots.js's celebrate(). */
+.slots-tier-1 .slots-glass { box-shadow: 0 0 0 3px #7fd4ff, 0 0 32px color-mix(in srgb, #7fd4ff 40%, transparent); }
+.slots-tier-2 .slots-glass { box-shadow: 0 0 0 4px var(--slot-gold), 0 0 44px color-mix(in srgb, var(--slot-gold) 50%, transparent); }
+.slots-tier-3 .slots-glass { box-shadow: 0 0 0 5px #ff9f1c, 0 0 64px color-mix(in srgb, #ff9f1c 60%, transparent); }
+.slots-tier-4 .slots-glass { box-shadow: 0 0 0 6px var(--slot-paper), 0 0 0 10px var(--slot-gold), 0 0 96px var(--slot-gold); }
+.slots-tier-3 .slots-marquee h2, .slots-tier-4 .slots-marquee h2 { color: var(--slot-gold); text-shadow: 0 0 28px var(--slot-gold); }
+.slots-tier-4.slots-cabinet { border-color: var(--slot-gold); }
+/* The tease: the third reel pulses gold while the other two dim (slots.js's tease; never under reduced motion). */
+.slots-reel { transition: filter .3s; }
+.slots-glass.teasing .slots-reel:not(.teasing) { filter: brightness(.6) saturate(.7); }
+.slots-reel.teasing { animation: slots-tease .55s ease-in-out infinite alternate; }
+@keyframes slots-tease {
+  from { box-shadow: inset 0 0 0 2px var(--slot-gold), 0 0 12px color-mix(in srgb, var(--slot-gold) 35%, transparent); }
+  to { box-shadow: inset 0 0 0 4px var(--slot-gold), 0 0 34px color-mix(in srgb, var(--slot-gold) 75%, transparent); }
+}
+.slots-fx-layer { position: fixed; inset: 0; z-index: 120; pointer-events: none; overflow: hidden; }
+.slots-fx-layer.dim { animation: slots-dim 8s ease-out forwards; }
+@keyframes slots-dim { 0% { background: transparent; } 8%, 75% { background: rgba(0, 0, 0, .45); } 100% { background: transparent; } }
+.slots-fx-drop { position: absolute; top: 0; left: 0; will-change: transform; }
+.slots-fx-emoji { font-size: 44px; line-height: 1; }
+.slots-fx-onkey { width: 120px; height: auto; }
+.slots-fx-flash { position: absolute; inset: 0; background: var(--slot-gold); opacity: 0; }
+.slots-fx-banner { position: absolute; left: 50%; top: 46%; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 56px 28px; border: 3px solid var(--slot-gold); border-radius: 24px; background: var(--slot-case); color: var(--slot-paper); box-shadow: 0 0 0 6px var(--slot-trim), 0 0 80px color-mix(in srgb, var(--slot-gold) 55%, transparent); transform: translate(-50%, -50%); }
+.slots-fx-banner img { height: 150px; width: auto; }
+.slots-fx-banner.golden img { height: 200px; }
+/* The Golden Onkey: Onkey's picture turned gold, with a golden glow. */
+.slots-img.golden, .slots-fx-onkey.golden, .slots-fx-banner.golden img {
+  filter: sepia(1) saturate(3.2) hue-rotate(-8deg) brightness(1.18) drop-shadow(0 0 4px #ffe066) drop-shadow(0 0 12px rgba(255, 196, 0, .75)); }
+.slots-fx-banner b { font: 900 64px/1 ui-monospace, 'Cascadia Code', Consolas, monospace; letter-spacing: .08em; color: var(--slot-gold); text-shadow: 0 0 24px color-mix(in srgb, var(--slot-gold) 60%, transparent); }
+.slots-fx-banner span { font: 700 22px ui-monospace, Consolas, monospace; }
+/* While the reels spin the marquee glows; while a teased reel teeters the payline flickers; when it lands the reel
+   flashes gold (won) or red (lost). */
+.slots-busy .slots-marquee h2 { animation: slots-marquee .7s ease-in-out infinite alternate; }
+@keyframes slots-marquee { to { color: var(--slot-gold); text-shadow: 0 0 34px var(--slot-gold), 0 0 8px var(--slot-gold); } }
+.slots-glass.teetering .slots-payline { animation: slots-teeter .24s steps(2) infinite; }
+@keyframes slots-teeter { 50% { border-color: #ff4d4d; box-shadow: 0 0 24px rgba(255, 77, 77, .55), inset 0 0 18px rgba(255, 77, 77, .3); } }
+.slots-reel.tease-won { animation: slots-tease-won 1.2s ease-out; }
+.slots-reel.tease-lost { animation: slots-tease-lost 1.2s ease-out; }
+@keyframes slots-tease-won { 0%, 40% { box-shadow: inset 0 0 0 6px var(--slot-gold), 0 0 60px var(--slot-gold); } }
+@keyframes slots-tease-lost { 0%, 40% { box-shadow: inset 0 0 0 6px #ff4d4d, 0 0 40px rgba(255, 77, 77, .7); filter: saturate(.4) brightness(.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .slots-fx-layer.dim { animation: none; background: rgba(0, 0, 0, .45); }
+  .slots-busy .slots-marquee h2, .slots-glass.teetering .slots-payline, .slots-reel.tease-won, .slots-reel.tease-lost,
+  .slots-leds i, .slots-win .slots-leds i, .slots-lever.pulled .slots-lever-rod, .slots-lever.pulled .slots-lever-knob { animation: none; }
+  .slots-spin { transition: none; }
+}
+/* Below the machine, side by side: recent spins, your season and the squad's biggest wins. */
+.slots-lower { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: stretch; }
+.slots-lower .slots-history { margin: 0; }
+.slots-lower > .card { margin: 0; }
+.slots-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.slots-stat { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 8px; background: var(--surface-2); }
+.slots-stat:last-child { grid-column: 1 / -1; }
+.slots-stat > span { font-size: 12px; color: var(--muted); }
+.slots-stat b { font: 700 22px ui-monospace, Consolas, monospace; color: var(--text); }
+.slots-stat b.up { color: var(--up); } .slots-stat b.down { color: var(--down); }
+.slots-stat small { font-size: 12px; color: var(--muted); }
+.slots-mini-reels { display: inline-flex; gap: 4px; align-items: center; font-size: 16px; vertical-align: middle; }
+.slots-mini-reels .slots-img { width: 22px; height: 18px; }
+.slots-big-list { list-style: none; margin: 0; padding: 0; }
+.slots-big-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.slots-big-list li:last-child { border-bottom: 0; }
+.slots-big-rank { font: 700 14px ui-monospace, Consolas, monospace; color: var(--muted); text-align: center; }
+.slots-big-list li:first-child .slots-big-rank { color: var(--slot-gold); }
+.slots-big-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slots-big-pay { text-align: right; }
+.slots-big-pay b { display: block; font: 700 16px ui-monospace, Consolas, monospace; color: var(--up); }
+.slots-big-pay small { font-size: 11px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .slots-spin:active:not(:disabled) { transform: none; } }
