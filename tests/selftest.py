@@ -757,6 +757,103 @@ def arcade(shared):
     assert {b["name"]: b["balance"] for b in db.bettors() if b["name"] != "Broke"} == balances
 
 
+@section("slots")
+def slots(shared):
+    from concurrent.futures import ThreadPoolExecutor
+    from itertools import product
+    from unittest.mock import patch
+    from fivestack.slots import MACHINES, SlotManager, multiplier
+
+    db = DB(os.path.join(shared.tmp, "slots.db"))
+    db.create_bettor("Spinner", 1000)
+    db.create_bettor("Empty", 0)
+    manager = SlotManager(db)
+    bets = BetManager({"starting_balance": 1000}, db, shared.engine)
+    # Enumerate the entire outcome space: only six triples pay.
+    for key, expected in (("jackpot", 200),):
+        payouts = [multiplier(MACHINES[key], r) for r in product(range(6), repeat=3)]
+        assert sum(payouts) == expected
+        assert sum(p > 0 for p in payouts) == 6
+    for i, (machine, reels, mult) in enumerate([
+            (None, [0, 0, 0], 8), ("jackpot", [1, 2, 1], 0),
+            ("jackpot", [0, 1, 2], 0), ("jackpot", [5, 5, 5], 80), ("jackpot", [1, 1, 2], 0)]):
+        before = db.get_bettor("Spinner")["balance"]
+        with patch("fivestack.slots.secrets.randbelow", side_effect=reels):
+            out = manager.spin("spinner", machine, 10, f"test-spin-{i:016d}")
+        assert out["spin"]["reels"] == reels and out["spin"]["payout"] == 10 * mult
+        assert out["balance"] == before + 10 * (mult - 1)
+        # Same request after a lost response: return the original outcome without a charge or a re-roll.
+        assert manager.spin("Spinner", machine, 10, f"test-spin-{i:016d}") == out
+    assert [m["name"] for m in manager.summary()["machines"]] == ["Slots"]
+    before = db.get_bettor("Spinner")["balance"]
+    for machine, stake, request in [("classic", 10, "retired-reference"), ("missing", 10, "valid-reference-1"), ([], 10, "valid-reference-1"),
+                                    ("jackpot", True, "valid-reference-1"), ("jackpot", "10", "valid-reference-1"),
+                                    ("jackpot", float("nan"), "valid-reference-1"), ("jackpot", float("inf"), "valid-reference-1"),
+                                    ("jackpot", -5, "valid-reference-1"), ("jackpot", 10.5, "valid-reference-1"),
+                                    ("jackpot", None, "valid-reference-1"), ("jackpot", 10, None),
+                                    ("jackpot", 10, "bad"), ("jackpot", 25, "test-spin-0000000000000000")]:
+        try:
+            manager.spin("Spinner", machine, stake, request)
+        except BetError:
+            pass
+        else:
+            raise AssertionError((machine, stake, request))
+    assert db.get_bettor("Spinner")["balance"] == before
+    for name in ("Empty", "Missing"):
+        try:
+            manager.spin(name, "jackpot", 5, "valid-reference-1")
+        except BetError:
+            pass
+        else:
+            raise AssertionError("unfunded or missing bettor spun")
+    # Concurrent retries settle exactly once; concurrent different requests cannot overdraw.
+    with patch("fivestack.slots.secrets.randbelow", return_value=0), ThreadPoolExecutor(4) as pool:
+        results = list(pool.map(lambda _: manager.spin("Spinner", "jackpot", 5, "concurrent-retry-1"), range(8)))
+    assert len({r["spin"]["id"] for r in results}) == 1
+    assert db.get_bettor("Spinner")["balance"] == before + 35
+    db.create_bettor("LastFive", 5)
+    def attempt(i):
+        try:
+            return manager.spin("LastFive", "jackpot", 5, f"concurrent-spend-{i}")
+        except BetError:
+            return None
+    with patch("fivestack.slots.secrets.randbelow", side_effect=[0, 1, 2]), ThreadPoolExecutor(4) as pool:
+        assert sum(r is not None for r in pool.map(attempt, range(4))) == 1
+    assert db.get_bettor("LastFive")["balance"] == 0
+    # The ledger insert and credit movement roll back together if storage fails.
+    db.execute("CREATE TRIGGER fail_slot BEFORE INSERT ON slot_spins BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+    before = db.get_bettor("Spinner")["balance"]
+    try:
+        manager.spin("Spinner", "jackpot", 10, "rollback-reference")
+    except Exception as e:
+        assert "test failure" in str(e)
+    else:
+        raise AssertionError("expected storage failure")
+    db.execute("DROP TRIGGER fail_slot")
+    assert db.get_bettor("Spinner")["balance"] == before
+    row = next(r for r in bets.leaderboard() if r["name"] == "Spinner")
+    assert row["profit"] == 0 and row["roi"] is None and row["slots"] == before - 1000
+    assert db.banana_wallet("Spinner") == 0 and not db.bets()
+    assert manager.summary()["me"] is None and manager.summary()["history"] == []
+    summary = manager.summary(db.get_bettor("Spinner"))
+    assert summary["me"]["spins"] == 6 and summary["me"]["net"] == before - 1000
+    assert len(summary["history"]) == 6
+    season = bets.reset()
+    assert manager.summary(db.get_bettor("Spinner"))["me"]["spins"] == 0
+    assert db.query_one("SELECT COUNT(*) AS n FROM slot_spins WHERE season_id=?", (season["id"],))["n"] == 7
+    # Old retry keys survive a reset, and reopening an existing database preserves history.
+    assert manager.spin("Spinner", "jackpot", 10, "test-spin-0000000000000000")["balance"] == 1000
+    assert next(r for r in bets.leaderboard() if r["name"] == "Spinner")["slots"] == 0
+    db.conn.close()
+    reopened = DB(os.path.join(shared.tmp, "slots.db"))
+    assert reopened.query_one("SELECT COUNT(*) AS n FROM slot_spins")["n"] == 7
+    reopened.execute("INSERT INTO slot_spins(bettor,machine,stake,reels,multiplier,payout,created_ts,request_id) "
+                     "VALUES('Spinner','classic',10,'[0,0,0]',18,180,0,'legacy-reference')")
+    old = SlotManager(reopened).spin("Spinner", "classic", 10, "legacy-reference")
+    assert old["spin"]["payout"] == 180 and old["balance"] == 1000
+    reopened.conn.close()
+
+
 @section("transfers")
 def transfers(shared):
     db, bets = shared.db, shared.bets
