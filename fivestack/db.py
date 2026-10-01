@@ -349,6 +349,63 @@ CREATE TABLE IF NOT EXISTS poker_results (
     season_id INTEGER REFERENCES seasons(id)
 );
 CREATE INDEX IF NOT EXISTS idx_poker_results_season ON poker_results(season_id, bettor);
+
+-- The house giving back (see house.py). Secret objectives: a set is drawn for the game after `after_match` and stays
+-- `open` (hidden) until a complete game that started after `drawn_ts` is recorded, then `met` / `missed` / `void`.
+CREATE TABLE IF NOT EXISTS house_objectives (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL,  -- player / squad / bettor
+    kind TEXT NOT NULL,
+    target TEXT,  -- a member's puuid, for personal goals and "win a bet on ..."
+    params TEXT,  -- JSON, e.g. {"n": 21}
+    text TEXT NOT NULL,
+    chance REAL,
+    prize REAL NOT NULL,
+    drawn_ts REAL NOT NULL,
+    after_match TEXT,
+    status TEXT NOT NULL,
+    match_id TEXT,
+    settled_ts REAL,
+    winners TEXT,  -- JSON {bettor: credits paid}
+    created_ts REAL
+);
+-- Every credit the house gives back: objective prizes and bad-beat refunds (from the pot), the daily wheel's credits and
+-- insurance (free) and its jackpot. Kept through resets: season_id NULL means the current season.
+CREATE TABLE IF NOT EXISTS house_payouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    amount REAL NOT NULL,
+    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot
+    ref TEXT NOT NULL UNIQUE,  -- objective:<id>:<bettor>, refund:<bet id>, insurance:<bet id> or wheel:<spin id>: paid once
+    match_id TEXT,
+    note TEXT,
+    created_ts REAL NOT NULL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+-- The daily wheel (see wheel.py): one row per spin, kept through resets. `day` is the Pacific date the spin counts for.
+CREATE TABLE IF NOT EXISTS wheel_spins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    day TEXT NOT NULL,
+    segment INTEGER NOT NULL,  -- index into wheel.SEGMENTS, the slice the wheel stops on
+    prize TEXT NOT NULL,  -- the slice's key
+    label TEXT,  -- what was won, e.g. "Free cosmetic: Gold name"
+    amount REAL,  -- credits or bananas won, when the prize is an amount
+    detail TEXT,  -- JSON, e.g. the cosmetic's item_id
+    created_ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wheel_day ON wheel_spins(bettor, day);
+-- The wheel's tokens, waiting for the bettor's next single (`ready`), then `used` on bet_id.
+CREATE TABLE IF NOT EXISTS wheel_perks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    kind TEXT NOT NULL,  -- boost / insurance
+    status TEXT NOT NULL,
+    spin_id INTEGER,
+    bet_id INTEGER,
+    created_ts REAL NOT NULL,
+    used_ts REAL
+);
 """
 
 MATCH_FIELDS = [
@@ -709,7 +766,8 @@ class DB:
                 self.conn.execute("DELETE FROM rewards")
                 self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
-                for table in ("house_ledger", "blackjack_hands", "poker_buyins", "poker_hands", "poker_results"):
+                for table in ("house_ledger", "house_payouts", "blackjack_hands", "poker_buyins", "poker_hands",
+                              "poker_results"):
                     self.conn.execute(f"UPDATE {table} SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.

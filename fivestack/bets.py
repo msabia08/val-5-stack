@@ -8,7 +8,7 @@ import time
 from .gamestate import DEFAULT_ROUNDS_TO_WIN, FORFEIT, ending, rounds_to_win, went_to_overtime
 from .house import casino_nets
 from .moments import game_facts
-from .odds import STAT_DEFS, alt_family, find_market, margin_key, parse_alt, score_key
+from .odds import STAT_DEFS, alt_family, decimal_to_american, fair_chance, find_market, margin_key, parse_alt, score_key
 from .parlay import LOOKBACK, correlation, price, score_conflict
 from .stats import aggregate, player_metrics
 
@@ -34,6 +34,18 @@ NOTE_MAX = 80  # characters in a transfer's note
 # transfer to everyone from earning a cut of all their wins.
 TAX_RATE = 0.10
 TAX_MIN_TRANSFER = 250
+# The odds boost of the game: one pick on the board, drawn again after every game, pays BOOST more profit (2.00 becomes
+# 2.50) on singles of up to BOOST_MAX_STAKE credits. It's a promotion, not paid from the house's pot: the pot counts a
+# boosted bet at its price before the boost. Picks the model gives a chance in BOOST_CHANCE are eligible.
+BOOST = 0.5
+BOOST_MAX_STAKE = 100
+BOOST_CHANCE = (0.3, 0.6)
+# The daily wheel's tokens (wheel.py, table wheel_perks), used on a single when the bettor asks for them from the bet
+# slip (place()'s `tokens`): a boost token adds TOKEN_BOOST profit to a single of up to TOKEN_MAX_STAKE credits (not on
+# top of the odds boost of the game), and an insurance token gets the stake back, up to TOKEN_MAX_STAKE, if it loses
+# (paid by HouseManager.refunds).
+TOKEN_BOOST = 0.5
+TOKEN_MAX_STAKE = 200
 
 
 def _credits(v):
@@ -132,6 +144,35 @@ class BetManager:
         with self.db.lock:
             return self.db.archive_and_reset(self.starting, self.leaderboard())
 
+    def house(self):
+        """What the house has taken from match bets, every season (archived bets included): the estimate (each stake
+        times the edge it was priced at: 1 minus the price times the model's chance, the chance of every leg that stood
+        for a parlay) and what actually happened (stakes minus payouts). Voids and cancels are refunds and count for
+        neither; open bets aren't counted until they settle."""
+        rows = self.db.query(
+            "SELECT market_type, odds_decimal, stake, payout, status, context, settled_ts FROM bets "
+            "WHERE status IN ('won','lost') UNION ALL "
+            "SELECT market_type, odds_decimal, stake, payout, status, context, settled_ts FROM archived_bets "
+            "WHERE status IN ('won','lost')")
+        edge = self.engine.edge
+        staked = paid = expected = 0.0
+        for b in rows:
+            ctx = json.loads(b["context"] or "{}")
+            if b["market_type"] == "parlay":
+                legs = [leg for leg in ctx.get("legs") or [] if leg.get("result") != "void"]
+                ret = 1.0
+                for leg in legs:  # the correlation cut lowers the price and raises the joint chance alike
+                    ret *= leg["odds_decimal"] * leg.get("fair_prob", fair_chance(leg["odds_decimal"], leg["market_type"], edge))
+            else:  # a boosted bet counts at its price before the boost: the boost isn't paid from the pot
+                dec = ctx.get("boost") or b["odds_decimal"]
+                ret = dec * ctx.get("fair_prob", fair_chance(dec, b["market_type"], edge))
+            staked += b["stake"]
+            paid += b["payout"] or 0.0
+            expected += b["stake"] * (1 - ret)
+        return {"since": min((b["settled_ts"] for b in rows if b["settled_ts"]), default=None), "bets": len(rows),
+                "staked": round(staked, 2), "paid": round(paid, 2), "expected_take": round(expected, 2),
+                "actual_take": round(staked - paid, 2)}
+
     def leaderboard(self):
         per = {}
         for b in self.db.bets():
@@ -149,15 +190,19 @@ class BetManager:
         rewards = self.db.reward_totals()
         transfers = self.db.transfer_totals()
         casino = casino_nets(self.db)
+        house = {r["k"]: r["total"] for r in self.db.query(
+            "SELECT lower(bettor) AS k, SUM(amount) AS total FROM house_payouts WHERE season_id IS NULL GROUP BY k")}
         out = []
         for b in self.db.bettors():
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
             earned = rewards.get(b["name"].lower(), 0.0)
             received = transfers.get(b["name"].lower(), 0.0)
-            # Match-betting profit only: game rewards, transfers and the casino change the balance too, but they
-            # are reported separately.
+            # Match-betting profit only: game rewards, transfers, the casino and the house's giveaways change the
+            # balance too, but they are reported separately.
             nets = casino.get(b["name"].lower(), {})
-            profit = b["balance"] + s["pending_stake"] - self.starting - earned - received - nets.get("total", 0.0)
+            given = house.get(b["name"].lower(), 0.0)
+            profit = (b["balance"] + s["pending_stake"] - self.starting - earned - received - nets.get("total", 0.0)
+                      - given)
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
@@ -167,6 +212,7 @@ class BetManager:
                 "transfers": round(received, 2),
                 "casino": round(nets.get("total", 0.0), 2),  # every casino game this season
                 "slots": round(nets.get("slots", 0.0), 2),
+                "giveaways": round(given, 2),
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }
             for k, v in s.items():
@@ -202,7 +248,7 @@ class BetManager:
         return self.db.query_one("SELECT * FROM transfers WHERE id=?", (transfer_id,))
 
     # ---- placement -------------------------------------------------------
-    def place(self, bettor_name, market_id, sel_key, stake, context):
+    def place(self, bettor_name, market_id, sel_key, stake, context, tokens=None):
         try:
             stake = round(float(stake), 2)
         except (TypeError, ValueError):
@@ -218,32 +264,61 @@ class BetManager:
         board = self.engine.build(self.db, context or {}, alts=[alt] if alt else None)
         if not board.get("ready"):
             raise BetError(board.get("message", "Odds are not available yet."))
+        self.apply_boost(board)
         market, sel = find_market(board, market_id, sel_key)
         if not market or not sel:
             raise BetError(self._unavailable(board, market_id, sel_key) or "That market is no longer available. Refresh the odds board.")
+        if sel.get("boost") and stake > BOOST_MAX_STAKE:
+            raise BetError(f"The odds boost takes up to {BOOST_MAX_STAKE} credits.")
 
         mtype = market["type"]
         desc, meta = self._describe(market, sel)
         meta["ctx"] = board.get("context")
+        if sel.get("boost"):
+            meta["boost"] = sel["boost"]["from_decimal"]  # the price before the boost, which the house's pot counts
         meta["fair_prob"] = sel["fair_prob"]  # the model's own chance, for the odds accuracy card
 
-        bet = {
-            "bettor": bettor["name"],
-            "market_id": market_id,
-            "market_type": mtype,
-            "description": desc,
-            "selection": sel_key,
-            "selection_label": sel["label"],
-            "line": market.get("line"),
-            "odds_decimal": sel["decimal"],
-            "stake": stake,
-            "placed_ts": time.time(),
-            "context": json.dumps(meta),
-            "status": "pending",
-        }
+        price = sel["decimal"]
         with self.db.lock:
+            # The daily wheel's tokens the bettor asked to use on this single (`tokens`: {"boost": true, "insurance":
+            # true}, from the bet slip; see TOKEN_BOOST).
+            tokens = tokens if isinstance(tokens, dict) else {}
+            ready = {p["kind"]: p for p in self.db.query(
+                "SELECT * FROM wheel_perks WHERE lower(bettor)=lower(?) AND status='ready' ORDER BY id", (bettor["name"],))}
+            used = []
+            if tokens.get("boost"):
+                if not ready.get("boost"):
+                    raise BetError("You don't have a boost token. Win one on the daily wheel.")
+                if sel.get("boost"):
+                    raise BetError("This pick already has the odds boost of the game. Keep your token for another one.")
+                if stake > TOKEN_MAX_STAKE:
+                    raise BetError(f"A boost token covers a single of up to {TOKEN_MAX_STAKE} credits.")
+                meta["boost"], meta["boost_token"] = price, ready["boost"]["id"]
+                price = self.boosted(price, TOKEN_BOOST)
+                used.append(ready["boost"]["id"])
+            if tokens.get("insurance"):
+                if not ready.get("insurance"):
+                    raise BetError("You don't have an insurance token. Win one on the daily wheel.")
+                meta["insured"] = {"perk": ready["insurance"]["id"], "max": TOKEN_MAX_STAKE}
+                used.append(ready["insurance"]["id"])
+            bet = {
+                "bettor": bettor["name"],
+                "market_id": market_id,
+                "market_type": mtype,
+                "description": desc,
+                "selection": sel_key,
+                "selection_label": sel["label"],
+                "line": market.get("line"),
+                "odds_decimal": price,
+                "stake": stake,
+                "placed_ts": time.time(),
+                "context": json.dumps(meta),
+                "status": "pending",
+            }
             self.db.adjust_balance(bettor["name"], -stake)
             bet_id = self.db.insert_bet(bet)
+            for perk in used:
+                self.db.execute("UPDATE wheel_perks SET status='used', bet_id=?, used_ts=? WHERE id=?", (bet_id, time.time(), perk))
         return self.db.bet(bet_id)
 
     @staticmethod
@@ -446,6 +521,41 @@ class BetManager:
         for puuid, m in metrics.items():
             own = aggregate(earlier.get(puuid, [])).get("acs")
             m["acs_rel"] = m["acs"] / own if own else None
+
+    @staticmethod
+    def boosted(decimal, pct=BOOST):
+        return round(1 + (decimal - 1) * (1 + pct), 2)
+
+    def apply_boost(self, board):
+        """Mark the odds boost of the game on a board and raise its price (see BOOST). The pick is drawn once per game
+        (meta `odds_boost`, keyed by the latest recorded game) from the board's picks with a fair chance in
+        BOOST_CHANCE, and drawn again if it leaves the board. Returns the board."""
+        if not board.get("ready"):
+            return board
+        latest = self.db.matches(1)
+        after = latest[0]["match_id"] if latest else None
+        cur = self.db.get_meta("odds_boost")
+        market = sel = None
+        if cur and cur.get("after") == after:
+            market, sel = find_market(board, cur["market_id"], cur["selection"])
+        if not sel:
+            options = [(mk, s) for group in ("team", "player_props", "top_markets") for mk in board.get(group, [])
+                       if mk.get("available", True) for s in mk["selections"]
+                       if s.get("available", True) and BOOST_CHANCE[0] <= s["fair_prob"] <= BOOST_CHANCE[1]]
+            if not options:
+                return board
+            market, sel = options[secrets.randbelow(len(options))]
+            self.db.set_meta("odds_boost", {"after": after, "market_id": market["market_id"], "selection": sel["key"],
+                                            "drawn_ts": time.time()})
+        if not sel.get("boost"):
+            sel["boost"] = {"from_decimal": sel["decimal"], "from_american": sel["american"], "pct": BOOST,
+                            "max_stake": BOOST_MAX_STAKE}
+            sel["decimal"] = self.boosted(sel["decimal"])
+            sel["american"] = decimal_to_american(sel["decimal"])
+        board["boost"] = {"market_id": market["market_id"], "selection": sel["key"],
+                          "description": self._describe(market, sel)[0], **sel["boost"],
+                          "decimal": sel["decimal"], "american": sel["american"], "fair_prob": sel["fair_prob"]}
+        return board
 
     def mark_streaks(self, board):
         """Give each selection on the board that would have won the last STREAK_MIN games or more in a row a

@@ -74,6 +74,31 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 /* ---- top bar -------------------------------------------------------- */
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+/* Onkey talks from the top-left corner (onkey.js): his bubble hangs under the logo, tail up, in the casino dealer's
+   style, and the logo hops and jabbers while he talks (more when he's excited). Click the bubble to hush him. */
+.brand { position: relative; }
+.onkey-says { position: absolute; left: 4px; top: calc(100% + 14px); z-index: 30; width: max-content; max-width: 320px; min-width: 170px;
+  background: var(--card-face); color: var(--card-ink); border-radius: 14px; padding: 8px 12px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  font-size: 14px; line-height: 1.35; cursor: pointer; opacity: 0; transform: translateY(-6px) scale(0.96); transform-origin: 24px 0;
+  transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
+.onkey-says::before { content: ""; position: absolute; left: 22px; top: -8px; border: 8px solid transparent; border-top: 0; border-bottom-color: var(--card-face); }
+.onkey-says .ook { display: block; font-style: italic; font-size: 12px; color: #6b6a64; margin-bottom: 2px; }
+.onkey-says .say { display: block; font-weight: 600; }
+.brand.onkey-talking .onkey-says { opacity: 1; transform: none; pointer-events: auto; }
+.brand.onkey-talking .logo-link { animation: onkey-hop 0.5s ease-out; }
+.brand.onkey-excited .logo-link { animation: onkey-hop 0.42s ease-out 3; }
+.brand.onkey-talking .logo { animation: onkey-jabber 0.18s ease-in-out 8 alternate; }
+/* At the blackjack and poker tables Onkey walks from the logo to the dealer's seat (walk() in onkey.js): the logo
+   empties while he's away and the dealer's face waits for him; .onkey-walker is him on the way. */
+html.onkey-away .topbar .brand .logo-link { visibility: hidden; }
+html.onkey-walking .onkey-dealer .onkey-face { visibility: hidden; }
+.onkey-walker { position: fixed; z-index: 100; pointer-events: none; object-fit: contain; transform-origin: 50% 90%;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
+@keyframes onkey-hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-7px) rotate(-6deg); } 65% { transform: translateY(0) rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .brand.onkey-talking .logo-link, .brand.onkey-excited .logo-link, .brand.onkey-talking .logo { animation: none; }
+  .onkey-says { transition: none; }
+}
 .logo { display: block; width: 62px; height: 36px; object-fit: contain; flex: none; }  /* web/assets/onkey-logo.png: a 124 x 72 crop of onkey.png */
 .logo-link { display: block; flex: none; border-radius: 8px; }  /* the logo opens Onkey's Shop */
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -313,6 +338,16 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
   50% { box-shadow: inset 0 0 0 1px #ff6d00, 0 0 4px 1px rgba(255, 80, 0, .5), -5px -5px 9px -4px rgba(255, 140, 0, .6), 3px -9px 11px -5px rgba(255, 215, 64, .75); }
   75% { box-shadow: inset 0 0 0 1px #ffc400, 0 0 8px 2px rgba(255, 60, 0, .6), -3px -8px 10px -4px rgba(255, 160, 0, .7), 5px -5px 9px -4px rgba(255, 235, 110, .55); }
 }
+/* The odds boost of the game (bets.py BOOST): a gold ring on its button wherever it shows, and a card above the team
+   markets with the usual price struck through. */
+.odd.boosted:not(.hot):not(.cold) { border-color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn); }
+.boost-card { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); }
+.boost-card h2 { margin: 0 0 6px; }
+.boost-card p { margin: 0; }
+.boost-pick { font-size: 15px; font-weight: 600; }
+.boost-price { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin: 10px 0; }
+.boost-price s { color: var(--muted); font-variant-numeric: tabular-nums; }
+.boost-price .odd { flex: 1; justify-content: space-between; padding: 8px 14px; font-size: 15px; }
 /* A cold streak: an icy ring that drifts slowly, a soft frosty glow and a glint of light sweeping across now and then. */
 .odd.cold { position: relative; overflow: hidden; border-color: transparent;
   background: linear-gradient(var(--surface), var(--surface)) padding-box,
@@ -332,6 +367,15 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .confetti { position: fixed; width: 7px; height: 11px; margin: -5px 0 0 -3px; border-radius: 2px; pointer-events: none; z-index: 1000; }
 .confetti.round { width: 8px; height: 8px; border-radius: 50%; }
 .me-chip b.tick-up { animation: tick-up 1.4s ease-out; }
+/* The daily wheel's reminder (wheelReady() in app.js): a gold chip in the top bar and a glowing dot on the Casino menu
+   and its Daily wheel entry while a spin is waiting. */
+.topbar .topbar-right > .me-chip.me-wheel { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.topbar .topbar-right > .me-chip.me-wheel:hover { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 30%, transparent); }
+.nav-trigger.nav-alert, .nav-menu a.nav-alert b { position: relative; }
+.nav-trigger.nav-alert::after, .nav-menu a.nav-alert b::after { content: ""; position: absolute; top: 2px; right: -9px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 60%, transparent); animation: nav-alert 1.8s ease-out infinite; }
+@keyframes nav-alert { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .nav-trigger.nav-alert::after, .nav-menu a.nav-alert b::after { animation: none; } }
 .me-chip b.tick-down { animation: tick-down 1.4s ease-out; }
 @keyframes tick-up { from { color: var(--up); text-shadow: 0 0 10px var(--up); } }
 @keyframes tick-down { from { color: var(--down); text-shadow: 0 0 10px var(--down); } }
@@ -415,6 +459,22 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .bettors-side .transfer-row > :nth-child(2) { text-align: right; }
 /* Game rewards: a header line per game (result, score, map, date), then who got what in two tidy columns */
 .bettors-side .rewards-card .how { margin-bottom: 4px; }
+/* The house (Standings sidebar, houseCard() in bets.js): the pot and jackpot, the next game's objectives, the last
+   game's revealed, the latest giveaways. */
+.house-card h3 { margin: 16px 0 6px; }
+.house-pots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0 12px; }
+.house-pots > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; }
+.house-pots b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.house-pots .muted { font-size: 12px; }
+.house-next { margin: 0; font-size: 14px; }
+.house-goals, .house-recent { list-style: none; margin: 0; padding: 0; }
+.house-goals li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }
+.house-goals li:last-child, .house-recent li:last-child { border-bottom: 0; }
+.house-mark { font-weight: 700; color: var(--muted); }
+.house-goals .met .house-mark { color: var(--up); }
+.house-goals .missed .house-mark { color: var(--down); }
+.house-recent li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }
+.house-recent li > .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bettors-side .recent-row.reward-row { grid-template-columns: 28px auto minmax(0, 1fr) auto; gap: 8px 10px; padding: 12px 0; }
 .bettors-side .reward-row .rewards-list { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px;
   font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
@@ -1628,6 +1688,125 @@ body.modal-open { overflow: hidden; }
 .slots-big-pay small { font-size: 11px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .slots-spin:active:not(:disabled) { transform: none; } }
 
+/* The daily wheel (web/wheel.js): the wheel on the left, prizes and tokens beside it. Slice colours are tokens so a
+   theme can change them; the jackpot is gold. */
+:root { --wheel-credits: #2f7de0; --wheel-credits-2: #1f5fb4; --wheel-bananas: #e8b923; --wheel-boost: #9b5de5;
+  --wheel-insurance: #14a38b; --wheel-nothing: #555550; --wheel-again: #e2557a; --wheel-item: #f07c2a; --wheel-jackpot: #ffd54a;
+  --bulb-1: #ffe9a8; --bulb-2: #ff4d4d; --bulb-3: #4dc3ff;
+  --wheel-rim: #808080; --wheel-rim-edge: #5f5f5f; --wheel-flapper: #0a0a0a; --wheel-flapper-shine: #3a3a3a; --wheel-peg: #e8e6dc; }
+.wheel-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; margin-bottom: 16px; }
+.wheel-stage { display: flex; flex-direction: column; align-items: center; padding-bottom: 20px; }
+.wheel-head { align-self: stretch; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.wheel-head h2 { margin-bottom: 2px; }
+/* The wheel as big as the card allows with the controls in a column beside it, so the Spin button stays on a 1080p
+   screen. */
+.wheel-row { display: flex; align-items: center; gap: 20px; align-self: stretch; }
+.wheel-box { position: relative; flex: none; width: min(880px, calc(100% - 240px)); aspect-ratio: 1; margin: -14px 0 -8px; }
+.wheel-svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, .45)); }
+#wheel-rotor { transform-origin: 200px 200px; transform-box: view-box; }
+/* The border: a medium grey band round the slices, with the bulbs on its outer edge. */
+.wheel-rim { fill: var(--wheel-rim); stroke: var(--wheel-rim-edge); stroke-width: 2; }
+/* Bulbs round the rim: lit every other one at rest, a chase while it spins, a gold pulse while it teases, all of them
+   flashing on a win. */
+/* Each bulb has its own colour (--c: warm white, red and blue, the --bulb-* tokens in turn round the rim); unlit it's a
+   dim glass of that colour. */
+.wheel-bulb { fill: color-mix(in srgb, var(--c) 28%, #1c1c1c); transition: fill .15s; }
+.wheel-bulbs .wheel-bulb:nth-child(odd) { fill: var(--c); filter: drop-shadow(0 0 4px var(--c)); }
+/* At rest a slow chase runs round the rim (four lit, two dark); spinning, a fast one. */
+.wheel-bulbs:not(.spin):not(.tease):not(.win) .wheel-bulb { animation: wheel-idle 2.4s steps(1) infinite; animation-delay: calc(var(--k) * -.4s); }
+.wheel-bulbs.spin .wheel-bulb { animation: wheel-chase .6s steps(1) infinite; animation-delay: calc(var(--k) * -.1s); }
+.wheel-bulbs.tease .wheel-bulb, .wheel-tense .wheel-bulb { fill: var(--c); animation: wheel-pulse .4s ease-in-out infinite alternate; }
+.wheel-bulbs.win .wheel-bulb { animation: wheel-blink .22s steps(1) infinite; }
+@keyframes wheel-idle { 0%, 66% { fill: var(--c); filter: drop-shadow(0 0 4px var(--c)); } 67%, 100% { fill: color-mix(in srgb, var(--c) 28%, #1c1c1c); filter: none; } }
+@keyframes wheel-chase { 0%, 49% { fill: var(--c); filter: drop-shadow(0 0 5px var(--c)); } 50%, 100% { fill: color-mix(in srgb, var(--c) 28%, #1c1c1c); filter: none; } }
+@keyframes wheel-pulse { from { opacity: .45; } to { opacity: 1; filter: drop-shadow(0 0 6px var(--c)); } }
+@keyframes wheel-blink { 0%, 49% { fill: #fff; filter: drop-shadow(0 0 7px var(--c)); } 50%, 100% { fill: var(--c); filter: drop-shadow(0 0 4px var(--c)); } }
+/* The jackpot sliver keeps its true size; a halo and a white-hot core line make it stand out, and the halo shimmers
+   gently at rest. */
+.wheel-jp-halo { fill: var(--wheel-jackpot); opacity: .6; filter: url(#wheel-glow); animation: wheel-shimmer 1.6s ease-in-out infinite alternate; }
+.wheel-jp { fill: url(#wheel-gold); stroke: #fff6c2; stroke-width: 1; }
+.wheel-jp-core { stroke: #fff; stroke-width: 2; stroke-linecap: round; }
+@keyframes wheel-shimmer { from { opacity: .75; } to { opacity: 1; } }
+.wheel-slice { stroke: rgba(0, 0, 0, .35); stroke-width: 1; }
+.wk-credits { fill: var(--wheel-credits); }
+.wk-credits.alt { fill: var(--wheel-credits-2); }
+.wk-bananas { fill: var(--wheel-bananas); }
+.wk-boost { fill: var(--wheel-boost); }
+.wk-insurance { fill: var(--wheel-insurance); }
+.wk-nothing { fill: var(--wheel-nothing); }
+.wk-again { fill: var(--wheel-again); }
+.wk-item { fill: var(--wheel-item); }
+.wk-jackpot { fill: var(--wheel-jackpot); }
+.wheel-icon { font-size: 18px; text-anchor: middle; dominant-baseline: central; }
+.wheel-icon.small { font-size: 13px; }
+.wk-jackpot { stroke: var(--wheel-jackpot); stroke-width: 2; }
+.wheel-label { fill: #fff; font-size: 11.5px; font-weight: 700; text-anchor: middle; dominant-baseline: central; letter-spacing: .2px;
+  paint-order: stroke; stroke: rgba(0, 0, 0, .35); stroke-width: 2px; }
+.wheel-peg { fill: var(--wheel-peg); stroke: rgba(0, 0, 0, .4); stroke-width: 1; }
+.wheel-hub { fill: var(--surface); stroke: var(--wheel-jackpot); stroke-width: 3; }
+.wheel-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+.wheel-center span { font-size: 12px; color: var(--muted); }
+.wheel-center b { font-size: 26px; font-weight: 700; color: var(--wheel-jackpot); font-variant-numeric: tabular-nums; }
+/* The pointer: a gold wedge over the top of the rim, pointing down into the slice that wins. */
+/* Sized as a share of the wheel so it lines up at any size: its tip reaches just inside the rim. */
+/* The pointer is a flapper hanging from a pin above the rim, its tip reaching a little way past the pegs onto the
+   slices; wheel.js turns it as the simulated pegs push it aside and it springs back. Sizes are shares of the wheel (the
+   pegs straddle the wheel's edge, their tops 10.2% down it), so it lines up at any size. */
+.wheel-pointer { position: absolute; top: 3.7%; left: 50%; width: 4%; height: 7.2%; transform: translateX(-50%); transform-origin: 50% 6%; z-index: 1;
+  background: linear-gradient(90deg, var(--wheel-flapper), var(--wheel-flapper-shine) 45%, #262626 55%, var(--wheel-flapper)); clip-path: polygon(18% 0, 82% 0, 70% 62%, 50% 100%, 30% 62%);
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, .55)); }
+.wheel-pivot { position: absolute; top: 3.35%; left: 50%; width: 1.7%; aspect-ratio: 1; transform: translateX(-50%); z-index: 2; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff, #c9c4b0 40%, #6e6a5c); box-shadow: 0 2px 3px rgba(0, 0, 0, .6); }
+.wheel-box.shaking { animation: wheel-shake .5s cubic-bezier(.36, .07, .19, .97); }
+@keyframes wheel-shake { 15%, 55% { transform: translate(calc(var(--shake) * -1), 1px); } 35%, 75% { transform: translate(var(--shake), -1px); } 90% { transform: translate(calc(var(--shake) / -3), 0); } }
+/* Teasing: the stage darkens round a glowing wheel. */
+.wheel-stage { transition: box-shadow .3s, background-color .3s; }
+.wheel-tense { background-color: color-mix(in srgb, var(--surface) 70%, #000); box-shadow: inset 0 0 120px rgba(0, 0, 0, .6); }
+.wheel-tense .wheel-svg { filter: drop-shadow(0 0 22px color-mix(in srgb, var(--wheel-jackpot) 70%, transparent)); }
+.wheel-tense .wheel-pointer { filter: drop-shadow(0 0 10px var(--wheel-jackpot)); }
+.wheel-sad .wheel-svg { filter: grayscale(.85) brightness(.8); transition: filter .4s; }
+/* Screen effects (a fixed layer that removes itself): a coloured flash per prize, the jackpot's banner and rain. */
+.wheel-fx-layer { position: fixed; inset: 0; pointer-events: none; z-index: 60; overflow: hidden; }
+.wheel-flash { position: absolute; inset: 0; opacity: 0; animation: wheel-flash .45s ease-out var(--times, 1); }
+.wheel-flash.fx-credits { background: radial-gradient(circle, rgba(47, 125, 224, .35), transparent 70%); }
+.wheel-flash.fx-bananas { background: radial-gradient(circle, rgba(232, 185, 35, .35), transparent 70%); }
+.wheel-flash.fx-boost { background: radial-gradient(circle, rgba(155, 93, 229, .45), transparent 70%); }
+.wheel-flash.fx-insurance { background: radial-gradient(circle, rgba(20, 163, 139, .4), transparent 70%); }
+.wheel-flash.fx-item { background: radial-gradient(circle, rgba(240, 124, 42, .45), transparent 70%); }
+.wheel-flash.fx-again { background: radial-gradient(circle, rgba(226, 85, 122, .35), transparent 70%); }
+.wheel-flash.fx-jackpot { background: radial-gradient(circle, rgba(255, 230, 120, .85), rgba(255, 170, 0, .35) 60%, transparent 85%); }
+@keyframes wheel-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
+html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 55; pointer-events: none; animation: wheel-dim 4.2s ease-in-out forwards; }
+@keyframes wheel-dim { 0% { opacity: 0; } 10%, 75% { opacity: 1; } 100% { opacity: 0; } }
+.wheel-banner { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%); font-size: 88px; font-weight: 900; letter-spacing: 2px;
+  color: #ffd54a; text-shadow: 0 0 24px #ff9f1c, 0 6px 0 #8a5a00; animation: wheel-banner 3.6s ease-out forwards; white-space: nowrap; }
+@keyframes wheel-banner { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.3); } 12% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  20%, 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -60%) scale(1); } }
+.wheel-rain { position: absolute; top: -60px; animation-name: wheel-fall; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes wheel-fall { to { transform: translateY(115vh) rotate(540deg); } }
+.wheel-nom { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); font-size: 64px; animation: wheel-nom 1.6s ease-out forwards; }
+.wheel-nom span { display: block; font-size: 20px; font-weight: 800; text-align: center; color: var(--text-2); }
+@keyframes wheel-nom { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.5); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -70%) scale(.9); } }
+.wheel-controls { flex: 1; min-width: 200px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.wheel-spin { min-width: 200px; padding: 12px 28px; font-size: 17px; font-weight: 700; background: var(--accent); color: #fff; border-color: var(--accent); }
+.wheel-spin:disabled { background: var(--surface-2); color: var(--muted); border-color: var(--border); cursor: default; }
+.wheel-result { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.wheel-result.jackpot { color: var(--wheel-jackpot); font-size: 22px; }
+.wheel-error { margin: 4px 0 0; color: var(--bad); }
+.wheel-side .card { margin-bottom: 16px; }
+.wheel-prizes th { font-weight: 500; }
+.wheel-tokens, .wheel-spins { list-style: none; margin: 0; padding: 0; }
+.wheel-tokens li { padding: 6px 0; border-bottom: 1px solid var(--grid); }
+.wheel-spins li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }
+.wheel-spins.who li { grid-template-columns: 140px minmax(0, 1fr) auto; }
+.wheel-tokens li:last-child, .wheel-spins li:last-child { border-bottom: 0; }
+@media (prefers-reduced-motion: reduce) {
+  #wheel-rotor { transition: none !important; }
+  .wheel-bulb, .wheel-jp-halo, .wheel-box.shaking { animation: none !important; }
+  .wheel-banner { animation: wheel-fade 3.6s ease-out forwards; transform: translate(-50%, -50%); }
+  @keyframes wheel-fade { 0% { opacity: 0; } 15%, 80% { opacity: 1; } 100% { opacity: 0; } }
+}
 
 /* ---- Casino tables: blackjack (blackjack.js) and poker (poker.js), with casino.js's cards and Onkey ---- */
 .casino-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
@@ -1871,3 +2050,15 @@ body.modal-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .pcard.deal-in, .pcard.flip-in, .after-deal { animation: none; }
 }
+
+/* The daily wheel's tokens in the bet slip (tokenRow() in bets.js): a Boost and an Insure toggle on each single, and
+   the boosted price and notes once one is on. */
+.slip-tokens { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 6px; }
+.token-btn { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-2); cursor: pointer; }
+.token-btn:hover:not(:disabled) { border-color: var(--warn); color: var(--text); }
+.token-btn.on { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); font-weight: 600; }
+.token-btn:disabled { opacity: .45; cursor: default; }
+.token-price { color: var(--warn); }
+.token-warn { color: var(--bad); }
+.bet-perk { color: var(--warn); }

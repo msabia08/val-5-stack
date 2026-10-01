@@ -1,15 +1,16 @@
 /* Server-settled slots. Reel motion is cosmetic; only the server chooses the result. */
 window.FiveSlots = (() => {
   'use strict';
-  let state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName;
+  let state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance;
   let data = null, owner = null, stake = 10, busy = false, result = null, error = '', pending = null;
   let motion = null, audio = null, muted = localStorage.getItem('fs.slotsMuted') === '1';
   // Wins on these symbols get bigger celebrations, 1 to 4 (celebrate()); other wins just light the cabinet.
   const FX = { diamond: 1, banana: 2, monkey: 3, golden: 4 };
   // The tease: when the first two reels match, the third may keep spinning, glow, then creep up to the payline so you
   // can't tell whether it will land. The chance depends only on the pair (never on whether the third reel wins, so a
-  // tease gives nothing away) and grows with what the pair could pay. TEASE_LEVEL (0-4) sets how long and slow it is.
-  const TEASE = { cherry: .15, bell: .2, spike: .35, diamond: .55, banana: .75, monkey: .9, golden: 1 };
+  // tease gives nothing away) and grows with what the pair could pay; cherry, bell and spike pairs never tease.
+  // TEASE_LEVEL (0-4) sets how long and slow it is.
+  const TEASE = { cherry: 0, bell: 0, spike: 0, diamond: .55, banana: .75, monkey: .9, golden: 1 };
   const TEASE_LEVEL = { cherry: 0, bell: 0, spike: 1, diamond: 2, banana: 3, monkey: 4, golden: 4 };
   // Stops slow down for bigger symbols: the wait (ms) before the next reel grows with the symbol the last one showed,
   // longer still after a matching pair, so they follow what's on screen and come on losses too. A long opening spin
@@ -18,7 +19,7 @@ window.FiveSlots = (() => {
   const BIG_OPENING = ['banana', 'monkey', 'golden'];
   const storageKey = (name) => `fs.slotSpin.${name.toLowerCase()}`;
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName } = ctx); }
+  function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance } = ctx); }
   function syncOwner() {
     const name = state.me?.name || null;
     if (owner === name) return;
@@ -495,7 +496,7 @@ window.FiveSlots = (() => {
   // The machine's own readout: your credits, the bet and the last win, in lit digits.
   function readout() {
     const cell = (label, value) => `<div><span>${label}</span><b>${value}</b></div>`;
-    return `<div class="slots-well slots-readout">${cell('Credits', state.me ? money(state.me.balance) : '–')}${cell('Bet', money(stake))}${cell('Win', result && !busy ? money(result.payout) : '0')}</div>`;
+    return `<div class="slots-well slots-readout">${cell('Credits', state.me ? money(displayBalance()) : '–')}${cell('Bet', money(stake))}${cell('Win', result && !busy ? money(result.payout) : '0')}</div>`;
   }
   function view() {
     syncOwner();
@@ -527,12 +528,16 @@ window.FiveSlots = (() => {
   }
   async function spin() {
     if (busy || !state.me) return;
-    if (!pending) {
+    const fresh = !pending;
+    if (fresh) {
       const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
       remember({ stake, request_id: Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('') });
     }
     const name = owner, request = pending;
     let landed = null;
+    // The server pays the spin before the reels stop, so until they do the balance shown (here and in the top bar)
+    // is held at what it was less the stake: it can't give the result away. A retried spin's stake was already taken.
+    holdBalance(fresh ? state.me.balance - request.stake : state.me.balance);
     busy = true; error = ''; sound('start'); draw();
     $('.slots-lever')?.classList.add('pulled');
     const rolling = motion = startMotion();
@@ -542,6 +547,7 @@ window.FiveSlots = (() => {
       if (owner !== name) return;
       result = landed = out.spin; remember(null);
       if (state.me?.name === name) state.me.balance = out.balance;
+      releaseBalance(); // the reels have stopped: the credits count to the real balance
       await Promise.all([load(), loadMe()]);
     } catch (e) {
       if (owner === name) {
@@ -551,10 +557,16 @@ window.FiveSlots = (() => {
     } finally {
       const teased = rolling.teased();
       rolling.cancel(); motion = null; busy = false;
+      releaseBalance();
       if (state.view === 'slots') {
         draw(); $('#slot-spin')?.focus();
         if (landed && teased) $$('.slots-reel')[2]?.classList.add(teased.won ? 'tease-won' : 'tease-lost');
-        if (landed) celebrate(landed);
+        if (landed) {
+          celebrate(landed);
+          const sym = data.symbols[landed.reels[0]] || {};
+          window.FiveOnkey?.note('slots', { stake: landed.stake, payout: landed.payout, multiplier: landed.multiplier,
+            symbol: sym.name, golden: !!sym.secret && landed.payout > 0 });
+        }
       }
     }
   }

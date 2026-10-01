@@ -46,8 +46,10 @@ next reel the bigger the symbol already showing; the readout under the reels sho
 your credits, the bet and the last win. Bigger wins get bigger celebrations: diamonds, then bananas, then
 Onkey each step it up. When the first two reels match, the third may keep
 spinning and creep up to the line so slowly you can't tell whether it will land,
-more often and for longer the bigger the pair; it happens on wins and losses
-alike, so it never gives the result away. The speaker button in the marquee
+more often and for longer the bigger the pair (never for cherries, bells or
+spikes); it happens on wins and losses alike, so it never gives the result away.
+Your credits (on the machine and in the top bar) show the stake taken until the
+reels stop, then count up to what you won, so they can't spoil it either. The speaker button in the marquee
 mutes the sounds and remembers your choice. Reduced motion shows the result immediately without rolling
 the reels or teasing, and keeps win celebrations to a glow and a banner.
 
@@ -118,7 +120,8 @@ season reset cashes everyone out too.
 The casino plays for betting credits only. Slots, blackjack and poker results count in the **Casino** column in
 Standings (this season's payouts minus stakes across all three), never in match-betting profit, ROI or records. The
 casino has nothing to do with bananas: it never earns or costs any. Every round's house cut (the slots and
-blackjack edge, the poker rake) is recorded, so the house's take per game is at `/api/house`.
+blackjack edge, the poker rake) is recorded, so the house's take per game is at `/api/house`. That take, with the
+house's cut of match bets, is what the house gives back: see [The house gives back](#the-house-gives-back).
 
 ## Quick start
 
@@ -760,6 +763,115 @@ win.
 - The rate and minimum are `TAX_RATE` and `TAX_MIN_TRANSFER` in
   `fivestack/bets.py`. A tax still waiting when the season is reset is dropped.
 
+## The house gives back
+
+The house keeps a small edge on every match bet and casino round (the slots and
+blackjack edge, the poker rake). What that has taken (estimated from the price of
+each bet and round, every season) is the house's money, and it goes back to the squad and the bettors. Half of it is
+the **pot**, which pays for secret objectives and bad-beat refunds, and half builds the
+**jackpot**, which the daily wheel pays out. The Standings page's sidebar shows both, along with the next game's
+objectives (how many and what they're worth, not what they are), the last
+game's objectives revealed, and the latest giveaways.
+
+### Secret objectives
+
+Before each game the house hides three objectives:
+
+- **A personal goal for one squad member**, such as "Sam: 26%+ headshots" or
+  "Riley: 7 deaths or fewer". It's set from that player's own past games, so it's
+  about as reachable for the squad's lowest scorer as for its best, and the
+  lower someone's usual ACS, the more often they're the one picked (the lowest
+  twice as often as the highest).
+- **A squad goal**, such as "Win the pistol round" or "Win by 5 or more rounds",
+  shared evenly by everyone who played.
+- **A bettor goal** that anyone can meet with a bet settled on that game, squad
+  or not, such as "Win a bet of 25 credits or less", "Win a bet on Jordan" or "Lose
+  every bet you placed on this game". None of them depend on how much you bet.
+
+Each objective is worth a share of the pot (10% of it per game, more for a
+rarer objective, at least 5 credits each), split evenly between everyone who
+meets it. They're revealed in the game's recap and on Standings once the game
+is recorded, and paid straight into balances, with a toast the next time
+you open the site. A surrender carries the set over to the next game. While the
+pot can't pay at least 5 credits per objective, none are set.
+
+### Bad-beat refunds
+
+A lost bet that only just missed gets **half its stake back, up to 100
+credits**, from the pot:
+
+- an over / under missed by one (by 1 point or less on headshot %),
+- a parlay of 3 or more legs that lost by one leg,
+- a match-result bet lost in overtime.
+
+The bet's ticket says so. Refunds stop when the pot runs dry.
+
+### The daily wheel
+
+The Casino's **Daily wheel** page has a prize wheel every bettor can spin **once a
+day** for free. The day turns over at **midnight Pacific, which is 3 AM
+Eastern**, so a late night on the East Coast still counts as the same day. Each
+slice's size on the wheel is its chance:
+
+| Prize | Chance |
+|---|---|
+| 50 credits | 1 in 5 |
+| 100 credits | 1 in 7 |
+| 50 bananas | 1 in 8 |
+| Boost token: a single of up to 200 credits pays 50% more profit | 1 in 11 |
+| Insurance token: if a single loses, you get the stake back (up to 200) | 1 in 13 |
+| 200 credits | 1 in 13 |
+| 100 bananas | 1 in 14 |
+| Onkey ate it (nothing) | 1 in 18 |
+| 400 credits | 1 in 20 |
+| Spin again | 1 in 20 |
+| A free cosmetic from Onkey's Shop you don't own yet (100 bananas if you own them all) | 1 in 33 |
+| **The jackpot**: all of it | 1 in 200 |
+
+Credit prizes and insurance refunds are free: they don't come out of the
+house's pot, so they never eat into the secret objectives or bad-beat refunds.
+Only the jackpot slice is paid from the house's money: the whole progressive
+jackpot. Tokens keep until you use them: add a pick on Place bets and tap
+**Boost** or **Insure** on it in your bet slip (singles only, never a parlay; a
+boost token doesn't stack with the odds boost of the game). The ticket says
+which token it carries. The server picks the
+slice, and the page only animates the wheel to it: the pointer clicks over each
+peg, and sometimes the wheel crawls up to a peg next to a big prize, balances
+there, and tips over or rolls back (that's for show; the result was already
+decided). Every prize has its own sound and screen effect; the speaker button
+mutes them. In demo mode (`--demo`) there's no daily limit, so it can be tried
+out as often as you like. Your credits in the top bar don't change until the wheel
+stops, so they never give the result away. The odds are in `fivestack/wheel.py` (`SEGMENTS`).
+
+### The jackpot
+
+The jackpot grows with every bet and spin, and the daily wheel's rarest slice
+pays all of it.
+
+### Odds boost of the game
+
+Separate from the house's money: one pick on the board pays **50% more
+profit** than its usual price until the next game is recorded, when a new one
+is picked. It's shown under the odds format toggle on Place bets and with a gold ring on its
+button. It's for singles of up to 100 credits; in a parlay that pick is at its
+usual price.
+
+Giveaways don't count toward betting profit or ROI. The Rankings show them in their
+own House column, and a season reset clears that column but not the pot or
+jackpot, which carry across seasons. The rules live in `fivestack/house.py`
+(`JACKPOT_SHARE`, `GAME_SHARE`, `REFUND_RATE`, `REFUND_MAX`, ...) and
+`fivestack/bets.py` (`BOOST`, `BOOST_MAX_STAKE`, `TOKEN_BOOST`, `TOKEN_MAX_STAKE`).
+
+## Onkey talks
+
+Onkey, the monkey in the top-left corner, chats like the dealer at the casino tables: a speech bubble with his monkey
+noises and what they mean, with a hop while he talks. Every minute or two he says something, sometimes about you (your
+balance, your place in the standings, a daily spin waiting), and he reacts to what you do: bets you place, bets that win
+or lose (and losing streaks), slot spins (dry runs and big wins), wheel prizes, credits you send and things you buy. He
+walks over to deal at the blackjack and poker tables (leaving the logo empty) and walks back when you leave; he
+keeps quiet there, where the dealer does the talking, and clicking his bubble hushes him
+for 15 minutes. His lines are in `web/onkey.js`.
+
 ## Going online (share it with the squad)
 
 The server can publish itself through a Cloudflare Tunnel, so your friends can
@@ -864,7 +976,9 @@ fivestack/             the backend package
   timeline.py          round-by-round records: clutches, multi-kills, spike sites
   odds.py              odds engine
   gamestate.py         how a game ended: complete, surrendered, or a remake
-  bets.py              betting ledger and settlement
+  bets.py              betting ledger and settlement, plus the odds boost of the game
+  house.py             the house giving back: its pot, secret objectives, bad-beat refunds and the jackpot
+  wheel.py             the daily wheel: one spin a day (midnight Pacific), prizes, tokens
   bananas.py           Onkey's Shop: bananas earned from credit gains, the catalogue, buying and wearing items
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
