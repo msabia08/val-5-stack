@@ -17,8 +17,31 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards; **Slots**: instant spins with betting credits) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
+
+## Slots
+
+Open **Betting → Slots** and sign in with your betting account. Pick a stake of
+5, 10, 25, 50 or 100 virtual credits, then spin. Three matching symbols on the
+centre line pay: banana / cherry / bell / diamond / spike / Onkey return
+8× / 12× / 20× / 30× / 50× / 80× your stake. Pairs and mixed symbols pay zero.
+
+The cabinet has continuous reels that accelerate, slow down, and stop from left
+to right. Sound on/off controls the spin, stop and win tones. Reduced motion
+shows the result immediately without rolling the reels.
+
+Each of the three reels independently picks one of six equally likely symbols.
+All payouts include the stake; other results return zero. The average return is
+92.59% over many spins. The pay table shows
+the credit payout for your selected stake. Results settle immediately on the
+server and cannot be cancelled; retrying an interrupted request recovers the
+same spin without paying again.
+
+Your last ten spins and season net appear below the machine. Slots affect your
+credit balance and have a separate **Slots** column in Standings; match-betting
+profit, ROI and records exclude them. Slots do not earn bananas. A season reset
+keeps the spin records with that season and starts fresh slot totals.
 
 ## Quick start
 

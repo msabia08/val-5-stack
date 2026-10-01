@@ -251,6 +251,22 @@ CREATE TABLE IF NOT EXISTS arcade_plays (
     score INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_arcade_game ON arcade_plays(game, score);
+
+-- Kept through resets: season_id NULL means the current season. Retry keys stay unique forever.
+CREATE TABLE IF NOT EXISTS slot_spins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL REFERENCES bettors(name),
+    machine TEXT NOT NULL,
+    stake REAL NOT NULL,
+    reels TEXT NOT NULL,
+    multiplier INTEGER NOT NULL,
+    payout REAL NOT NULL,
+    created_ts REAL NOT NULL,
+    request_id TEXT NOT NULL,
+    season_id INTEGER REFERENCES seasons(id),
+    UNIQUE(bettor, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_slots_season ON slot_spins(season_id, bettor);
 """
 
 MATCH_FIELDS = [
@@ -545,6 +561,7 @@ class DB:
                 self.conn.execute("DELETE FROM bets")
                 self.conn.execute("DELETE FROM rewards")
                 self.conn.execute("DELETE FROM transfers")
+                self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.
                 self.conn.execute(

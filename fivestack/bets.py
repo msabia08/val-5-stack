@@ -128,7 +128,8 @@ class BetManager:
     def reset(self):
         """End the season: its standings, bets and game rewards are archived (see db.archive_and_reset), then every
         balance goes back to the starting amount. Returns the archived season."""
-        return self.db.archive_and_reset(self.starting, self.leaderboard())
+        with self.db.lock:
+            return self.db.archive_and_reset(self.starting, self.leaderboard())
 
     def leaderboard(self):
         per = {}
@@ -146,14 +147,17 @@ class BetManager:
                 s[st] = s.get(st, 0) + 1
         rewards = self.db.reward_totals()
         transfers = self.db.transfer_totals()
+        slots = {r["bettor"].lower(): r["net"] for r in self.db.query(
+            "SELECT bettor, SUM(payout-stake) AS net FROM slot_spins WHERE season_id IS NULL GROUP BY bettor")}
         out = []
         for b in self.db.bettors():
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
             earned = rewards.get(b["name"].lower(), 0.0)
             received = transfers.get(b["name"].lower(), 0.0)
-            # Betting profit only: game rewards and credits sent between bettors change the balance too, but they
+            # Match-betting profit only: game rewards, transfers and slots change the balance too, but they
             # are reported separately.
-            profit = b["balance"] + s["pending_stake"] - self.starting - earned - received
+            slot_profit = slots.get(b["name"].lower(), 0.0)
+            profit = b["balance"] + s["pending_stake"] - self.starting - earned - received - slot_profit
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
@@ -161,6 +165,7 @@ class BetManager:
                 "profit": round(profit, 2),
                 "rewards": round(earned, 2),
                 "transfers": round(received, 2),
+                "slots": round(slot_profit, 2),
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }
             for k, v in s.items():

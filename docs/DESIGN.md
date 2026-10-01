@@ -41,7 +41,7 @@ retire an old one, update this file in the same pull request.
 ## Navigation
 
 - The top bar holds 🏠 **Overview** on its own, then three dropdown groups (`.nav-group` in `index.html`):
-  📊 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings) and 🐒 **Onkey's**
+  📊 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings, Slots) and 🐒 **Onkey's**
   (Shop, Arcade, Monkeys). A new page joins the group it belongs to, as a menu row with an emoji, a name and a
   one-line description; don't add another top-level entry without a good reason.
 - A group's button shows the name and emoji of the page you're on (`syncNavGroups()`), so you always know where you
@@ -114,6 +114,29 @@ Reuse these before inventing new ones.
 | A market group as questions | `.tm-match`, `.tm-form`, `.tm-qgrid` / `.tm-q`, `.tm-mountain` (Place bets, team markets) | The main bet first and bigger, its bar centred and split by chance, recent form as small W / L chips under the middle, a nudge below the chances either side, and the two buttons centred vertically on the bar and that line; every other market a card asked as a plain question with its picks (the fact line under each is off, `TM_FACTS = false` in `app.js`, to keep the section short); a many-pick market (final score) as one row of columns whose height is the chance, the likeliest outlined |
 | Cards of different heights | `.bettor-slips` (CSS columns) | Stacks cards without holes; `break-inside: avoid` on each card |
 | One list per player | `.ap-grid` > `.ap-col` (Charts, agent pool) | A column per player listing only what they have, instead of a sparse player × item grid |
+
+### Slots
+
+`#slots` lives under Betting, labelled Slots. One machine, no names or picker.
+`.slots-layout` pairs a wide arcade cabinet with a 348px pay table. Like the
+Arcade, the cabinet stays dark in every theme: `--slot-*` tokens define plum
+housing, gold controls and ivory reels. Surrounding cards follow the theme.
+A monospace marquee with Onkey's logo, a recessed reel window and a raised Spin
+button give the cabinet its shape. The gold centre line marks the paying symbols;
+adjacent symbols remain partly visible above and below. Five stake buttons show
+the selection. Payouts list largest first, with multipliers and current credits.
+Balance stays in the top bar; recent spins and season net follow below, without
+a machine column. Standings has a separate Slots column.
+
+Reels use continuous symbol strips moved with `translate3d` in requestAnimationFrame.
+They accelerate, then decelerate with matching incoming velocity and stop left
+to right on the server's result, with no artificial near misses. Repaints retain
+their positions; leaving the tab cancels motion. Reduced motion skips rolling.
+Wins light the cabinet and the matching pay-table row; synthesized sounds mark
+the spin, each stop and a win, with a persistent Sound on/off control. No idle
+animation. Results use a live status region and errors appear inline. An uncertain
+request locks stakes and offers "Check last spin"; "Sign in to spin" uses the
+existing account menu.
 
 ## Words
 
