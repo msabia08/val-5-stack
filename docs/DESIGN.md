@@ -41,7 +41,7 @@ retire an old one, update this file in the same pull request.
 ## Navigation
 
 - The top bar holds 🏠 **Overview** on its own, then four dropdown groups (`.nav-group` in `index.html`):
-  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings), 🃏 **Casino** (Slots) and 🐒 **Onkey's**
+  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings), 🃏 **Casino** (Slots, Blackjack, Poker) and 🐒 **Onkey's**
   (Shop, Arcade, Monkeys). A new page joins the group it belongs to, as a menu row with an emoji, a name and a
   one-line description; don't add another top-level entry without a good reason.
 - A group's button shows the name and emoji of the page you're on (`syncNavGroups()`), so you always know where you
@@ -71,6 +71,7 @@ hard-code a colour in a component; add or reuse a token so every theme picks it 
 | `--good` / `--warn` / `--bad` | green / amber / red | Status: connected, demo banner, errors and danger buttons |
 | `--s1` … `--s8` | blue, orange, teal, gold, pink, … | One per squad member slot (`bettorSlot()`); the same person is always the same colour |
 | `--axis`, `--div-*`, `--aim-*`, `--pair-*`, `--spark`, `--bar-*` | | Charts (see Charts) |
+| `--felt*`, `--card-*`, `--chip*`, `--turn` | green felt, white cards, gold chips | The casino tables. Defined once on `:root` and not redefined per theme: the felt and the cards look the same in every theme, like the slots cabinet |
 
 - Green and red mean better and worse only. Don't use them for decoration.
 - Player colours come from the slot, never picked per chart.
@@ -234,6 +235,41 @@ still until it's used, and reduced motion stops all of it. Results use a live st
 request locks stakes and offers "Check last spin"; "Sign in to spin" uses the
 existing account menu.
 
+### Blackjack and poker
+
+`#blackjack` and `#poker` live under Casino. Both are a `.casino-page`: a `.casino-bar` (the page's own controls, the
+mute button on the right), then `.casino-layout`, the table (main column) plus a 340px `.casino-side` of cards.
+The table is the page's personality, like the slots cabinet; the side cards are ordinary site cards.
+
+- **The felt** (`.felt`): green, a wooden rail (`--felt-edge`), light text (`--felt-ink`, `--felt-dim` for muted).
+  Blackjack's is a rounded rectangle with Onkey and his hand at the top, the table print ("Blackjack pays 3 to 2"),
+  the player spots, then the status line and controls inside the felt. Poker's is an oval (`.pk-rail`) with eight
+  seats placed round it by percentage (`SPOTS` in `poker.js`), turned so your own seat is at the bottom; the board and
+  pot sit in the middle, each seat's bet as a chip part-way to the middle, and the status line and action bar sit
+  under the oval.
+- **Cards** (`FiveCasino.card()`, `.pcard`): drawn in CSS, no images: rank and suit top left, a big pip bottom right,
+  red for hearts and diamonds; sizes `xs` (logs and tables), `sm` (other players), `md` (your poker hand), `lg`
+  (blackjack and the board). A face-down card is `.back`, an empty board slot `.empty`. Every card has an
+  `aria-label` ("Ace of spades"). No deal animation: regions re-render on every table change, which would replay it.
+- **Onkey, the dealer** (`FiveCasino.dealer()` / `say()`): his picture with a white speech bubble to its right. When
+  he speaks, the bubble's first line is his monkey noises ("Ook Eek Ook", with "!" when he's excited) and the second
+  what they mean, while Web Audio plays matching ooks (low, falling) and eeks (high, rising); his picture jabbers
+  (off with reduced motion). He reacts to the table's log, one line per update, the most interesting event first
+  (`PRIORITY`); his lines are `QUIPS`, casual and short. One mute button (`fs.casinoMuted`) covers both tables.
+- **Turns**: the player to act gets a gold outline (`--turn`) and a shrinking `.timer-bar`; countdowns
+  (`[data-deadline]`) tick every 250 ms against the server's clock and go gold, then red, under 6 seconds.
+- **Controls**: stakes are round gold chips (`.stake-key`); moves are big `.casino-act` buttons with the amount as a
+  second line (Hit / Stand / Double / Split; Fold / Check or Call / Raise to), the primary move (Hit, Raise) in the
+  accent colour and Fold in red text. Poker's raise has a slider, a number field and presets (Min, ½ pot, Pot, All
+  in). Keyboard shortcuts: H S D P and Enter at blackjack, F C R at poker.
+- **Live updates** (`FiveCasino.live()`): the shared tables long-poll, and `patch()` replaces only the regions whose
+  HTML changed, keeping keyboard focus and a text field's caret, so a rules form or raise amount survives other
+  players' moves. Results, errors and turns go through a `role="status"` line.
+- **Side cards**: Blackjack shows Your season (four tiles), the shared table's players and House rules. Poker shows
+  Your seat (buy-in, or chips, Ready up / Not ready, leave, top up), Table rules (an editable form for seated players
+  in the lobby, else a list), the last hand (board, each player's cards, hand and net), Your season, and Table talk
+  (the log in words, newest first). Bettors appear as `plainName()`.
+
 ## Words
 
 - Name things by what people see and do, not how they're built: "Send credits", not "create transfer".
@@ -297,6 +333,9 @@ map, a readable chart that opens recaps). Still open:
   by-agent breakdown (the data is in `overall.agents`); a calibration row for all five players (costs a replay per
   player on the server); one stat picker plus a per game / per round switch instead of three groups; merging the
   better and worse tiles into one with an above / inside / below bar; a last 20 / 50 / all toggle on the chart.
+- The Casino tables (2026-10-01) were checked in dark and light at 1920×1080 with headless Chromium and three
+  signed-in players (solo and shared blackjack, a full poker hand to showdown); a real mouse on the raise slider, the
+  sounds, and the shop themes are still to be checked.
 - Not yet reviewed: the signed-in top bar and bet slip (the demo has no account to sign in with), and the shop themes
   after the width change. Light mode has been checked on Forecasts and Charts.
 - The Squad page (2026-09-30) was checked in dark at 1920×1080 with a headless browser against the fake API, and its
