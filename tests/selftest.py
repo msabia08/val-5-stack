@@ -762,34 +762,59 @@ def slots(shared):
     from concurrent.futures import ThreadPoolExecutor
     from itertools import product
     from unittest.mock import patch
-    from fivestack.slots import MACHINES, SlotManager, multiplier
+    from fivestack.slots import MACHINES, STAKES, SYMBOLS, SlotManager, chances, draw_reel, draw_spin, multiplier, rtp
 
     db = DB(os.path.join(shared.tmp, "slots.db"))
     db.create_bettor("Spinner", 1000)
     db.create_bettor("Empty", 0)
     manager = SlotManager(db)
     bets = BetManager({"starting_balance": 1000}, db, shared.engine)
-    # Enumerate the entire outcome space: only six triples pay.
-    for key, expected in (("jackpot", 200),):
-        payouts = [multiplier(MACHINES[key], r) for r in product(range(6), repeat=3)]
-        assert sum(payouts) == expected
-        assert sum(p > 0 for p in payouts) == 6
-    for i, (machine, reels, mult) in enumerate([
-            (None, [0, 0, 0], 8), ("jackpot", [1, 2, 1], 0),
-            ("jackpot", [0, 1, 2], 0), ("jackpot", [5, 5, 5], 80), ("jackpot", [1, 1, 2], 0)]):
+    m = MACHINES["jackpot"]
+    # Seven triples pay. The six regular lines return 95.00% (a 5% house edge), a win about every 8 spins; the secret
+    # Golden Onkey's jackpot comes on top of that (97% in all).
+    assert len(m["lines"]) == len(m["triples"]) == len(m["show"]) == len(SYMBOLS)
+    assert sum(multiplier(m, r) > 0 for r in product(range(len(SYMBOLS)), repeat=3)) == 7
+    assert abs(rtp(m) - 0.95) < 1e-12 and abs(rtp(m, secret=True) - 0.97) < 1e-12
+    assert abs(sum(chances(m)) - 12410 / 100000) < 1e-12 and [round(1 / c) for c in chances(m)] == [250, 20, 25, 125, 50, 500, 10000]
+    # The bigger the payout, the rarer the line.
+    by_payout = sorted(range(len(SYMBOLS)), key=lambda i: m["triples"][i])
+    assert all(chances(m)[a] > chances(m)[b] for a, b in zip(by_payout, by_payout[1:]))
+    # A reel is drawn in proportion to its weights.
+    with patch("fivestack.slots.secrets.randbelow", side_effect=range(sum(m["show"]))):
+        drawn = [draw_reel(m["show"]) for _ in range(sum(m["show"]))]
+    assert [drawn.count(i) for i in range(len(SYMBOLS))] == m["show"]
+    # The line is picked first, each triple over exactly its "lines" tickets of the 100,000: banana takes 0-399, ...,
+    # the Golden Onkey, the secret 200x symbol, the last 10 (12,400-12,409); every ticket after that is a loss.
+    tickets = [sum(m["lines"][:i]) for i in range(len(SYMBOLS) + 1)]
+    for i in range(len(SYMBOLS)):
+        for t in (tickets[i], tickets[i + 1] - 1):
+            with patch("fivestack.slots.secrets.randbelow", return_value=t):
+                assert draw_spin(m) == [i, i, i], (i, t)
+    # A loss is shown from the display weights, redrawn if they happen to match; the Golden Onkey shows on under 1% of
+    # those reels.
+    with patch("fivestack.slots.secrets.randbelow", return_value=tickets[-1]), \
+            patch("fivestack.slots.draw_reel", side_effect=[6, 6, 6, 6, 1, 6]):
+        assert draw_spin(m) == [6, 1, 6]
+    assert len(m["show"]) == len(SYMBOLS) and m["show"][6] * 100 < sum(m["show"])
+    assert [s["key"] for s in SYMBOLS if s.get("secret")] == ["golden"] and max(m["triples"]) == m["triples"][6] == 200
+    assert STAKES == (5, 10, 25, 50, 100, 250, 500)
+    for i, (machine, reels, mult, stake) in enumerate([
+            (None, [0, 0, 0], 40, 10), ("jackpot", [1, 1, 1], 3, 10), ("jackpot", [6, 6, 6], 200, 500),
+            ("jackpot", [0, 1, 2], 0, 250), ("jackpot", [5, 5, 5], 80, 10), ("jackpot", [1, 1, 2], 0, 10)]):
         before = db.get_bettor("Spinner")["balance"]
-        with patch("fivestack.slots.secrets.randbelow", side_effect=reels):
-            out = manager.spin("spinner", machine, 10, f"test-spin-{i:016d}")
-        assert out["spin"]["reels"] == reels and out["spin"]["payout"] == 10 * mult
-        assert out["balance"] == before + 10 * (mult - 1)
+        with patch("fivestack.slots.draw_spin", return_value=reels):
+            out = manager.spin("spinner", machine, stake, f"test-spin-{i:016d}")
+        assert out["spin"]["reels"] == reels and out["spin"]["payout"] == stake * mult
+        assert out["balance"] == before + stake * (mult - 1)
         # Same request after a lost response: return the original outcome without a charge or a re-roll.
-        assert manager.spin("Spinner", machine, 10, f"test-spin-{i:016d}") == out
+        assert manager.spin("Spinner", machine, stake, f"test-spin-{i:016d}") == out
     assert [m["name"] for m in manager.summary()["machines"]] == ["Slots"]
     before = db.get_bettor("Spinner")["balance"]
     for machine, stake, request in [("classic", 10, "retired-reference"), ("missing", 10, "valid-reference-1"), ([], 10, "valid-reference-1"),
                                     ("jackpot", True, "valid-reference-1"), ("jackpot", "10", "valid-reference-1"),
                                     ("jackpot", float("nan"), "valid-reference-1"), ("jackpot", float("inf"), "valid-reference-1"),
                                     ("jackpot", -5, "valid-reference-1"), ("jackpot", 10.5, "valid-reference-1"),
+                                    ("jackpot", 1000, "valid-reference-1"),
                                     ("jackpot", None, "valid-reference-1"), ("jackpot", 10, None),
                                     ("jackpot", 10, "bad"), ("jackpot", 25, "test-spin-0000000000000000")]:
         try:
@@ -807,17 +832,17 @@ def slots(shared):
         else:
             raise AssertionError("unfunded or missing bettor spun")
     # Concurrent retries settle exactly once; concurrent different requests cannot overdraw.
-    with patch("fivestack.slots.secrets.randbelow", return_value=0), ThreadPoolExecutor(4) as pool:
+    with patch("fivestack.slots.draw_spin", return_value=[0, 0, 0]), ThreadPoolExecutor(4) as pool:
         results = list(pool.map(lambda _: manager.spin("Spinner", "jackpot", 5, "concurrent-retry-1"), range(8)))
     assert len({r["spin"]["id"] for r in results}) == 1
-    assert db.get_bettor("Spinner")["balance"] == before + 35
+    assert db.get_bettor("Spinner")["balance"] == before + 5 * (40 - 1)
     db.create_bettor("LastFive", 5)
     def attempt(i):
         try:
             return manager.spin("LastFive", "jackpot", 5, f"concurrent-spend-{i}")
         except BetError:
             return None
-    with patch("fivestack.slots.secrets.randbelow", side_effect=[0, 1, 2]), ThreadPoolExecutor(4) as pool:
+    with patch("fivestack.slots.draw_spin", return_value=[0, 1, 2]), ThreadPoolExecutor(4) as pool:
         assert sum(r is not None for r in pool.map(attempt, range(4))) == 1
     assert db.get_bettor("LastFive")["balance"] == 0
     # The ledger insert and credit movement roll back together if storage fails.
@@ -836,22 +861,51 @@ def slots(shared):
     assert db.banana_wallet("Spinner") == 0 and not db.bets()
     assert manager.summary()["me"] is None and manager.summary()["history"] == []
     summary = manager.summary(db.get_bettor("Spinner"))
-    assert summary["me"]["spins"] == 6 and summary["me"]["net"] == before - 1000
-    assert len(summary["history"]) == 6
+    assert summary["me"]["spins"] == 7 and summary["me"]["net"] == before - 1000
+    assert len(summary["history"]) == 7
+    # Line stats: each triple hit (two bananas, a cherry, an Onkey, a Golden Onkey) out of the bettor's tracked spins.
+    assert summary["lines"]["spins"] == 7 and summary["lines"]["hits"] == [2, 1, 0, 0, 0, 1, 1]
+    # The house: 800 staked by everyone, 101,430 paid out (100,000 of it the Golden Onkey jackpot), and the 5% edge it
+    # expected to keep, which leaves the jackpot out (every spin recorded the 95% return without it).
+    house = summary["house"]
+    assert house["spins"] == 8 and house["staked"] == 800 and house["paid"] == 101430 and house["actual_take"] == -100630
+    assert house["secret_paid"] == 100000 and house["expected_take"] == round(800 * (1 - rtp(m)), 2) == 40.0
+    # Season stats: 5 wins in 7 spins, the Golden Onkey the biggest, and the last spin (the concurrent banana) a win.
+    assert summary["me"]["wins"] == 5 and summary["me"]["since_win"] == 0
+    assert summary["me"]["best"]["payout"] == 100000 and summary["me"]["best"]["reels"] == [6, 6, 6]
+    # The squad's biggest wins this season, biggest first.
+    assert [w["payout"] for w in summary["big_wins"]] == [100000, 800, 400, 200, 30]
+    assert {w["bettor"] for w in summary["big_wins"]} == {"Spinner"} and summary["big_wins"][0]["reels"] == [6, 6, 6]
     season = bets.reset()
     assert manager.summary(db.get_bettor("Spinner"))["me"]["spins"] == 0
-    assert db.query_one("SELECT COUNT(*) AS n FROM slot_spins WHERE season_id=?", (season["id"],))["n"] == 7
+    assert manager.summary()["big_wins"] == [] and manager.summary(db.get_bettor("Spinner"))["me"]["best"] is None
+    assert manager.house() == house and manager.lines("Spinner") == summary["lines"]  # both span every season
+    assert db.query_one("SELECT COUNT(*) AS n FROM slot_spins WHERE season_id=?", (season["id"],))["n"] == 8
     # Old retry keys survive a reset, and reopening an existing database preserves history.
     assert manager.spin("Spinner", "jackpot", 10, "test-spin-0000000000000000")["balance"] == 1000
     assert next(r for r in bets.leaderboard() if r["name"] == "Spinner")["slots"] == 0
     db.conn.close()
     reopened = DB(os.path.join(shared.tmp, "slots.db"))
-    assert reopened.query_one("SELECT COUNT(*) AS n FROM slot_spins")["n"] == 7
+    assert reopened.query_one("SELECT COUNT(*) AS n FROM slot_spins")["n"] == 8
     reopened.execute("INSERT INTO slot_spins(bettor,machine,stake,reels,multiplier,payout,created_ts,request_id) "
                      "VALUES('Spinner','classic',10,'[0,0,0]',18,180,0,'legacy-reference')")
     old = SlotManager(reopened).spin("Spinner", "classic", 10, "legacy-reference")
     assert old["spin"]["payout"] == 180 and old["balance"] == 1000
+    # Spins from before tracking began (no rtp) count in neither the line stats nor the house's take.
+    assert SlotManager(reopened).house() == house and SlotManager(reopened).lines("Spinner") == summary["lines"]
     reopened.conn.close()
+    # A database whose slot_spins predates the rtp column gets it on open.
+    import sqlite3
+    legacy_path = os.path.join(shared.tmp, "slots-legacy.db")
+    con = sqlite3.connect(legacy_path)
+    con.execute("CREATE TABLE slot_spins (id INTEGER PRIMARY KEY AUTOINCREMENT, bettor TEXT NOT NULL, machine TEXT NOT NULL, "
+                "stake REAL NOT NULL, reels TEXT NOT NULL, multiplier INTEGER NOT NULL, payout REAL NOT NULL, created_ts REAL NOT NULL, "
+                "request_id TEXT NOT NULL, season_id INTEGER, UNIQUE(bettor, request_id))")
+    con.commit()
+    con.close()
+    legacy = DB(legacy_path)
+    assert "rtp" in {r["name"] for r in legacy.query("PRAGMA table_info(slot_spins)")}
+    legacy.conn.close()
 
 
 @section("transfers")

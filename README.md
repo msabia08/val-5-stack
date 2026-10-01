@@ -23,22 +23,47 @@ button shows the page you're on.
 ## Slots
 
 Open **Betting → Slots** and sign in with your betting account. Pick a stake of
-5, 10, 25, 50 or 100 virtual credits, then spin. Three matching symbols on the
-centre line pay: banana / cherry / bell / diamond / spike / Onkey return
-8× / 12× / 20× / 30× / 50× / 80× your stake. Pairs and mixed symbols pay zero.
+5, 10, 25, 50, 100, 250 or 500 virtual credits, then spin. Three matching
+symbols on the centre line pay, and the bigger the payout the rarer the line:
 
-The cabinet has continuous reels that accelerate, slow down, and stop from left
-to right. Sound on/off controls the spin, stop and win tones. Reduced motion
-shows the result immediately without rolling the reels.
+| Line | Chance | Pays |
+|---|---|---|
+| Onkey | 1 in 500 | 80× |
+| Banana | 1 in 250 | 40× |
+| Diamond | 1 in 125 | 20× |
+| Spike | 1 in 50 | 8× |
+| Bell | 1 in 25 | 4× |
+| Cherry | 1 in 20 | 3× |
 
-Each of the three reels independently picks one of six equally likely symbols.
-All payouts include the stake; other results return zero. The average return is
-92.59% over many spins. The pay table shows
-the credit payout for your selected stake. Results settle immediately on the
-server and cannot be cancelled; retrying an interrupted request recovers the
-same spin without paying again.
+There is also a rarer secret symbol that isn't on the pay table. Pairs and mixed
+symbols pay zero; some line hits about once every 8 spins. Each spin decides its
+line first, with exactly the chances above, and a losing spin then shows a
+random mix of symbols, so the reels show what you won.
 
-Your last ten spins and season net appear below the machine. Slots affect your
+Pull the lever on the side of the machine or press the red Spin button. The
+reels clank as they turn and stop from left to right, waiting longer before the
+next reel the bigger the symbol already showing; the readout under the reels shows
+your credits, the bet and the last win. Bigger wins get bigger celebrations: diamonds, then bananas, then
+Onkey each step it up. When the first two reels match, the third may keep
+spinning and creep up to the line so slowly you can't tell whether it will land,
+more often and for longer the bigger the pair; it happens on wins and losses
+alike, so it never gives the result away. The speaker button in the marquee
+mutes the sounds and remembers your choice. Reduced motion shows the result immediately without rolling
+the reels or teasing, and keeps win celebrations to a glow and a banner.
+
+All payouts include the stake; other results return zero. The lines in the table
+return 95% over many spins, a 5% house edge; the secret jackpot is a bonus on top
+of that, so it doesn't make the other lines any harder. The pay table shows each
+line's chance, the credit payout for your selected stake, and how many times
+you've hit it (counted across seasons, from spins made since line stats were
+added). Results settle immediately on the server and cannot be cancelled;
+retrying an interrupted request recovers the same spin without paying again.
+
+Below the machine are your last ten spins, your season (spins, net, how often
+you win against the odds, spins since your last win and your biggest win) and the
+squad's five biggest wins this season. When a tease reaches the line it teeters
+half on and half off the matching symbol, then snaps one way or the other: onto it
+for a win, or back short of it or forward past it for a loss. Slots affect your
 credit balance and have a separate **Slots** column in Standings; match-betting
 profit, ROI and records exclude them. Slots do not earn bananas. A season reset
 keeps the spin records with that season and starts fresh slot totals.

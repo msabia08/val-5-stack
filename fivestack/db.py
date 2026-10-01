@@ -264,6 +264,7 @@ CREATE TABLE IF NOT EXISTS slot_spins (
     created_ts REAL NOT NULL,
     request_id TEXT NOT NULL,
     season_id INTEGER REFERENCES seasons(id),
+    rtp REAL,  -- the expected return the spin was played at; NULL before line stats and house tracking began
     UNIQUE(bettor, request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_slots_season ON slot_spins(season_id, bettor);
@@ -314,6 +315,8 @@ class DB:
             for col in ("salt", "password_hash"):
                 if col not in cols:
                     self.conn.execute(f"ALTER TABLE bettors ADD COLUMN {col} TEXT")
+            if "rtp" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(slot_spins)").fetchall()}:
+                self.conn.execute("ALTER TABLE slot_spins ADD COLUMN rtp REAL")
             self.conn.commit()
 
     # ---- low level -------------------------------------------------------

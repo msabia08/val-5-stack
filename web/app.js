@@ -1319,7 +1319,7 @@
     shop.init({ state, $, $$, api, draw, esc, fmt, kpi, toast, confetti, onShop: () => checkTheme() });
     window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
     window.FiveArcade.init({ state, $, $$, api, draw, esc, fmt, toast, nameHtml: shop.nameHtml, loadMe });
-    window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe });
+    window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName });
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
     // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms
     // it's owned (checkTheme, after every shop load), so a saved or ?theme= one waits, and one you don't own is dropped.
