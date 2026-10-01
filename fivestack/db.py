@@ -289,6 +289,66 @@ CREATE TABLE IF NOT EXISTS house_ledger (
     UNIQUE(game, ref)
 );
 CREATE INDEX IF NOT EXISTS idx_house_season ON house_ledger(season_id, game);
+
+-- Blackjack (blackjack.py): one row per bettor per round, all their hands (two after a split). Kept through resets.
+CREATE TABLE IF NOT EXISTS blackjack_hands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL REFERENCES bettors(name),
+    tbl TEXT NOT NULL,           -- solo or shared
+    round INTEGER NOT NULL,
+    stake REAL NOT NULL,         -- everything staked, doubles and splits included
+    payout REAL NOT NULL,        -- stakes included; the refund for a void round
+    hands TEXT NOT NULL,         -- JSON: each hand's cards, stake, doubled, split, result, payout
+    dealer TEXT NOT NULL,        -- JSON: the dealer's cards
+    status TEXT NOT NULL,        -- playing, settled or void
+    note TEXT,
+    created_ts REAL NOT NULL,
+    settled_ts REAL,
+    request_id TEXT NOT NULL,
+    edge REAL,
+    season_id INTEGER REFERENCES seasons(id),
+    UNIQUE(bettor, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_blackjack_season ON blackjack_hands(season_id, bettor);
+
+-- Poker (poker.py): the chips at the table (the escrow, one row per seated bettor), every buy-in, top-up and
+-- cash-out, every finished hand and each player's net from it. All but the seats are kept through resets.
+CREATE TABLE IF NOT EXISTS poker_seats (
+    bettor TEXT PRIMARY KEY REFERENCES bettors(name),
+    seat INTEGER NOT NULL,
+    stack INTEGER NOT NULL,
+    joined_ts REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS poker_buyins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    kind TEXT NOT NULL,          -- buyin, topup or cashout
+    amount INTEGER NOT NULL,
+    created_ts REAL NOT NULL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE TABLE IF NOT EXISTS poker_hands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_ts REAL NOT NULL,
+    ended_ts REAL NOT NULL,
+    settings TEXT NOT NULL,
+    board TEXT NOT NULL,
+    players TEXT NOT NULL,
+    pots TEXT NOT NULL,
+    pot INTEGER NOT NULL,
+    rake INTEGER NOT NULL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE TABLE IF NOT EXISTS poker_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hand_id INTEGER NOT NULL REFERENCES poker_hands(id),
+    bettor TEXT NOT NULL,
+    start INTEGER NOT NULL,
+    end INTEGER NOT NULL,
+    net INTEGER NOT NULL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE INDEX IF NOT EXISTS idx_poker_results_season ON poker_results(season_id, bettor);
 """
 
 MATCH_FIELDS = [
@@ -649,7 +709,8 @@ class DB:
                 self.conn.execute("DELETE FROM rewards")
                 self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
-                self.conn.execute("UPDATE house_ledger SET season_id=? WHERE season_id IS NULL", (sid,))
+                for table in ("house_ledger", "blackjack_hands", "poker_buyins", "poker_hands", "poker_results"):
+                    self.conn.execute(f"UPDATE {table} SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.
                 self.conn.execute(

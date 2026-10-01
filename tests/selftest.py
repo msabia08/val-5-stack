@@ -936,6 +936,329 @@ def slots(shared):
     legacy.conn.close()
 
 
+def _expect_error(fn, *args, contains=""):
+    try:
+        fn(*args)
+    except BetError as e:
+        assert contains in str(e), (contains, str(e))
+        return str(e)
+    raise AssertionError(f"expected an error containing {contains!r}")
+
+
+@section("blackjack")
+def blackjack(shared):
+    import threading
+    from contextlib import contextmanager
+    from unittest.mock import patch
+    from fivestack import cards
+    from fivestack.blackjack import BlackjackManager, is_blackjack, outcome, total
+    from fivestack.house import HouseManager, casino_nets
+
+    assert total(["As", "Kd"]) == (21, True) and is_blackjack(["As", "Kd"]) and not is_blackjack(["As", "Kd"], split=True)
+    assert total(["As", "Ah", "9c"]) == (21, True) and total(["Kh", "Qd", "2c"]) == (22, False)
+    assert total(["As", "6d", "Kc"]) == (17, False)
+    hand = lambda cs, stake=10, split=False: {"cards": cs, "stake": stake, "split": split}
+    assert outcome(hand(["As", "Kd"]), ["Th", "9c"]) == ("blackjack", 25)
+    assert outcome(hand(["As", "Kd"]), ["Ah", "Qc"]) == ("push", 10)
+    assert outcome(hand(["Th", "9d"]), ["Ah", "Qc"]) == ("lose", 0)
+    assert outcome(hand(["Th", "9d"]), ["Th", "6c", "Kd"]) == ("win", 20)
+    assert outcome(hand(["Th", "9d", "5c"]), ["Th", "6c", "Kd"]) == ("bust", 0)
+    assert outcome(hand(["Th", "7d"]), ["Th", "7c"]) == ("push", 10)
+
+    db = DB(os.path.join(shared.tmp, "casino.db"))
+    for n in ("Ace", "Bea", "Cy", "S1", "S2", "S3"):
+        db.create_bettor(n, 1000)
+    db.create_bettor("Broke", 3)
+    clock = [1000.0]
+    bj = BlackjackManager(db, clock=lambda: clock[0])
+    filler = cards.deck(2)
+
+    @contextmanager
+    def stack(*cs):  # the next deal comes from a fresh shoe starting with these cards
+        for t in bj.tables.values():
+            t.shoe = []
+        with patch("fivestack.cards.shuffled", return_value=list(cs) + filler):
+            yield
+    bal = lambda n: db.get_bettor(n)["balance"]
+    ref = iter(f"bj-reference-{i:08d}" for i in range(1000))
+
+    # Solo: the deal goes you, the dealer, you, the dealer. 10 + 7 hits a 4 for 21 (which stands by itself); the
+    # dealer's 9 + 8 stands on 17, and you win even money.
+    with stack("Th", "9s", "7d", "8c", "4h"):
+        r1 = next(ref)
+        v = bj.bet("Ace", "solo", 10, r1)
+        assert bal("Ace") == 990 and v["phase"] == "playing" and v["me"]["actions"] == ["hit", "stand", "double"]
+        assert v["dealer"]["cards"] == ["9s", None] and v["dealer"]["total"] == 9  # the hole card stays hidden
+        _expect_error(bj.action, "Ace", "solo", "hit", 5, contains="moved on")
+        _expect_error(bj.action, "Ace", "solo", "split", 0, contains="can't do that")
+        v = bj.action("Ace", "solo", "hit", 0)
+    assert v["phase"] == "done" and v["dealer"]["cards"] == ["9s", "8c"] and v["seats"][0]["hands"][0]["result"] == "win"
+    assert bal("Ace") == 1010
+    assert bj.bet("Ace", "solo", 10, r1)["me"]["balance"] == 1010  # a retried bet isn't charged again
+    row = db.query_one("SELECT * FROM blackjack_hands WHERE request_id=?", (r1,))
+    assert row["status"] == "settled" and row["stake"] == 10 and row["payout"] == 20
+    assert db.query_one("SELECT take, expected FROM house_ledger WHERE ref=?", (f"hand:{row['id']}",)) == {"take": -10, "expected": 0.05}
+    # A natural pays 3:2 straight away (the dealer's 9 up means no peek, and the dealer doesn't draw).
+    with stack("As", "9s", "Kd", "7c"):
+        v = bj.bet("Ace", "solo", 10, next(ref))
+    assert v["phase"] == "done" and v["seats"][0]["hands"][0]["result"] == "blackjack" and v["dealer"]["cards"] == ["9s", "7c"]
+    assert bal("Ace") == 1025
+    # The dealer peeks under an ace: a dealer blackjack takes only the stake, before you can double or split.
+    with stack("Th", "As", "9d", "Kc"):
+        v = bj.bet("Ace", "solo", 10, next(ref))
+    assert v["phase"] == "done" and v["dealer"]["blackjack"] and bal("Ace") == 1015
+    # Doubling 11 into 21 against the dealer's 17 wins the doubled stake.
+    with stack("6h", "Ts", "5d", "7c", "Tc"):
+        bj.bet("Ace", "solo", 10, next(ref))
+        assert bal("Ace") == 1005
+        v = bj.action("Ace", "solo", "double", 0)
+    assert v["seats"][0]["hands"][0]["doubled"] and v["seats"][0]["hands"][0]["payout"] == 40 and bal("Ace") == 1035
+    # Splitting eights: each hand takes a card (10 and K, 18 each), both stand, the dealer's 16 draws a K and busts.
+    with stack("8h", "9s", "8d", "7c", "Tc", "Kd", "Kc"):
+        bj.bet("Ace", "solo", 10, next(ref))
+        v = bj.action("Ace", "solo", "split", 0)
+        assert bal("Ace") == 1015 and [h["total"] for h in v["seats"][0]["hands"]] == [18, 18]
+        assert v["me"]["actions"] == ["hit", "stand", "double"]  # double after a split, but no second split
+        bj.action("Ace", "solo", "stand", 1)
+        v = bj.action("Ace", "solo", "stand", 2)
+    assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "win"] and bal("Ace") == 1055
+    assert db.query_one("SELECT stake, payout FROM blackjack_hands ORDER BY id DESC LIMIT 1") == {"stake": 20, "payout": 40}
+    assert v["me"]["season"]["hands"] == 5 and v["me"]["season"]["net"] == 55 and v["me"]["season"]["blackjacks"] == 1
+    _expect_error(bj.bet, "Broke", "solo", 5, next(ref), contains="Not enough credits")
+    _expect_error(bj.bet, "Ace", "solo", 7, next(ref), contains="Choose a stake")
+    _expect_error(bj.bet, "Ace", "solo", 5, "short", contains="reference")
+
+    # The shared table: five seats.
+    for n in ("Ace", "Bea", "S1", "S2", "S3"):
+        bj.sit(n)
+    _expect_error(bj.sit, "Cy", contains="full")
+    for n in ("S1", "S2", "S3"):
+        bj.leave(n)
+    _expect_error(bj.bet, "Cy", "shared", 10, next(ref), contains="Take a seat")
+    # Betting closes when everyone seated has bet. Ace 10 + 6, Bea a pair of nines, the dealer 7 + 10.
+    with stack("Th", "9h", "7s", "6d", "9c", "Ts"):
+        v = bj.bet("Ace", "shared", 10, next(ref))
+        assert v["phase"] == "betting" and v["deadline"] == 1015
+        v = bj.bet("Bea", "shared", 10, next(ref))
+    assert v["phase"] == "playing" and v["turn"] == {"bettor": "Ace", "hand": 0} and v["deadline"] == 1030
+    assert bj.view("Bea", "shared")["me"]["actions"] == []
+    _expect_error(bj.action, "Bea", "shared", "stand", 0, contains="not your turn")
+    version = v["version"]
+    bj.tick(1029)
+    assert bj.view("Ace", "shared")["version"] == version  # nothing happened yet
+    clock[0] = 1031
+    bj.tick(1031)  # Ace's turn timed out: they stand on 16
+    v = bj.view("Bea", "shared")
+    assert v["turn"] == {"bettor": "Bea", "hand": 0} and "split" in v["me"]["actions"] and v["log"][-1]["kind"] == "stand"
+    assert v["log"][-2]["kind"] == "timeout"
+    v = bj.action("Bea", "shared", "stand", 0)
+    assert v["phase"] == "done" and v["next_round_at"] == 1036
+    assert bal("Ace") == 1045 and bal("Bea") == 1010
+    _expect_error(bj.bet, "Ace", "shared", 10, next(ref), contains="Bets open again")
+    bj.tick(1037)
+    v = bj.view("Ace", "shared")
+    assert v["phase"] == "betting" and v["round"] == 1 and v["seats"][0]["hands"] == []
+    # With only one bet, betting closes BET_WINDOW_S after it.
+    with stack("Th", "7s", "9h", "Ts"):
+        clock[0] = 1040
+        bj.bet("Ace", "shared", 25, next(ref))
+        bj.tick(1050)
+        assert bj.view("Ace", "shared")["phase"] == "betting"
+        bj.tick(1056)
+    assert bj.view("Ace", "shared")["phase"] == "playing"
+    _expect_error(bj.leave, "Ace", contains="Finish your hand")
+    clock[0] = 1060
+    bj.action("Ace", "shared", "stand", 0)  # 19 against 17
+    assert bal("Ace") == 1070
+    bj.tick(1070)
+    # A bet left before the deal comes back.
+    bj.bet("Ace", "shared", 10, next(ref))
+    bj.leave("Ace")
+    assert bal("Ace") == 1070 and db.query_one("SELECT status FROM blackjack_hands ORDER BY id DESC LIMIT 1")["status"] == "void"
+    # A hand in play when the server restarts (or the season ends) is refunded.
+    with stack("Th", "9s", "6d", "8c"):
+        bj.bet("Cy", "solo", 50, next(ref))
+    assert bal("Cy") == 950
+    BlackjackManager(db, clock=lambda: clock[0])
+    assert bal("Cy") == 1000 and db.query_one("SELECT status, note FROM blackjack_hands ORDER BY id DESC LIMIT 1") == {
+        "status": "void", "note": "The server restarted mid-hand"}
+    # Long-polling wakes as soon as the table changes.
+    woke = []
+    t = bj.tables["shared"]
+    waiter = threading.Thread(target=lambda: (bj.wait(t, t.version, 5), woke.append(time.time())))
+    started = time.time()
+    waiter.start()
+    time.sleep(0.05)
+    bj.sit("Cy")
+    waiter.join(3)
+    assert woke and woke[0] - started < 2
+    # Season results: blackjack counts in the casino column; the ledger has a row per settled round.
+    nets = casino_nets(db)
+    assert nets["ace"] == {"total": 70, "blackjack": 70} and nets["bea"] == {"total": 10, "blackjack": 10} and "cy" not in nets
+    games = {g["game"]: g for g in HouseManager(db).summary()["games"]}
+    assert games["blackjack"]["season"]["rounds"] == 8 and games["blackjack"]["season"]["take"] == -80
+    shared.casino_db = db
+
+
+@section("poker")
+def poker(shared):
+    from unittest.mock import patch
+    from fivestack import cards
+    from fivestack.house import HouseManager, casino_nets
+    from fivestack.poker import DEFAULTS, PokerManager, build_pots, check_settings, rake_for
+
+    royal = cards.best_hand(["As", "Ks", "Qs", "Js", "Ts", "2d", "3c"])
+    assert cards.describe(royal[0]) == "Royal flush" and sorted(royal[1]) == sorted(["As", "Ks", "Qs", "Js", "Ts"])
+    assert cards.describe(cards.best_hand(["Ah", "2d", "3c", "4s", "5h", "Kd", "Kc"])[0]) == "Five-high straight"
+    assert cards.describe(cards.best_hand(["Kh", "Kd", "Kc", "5s", "5h", "2d", "9c"])[0]) == "Kings full of Fives"
+    assert cards.describe(cards.best_hand(["6h", "6d", "Kc", "Ks", "2h", "3d", "9c"])[0]) == "Two pair, Kings and Sixes"
+    assert cards.best_hand(["Ah", "Ad", "Kc", "Qs", "2h"])[0] > cards.best_hand(["Kh", "Kd", "Ac", "Qs", "2h"])[0]
+    assert build_pots({0: 50, 1: 200, 2: 200}, {0, 1, 2}) == [
+        {"amount": 150, "eligible": [0, 1, 2]}, {"amount": 300, "eligible": [1, 2]}]
+    assert build_pots({0: 100, 1: 100, 2: 40}, {0, 1}) == [{"amount": 240, "eligible": [0, 1]}]
+    assert rake_for(100, True) == 1 and rake_for(1000, True) == 5 and rake_for(1000, False) == 0 and rake_for(99, True) == 0
+    assert check_settings({"limit": "pot"}, DEFAULTS)["limit"] == "pot"
+    for bad, msg in (({"min_buyin": 50}, "at least 10 big blinds"), ({"max_buyin": 2000}, "Buy-ins go"),
+                     ({"small_blind": 3}, "Pick blinds"), ({"limit": "spread"}, "Pick no limit"),
+                     ({"turn_seconds": 7}, "turn timer")):
+        _expect_error(check_settings, bad, DEFAULTS, contains=msg)
+
+    db = shared.casino_db
+    start_total = sum(r["balance"] for r in db.query("SELECT balance FROM bettors"))
+    clock = [5000.0]
+    pk = PokerManager(db, clock=lambda: clock[0])
+    bal = lambda n: db.get_bettor(n)["balance"]
+    stack = lambda *cs: patch("fivestack.cards.shuffled", return_value=list(cs) + [c for c in cards.deck() if c not in cs])
+    ace0, cy0 = bal("Ace"), bal("Cy")
+
+    _expect_error(pk.sit, "Ace", 100, contains="Buy in for 200 to 1000")
+    pk.sit("Ace", 500)
+    pk.sit("Bea", 500)
+    assert bal("Ace") == ace0 - 500 and db.query_one("SELECT stack FROM poker_seats WHERE bettor='Ace'")["stack"] == 500
+    _expect_error(pk.sit, "Ace", 500, contains="already at the table")
+    pk.set_ready("Ace", True)
+    assert pk.view("Ace")["phase"] == "lobby"  # everyone has to ready up
+    # Hand 1, heads-up: Ace has the button and the small blind and acts first. Bea's cards come first.
+    with stack("2h", "3h", "7c", "8d", "Jc", "Kc", "Qd", "4s", "9s", "5d", "Ts", "6c"):
+        v = pk.set_ready("Bea", True)
+    assert v["phase"] == "playing" and v["hand"]["no"] == 1 and v["hand"]["pot"] == 15
+    a = pk.view("Ace")
+    assert a["me"]["legal"] == {"fold": True, "check": False, "call": 5, "raise": {"min": 20, "max": 500}, "verb": "Raise"}
+    assert a["seats"][0]["cards"] == ["3h", "8d"] and a["seats"][1]["cards"] is None and a["seats"][1]["hidden"] == 2
+    _expect_error(pk.update_settings, "Ace", {"limit": "pot"}, contains="once the game stops")
+    _expect_error(pk.act, "Bea", "check", None, 1, 0, contains="not your turn")
+    _expect_error(pk.act, "Ace", "raise", 15, 1, 0, contains="between 20 and 500")
+    _expect_error(pk.act, "Ace", "call", None, 1, 3, contains="moved on")
+    pk.act("Ace", "raise", 30, 1, 0)
+    pk.act("Bea", "call", None, 1, 1)
+    v = pk.view("Bea")
+    assert v["hand"]["street"] == "flop" and v["hand"]["board"] == ["Kc", "Qd", "4s"] and v["hand"]["to_act"] == 1
+    pk.act("Bea", "check", None, 1, 2)
+    pk.act("Ace", "raise", 50, 1, 3)  # a bet of 50
+    v = pk.act("Bea", "fold", None, 1, 4)
+    # Ace's uncalled 50 comes back; no showdown, so no cards are shown. The pot was 60: 1% of it rounds down to 0.
+    assert v["hand"]["street"] == "done" and v["last"]["pot"] == 60 and v["last"]["rake"] == 0 and not v["last"]["showdown"]
+    assert [s["stack"] for s in v["seats"][:2]] == [530, 470] and v["seats"][0]["cards"] is None
+    assert db.query("SELECT bettor, net FROM poker_results ORDER BY id") == [{"bettor": "Ace", "net": 30}, {"bettor": "Bea", "net": -30}]
+    assert v["next_hand_at"] == 5006
+    # Hand 2: the button moves to Bea. Aces against kings, checked down: the pot of 200 pays 2 to the house.
+    with stack("As", "Kd", "Ah", "Kc", "5h", "2c", "7d", "9h", "6h", "3s", "8h", "4d"):
+        pk.tick(5007)
+    v = pk.view("Bea")
+    assert v["hand"]["no"] == 2 and v["seats"][1]["button"] and v["seats"][1]["sb"] and v["hand"]["to_act"] == 1
+    clock[0] = 5008
+    pk.act("Bea", "raise", 100, 2, 0)
+    pk.act("Ace", "call", None, 2, 1)
+    step = 2
+    for _ in range(3):  # flop, turn, river: Ace (out of position) then Bea
+        pk.act("Ace", "check", None, 2, step)
+        pk.act("Bea", "check", None, 2, step + 1)
+        step += 2
+    v = pk.view("Bea")
+    assert v["last"]["showdown"] and v["last"]["rake"] == 2
+    assert v["last"]["pots"] == [{"amount": 198, "winners": ["Ace"], "hand": "Pair of Aces"}]
+    assert v["seats"][0]["cards"] == ["As", "Ah"] and v["seats"][1]["cards"] == ["Kd", "Kc"]  # both shown at showdown
+    assert [s["stack"] for s in v["seats"][:2]] == [628, 370]
+    # Cy sits down between hands and readies up: hand 3 is three-handed with Cy on the button.
+    pk.sit("Cy", 200)
+    pk.set_ready("Cy", True)
+    with stack("Qh", "Kh", "Ah", "Qd", "Kd", "Ad", "5h", "2c", "7s", "9h", "6h", "3s", "8h", "4c"):
+        pk.tick(5020)
+    v = pk.view("Cy")
+    assert v["hand"]["no"] == 3 and v["seats"][2]["button"] and v["seats"][0]["sb"] and v["seats"][1]["bb"]
+    assert v["hand"]["to_act"] == 2
+    clock[0] = 5021
+    pk.act("Cy", "allin", None, 3, 0)          # 200
+    pk.act("Ace", "allin", None, 3, 1)         # 628, a full raise
+    v = pk.act("Bea", "call", None, 3, 2)      # all in for 370; the board runs out
+    # Ace's uncalled 258 comes back. Main pot 600 (all three), side pot 340 (Ace and Bea); 5 credits of rake (the cap)
+    # come out of the bigger pot. Cy's aces take the main pot, Bea's kings the side pot.
+    last = v["last"]
+    assert last["pot"] == 940 and last["rake"] == 5 and len(last["board"]) == 5
+    assert last["pots"] == [{"amount": 595, "winners": ["Cy"], "hand": "Pair of Aces"},
+                            {"amount": 340, "winners": ["Bea"], "hand": "Pair of Kings"}]
+    assert [s["stack"] for s in v["seats"][:3]] == [258, 340, 595]
+    assert sum(r["net"] for r in db.query("SELECT net FROM poker_results")) == -7  # what the house took, 2 + 5
+    # Everyone un-readies: the game stops at the next deal, and the rules can change (un-readying everyone).
+    for n in ("Ace", "Bea", "Cy"):
+        pk.set_ready(n, False)
+    pk.tick(5030)
+    assert pk.view("Ace")["phase"] == "lobby" and pk.view("Ace")["hand"] is None
+    pk.set_ready("Ace", True)
+    v = pk.update_settings("Bea", {"limit": "pot", "small_blind": 10, "big_blind": 20})
+    assert v["settings"]["limit"] == "pot" and not any(s and s["ready"] for s in v["seats"])
+    assert db.get_meta("poker_settings")["big_blind"] == 20
+    pk.leave("Cy")
+    assert bal("Cy") == cy0 - 200 + 595
+    # Pot limit: the small blind can raise to at most the pot after calling (20 + 30 + 10 = 60).
+    with stack(*cards.deck()):
+        pk.set_ready("Ace", True)
+        pk.set_ready("Bea", True)
+    v = pk.view("Ace")
+    assert v["me"]["legal"]["raise"] == {"min": 40, "max": 60}
+    _expect_error(pk.topup, "Ace", 100, contains="between hands")
+    # A turn that times out checks if it can, else folds; two in a row sit you out.
+    pk.tick(v["hand"]["deadline"] + 1)
+    v = pk.view("Ace")
+    assert v["last"]["no"] == v["hand"]["no"] and v["seats"][0]["timeouts"] == 1
+    assert [e["kind"] for e in v["log"][-3:]] == ["timeout", "fold", "win"]
+    with stack(*cards.deck()):
+        pk.tick(v["next_hand_at"] + 1)
+    v = pk.view("Bea")
+    pk.act("Bea", "call", None, v["hand"]["no"], 0)
+    pk.tick(pk.view("Ace")["hand"]["deadline"] + 1)  # Ace checks the option by timing out
+    v = pk.view("Ace")
+    assert v["seats"][0]["timeouts"] == 2 and not v["seats"][0]["ready"] and v["hand"]["street"] == "flop"
+    # Leaving mid-hand folds and cashes out when the hand ends.
+    pk.leave("Ace")
+    v = pk.view("Bea")
+    assert v["hand"]["street"] == "done" and v["seats"][0] is None
+    # Top-ups between hands, up to the maximum buy-in.
+    room = v["me"]["topup_room"]
+    _expect_error(pk.topup, "Bea", room + 1, contains="up to")
+    pk.topup("Bea", 50)
+    assert v["me"]["stack"] + 50 == pk.view("Bea")["me"]["stack"]
+    # A restart cashes out every seat at its stack from before the hand in play.
+    seat_stack = db.query_one("SELECT stack FROM poker_seats WHERE bettor='Bea'")["stack"]
+    before = bal("Bea")
+    PokerManager(db, clock=lambda: clock[0])
+    assert bal("Bea") == before + seat_stack and not db.query("SELECT * FROM poker_seats")
+    # Nothing was created or lost: every credit is in a balance or the house's rake.
+    rake = sum(r["rake"] for r in db.query("SELECT rake FROM poker_hands"))
+    assert abs(sum(r["balance"] for r in db.query("SELECT balance FROM bettors")) + rake - start_total) < 1e-6
+    nets = casino_nets(db)
+    assert nets["cy"]["poker"] == 395 and nets["ace"]["total"] == nets["ace"]["blackjack"] + nets["ace"]["poker"]
+    games = {g["game"]: g for g in HouseManager(db).summary()["games"]}
+    assert games["poker"]["season"]["take"] == rake and games["poker"]["season"]["staked"] == 0
+    # A season reset tags every casino row with the season and starts the casino column again.
+    bets = BetManager({"starting_balance": 1000}, db, shared.engine)
+    row = next(r for r in bets.leaderboard() if r["name"] == "Cy")
+    assert row["casino"] == nets["cy"]["total"] and row["profit"] == 0
+    bets.reset()
+    assert casino_nets(db) == {} and HouseManager(db).summary()["season_take"] == 0
+    assert db.query_one("SELECT COUNT(*) AS n FROM poker_results WHERE season_id IS NULL")["n"] == 0
+
+
 @section("transfers")
 def transfers(shared):
     db, bets = shared.db, shared.bets

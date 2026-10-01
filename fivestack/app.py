@@ -19,7 +19,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .arcade import ArcadeManager
+from .blackjack import BlackjackManager
 from .house import HouseManager
+from .poker import PokerManager
 from .slots import SlotManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bananas import BananaManager
@@ -78,6 +80,8 @@ class App:
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db)
         self.house = HouseManager(self.db)  # the casino's take; scaffolding for what the house will do with it
+        self.blackjack = BlackjackManager(self.db)
+        self.poker = PokerManager(self.db)
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
@@ -93,6 +97,26 @@ class App:
             self.tracker = Tracker(cfg, self.db, self.client, on_new_matches=self.on_new_matches)
         self.bananas.earn()  # credit gains from before the shop existed (or from a sync that stopped part-way)
         self.started = time.time()
+
+    def start_casino_clock(self, interval=0.25):
+        """Run the live tables' clocks (turn timers, betting windows, the pause between hands) on a daemon thread."""
+        def loop():
+            while True:
+                for manager in (self.blackjack, self.poker):
+                    try:
+                        manager.tick()
+                    except Exception as e:  # a clock failure must never stop the others
+                        print(f"[casino] {type(manager).__name__}.tick failed: {e}", flush=True)
+                time.sleep(interval)
+        threading.Thread(target=loop, name="casino-clock", daemon=True).start()
+
+    def reset_season(self):
+        """End the season: the casino tables close first (open blackjack hands refunded, poker seats cashed out), with
+        their locks held so nobody sits back down before the reset is done."""
+        with self.blackjack.lock, self.poker.lock:
+            self.blackjack.void_open("The season ended")
+            self.poker.close_all("The season ended")
+            return self.bets.reset()
 
     def on_new_matches(self, matches):
         settled = []
@@ -245,6 +269,26 @@ class Handler(BaseHTTPRequestHandler):
     def _raw_body(self):
         n = int(self.headers.get("Content-Length") or 0)
         return self.rfile.read(n) if n else b""
+
+    @staticmethod
+    def _casino_post(app, name, path, body):
+        bj, pk = app.blackjack, app.poker
+        which = body.get("table") or "solo"
+        routes = {
+            "/api/blackjack/sit": lambda: bj.sit(name),
+            "/api/blackjack/leave": lambda: bj.leave(name),
+            "/api/blackjack/bet": lambda: bj.bet(name, which, body.get("stake"), body.get("request_id")),
+            "/api/blackjack/action": lambda: bj.action(name, which, body.get("action"), body.get("step")),
+            "/api/poker/sit": lambda: pk.sit(name, body.get("buyin")),
+            "/api/poker/leave": lambda: pk.leave(name),
+            "/api/poker/ready": lambda: pk.set_ready(name, body.get("ready")),
+            "/api/poker/settings": lambda: pk.update_settings(name, body.get("settings")),
+            "/api/poker/topup": lambda: pk.topup(name, body.get("amount")),
+            "/api/poker/action": lambda: pk.act(name, body.get("action"), body.get("amount"), body.get("hand"), body.get("step")),
+        }
+        if path not in routes:
+            raise BetError("Unknown casino action.")
+        return routes[path]()
 
     def _body(self):
         raw = self._raw_body()
@@ -441,6 +485,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(app.slots.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/house":
             return self._json(app.house.summary())
+        if path in ("/api/blackjack", "/api/poker"):
+            me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
+            name = me["name"] if me else None
+            try:
+                since = int(qs["since"]) if "since" in qs else None
+            except ValueError:
+                since = None
+            if path == "/api/poker":
+                if since is not None:  # long-poll: answer when the table changes, or after 20 seconds
+                    app.poker.wait(app.poker.table, since, 20)
+                return self._json(app.poker.view(name))
+            which = qs.get("table") or "solo"
+            if which not in ("solo", "shared"):
+                return self._json({"error": "Pick the solo table or the shared table."}, 400)
+            if since is not None and which == "shared":
+                app.blackjack.wait(app.blackjack.tables["shared"], since, 20)
+            if which == "solo" and not name:
+                return self._json(app.blackjack.view(None, "shared") | {"table": "solo", "seats": [], "log": []})
+            return self._json(app.blackjack.view(name, which))
         if path == "/api/troop":
             return self._json(app.bananas.troop())
         if path == "/api/troop/profile":
@@ -615,6 +678,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not me:
                     return self._json({"error": "Sign in as a bettor to spin."}, 403)
                 return self._json(app.slots.spin(me["name"], body.get("machine"), body.get("stake"), body.get("request_id")))
+            if path.startswith("/api/blackjack/") or path.startswith("/api/poker/"):
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to play."}, 403)
+                return self._json(self._casino_post(app, me["name"], path, body))
             if path in ("/api/arcade/start", "/api/arcade/finish"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
@@ -636,7 +704,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "Admin password required for that."}, 403)
                 if str(body.get("confirm") or "").strip().upper() != "RESET":
                     return self._json({"error": "Type RESET to confirm ending the season."}, 400)
-                season = app.bets.reset()
+                season = app.reset_season()
                 app.bananas.earn()  # the new season's starting bananas (the reset zeroed every wallet)
                 return self._json({"ok": True, "season": season, "bettors": app.bets.leaderboard()})
             return self._json({"error": "Not found"}, 404)
@@ -712,6 +780,7 @@ def main():
             print(f"  - {p}")
     elif app.tracker:
         app.tracker.start()
+    app.start_casino_clock()
     if app.auth.enabled:
         print("Site password is on: visitors log in at /login.")
     if tunnel_mode != "off":
