@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .arcade import ArcadeManager
+from .slots import SlotManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bananas import BananaManager
 from .bets import TAX_MIN_TRANSFER, TAX_RATE, BetError, BetManager
@@ -74,6 +75,7 @@ class App:
         self.rewards = RewardManager(cfg, self.db, load_bettor_names())
         self.bananas = BananaManager(cfg, self.db, self.bets)
         self.arcade = ArcadeManager(self.db)
+        self.slots = SlotManager(self.db)
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
@@ -433,6 +435,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/arcade":
             return self._json(app.arcade.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
+        if path == "/api/slots":
+            return self._json(app.slots.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/troop":
             return self._json(app.bananas.troop())
         if path == "/api/troop/profile":
@@ -602,6 +606,11 @@ class Handler(BaseHTTPRequestHandler):
                         body.get("stake"), body.get("context") or {},
                     )
                 return self._json({"bet": bet, "bettors": app.bets.leaderboard()}, 201)
+            if path == "/api/slots/spin":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to spin."}, 403)
+                return self._json(app.slots.spin(me["name"], body.get("machine"), body.get("stake"), body.get("request_id")))
             if path in ("/api/arcade/start", "/api/arcade/finish"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -85,7 +85,11 @@
     }
     let data = {};
     try { data = await res.json(); } catch (e) { /* no body */ }
-    if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      const error = new Error(data.error || `${res.status} ${res.statusText}`);
+      error.status = res.status;
+      throw error;
+    }
     return data;
   }
   const loadStatus = async () => {
@@ -1113,6 +1117,7 @@
         case 'shop': view.innerHTML = window.FiveShop.viewShop(); break;
         case 'troop': view.innerHTML = window.FiveShop.viewTroop(); break;
         case 'arcade': view.innerHTML = window.FiveArcade.viewArcade(); break;
+        case 'slots': view.innerHTML = window.FiveSlots.view(); break;
         case 'matches': view.innerHTML = viewMatches(); break;
         default: view.innerHTML = viewSetup();
       }
@@ -1140,6 +1145,7 @@
         case 'shop': await Promise.all([window.FiveShop.loadShop(), window.FiveShop.loadTroop()]); break;
         case 'troop': await Promise.all([window.FiveShop.loadTroop(), window.FiveShop.loadProfile(), state.shop ? null : window.FiveShop.loadShop()]); break;
         case 'arcade': await window.FiveArcade.load(); break;
+        case 'slots': await window.FiveSlots.load(); break;
         case 'matches': await Promise.all([loadMatches(), loadRecap()]); break;
         default: await loadStatus();
       }
@@ -1193,6 +1199,7 @@
     }));
     window.FiveShop.bind(view);
     window.FiveArcade.bind(view);
+    window.FiveSlots.bind(view);
     $('#copy-url')?.addEventListener('click', async (e) => {
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
       catch (err) { toast('Could not copy; select the link and copy it manually', 'bad'); }
@@ -1574,6 +1581,7 @@
     shop.init({ state, $, $$, api, draw, esc, fmt, kpi, toast, confetti, onShop: () => checkTheme() });
     window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
     window.FiveArcade.init({ state, $, $$, api, draw, esc, fmt, toast, nameHtml: shop.nameHtml, loadMe });
+    window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe });
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
     // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms
     // it's owned (checkTheme, after every shop load), so a saved or ?theme= one waits, and one you don't own is dropped.

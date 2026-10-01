@@ -41,7 +41,7 @@ retire an old one, update this file in the same pull request.
 ## Navigation
 
 - The top bar holds 🏠 **Overview** on its own, then three dropdown groups (`.nav-group` in `index.html`):
-  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings) and 🐒 **Onkey's**
+  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings, Slots) and 🐒 **Onkey's**
   (Shop, Arcade, Monkeys). A new page joins the group it belongs to, as a menu row with an emoji, a name and a
   one-line description; don't add another top-level entry without a good reason.
 - A group's button shows the name and emoji of the page you're on (`syncNavGroups()`), so you always know where you
@@ -116,6 +116,29 @@ Reuse these before inventing new ones.
 | One list per player | `.ap-grid` > `.ap-col` (Charts, agent pool) | A column per player listing only what they have, instead of a sparse player × item grid |
 | Line-up tables | `table.roster`, `tbody.drop-target[data-zone]`, `.grip`, `tr.slot-empty`, `tr.me` (Squad, `viewSquad()`) | Two tables with the same columns, Active squad above Bench. Rows drag between them (a ⋮⋮ grip in the first cell, the target tbody outlined with a dashed accent while a row is over it) and every row also has a Bench / Swap in button, so the page works without a mouse. The squad's open spots are dashed `slot-empty` rows that say what to do; a button that can't apply (full squad, minimum size) stays visible but disabled with a `title` saying why. Your own row is tinted like your Standings row. A line-up change posts the whole order, so dropping a row also reorders the colours |
 | Inline add form | `.roster-add` (Squad) | One row: labelled inputs (Riot ID, nickname) ending in a button, with the explanation in a `.muted.small` line under it. The admin form sits folded in a `details.how` so the page stays about the tables |
+
+### Slots
+
+`#slots` lives under Betting, labelled Slots. One machine, no names or picker.
+`.slots-layout` pairs a wide arcade cabinet with a 348px pay table. Like the
+Arcade, the cabinet stays dark in every theme: `--slot-*` tokens define plum
+housing, gold controls and ivory reels. Surrounding cards follow the theme.
+A monospace marquee with Onkey's logo, a recessed reel window and a raised Spin
+button give the cabinet its shape. The gold centre line marks the paying symbols;
+adjacent symbols remain partly visible above and below. Five stake buttons show
+the selection. Payouts list largest first, with multipliers and current credits.
+Balance stays in the top bar; recent spins and season net follow below, without
+a machine column. Standings has a separate Slots column.
+
+Reels use continuous symbol strips moved with `translate3d` in requestAnimationFrame.
+They accelerate, then decelerate with matching incoming velocity and stop left
+to right on the server's result, with no artificial near misses. Repaints retain
+their positions; leaving the tab cancels motion. Reduced motion skips rolling.
+Wins light the cabinet and the matching pay-table row; synthesized sounds mark
+the spin, each stop and a win, with a persistent Sound on/off control. No idle
+animation. Results use a live status region and errors appear inline. An uncertain
+request locks stakes and offers "Check last spin"; "Sign in to spin" uses the
+existing account menu.
 
 ## Words
 
