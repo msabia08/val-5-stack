@@ -344,8 +344,9 @@ window.FiveOnkey = (() => {
   // away: html.onkey-away) and waddles across the page to the dealer's seat; the dealer's face stays hidden until he
   // arrives (html.onkey-walking). Leaving the tables, he walks back from where he sat. Reduced motion just swaps them.
   const SEAT = '.onkey-dealer .onkey-face';
-  // The tables hear about the walk: 'onkey:walking' when he sets off, 'onkey:seated' when he's in the chair (casino.js's
-  // Greg waits for it).
+  // The tables hear about the walk: 'onkey:walking' when he's about to set off (a listener can set detail.hold, in ms,
+  // to keep him in the logo a while first: casino.js does while Greg says his line), 'onkey:seated' when he's in the
+  // chair (Greg waits for it).
   const arrive = () => { root.classList.remove('onkey-walking'); document.dispatchEvent(new CustomEvent('onkey:seated')); };
   let away = false, seat = null, walker = null, walkToken = 0;
   const root = document.documentElement;
@@ -406,13 +407,18 @@ window.FiveOnkey = (() => {
     away = atTable;
     el?.closest('.brand')?.classList.remove('onkey-talking', 'onkey-excited');
     if (atTable) {
-      root.classList.add('onkey-away', 'onkey-walking');
-      document.dispatchEvent(new CustomEvent('onkey:walking'));
-      ++walkToken;
+      root.classList.add('onkey-walking');
+      const plan = { hold: 0 };
+      document.dispatchEvent(new CustomEvent('onkey:walking', { detail: plan }));
+      const token = ++walkToken;
       whenSeated((face) => {
-        seat = pageRect(face.getBoundingClientRect());
-        if (reduced() || !from) { arrive(); return; }
-        stride(from, viewRect(seat), arrive);
+        setTimeout(() => { // he stays in the logo for plan.hold, then gets up
+          if (token !== walkToken || !away) return;
+          root.classList.add('onkey-away');
+          seat = pageRect(face.getBoundingClientRect());
+          if (reduced() || !from) { arrive(); return; }
+          stride(from, viewRect(seat), arrive);
+        }, plan.hold);
       });
     } else {
       root.classList.remove('onkey-walking');

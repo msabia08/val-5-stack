@@ -336,8 +336,9 @@ The table is the page's personality, like the slots cabinet; the side cards are 
   in a handwriting font (about 1.9 s from the deal; `.fix-in`). The suits stay
   as they are. The total, the result and his line ("Onkey has a pen and no shame.") wait until he's finished.
 - **Greg in the chair** (casino.js, both tables): 1 time in 20 that Onkey walks to a table, Greg is sitting in the
-  dealer's chair when you get there (his face, "*Greg clears his throat*" and a line). When Onkey arrives he throws
-  Greg out: Greg spins off the felt, Onkey wobbles back into the chair and has his say.
+  dealer's chair when you get there (his face, "*Greg clears his throat*" and a line). Onkey waits in the logo until
+  Greg has said it (about 3 s), then walks over and throws him out: Greg spins off the felt, Onkey wobbles into the chair
+  and has his say.
 - **Onkey's hint** (blackjack): not every time: about one pause in three, at most once a round and never in the round
   after one. 3 seconds into your move (after the cards land), Onkey suggests the move the numbers favour
   in his bubble, as advice, never figures: plain ("{total} won't hold up. Hit it."), a joke ("Split them like a

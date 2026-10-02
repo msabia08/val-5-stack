@@ -246,17 +246,19 @@ window.FiveCasino = (() => {
 
   // ---- Greg ------------------------------------------------------------------------------------
   // Now and then (GREG_CHANCE of the times Onkey walks to a table, onkey.js's 'onkey:walking') Greg is sitting in the
-  // dealer's chair when you get there. He says his piece; when Onkey arrives ('onkey:seated', or straight away if he's
-  // already there), and Greg has had GREG_MIN_MS to talk, Onkey kicks him out of the chair with a line of his own.
-  const GREG_CHANCE = 0.05, GREG_MIN_MS = 3200;
+  // dealer's chair when you get there. He says his piece while Onkey waits in the logo (GREG_TALK_MS), then Onkey walks
+  // over; when he arrives ('onkey:seated', or straight away if he's already there), and Greg has had GREG_MIN_MS to talk,
+  // Onkey kicks him out of the chair with a line of his own.
+  const GREG_CHANCE = 0.05, GREG_MIN_MS = 3200, GREG_TALK_MS = 2800; // Onkey stays in the logo GREG_TALK_MS while Greg talks
   const GREG_IN = ['Hi! I\'m Greg. I\'ll be your dealer today.', 'Onkey\'s on a banana break. Greg\'s dealing. How hard can it be?',
     'Greg here. Do aces count as one or eleven? Asking for a friend.', 'Welcome to Greg\'s table. Greg has never done this before.'];
   const GREG_OUT = ['GREG. Out of Onkey\'s chair. Now.', 'Who let Greg in? Sorry, folks. Onkey is back.', 'Greg, we talked about this. OUT!',
     'Onkey leaves for one banana, and this happens. Shoo, Greg.'];
   let greg = null;
   const gregHere = () => !!(greg && greg.el.isConnected);
-  document.addEventListener('onkey:walking', () => {
+  document.addEventListener('onkey:walking', (e) => {
     if (Math.random() >= GREG_CHANCE) return;
+    if (e.detail) e.detail.hold = GREG_TALK_MS; // Onkey waits for Greg's line before he sets off
     const t0 = Date.now();
     const look = () => {
       const el = document.querySelector('.onkey-dealer');
