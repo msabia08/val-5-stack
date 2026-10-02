@@ -853,8 +853,9 @@ pays all of it.
 Separate from the house's money: one pick on the board pays **50% more
 profit** than its usual price until the next game is recorded, when a new one
 is picked. It's shown under the odds format toggle on Place bets and with a gold ring on its
-button. It's for singles of up to 100 credits; in a parlay that pick is at its
-usual price.
+button. It's for singles of up to 100 credits; put that pick in a **parlay**
+and the leg prices at its boosted odds too (marked with ⚡ in the slip and on
+the ticket), but the whole parlay's stake is capped the same way.
 
 Giveaways don't count toward betting profit or ROI. The Rankings show them in their
 own House column, and a season reset clears that column but not the pot or

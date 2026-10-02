@@ -2233,6 +2233,39 @@ def house_giveaways(shared):
     boosted = hbets.place("Bea", boost["market_id"], boost["selection"], 20, {})
     assert boosted["odds_decimal"] == boost["decimal"] and json.loads(boosted["context"])["boost"] == boost["from_decimal"]
     assert hdb.get_meta("odds_boost")["after"] == "h-ff"
+
+    # A parlay leg on the same pick prices at the boosted decimal too, under the same stake cap. Paired with a
+    # player prop (never a score market), so it can never conflict with whatever market the boost landed on.
+    second = ("ou:deaths:puuid-1", "over") if boost["market_id"] == "ou:kills:puuid-1" else ("ou:kills:puuid-1", "over")
+    parlay_legs = [{"market_id": boost["market_id"], "selection": boost["selection"]}, {"market_id": second[0], "selection": second[1]}]
+    built, _, quote = hbets.quote_parlay(parlay_legs, {})
+    boosted_leg = next(l for l in built if l["market_id"] == boost["market_id"])
+    other_leg = next(l for l in built if l["market_id"] != boost["market_id"])
+    assert boosted_leg["boost"] == boost["from_decimal"] and boosted_leg["odds_decimal"] == boost["decimal"]
+    assert not other_leg["boost"]
+    try:
+        hbets.place_parlay("Bea", parlay_legs, BOOST_MAX_STAKE + 1, {})
+        raise AssertionError("a parlay with a boosted leg has the same stake cap")
+    except BetError:
+        pass
+    boosted_parlay = hbets.place_parlay("Bea", parlay_legs, 15, {})
+    placed_legs = json.loads(boosted_parlay["context"])["legs"]
+    assert next(l for l in placed_legs if l["market_id"] == boost["market_id"])["boost"] == boost["from_decimal"]
+    assert boosted_parlay["odds_decimal"] == quote["odds_decimal"]
+    hbets.cancel(boosted_parlay["id"], by="Bea")
+
+    # house() backs a boosted parlay leg out of the pot at its pre-boost price, like a boosted single.
+    before_house = hbets.house()
+    ctx = json.dumps({"legs": [{"odds_decimal": 3.0, "fair_prob": 0.3, "boost": 2.0, "market_type": "ou"},
+                               {"odds_decimal": 1.8, "fair_prob": 0.55, "market_type": "team_win"}]})
+    dec = round(3.0 * 1.8, 2)
+    fake = hdb.insert_bet({"bettor": "Bea", "market_id": "parlay", "market_type": "parlay", "selection": "parlay",
+                          "odds_decimal": dec, "stake": 10, "placed_ts": 1, "context": ctx, "status": "pending"})
+    hdb.update_bet(fake, status="won", payout=round(10 * dec, 2), settled_match_id="h-ff", settled_ts=3)
+    after_house = hbets.house()
+    ret = 2.0 * 0.3 * 1.8 * 0.55  # the boosted leg counts at its pre-boost decimal (2.0), not its priced 3.0
+    assert abs((after_house["expected_take"] - before_house["expected_take"]) - 10 * (1 - ret)) < 0.01, (before_house, after_house)
+
     hdb.insert_match({"match_id": "h-later", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 20,
                       "rounds_won": 13, "rounds_lost": 2, "result": "win"}, line({}))
     assert hbets.apply_boost(engine.build(hdb))["boost"] and hdb.get_meta("odds_boost")["after"] == "h-later"  # drawn again

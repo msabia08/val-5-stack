@@ -518,6 +518,9 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .slip-item.parlay-leg.linked { box-shadow: inset 3px 0 0 var(--accent); padding-left: 8px; }
 .linked-tag { color: var(--accent); font-weight: 600; }
 .parlay-blocked { margin: 4px 0 8px; }
+/* the odds boost of the game, landed on one leg */
+.slip-item.parlay-leg.boosted { box-shadow: inset 3px 0 0 var(--warn); padding-left: 8px; }
+.bet-leg.boosted .leg-desc { color: var(--warn); }
 
 /* ---- bet tickets (Open / Settled bets, grouped by bettor) -------------- */
 /* Bet-slip cards stack in columns (like a masonry wall), so cards of different heights leave no holes. */
