@@ -25,6 +25,8 @@ from .poker import PokerManager
 from .slots import DEMO_GOLDEN_BOOST, SlotManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bananas import BananaManager
+from .bank import BankManager
+from .hunt import HuntManager
 from .bets import TAX_MIN_TRANSFER, TAX_RATE, BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
@@ -37,7 +39,7 @@ from .odds import OddsEngine
 from .recap import build_recap
 from .rewards import RewardManager
 from .stats import build_stats
-from .tracker import ROSTER_MAX, ROSTER_MIN, Tracker, TrackerError
+from .tracker import MODES, ROSTER_MAX, ROSTER_MIN, Tracker, TrackerError
 from .tunnel import Tunnel
 
 KNOWN_MAPS = ["Abyss", "Ascent", "Bind", "Breeze", "Corrode", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset"]
@@ -74,10 +76,16 @@ class App:
         self.demo = demo
         os.makedirs(DATA_DIR, exist_ok=True)
         self.db = DB(os.path.join(DATA_DIR, "demo.db" if demo else "tracker.db"))
+        purged = self.db.purge_other_modes(MODES)  # only Competitive counts (tracker.MODES); older databases may hold more
+        if purged["games"] or purged["lines"]:
+            print(f"[tracker] Only Competitive counts now: dropped {purged['games']} game(s) and {purged['lines']} member line(s) "
+                  "from other modes", flush=True)
         self.engine = OddsEngine(cfg)
         self.bets = BetManager(cfg, self.db, self.engine)
         self.rewards = RewardManager(cfg, self.db, load_bettor_names())
-        self.bananas = BananaManager(cfg, self.db, self.bets)
+        self.bananas = BananaManager(cfg, self.db, self.bets, accounts=self.member_accounts)
+        self.bank = BankManager(cfg, self.db)
+        self.hunt = HuntManager(self.db, cfg)
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db, golden_boost=DEMO_GOLDEN_BOOST if demo else 1)  # demo: Golden Onkeys to test
         self.house = HouseManager(self.db, self.bets, self.rewards)  # the take (bets and the casino) and what it gives back
@@ -92,13 +100,16 @@ class App:
         if demo:
             from . import demo_seed
             demo_seed.seed(self.db)
+            self.db.set_meta("bananas_since", 0)  # every demo game pays bananas
             self.bananas.earn()
             demo_seed.seed_shop(self.db, self.bananas)
             demo_seed.seed_house(self.db, self.house)
+            demo_seed.seed_bank(self.db, self.bank)
+            demo_seed.seed_hunt(self.db)
         elif not self.problems:
             self.client = HenrikClient(cfg["api_key"].strip(), min_interval=float(cfg.get("min_request_interval_s", 1.5)))
-            self.tracker = Tracker(cfg, self.db, self.client, on_new_matches=self.on_new_matches)
-        self.bananas.earn()  # credit gains from before the shop existed (or from a sync that stopped part-way)
+            self.tracker = Tracker(cfg, self.db, self.client, on_new_matches=self.on_new_matches, on_sync=self.on_sync)
+        self.bananas.earn()  # games played since the last start (or stored by a sync that stopped part-way)
         self.house.ensure_objectives()  # the next game's secret objectives, once the pot can pay for them
         self.started = time.time()
 
@@ -145,8 +156,16 @@ class App:
             given = self.house.after_match(m, players, done)  # bad-beat refunds and the secret objectives
             if given:
                 print(f"[house] {m['map']}: " + ", ".join(f"{g['bettor']} +{g['amount']:g} ({g['kind']})" for g in given), flush=True)
-        self.bananas.earn()  # bananas for the bets just won and the rewards just paid
+        self.bananas.earn()  # bananas for the games just stored
         return settled
+
+    def on_sync(self, summary):
+        """After every sync, new squad games or not: bananas for every game each member played."""
+        self.bananas.earn()
+
+    def member_accounts(self):
+        """Each active member's bettor account (created unclaimed if missing): who gets their bananas per game."""
+        return {m["puuid"]: self.rewards.bettor_for(m) for m in self.db.members()}
 
     def _member_public(self, m):
         return {"puuid": m["puuid"], "name": m["name"], "tag": m["tag"], "nickname": m.get("nickname") or m["name"],
@@ -197,7 +216,7 @@ class App:
             "demo": self.demo,
             "problems": self.problems,
             "region": self.cfg.get("region"),
-            "modes": self.cfg.get("modes") or [],
+            "modes": sorted(MODES),
             "poll_interval_minutes": self.cfg.get("poll_interval_minutes", 10),
             "members": members,
             "expected_members": len(members),
@@ -213,7 +232,11 @@ class App:
             "game_reward": self.rewards.game,
             "win_reward": self.rewards.win,
             "performance_bonus_max": self.rewards.bonus_max,
-            "banana_rate": self.bananas.rate,
+            "banana_per_game": self.bananas.per_game,
+            "loan_max": self.bank.max,
+            "loan_interest": self.bank.interest,
+            "hunt_daily_max": self.hunt.daily_max,
+            "hunt_floor": self.hunt.floor,
             "tax_rate": TAX_RATE,
             "tax_min_transfer": TAX_MIN_TRANSFER,
             "server_time": time.time(),
@@ -520,6 +543,11 @@ class Handler(BaseHTTPRequestHandler):
                                                                               if b["status"] in ("won", "lost", "void")),
                                                                              key=lambda b: b.get("settled_ts") or 0, reverse=True)[:12]],
                                           "member": app.own_member(me)}})
+        if path == "/api/bank":
+            me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
+            return self._json({"bank": app.bank.terms(), "me": app.bank.status(me["name"]) if me else None})
+        if path == "/api/hunt":
+            return self._json(app.hunt.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/shop":
             return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/arcade":
@@ -699,6 +727,24 @@ class Handler(BaseHTTPRequestHandler):
                 legs, _, quote = app.bets.quote_parlay(body.get("legs"), body.get("context") or {})
                 return self._json({**quote, "legs": [{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal", "boost")}
                                                      for leg in legs]})
+            if path in ("/api/hunt/start", "/api/hunt/click"):
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to hunt bananas."}, 403)
+                if path.endswith("/start"):
+                    return self._json({"me": app.hunt.start(me["name"])})
+                out = app.hunt.click(me["name"], body.get("x"), body.get("y"))
+                return self._json({**out, "balance": round(app.db.get_bettor(me["name"])["balance"], 2)})
+            if path in ("/api/bank/borrow", "/api/bank/repay"):
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to use the bank."}, 403)
+                if path.endswith("/borrow"):
+                    out = {"loan": app.bank.borrow(me["name"], body.get("amount"))}
+                else:
+                    out = {"repaid": app.bank.repay(me["name"], body.get("amount"))}
+                return self._json({**out, "me": app.bank.status(me["name"]), "bank": app.bank.terms(),
+                                   "bettor": app.bets.public(app.db.get_bettor(me["name"])), "bettors": app.bets.leaderboard()}, 201)
             if path == "/api/transfers":
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

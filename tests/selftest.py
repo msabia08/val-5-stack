@@ -19,11 +19,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 from fivestack.app import KNOWN_AGENTS  # noqa: E402
 from fivestack.arcade import ARCADE_PRICE, ArcadeManager  # noqa: E402
 from fivestack.bananas import CATALOG, BananaManager  # noqa: E402
+from fivestack.bank import BankManager  # noqa: E402
 from fivestack.bets import BetError, BetManager  # noqa: E402
 from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.forecasts import build_forecasts  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
+from fivestack.hunt import FIELD_H, FIELD_W, MARGIN, MIN_HOP, TARGET_R, HuntManager  # noqa: E402
 from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.moments import game_facts  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
@@ -33,7 +35,7 @@ from fivestack.recap import build_recap  # noqa: E402
 from fivestack.rewards import RewardManager, beat_share  # noqa: E402
 from fivestack.stats import aggregate, build_stats, deviation, player_metrics  # noqa: E402
 from fivestack.timeline import clutches_and_multikills, extract_timeline, spike_sites  # noqa: E402
-from fivestack.tracker import Tracker, TrackerError, parse_details  # noqa: E402
+from fivestack.tracker import MODES, Tracker, TrackerError, parse_details  # noqa: E402
 
 MEMBERS = [f"P{i}#TAG" for i in range(1, 6)]
 PUUIDS = {f"P{i}": f"puuid-{i}" for i in range(1, 6)}
@@ -97,6 +99,7 @@ class FakeClient:
         if n in "123":                                                             # only 3 present -> reject
             items.append(stored_item("m5", puuid, started="2026-09-19T18:00:00Z"))
         items.append(stored_item("m6", puuid, started="2026-09-18T18:00:00Z", red=1, blue=2))  # remake -> skipped
+        items.append(stored_item("m7", puuid, mode="Unrated", started="2026-09-17T18:00:00Z"))  # not Competitive -> skipped
         return {"status": 200, "results": {"total": len(items)}, "data": items}
 
     def match_details(self, region, match_id):
@@ -212,6 +215,19 @@ def detection(shared):
     assert "m2" in rejected and "m5" in rejected and "m4" not in rejected, rejected
     assert "m6" in rejected and not db.has_match("m6")  # a 2-1 remake is no contest: never recorded
     assert len(db.members()) == 5
+    # Only Competitive counts, whatever config.json says: the Unrated game every member played isn't a squad game
+    # or a member line, and a database holding games from other modes drops them on purge.
+    assert shared.tracker.modes == set(MODES) == {"competitive"} and shared.cfg["modes"] == ["competitive", "unrated"]
+    assert res["skipped_mode"] == 2 and not db.has_match("m7"), res  # m4 (Deathmatch) and m7 (Unrated)
+    assert not db.query("SELECT 1 FROM member_games WHERE mode != 'competitive'")
+    db.insert_match({"match_id": "unrated-old", "map": "Bind", "mode": "unrated", "mode_label": "Unrated", "started_ts": 1,
+                     "rounds_won": 13, "rounds_lost": 2, "result": "win", "team": "Blue"},
+                    [{"puuid": "puuid-1", "kills": 20}])
+    db.insert_member_games([{"match_id": "unrated-old", "puuid": "puuid-1", "map": "Bind", "mode": "unrated", "started_ts": 1,
+                             "rounds_won": 13, "rounds_lost": 2, "result": "win", "kills": 20, "team": "Blue"}])
+    assert db.purge_other_modes(MODES) == {"games": 1, "lines": 1} and db.purge_other_modes(MODES) == {"games": 0, "lines": 0}
+    assert not db.has_match("unrated-old") and db.match_players("unrated-old") == []
+    assert not db.query("SELECT 1 FROM member_games WHERE match_id='unrated-old'") and db.count_matches() == 2
 
 
 @section("stats")
@@ -626,30 +642,35 @@ def rewards(shared):
 @section("bananas")
 def bananas(shared):
     db, bets = shared.db, shared.bets
-    bm = shared.bananas = BananaManager({"banana_rate": 0.1, "starting_bananas": 0}, db, bets)  # starters: checked below
+    # Who gets a member's bananas: their bettor account (here the nickname, as RewardManager.account_name would say).
+    accounts = lambda: {m["puuid"]: m.get("nickname") or m["name"] for m in db.members()}  # noqa: E731
+    db.set_meta("bananas_since", 1000)  # games from before this never pay (set to "now" the first time, like rewards)
+    bm = shared.bananas = BananaManager({"banana_per_game": 2, "starting_bananas": 0}, db, bets, accounts=accounts)  # starters: checked below
     board = bets.leaderboard()
     balances = {b["name"]: b["balance"] for b in db.bettors()}
-    # Earning: 0.1 banana per credit gained (won bets' profit + game rewards), paid once.
+    # Earning: 2 bananas for every game a member played (each member_games line, squad game or not), paid once.
     added = bm.earn()
     assert added > 0 and bm.earn() == 0, added
-    gains, rows = {}, {}
-    for b in db.bets(status="won"):
-        if b["payout"] > b["stake"]:
-            k = b["bettor"].lower()
-            gains[k] = gains.get(k, 0) + b["payout"] - b["stake"]
-            rows[k] = rows.get(k, 0) + 1
-    for r in db.rewards():
-        k = r["bettor"].lower()
-        gains[k] = gains.get(k, 0) + r["base"] + r["bonus"]
-        rows[k] = rows.get(k, 0) + 1
+    games = {accounts()[r["puuid"]].lower(): r["n"] for r in db.query(
+        "SELECT puuid, COUNT(*) AS n FROM member_games WHERE started_ts >= 1000 GROUP BY puuid")}
+    assert games and all(n >= 2 for n in games.values()), games  # squad games plus each member's other games
     totals = db.banana_totals()
-    assert set(totals) == set(gains), (totals.keys(), gains.keys())  # a bettor who only lost earns nothing
-    for k, g in gains.items():  # linear in credits won, up to rounding each row to 0.01
+    assert set(totals) == set(games), (totals.keys(), games.keys())  # only members earn: a bettor who only bets doesn't
+    for k, n in games.items():
         t = totals[k]
-        assert abs(t["earned"] - 0.1 * g) <= 0.005 * rows[k] + 1e-9 and abs(t["season_credits"] - g) < 1e-6, (k, t, g)
-        assert abs(t["wallet"] - t["earned"]) < 1e-9 and t["spent"] == 0
-    assert all(b["status"] != "lost" for b in db.bets() if f"bet:{b['id']}" in
-               {r["ref"] for r in db.query("SELECT ref FROM banana_ledger WHERE reason='bet_win'")})
+        assert t["earned"] == 2 * n and t["season_games"] == n and t["wallet"] == t["earned"] and t["spent"] == 0, (k, t, n)
+        assert float(t["wallet"]).is_integer()
+    assert not db.query("SELECT 1 FROM banana_ledger WHERE reason IN ('bet_win', 'reward')")  # credits don't make bananas
+    assert all(r["note"].startswith(("Ascent", "Bind")) for r in db.query("SELECT note FROM banana_ledger WHERE reason='game'"))
+    # A game from before bananas_since never pays, however many times earn() runs.
+    db.insert_member_games([{"match_id": "ancient", "puuid": "puuid-1", "map": "Split", "mode": "competitive", "started_ts": 5,
+                             "rounds_won": 13, "rounds_lost": 9, "result": "win", "kills": 20, "team": "Blue"}])
+    assert bm.earn() == 0 and db.banana_totals()["p1"]["earned"] == totals["p1"]["earned"]
+    db.execute("DELETE FROM member_games WHERE match_id='ancient'")  # later sections count the lines
+    # Whole numbers only: a fraction left from when bananas were paid per credit is rounded away once.
+    db.execute("INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES('P3', 12.4, 'bet_win', 'bet:old', '', ?)", (time.time(),))
+    assert bm.earn() == 1 and float(db.banana_wallet("P3")).is_integer() and bm.wallet("P3") == totals["p3"]["wallet"] + 12
+    assert db.query_one("SELECT reason FROM banana_ledger ORDER BY id DESC")["reason"] == "rounding" and bm.earn() == 0
 
     # Buying: bananas only. Give Tester a test grant so every case can be tried.
     db.execute("INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES('Tester', 500, 'test', 'grant', '', ?)", (time.time(),))
@@ -722,7 +743,7 @@ def bananas(shared):
     # Starting bananas: every account gets 50 once a season, not counted as earned.
     wallets = {b["name"]: db.banana_wallet(b["name"]) for b in db.bettors()}
     earned = {k: v["earned"] for k, v in db.banana_totals().items()}
-    starter = BananaManager({"banana_rate": 0.1, "starting_bananas": 50}, db, bets)
+    starter = BananaManager({"banana_per_game": 2, "starting_bananas": 50}, db, bets, accounts=accounts)
     assert starter.earn() == len(wallets) and starter.earn() == 0
     assert all(abs(db.banana_wallet(n) - (w + 50)) < 1e-9 for n, w in wallets.items())
     assert all(abs(db.banana_totals()[k]["earned"] - e) < 1e-9 for k, e in earned.items())
@@ -1474,7 +1495,7 @@ def casino_looks(shared):
     from fivestack.bananas import GROUPS, ITEMS, SLOTS
     db = shared.casino_db
     bets = BetManager({"starting_balance": 1000}, db, shared.engine)
-    bm = BananaManager({"banana_rate": 0.1, "starting_bananas": 0}, db, bets)
+    bm = BananaManager({"banana_per_game": 5, "starting_bananas": 0}, db, bets)
     # Onkey's Casino is its own group in the shop, with its own slots and items.
     groups = {g[0] for g in GROUPS}
     assert groups == {"looks", "casino"} and all(slot[3] in groups for slot in SLOTS)
@@ -1575,6 +1596,177 @@ def transfers(shared):
     shared.transfer_count = len(db.transfers())
 
 
+@section("bank")
+def bank(shared):
+    db, bets = shared.db, shared.bets
+    bank = BankManager({"loan_max": 1000, "loan_interest": 0.1}, db)
+    assert bank.terms() == {"max": 1000, "interest": 0.1, "min": 1, "enabled": True}
+    name = "Tester"
+    before = db.get_bettor(name)["balance"]
+    board = {r["name"]: r for r in bets.leaderboard()}
+    # Borrowing adds to the balance; the debt carries interest; betting profit doesn't move.
+    loan = bank.borrow(name, 400)
+    assert (loan["principal"], loan["interest"], loan["owed"], loan["repaid"], loan["cleared_ts"]) == (400, 40, 440, 0, None), loan
+    assert abs(db.get_bettor(name)["balance"] - (before + 400)) < 1e-9
+    st = bank.status(name)
+    assert (st["borrowed"], st["debt"], st["room"], len(st["open"]), st["open"][0]["due"], st["cleared"]) == (400, 440, 600, 1, 440, [])
+    row = {r["name"]: r for r in bets.leaderboard()}[name]
+    assert row["debt"] == 440 and row["borrowed"] == 400 and abs(row["profit"] - board[name]["profit"]) < 1e-9, (row, board[name])
+    assert abs(row["balance"] - (before + 400)) < 1e-9
+    # The limit is on what's out: 600 more at most, then nothing until it's all paid back with interest.
+    for amount, msg in [(601, "lend you 600 more"), (0, "smallest"), ("x", "Enter"), (10.5, "Whole credits"), (float("nan"), "smallest")]:
+        try:
+            bank.borrow(name, amount)
+        except BetError as e:
+            assert msg in str(e), (amount, e)
+        else:
+            raise AssertionError(f"borrow {amount} should fail")
+    second = bank.borrow(name, 600)
+    st = bank.status(name)
+    assert (st["borrowed"], st["debt"], st["room"], len(st["open"])) == (1000, 1100, 0, 2)
+    try:
+        bank.borrow(name, 1)
+    except BetError as e:
+        assert "full 1000" in str(e), e
+    else:
+        raise AssertionError("borrowing past the limit should fail")
+    for bad in [("Nobody", 10), (name, 10)]:
+        try:
+            BankManager({"loan_max": 0}, db).borrow(*bad) if bad[0] == name else bank.borrow(*bad)
+        except BetError as e:
+            assert ("Sign in" in str(e)) == (bad[0] == "Nobody"), (bad, e)
+        else:
+            raise AssertionError(f"borrow {bad} should fail")
+    # Paying back: any whole amount, oldest loan first, never more than the balance or the debt.
+    bal = db.get_bettor(name)["balance"]
+    assert bank.repay(name, 100) == {"paid": 100, "cleared": []} and abs(db.get_bettor(name)["balance"] - (bal - 100)) < 1e-9
+    st = bank.status(name)
+    assert st["debt"] == 1000 and st["room"] == 0 and {l["id"]: l["repaid"] for l in st["open"]} == {loan["id"]: 100, second["id"]: 0}
+    r = bank.repay(name, 340)  # clears the first loan to the credit
+    assert r == {"paid": 340, "cleared": [loan["id"]]}, r
+    st = bank.status(name)
+    assert (st["borrowed"], st["debt"], st["room"], len(st["open"]), len(st["cleared"])) == (600, 660, 400, 1, 1)
+    assert st["cleared"][0]["id"] == loan["id"] and st["cleared"][0]["repaid"] == 440 and st["cleared"][0]["cleared_ts"]
+    db.execute("UPDATE bettors SET balance = 50 WHERE name=?", (name,))
+    try:
+        bank.repay(name, 60)
+    except BetError as e:
+        assert "only have 50" in str(e), e
+    else:
+        raise AssertionError("paying more than the balance should fail")
+    assert bank.status(name)["debt"] == 660  # nothing moved
+    db.execute("UPDATE bettors SET balance = 5000 WHERE name=?", (name,))
+    r = bank.repay(name, 9999)  # more than the debt pays just the debt; repay(name) with no amount does the same
+    assert r == {"paid": 660, "cleared": [second["id"]]} and abs(db.get_bettor(name)["balance"] - (5000 - 660)) < 1e-9, r
+    st = bank.status(name)
+    assert (st["borrowed"], st["debt"], st["room"], st["open"], len(st["cleared"])) == (0, 0, 1000, [], 2)
+    try:
+        bank.repay(name)
+    except BetError as e:
+        assert "don't owe" in str(e), e
+    else:
+        raise AssertionError("repaying with no debt should fail")
+    # Interest paid isn't a betting loss and credits on loan aren't profit: with the balance back where the loans
+    # left it (100 interest paid in all), profit is what it was before any of this.
+    db.execute("UPDATE bettors SET balance = ? WHERE name=?", (before - 100, name))
+    row = {r["name"]: r for r in bets.leaderboard()}[name]
+    assert abs(row["profit"] - board[name]["profit"]) < 1e-9 and row["debt"] == 0, (row, board[name])
+    assert db.loan_totals()[name.lower()] == {"k": name.lower(), "borrowed": 0, "debt": 0, "net": -100}
+    # One loan left open for the season reset to archive; the rankings put the debt against the balance.
+    bank.borrow(name, 250)
+    ranked = bets.leaderboard()
+    assert [r["name"] for r in ranked] == [r["name"] for r in sorted(ranked, key=lambda r: -(r["balance"] - r["debt"]))]
+    assert {r["name"]: r["debt"] for r in ranked}[name] == 275
+    shared.loan_count = len(db.loans())
+    assert shared.loan_count == 3 and len(db.loans(name, open_only=True)) == 1
+
+
+@section("banana hunt")
+def banana_hunt(shared):
+    from fivestack.wheel import next_reset, wheel_day
+
+    db, bets = shared.db, shared.bets
+    hunt = HuntManager(db, {"hunt_daily_max": 5, "hunt_floor": 250})
+    assert hunt.terms()["daily_max"] == 5 and hunt.terms()["floor"] == 250 and hunt.terms()["per_banana"] == 1 and hunt.enabled
+    name = "Tester"
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name=?", (name,))  # well above the floor, so the cap applies
+    before = db.get_bettor(name)["balance"]
+    board = {r["name"]: r for r in bets.leaderboard()}
+    t0 = 1_800_000_000.0  # a fixed "now", a Pacific morning in 2027
+    st = hunt.start(name, now=t0)
+    tgt = st["target"]
+    assert st["today"] == 0 and st["left"] == 5 and not st["done"] and st["day"] == wheel_day(t0) and st["resets_ts"] == next_reset(t0)
+    assert not st["under_floor"] and st["balance"] == before and before >= 250  # well above the floor: the cap applies
+    assert MARGIN <= tgt["x"] <= FIELD_W - MARGIN and MARGIN <= tgt["y"] <= FIELD_H - MARGIN, tgt
+    # A miss pays nothing and leaves the banana where it is.
+    r = hunt.click(name, tgt["x"] + TARGET_R + 2, tgt["y"], now=t0 + 1)
+    assert r["hit"] is False and r["reason"] == "miss" and r["target"] == tgt and db.get_bettor(name)["balance"] == before, r
+    # A hit pays one credit and moves the banana at least a hop away.
+    r = hunt.click(name, tgt["x"] + 3, tgt["y"] - 3, now=t0 + 1.5)
+    assert r["hit"] and r["paid"] == 1 and r["today"] == 1 and r["left"] == 4 and db.get_bettor(name)["balance"] == before + 1, r
+    new = r["target"]
+    assert new != tgt and math.hypot(new["x"] - tgt["x"], new["y"] - tgt["y"]) >= MIN_HOP, (tgt, new)
+    assert hunt.status(name, now=t0 + 1.5)["target"] == new
+    # Too soon after the last paid pick: not paid, and the banana stays put.
+    r = hunt.click(name, new["x"], new["y"], now=t0 + 1.6)
+    assert r["hit"] is False and r["reason"] == "too_fast" and r["target"] == new and db.get_bettor(name)["balance"] == before + 1, r
+    # Up to the day's cap, then done until the next Pacific day.
+    t = t0 + 2.2  # past the pace limit since the last paid pick
+    for _ in range(4):
+        r = hunt.click(name, r["target"]["x"], r["target"]["y"], now=t)
+        assert r["hit"] and not r["under_floor"], r
+        t += 0.7
+    assert r["left"] == 0 and r["done"] and r["target"] is None and r["today"] == 5
+    r = hunt.click(name, 100, 100, now=t)
+    assert r["hit"] is False and r["reason"] == "done" and r["target"] is None
+    st = hunt.status(name, now=t)
+    assert st["today"] == 5 and st["done"] and st["target"] is None and db.get_bettor(name)["balance"] == before + 5
+    assert hunt.start(name, now=t)["target"] is None  # starting again doesn't help
+    # Under the floor the cap doesn't apply: with 247 credits, three more picks are allowed, then it's done again.
+    db.execute("UPDATE bettors SET balance = 247 WHERE name=?", (name,))
+    st = hunt.start(name, now=t)
+    assert st["under_floor"] and st["left"] == 3 and not st["done"] and st["target"], st
+    for i in range(3):
+        r = hunt.click(name, st["target"]["x"], st["target"]["y"], now=t + 1 + i)
+        assert r["hit"] and r["today"] == 6 + i, r
+        st["target"] = r["target"]
+    assert r["done"] and r["target"] is None and not r["under_floor"] and db.get_bettor(name)["balance"] == 250, r
+    assert hunt.click(name, 100, 100, now=t + 5)["reason"] == "done" and hunt.status(name, now=t + 5)["today"] == 8
+    db.execute("UPDATE bettors SET balance = 249.5 WHERE name=?", (name,))  # half a credit short: one more pick
+    assert hunt.start(name, now=t + 6)["left"] == 1
+    db.execute("UPDATE bettors SET balance = ? WHERE name=?", (before + 8, name))  # the 8 picks so far, as if nothing else moved
+    nxt = next_reset(t) + 1
+    st = hunt.start(name, now=nxt)
+    assert st["today"] == 0 and st["left"] == 5 and st["target"], st
+    r = hunt.click(name, st["target"]["x"], st["target"]["y"], now=nxt + 1)
+    assert r["hit"] and db.get_bettor(name)["balance"] == before + 9 and hunt.today(name, now=nxt) == 1 and r["left"] == 4
+    # Bad input, nobody, and a closed hunt.
+    for bad in [("x", 1), (None, 2), (float("nan"), 3)]:
+        try:
+            hunt.click(name, *bad, now=nxt + 2)
+        except BetError as e:
+            assert "click" in str(e), e
+        else:
+            raise AssertionError(f"click {bad} should fail")
+    for fn in (lambda: hunt.click("Nobody", 1, 1), lambda: hunt.start("Nobody"),
+               lambda: HuntManager(db, {"hunt_daily_max": 0}).click(name, 1, 1)):
+        try:
+            fn()
+        except BetError:
+            pass
+        else:
+            raise AssertionError("should fail")
+    assert not HuntManager(db, {"hunt_daily_max": 0}).enabled
+    # The leaderboard reports the hunt in its own column and keeps it out of profit; the board ranks pickers.
+    row = {r["name"]: r for r in bets.leaderboard()}[name]
+    assert row["hunt"] == 9 and abs(row["profit"] - board[name]["profit"]) < 1e-9, (row, board[name])
+    top = hunt.board()[0]
+    assert top["name"] == name and top["season"] == 9 and top["all_time"] == 9 and top["bananas"] == 9, top
+    assert db.hunt_totals()[name.lower()]["season"] == 9 and len(db.query("SELECT 1 FROM hunt_days")) == 2  # two days
+    assert hunt.summary(db.get_bettor(name), now=nxt + 2)["me"]["today"] == 1 and hunt.summary()["me"] is None
+    shared.hunt_rows = 2
+
+
 @section("seasons")
 def seasons(shared):
     db, bets = shared.db, shared.bets
@@ -1594,6 +1786,12 @@ def seasons(shared):
     assert db.query_one("SELECT COUNT(*) AS n FROM archived_rewards WHERE season_id=?", (season["id"],))["n"] == before["rewards"]
     assert db.query_one("SELECT COUNT(*) AS n FROM archived_transfers WHERE season_id=?", (season["id"],))["n"] == shared.transfer_count
     assert db.transfers() == [] and db.transfer_totals() == {}
+    # Loans are archived and the debts forgiven with the balances.
+    assert db.query_one("SELECT COUNT(*) AS n FROM archived_loans WHERE season_id=?", (season["id"],))["n"] == shared.loan_count
+    assert db.loans() == [] and db.loan_totals() == {} and all(r["debt"] == 0 for r in bets.leaderboard())
+    # The hunt's day rows are tagged with the season; this season's column starts from zero.
+    assert db.query_one("SELECT COUNT(*) AS n FROM hunt_days WHERE season_id=?", (season["id"],))["n"] == shared.hunt_rows
+    assert all(r["hunt"] == 0 for r in bets.leaderboard()) and db.hunt_totals()["tester"]["all_time"] == 9
     assert saved["P2"]["transfers"] == before["standings"]["P2"]["transfers"] != 0  # the standings keep them
     assert db.season_counts() == {"started_ts": season["ended_ts"], "bets": 0, "rewards": 0, "transfers": 0,
                                   "bettors": db.season_counts()["bettors"]}

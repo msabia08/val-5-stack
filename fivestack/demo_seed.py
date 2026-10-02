@@ -108,7 +108,7 @@ def _seed_stack(db, rng, games):
             ahead, behind = rng.randint(8, 10), min(rw, rl, 3)
             rw, rl = (ahead, behind) if win else (behind, ahead)
         rounds = rw + rl
-        mode = "Competitive" if rng.random() < 0.8 else "Unrated"
+        mode = "Competitive"  # the tracker only follows Competitive
         match = {
             "match_id": str(uuid.UUID(int=rng.getrandbits(128))),
             "map": map_name,
@@ -149,7 +149,7 @@ def _seed_other_games(db, rng, per_member=60):
             t += rng.uniform(0.2, 1.4) * 86400
             win = rng.random() < 0.5
             rw, rl = _score(rng, win)
-            mode = "Competitive" if rng.random() < 0.85 else "Unrated"
+            mode = "Competitive"
             match = {
                 "match_id": str(uuid.UUID(int=rng.getrandbits(128))),
                 "map": rng.choice(MAPS), "mode": mode.lower(), "mode_label": mode,
@@ -365,3 +365,40 @@ def _seed_timelines(db, rng):
             rounds.append({"winner": winner, "site": site, "planter_team": attackers if planted else None,
                            "defused": bool(planted and winner != attackers)})
         db.save_timeline(match["match_id"], {"our_team": "Blue", "team_of": team_of, "rounds": rounds, "kills": kills})
+
+
+def seed_hunt(db, days=6, seed=11):
+    """A few days of banana picking per demo bettor (yesterday and before, so today's cap is untouched)."""
+    from .wheel import wheel_day
+
+    if db.query_one("SELECT 1 FROM hunt_days"):
+        return
+    rng = random.Random(seed)
+    now = time.time()
+    for i, b in enumerate(db.bettors()):
+        for d in range(1, days + 1):
+            if rng.random() < 0.55:
+                continue
+            n = rng.randint(5, 100 if i % 2 else 60)
+            db.execute("INSERT INTO hunt_days(bettor, day, bananas, credits, updated_ts) VALUES(?,?,?,?,?)",
+                       (b["name"], wheel_day(now - d * 86400), n, float(n), now - d * 86400))
+        if db.query_one("SELECT 1 FROM hunt_days WHERE bettor=?", (b["name"],)):
+            paid = db.query_one("SELECT SUM(credits) AS c FROM hunt_days WHERE bettor=?", (b["name"],))["c"]
+            db.adjust_balance(b["name"], paid)
+
+
+def seed_bank(db, bank):
+    """One loan still open and one paid back with interest, so the Standings page has something at Onkey's Bank."""
+    from .bets import BetError
+
+    if db.loans() or not bank.enabled:
+        return
+    names = [b["name"] for b in db.bettors()]
+    if len(names) < 3:
+        return
+    try:
+        bank.borrow(names[1], 500)
+        bank.borrow(names[2], 200)
+        bank.repay(names[2])
+    except BetError:
+        pass

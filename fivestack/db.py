@@ -408,6 +408,42 @@ CREATE TABLE IF NOT EXISTS wheel_perks (
     created_ts REAL NOT NULL,
     used_ts REAL
 );
+-- Onkey's Bank (see bank.py): credits a bettor borrowed. A loan is open until `repaid` reaches `owed`
+-- (principal plus interest); open principal counts against the bettor's borrowing limit.
+CREATE TABLE IF NOT EXISTS loans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    principal REAL NOT NULL,
+    interest REAL NOT NULL,
+    owed REAL NOT NULL,
+    repaid REAL NOT NULL DEFAULT 0,
+    taken_ts REAL NOT NULL,
+    cleared_ts REAL
+);
+CREATE INDEX IF NOT EXISTS idx_loans_bettor ON loans(bettor, cleared_ts);
+CREATE TABLE IF NOT EXISTS archived_loans (
+    season_id INTEGER NOT NULL,
+    id INTEGER,
+    bettor TEXT,
+    principal REAL,
+    interest REAL,
+    owed REAL,
+    repaid REAL,
+    taken_ts REAL,
+    cleared_ts REAL
+);
+-- The Banana Hunt (see hunt.py): what each bettor picked per Pacific day. Kept through resets; season_id NULL is
+-- the current season, so a day that straddles a reset has one row per season.
+CREATE TABLE IF NOT EXISTS hunt_days (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    day TEXT NOT NULL,
+    bananas INTEGER NOT NULL DEFAULT 0,
+    credits REAL NOT NULL DEFAULT 0,
+    updated_ts REAL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE INDEX IF NOT EXISTS idx_hunt_days ON hunt_days(bettor, day, season_id);
 """
 
 MATCH_FIELDS = [
@@ -439,6 +475,7 @@ ARCHIVED_BET_COLUMNS = [
 ARCHIVED_REWARD_COLUMNS = ["match_id", "puuid", "bettor", "base", "bonus", "acs", "beat_share", "baseline_games", "created_ts"]
 TRANSFER_COLUMNS = ["id", "sender", "recipient", "amount", "note", "created_ts",
                     "tax_status", "tax_amount", "tax_bet_id", "tax_match_id", "tax_ts"]
+LOAN_COLUMNS = ["id", "bettor", "principal", "interest", "owed", "repaid", "taken_ts", "cleared_ts"]
 BET_FIELDS = [
     "bettor", "market_id", "market_type", "description", "selection", "selection_label",
     "line", "odds_decimal", "stake", "placed_ts", "context", "status",
@@ -666,6 +703,22 @@ class DB:
                 self.conn.execute(f"DELETE FROM {table} WHERE match_id=?", (match_id,))
             self.conn.commit()
 
+    def purge_other_modes(self, keep):
+        """Forget every stored game whose mode isn't in `keep` (the tracker only follows those modes now): recorded
+        games with their players and timelines, and every member line. Bets and rewards settled on them stay.
+        Returns how many games and member lines went."""
+        keep = sorted(keep)
+        ph = _placeholders(len(keep))
+        with self.lock:
+            gone = self.conn.execute(f"SELECT match_id FROM matches WHERE mode IS NOT NULL AND mode NOT IN ({ph})", keep).fetchall()
+            ids = [r[0] for r in gone]
+            for mid in ids:
+                for table in ("match_players", "match_timelines", "matches"):
+                    self.conn.execute(f"DELETE FROM {table} WHERE match_id=?", (mid,))
+            cur = self.conn.execute(f"DELETE FROM member_games WHERE mode IS NOT NULL AND mode NOT IN ({ph})", keep)
+            self.conn.commit()
+            return {"games": len(ids), "lines": cur.rowcount}
+
     def baseline_rows(self):
         """Member lines from games that were NOT squad games, newest first."""
         return self.query(
@@ -744,7 +797,7 @@ class DB:
                 "bettors": self.query_one("SELECT COUNT(*) AS n FROM bettors")["n"]}
 
     def archive_and_reset(self, balance, standings):
-        """End the season: archive its standings, bets, rewards and transfers, then clear them and reset every balance.
+        """End the season: archive its standings, bets, rewards, transfers and loans, then clear them and reset every balance.
         One transaction, so a failure part-way leaves everything as it was. Returns the new season row."""
         now = time.time()
         with self.lock:
@@ -765,12 +818,15 @@ class DB:
                 self.conn.execute(f"INSERT INTO archived_rewards(season_id, {cols}) SELECT ?, {cols} FROM rewards", (sid,))
                 cols = ", ".join(TRANSFER_COLUMNS)
                 self.conn.execute(f"INSERT INTO archived_transfers(season_id, {cols}) SELECT ?, {cols} FROM transfers", (sid,))
+                cols = ", ".join(LOAN_COLUMNS)
+                self.conn.execute(f"INSERT INTO archived_loans(season_id, {cols}) SELECT ?, {cols} FROM loans", (sid,))
                 self.conn.execute("DELETE FROM bets")
                 self.conn.execute("DELETE FROM rewards")
                 self.conn.execute("DELETE FROM transfers")
+                self.conn.execute("DELETE FROM loans")  # debts are forgiven with the balances
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
                 for table in ("house_ledger", "house_payouts", "blackjack_hands", "poker_buyins", "poker_hands",
-                              "poker_results"):
+                              "poker_results", "hunt_days"):
                     self.conn.execute(f"UPDATE {table} SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.
@@ -869,21 +925,33 @@ class DB:
             "SELECT lower(bettor) AS k, SUM(base + bonus) AS total FROM rewards GROUP BY lower(bettor)")}
 
     # ---- bananas (see bananas.py) -------------------------------------------
-    def earn_bananas(self, rate, now=None):
-        """Pay bananas for every credit gain not paid yet: a won bet's profit and each game reward, `rate` bananas per
-        credit. The unique (reason, ref) makes it safe to run after every settlement. Returns the rows added."""
+    def earn_game_bananas(self, per_game, accounts, since_ts, now=None):
+        """Pay `per_game` bananas for every game a member played (their `member_games` lines, squad game or not) that
+        started at or after `since_ts` and isn't paid yet. `accounts` maps each member's puuid to their bettor
+        account. The unique (reason, ref) makes it safe to run after every sync. Returns the rows added."""
         now = now or time.time()
         with self.lock:
             before = self.conn.total_changes
+            for puuid, bettor in accounts.items():
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) "
+                    "SELECT ?, ?, 'game', 'game:' || match_id || ':' || puuid, "
+                    "COALESCE(map, 'A game') || CASE WHEN result IS NULL THEN '' ELSE ' · ' || result END, ? "
+                    "FROM member_games WHERE puuid=? AND COALESCE(started_ts, 0) >= ?",
+                    (bettor, int(per_game), now, puuid, since_ts))
+            self.conn.commit()
+            return self.conn.total_changes - before
+
+    def round_bananas(self, now=None):
+        """Bananas are whole numbers: a wallet with a fraction left from before (bananas were once paid per credit)
+        gets one rounding row that takes it to the nearest whole. Returns the rows added."""
+        with self.lock:
+            before = self.conn.total_changes
             self.conn.execute(
-                "INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, credits, note, created_ts) "
-                "SELECT bettor, ROUND((payout - stake) * ?, 2), 'bet_win', 'bet:' || id, payout - stake, description, ? "
-                "FROM bets WHERE status='won' AND payout > stake", (rate, now))
-            self.conn.execute(
-                "INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, credits, note, created_ts) "
-                "SELECT r.bettor, ROUND((r.base + r.bonus) * ?, 2), 'reward', 'reward:' || r.match_id || ':' || r.puuid, "
-                "r.base + r.bonus, 'Game reward: ' || COALESCE(m.map, 'a game'), ? "
-                "FROM rewards r LEFT JOIN matches m USING(match_id) WHERE r.base + r.bonus > 0", (rate, now))
+                "INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) "
+                "SELECT bettor, ROUND(SUM(delta)) - SUM(delta), 'rounding', 'round:' || lower(bettor) || ':' || ?, "
+                "'Rounded to whole bananas', ? FROM banana_ledger GROUP BY lower(bettor) "
+                "HAVING ABS(ROUND(SUM(delta)) - SUM(delta)) > 1e-9", (time.time_ns(), now or time.time()))
             self.conn.commit()
             return self.conn.total_changes - before
 
@@ -902,13 +970,15 @@ class DB:
             return self.conn.total_changes - before
 
     def banana_totals(self):
-        """Per bettor (lower-cased name): wallet, earned (all time and since the season started) and spent."""
+        """Per bettor (lower-cased name): wallet, earned (all time and since the season started), the games paid this
+        season, and spent. Earnings are per game played ('game'); 'bet_win' / 'reward' rows are from when bananas
+        were paid per credit and still count as earned."""
         since = self.get_meta("season_started") or 0
         return {r["k"]: r for r in self.query(
             """SELECT lower(bettor) AS k, SUM(delta) AS wallet,
-                      SUM(CASE WHEN reason IN ('bet_win', 'reward') THEN delta ELSE 0 END) AS earned,
-                      SUM(CASE WHEN reason IN ('bet_win', 'reward') AND created_ts >= ? THEN delta ELSE 0 END) AS season_earned,
-                      SUM(CASE WHEN reason IN ('bet_win', 'reward') AND created_ts >= ? THEN credits ELSE 0 END) AS season_credits,
+                      SUM(CASE WHEN reason IN ('game', 'bet_win', 'reward') THEN delta ELSE 0 END) AS earned,
+                      SUM(CASE WHEN reason IN ('game', 'bet_win', 'reward') AND created_ts >= ? THEN delta ELSE 0 END) AS season_earned,
+                      SUM(CASE WHEN reason = 'game' AND created_ts >= ? THEN 1 ELSE 0 END) AS season_games,
                       -SUM(CASE WHEN reason IN ('purchase', 'prank', 'arcade') THEN delta ELSE 0 END) AS spent
                FROM banana_ledger GROUP BY lower(bettor)""", (since, since))}
 
@@ -1039,6 +1109,108 @@ class DB:
                 self.conn.rollback()
                 raise
             return bool(cur.rowcount)
+
+    # ---- loans (see bank.py) ------------------------------------------------------
+    def take_loan(self, name, principal, interest):
+        """Lend a bettor `principal` credits (they owe principal + interest) and credit their balance, in one
+        transaction. Returns the new loan's id."""
+        now = time.time()
+        with self.lock:
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO loans(bettor, principal, interest, owed, repaid, taken_ts) VALUES(?,?,?,?,0,?)",
+                    (name, principal, interest, principal + interest, now))
+                self.conn.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (principal, name))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+            return cur.lastrowid
+
+    def repay_loan(self, name, amount):
+        """Pay `amount` of a bettor's open loans back, oldest first, out of their balance (checked inside the
+        transaction, so two repayments at once can't overdraw). Returns what was paid and the ids of the loans that
+        cleared, or None if the balance is short."""
+        now = time.time()
+        with self.lock:
+            row = self.conn.execute("SELECT balance FROM bettors WHERE lower(name)=lower(?)", (name,)).fetchone()
+            if row is None or row[0] + 1e-9 < amount:
+                return None
+            open_loans = self.conn.execute(
+                "SELECT id, owed, repaid FROM loans WHERE lower(bettor)=lower(?) AND cleared_ts IS NULL ORDER BY taken_ts, id",
+                (name,)).fetchall()
+            left, paid, cleared = amount, 0.0, []
+            try:
+                for loan in open_loans:
+                    if left <= 1e-9:
+                        break
+                    due = loan["owed"] - loan["repaid"]
+                    part = min(due, left)
+                    done = part + 1e-9 >= due
+                    self.conn.execute("UPDATE loans SET repaid = repaid + ?, cleared_ts = ? WHERE id=?",
+                                      (part, now if done else None, loan["id"]))
+                    left -= part
+                    paid += part
+                    if done:
+                        cleared.append(loan["id"])
+                if paid > 0:
+                    self.conn.execute("UPDATE bettors SET balance = balance - ? WHERE lower(name)=lower(?)", (paid, name))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+            return {"paid": round(paid, 2), "cleared": cleared}
+
+    def loans(self, name=None, open_only=False, limit=None):
+        """Loans newest first: everyone's, or one bettor's; `open_only` keeps the ones still being paid back."""
+        sql, params = "SELECT * FROM loans", []
+        where = []
+        if name:
+            where.append("lower(bettor)=lower(?)")
+            params.append(name)
+        if open_only:
+            where.append("cleared_ts IS NULL")
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY taken_ts DESC, id DESC"
+        if limit:
+            sql += f" LIMIT {int(limit)}"
+        return self.query(sql, params)
+
+    def loan_totals(self):
+        """Per bettor (lower-cased name): `borrowed` (open principal, what counts against the limit), `debt` (what
+        they still owe, interest included) and `net` (every loan's principal minus what was paid back, this season:
+        the credits loans added to their balance, so the leaderboard can leave them out of profit)."""
+        return {r["k"]: r for r in self.query(
+            """SELECT lower(bettor) AS k,
+                      SUM(CASE WHEN cleared_ts IS NULL THEN principal ELSE 0 END) AS borrowed,
+                      SUM(CASE WHEN cleared_ts IS NULL THEN owed - repaid ELSE 0 END) AS debt,
+                      SUM(principal - repaid) AS net
+               FROM loans GROUP BY lower(bettor)""")}
+
+    # ---- the Banana Hunt (see hunt.py) ----------------------------------------------
+    def hunt_pay(self, name, day, credits, now=None):
+        """Pay a bettor for one banana: their balance and the day's row (this season's), in one transaction."""
+        now = now or time.time()
+        with self.lock:
+            try:
+                cur = self.conn.execute(
+                    "UPDATE hunt_days SET bananas = bananas + 1, credits = credits + ?, updated_ts = ? "
+                    "WHERE lower(bettor)=lower(?) AND day=? AND season_id IS NULL", (credits, now, name, day))
+                if not cur.rowcount:
+                    self.conn.execute("INSERT INTO hunt_days(bettor, day, bananas, credits, updated_ts) VALUES(?,?,1,?,?)",
+                                      (name, day, credits, now))
+                self.conn.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (credits, name))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
+    def hunt_totals(self):
+        """Per bettor (lower-cased name): credits from the hunt this season and all time, and bananas picked."""
+        return {r["k"]: r for r in self.query(
+            """SELECT lower(bettor) AS k, SUM(CASE WHEN season_id IS NULL THEN credits ELSE 0 END) AS season,
+                      SUM(credits) AS all_time, SUM(bananas) AS bananas FROM hunt_days GROUP BY lower(bettor)""")}
 
     def taxes_collected(self, sender, limit=20):
         """Generosity taxes a bettor collected, newest first, with the bet they came from."""

@@ -1,12 +1,14 @@
-"""Bananas: the shop's currency, earned alongside credits and never turned back into them.
+"""Bananas: the shop's currency, earned by playing and never turned back into credits.
 
-Every credit a bettor *gains* pays `banana_rate` bananas (0.1 by default, so 10 credits = 1 banana): a won bet's
-profit (payout minus stake) and every game reward. Losing never takes bananas away, so a bettor's bananas earned
-this season are exactly banana_rate x the credits they gained this season, a straight line. Bananas only ever go
-into banana_ledger; nothing here writes to `bettors`, `bets` or `rewards`, so the shop can't move the leaderboard.
+Every Competitive game a squad member plays pays `banana_per_game` bananas (5 by default), win or lose, whoever
+they queued with: a solo game counts as much as a squad game. Credits are different: they come only from squad
+games (game rewards) and from betting. Bananas are whole numbers. They only ever go into banana_ledger; nothing
+here writes to `bettors`, `bets` or `rewards`, so the shop can't move the leaderboard.
 
-`earn()` (db.earn_bananas) scans won bets and rewards for gains not paid yet, so it can run after every settlement
-and at start-up; the ledger's unique (reason, ref) keeps it from paying twice. A season reset zeroes every wallet
+`earn()` (db.earn_game_bananas) pays every member line in `member_games` that started after meta `bananas_since`
+(set the first time it runs, so an upgrade doesn't pay for the whole backlog) and isn't paid yet, so it can run
+after every sync and at start-up; the ledger's unique (reason, ref) keeps it from paying twice. Wallets left with a
+fraction from the old per-credit scheme get one rounding row (db.round_bananas). A season reset zeroes every wallet
 (db.archive_and_reset) but owned items stay.
 
 The catalogue is code, not data: CATALOG lists every item with its slot, price and `look` (what the page needs to
@@ -208,18 +210,30 @@ SOCIAL_ITEMS = {i["id"]: i for i in SOCIAL}
 
 
 class BananaManager:
-    def __init__(self, cfg, db, bets):
+    def __init__(self, cfg, db, bets, accounts=None):
         self.db = db
         self.bets = bets
-        self.rate = float(cfg.get("banana_rate", 0.1))
-        self.starting = float(cfg.get("starting_bananas", 50))
+        self.per_game = max(0, int(cfg.get("banana_per_game", 5)))
+        self.starting = max(0, int(cfg.get("starting_bananas", 50)))
+        # Who gets paid for a member's games: a callable returning {puuid: bettor account name}.
+        self.accounts = accounts or (lambda: {})
+
+    def since(self):
+        """Games that started before this never pay (set the first time bananas are paid, like rewards_since)."""
+        since = self.db.get_meta("bananas_since")
+        if since is None:
+            since = time.time()
+            self.db.set_meta("bananas_since", since)
+        return since
 
     def earn(self):
-        """Give any account without this season's starting bananas its `starting_bananas`, then pay bananas for credit
-        gains not paid yet (see the module docstring). Returns how many ledger rows were added."""
+        """Give any account without this season's starting bananas its `starting_bananas`, then pay bananas for every
+        game played and not paid yet (see the module docstring), and round away any fraction left from the old
+        per-credit scheme. Returns how many ledger rows were added."""
         added = self.db.grant_starting_bananas(self.starting) if self.starting > 0 else 0
-        if self.rate > 0:
-            added += self.db.earn_bananas(self.rate)
+        if self.per_game > 0:
+            added += self.db.earn_game_bananas(self.per_game, self.accounts(), self.since())
+        added += self.db.round_bananas()
         return added
 
     # ---- reading ---------------------------------------------------------------
@@ -241,17 +255,17 @@ class BananaManager:
         return out
 
     def wallet(self, name):
-        return round(self.db.banana_wallet(name), 2)
+        return int(round(self.db.banana_wallet(name)))
 
     def summary(self, name, totals=None):
         t = (totals if totals is not None else self.db.banana_totals()).get(name.lower()) or {}
-        return {"wallet": round(t.get("wallet") or 0, 2), "earned": round(t.get("earned") or 0, 2),
-                "season_earned": round(t.get("season_earned") or 0, 2), "season_credits": round(t.get("season_credits") or 0, 2),
-                "spent": round(t.get("spent") or 0, 2)}
+        whole = lambda k: int(round(t.get(k) or 0))  # noqa: E731
+        return {"wallet": whole("wallet"), "earned": whole("earned"), "season_earned": whole("season_earned"),
+                "season_games": whole("season_games"), "spent": whole("spent")}
 
     def shop(self, me=None):
         """The catalogue, plus the signed-in bettor's wallet, items and recent history."""
-        out = {"rate": self.rate, "groups": [{"key": k, "label": l, "desc": d} for k, l, d in GROUPS],
+        out = {"per_game": self.per_game, "groups": [{"key": k, "label": l, "desc": d} for k, l, d in GROUPS],
                "slots": [{"key": k, "label": l, "desc": d, "group": g} for k, l, d, g in SLOTS],
                "catalog": CATALOG, "social": SOCIAL, "me": None}
         if me:
@@ -276,7 +290,7 @@ class BananaManager:
                          "items": len(own), "collection": sum(ITEMS[i]["price"] for i in own),
                          "credits": round(b["balance"], 2), "profit": board.get(k, {}).get("profit")})
         rows.sort(key=lambda r: (-r["collection"], -r["wallet"], r["name"].lower()))
-        return {"rate": self.rate, "catalog_size": len(CATALOG), "troop": rows, "looks": self.looks()}
+        return {"per_game": self.per_game, "catalog_size": len(CATALOG), "troop": rows, "looks": self.looks()}
 
     def profile(self, name):
         b = self.db.get_bettor(name)
@@ -296,7 +310,7 @@ class BananaManager:
             p["active"] = p["id"] in active
         by_me = [dict(p, name=SOCIAL_ITEMS[p["item_id"]]["name"]) for p in self.db.query(
             "SELECT * FROM banana_pranks WHERE bettor=? ORDER BY id DESC LIMIT 15", (name,)) if p["item_id"] in SOCIAL_ITEMS]
-        return {"name": name, "claimed": bool(b.get("password_hash")), "created_at": b.get("created_at"), "rate": self.rate,
+        return {"name": name, "claimed": bool(b.get("password_hash")), "created_at": b.get("created_at"), "per_game": self.per_game,
                 **self.summary(name), "owned": owned, "worn": self.db.banana_equipped().get(name.lower(), {}),
                 "collection": sum(o["price"] for o in owned), "catalog_size": len(CATALOG),
                 "pranks": pranks, "pranks_sent": by_me,

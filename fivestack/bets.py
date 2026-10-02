@@ -194,33 +194,41 @@ class BetManager:
         casino = casino_nets(self.db)
         house = {r["k"]: r["total"] for r in self.db.query(
             "SELECT lower(bettor) AS k, SUM(amount) AS total FROM house_payouts WHERE season_id IS NULL GROUP BY k")}
+        loans = self.db.loan_totals()
+        hunts = self.db.hunt_totals()
         out = []
         for b in self.db.bettors():
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
             earned = rewards.get(b["name"].lower(), 0.0)
             received = transfers.get(b["name"].lower(), 0.0)
-            # Match-betting profit only: game rewards, transfers, the casino and the house's giveaways change the
-            # balance too, but they are reported separately.
+            loan = loans.get(b["name"].lower()) or {}
+            hunted = (hunts.get(b["name"].lower()) or {}).get("season") or 0.0
+            # Match-betting profit only: game rewards, transfers, the casino, the house's giveaways, bank loans and
+            # the Banana Hunt change the balance too, but they are reported separately (a loan's credits aren't
+            # profit, and the interest isn't a loss).
             nets = casino.get(b["name"].lower(), {})
             given = house.get(b["name"].lower(), 0.0)
             profit = (b["balance"] + s["pending_stake"] - self.starting - earned - received - nets.get("total", 0.0)
-                      - given)
+                      - given - (loan.get("net") or 0.0) - hunted)
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
                 "balance": round(b["balance"], 2),
+                "debt": round(loan.get("debt") or 0.0, 2),  # what they still owe Onkey's Bank, interest included
+                "borrowed": round(loan.get("borrowed") or 0.0, 2),
                 "profit": round(profit, 2),
                 "rewards": round(earned, 2),
                 "transfers": round(received, 2),
                 "casino": round(nets.get("total", 0.0), 2),  # every casino game this season
                 "slots": round(nets.get("slots", 0.0), 2),
                 "giveaways": round(given, 2),
+                "hunt": round(hunted, 2),  # credits from the Banana Hunt this season
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }
             for k, v in s.items():
                 row[k] = round(v, 2) if isinstance(v, float) else v
             out.append(row)
-        out.sort(key=lambda x: -x["balance"])
+        out.sort(key=lambda x: -(x["balance"] - x["debt"]))  # credits minus bank debt: borrowed credits don't rank
         return out
 
     # ---- transfers between bettors ------------------------------------------
