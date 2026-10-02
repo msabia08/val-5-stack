@@ -4,7 +4,7 @@ Rules, fixed: six decks, reshuffled when less than a quarter is left; the dealer
 3:2; double down on any first two cards (after a split too, except split aces); split any pair, and split again as
 often as a new pair comes, with split aces taking one card each (a new ace splits again); the dealer checks for
 blackjack under an ace or ten-value card, so a dealer blackjack only takes the original stakes; no insurance, no
-surrender. Onkey's save (below) is part of the rules too. That's a house edge of about 0.27% (EDGE,
+surrender. Onkey's save (below) is part of the rules too. That's a house edge of about 0.11% (EDGE,
 bjstrategy.house_edge()), the house's cut.
 
 Onkey's hint: on your turn `me.hint` is the move worth most on average and every legal move's value
@@ -17,7 +17,7 @@ here until the card shows (the next card when you hit, double or split, standing
 the round ends), and then `me.peek_result` says what it was and whether he lied, so the page can have him gloat or
 own up.
 
-Onkey's save: SAVE_CHANCE (bjstrategy's, 1 in 200) of the busts a hit or a double causes, Onkey takes his pen to the
+Onkey's save: SAVE_CHANCE (bjstrategy's, 1 in 100) of the busts a hit or a double causes, Onkey takes his pen to the
 card and makes it the one that gives exactly 21, same suit (there always is one: you can only bust from 12 or more).
 The hand keeps `saved` (`index`, `was`: the card that came out of the shoe) so the page can draw it crossed out.
 
@@ -58,7 +58,7 @@ from .tables import LiveManager, LiveTable, check_ref
 STAKES = (5, 10, 25, 50, 100, 250, 500)
 DECKS = 6
 RESHUFFLE_AT = DECKS * 52 // 4
-EDGE = 0.0027  # bjstrategy.house_edge() for these rules, the save included; the self-test checks it
+EDGE = 0.0011  # bjstrategy.house_edge() for these rules, the save included; the self-test checks it
 SAVE_CHANCE = bjstrategy.SAVE_CHANCE
 SHARED_SEATS = 5
 BET_WINDOW_S = 15
