@@ -2173,7 +2173,7 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
   background: linear-gradient(170deg, #fffdf6, #f3e6c4); border: 2px solid #c9a227;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), inset 0 0 0 4px #fffdf6, inset 0 0 0 5.5px rgba(201, 162, 39, 0.7); transition: transform 0.12s; }
 .deal-face b { font: 900 27px/1 var(--font); letter-spacing: 0.2em; margin-right: -0.2em;
-  background: linear-gradient(180deg, #8a6200, #e8b923 40%, #fff1b0 52%, #c99a12 64%, #7a5600); -webkit-background-clip: text; background-clip: text; color: transparent;
+  background: linear-gradient(180deg, #8a6200, #e8b923 40%, #f8e086 52%, #c99a12 64%, #7a5600); -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8)); }
 .deal-face::after { content: ""; position: absolute; inset: -20% auto -20% -60%; width: 40%; transform: skewX(-20deg);
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent); animation: deal-shine 3.6s ease-in-out infinite; }
