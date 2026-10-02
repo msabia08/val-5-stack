@@ -9,7 +9,6 @@
     { "riot_id": "Friend3#TAG3", "nickname": "", "bettor": "" },
     { "riot_id": "Friend4#TAG4", "nickname": "", "bettor": "" }
   ],
-  "modes": ["competitive", "unrated", "premier"],
   "poll_interval_minutes": 10,
   "poll_size": 40,
   "fetch_match_details": true,
@@ -34,6 +33,8 @@
   "game_reward": 50,
   "win_reward": 0,
   "performance_bonus_max": 150,
-  "banana_rate": 0.1,
-  "starting_bananas": 50
+  "banana_per_game": 5,
+  "starting_bananas": 50,
+  "loan_max": 1000,
+  "loan_interest": 0.1
 }

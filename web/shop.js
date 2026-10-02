@@ -2,7 +2,7 @@
  * bettor's bananas and collection, and one bettor's profile), and the name styling the rest of the site uses to show
  * what people bought (nameHtml / ticketClass).
  *
- * Bananas are earned alongside credits (fivestack/bananas.py) and only buy looks and pranks: nothing here touches
+ * Bananas are earned per Competitive game played (fivestack/bananas.py) and only buy looks and pranks: nothing here touches
  * credits, bets or the leaderboard. app.js calls FiveShop.init() once with its shared helpers, like FiveBets.
  * Loaded before bets.js and app.js; plain JS, no dependencies.
  */
@@ -19,11 +19,8 @@ window.FiveShop = (() => {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#shop-modal')) closePreview(); });
   }
 
-  // Bananas are shown to one decimal only when they have one (12.5, 40).
-  const bn = (v) => {
-    const x = Math.floor((Number(v) || 0) * 10 + 1e-6) / 10;
-    return x.toLocaleString(undefined, { maximumFractionDigits: 1 });
-  };
+  // Bananas are whole numbers.
+  const bn = (v) => Math.round(Number(v) || 0).toLocaleString();
   const bananas = (v) => `<span class="bananas">${bn(v)} <span aria-hidden="true">${BANANA}</span><span class="sr-only">bananas</span></span>`;
 
   // ---- data ---------------------------------------------------------------------
@@ -182,11 +179,11 @@ window.FiveShop = (() => {
   function viewShop() {
     const s = state.shop;
     if (!s) return '<div class="loading">Loading…</div>';
-    const me = s.me, per = Math.round(1 / (s.rate || 0.1));
-    // The exchange rate is in the intro line below, so it doesn't get a tile of its own.
+    const me = s.me, per = s.per_game ?? 5;
+    // How bananas are earned is in the intro line below, so it doesn't get a tile of its own.
     const tiles = me ? [
       kpi('Your bananas', bananas(me.wallet), 'ready to spend'),
-      kpi('Earned this season', bananas(me.season_earned), `from ${fmt.credits(me.season_credits)} credits won`),
+      kpi('Earned this season', bananas(me.season_earned), `from ${me.season_games} game${me.season_games === 1 ? '' : 's'} played`),
       kpi('Spent in all', bananas(me.spent), 'on looks, pranks and the arcade'),
     ] : [];
     const signIn = me ? '' : '<div class="viz-note"><a href="#" data-signin>Sign in</a> to spend bananas. You can still preview everything.</div>';
@@ -218,8 +215,8 @@ window.FiveShop = (() => {
     return `${tiles.length ? `<section class="kpis">${tiles.join('')}</section>` : ''}
       <section class="card shop-hero"><div class="shop-hero-art" aria-hidden="true"></div><div>
         <h2>Onkey's Shop</h2>
-        ${how(`Every ${per} credits you win pays 1 ${BANANA}. Bananas only buy looks, never credits.`,
-          `<p>Bananas are paid on every credit you gain: a won bet's profit and every game reward, at ${per} credits to 1 ${BANANA}. Losing bets never take bananas back, so this season's bananas are always your credits won divided by ${per}.</p>` +
+        ${how(`Every Competitive game you play pays ${per} ${BANANA}, win or lose. Bananas only buy looks, never credits.`,
+          `<p>Every Competitive game a squad member plays pays ${per} bananas, whoever they queued with: a solo game counts as much as a ${stackWord()} game. Credits are different: they only come from ${stackWord()} games (game rewards) and from betting.</p>` +
           '<p>Spending bananas never changes your credits, your bets or the leaderboard. A season reset takes bananas back to zero with the credits, but everything you bought stays yours.</p>')}
         ${signIn}</div></section>
       ${collectionMap(s, me)}
@@ -286,12 +283,12 @@ window.FiveShop = (() => {
   }
 
   function historyCard(me) {
-    const why = { bet_win: 'Bet won', reward: 'Game reward', purchase: 'Bought', prank: 'Used', arcade: 'Played', starter: 'Starting bananas', season_reset: 'Season reset', demo: 'Demo grant' };
+    const why = { game: 'Game played', bet_win: 'Bet won', reward: 'Game reward', rounding: 'Rounded', purchase: 'Bought', prank: 'Used', arcade: 'Played', starter: 'Starting bananas', season_reset: 'Season reset', demo: 'Demo grant' };
     const rows = (me.history || []).map((h) => `<li class="banana-row"><span class="num ${h.delta > 0 ? 'up' : 'down'}">${h.delta > 0 ? '+' : '−'}${bn(Math.abs(h.delta))}</span>` +
       `<span><b>${why[h.reason] || esc(h.reason)}</b> <span class="muted">${esc(h.note || '')}</span></span>` +
       `<span class="muted small">${h.credits ? `${fmt.credits(h.credits)} credits · ` : ''}${fmt.ago(h.created_ts)}</span></li>`).join('');
     return `<section class="card"><h2>Your bananas</h2>` +
-      (rows ? `<ul class="recent banana-list">${rows}</ul>` : `<p class="muted">No bananas yet. Win a bet or play a 5-stack game.</p>`) + '</section>';
+      (rows ? `<ul class="recent banana-list">${rows}</ul>` : `<p class="muted">No bananas yet. Play a Competitive game.</p>`) + '</section>';
   }
 
   // ---- preview window ------------------------------------------------------------
@@ -444,7 +441,7 @@ window.FiveShop = (() => {
       <td class="bar-cell"><div class="hbar-track"><div class="hbar-fill banana" style="width:${Math.round((r.collection / maxCol) * 100)}%"></div></div></td>
       <td class="num balance">${bananas(r.wallet)}</td>
       <td class="num">${bn(r.season_earned)}</td>
-      <td class="num muted">${fmt.credits(r.season_credits)}</td></tr>`).join('');
+      <td class="num muted">${r.season_games}</td></tr>`).join('');
     const active = Object.entries(state.looks || {}).flatMap(([, l]) => l.pranks || []);
     const pranked = rows.flatMap((r) => (lookOf(r.name).pranks || []).map((p) => ({ ...p, target: r.name })));
     const business = pranked.length ? `<section class="card"><h2>Monkey business</h2><ul class="recent">${pranked.map((p) =>
@@ -457,9 +454,9 @@ window.FiveShop = (() => {
         ${kpi('Pranks active', active.length, active.length ? 'someone is getting got' : 'all quiet')}
       </section>
       <section class="card"><h2>Monkey rankings</h2>${how('Ordered by the bananas spent on their collection. Click anyone for their profile.',
-        `Bananas this season are the credits they won this season divided by ${Math.round(1 / (t.rate || 0.1))}, so the columns on the right always line up. Pranks don't count toward a collection.`)}
+        `Bananas this season are ${t.per_game ?? 5} per Competitive game played, so the columns on the right always line up. Pranks don't count toward a collection.`)}
         <div class="table-wrap"><table class="rankings troop"><thead><tr><th class="rank">#</th><th>Monkey</th><th class="num">Items</th><th>Collection</th>
-          <th class="num">Bananas</th><th class="num">Earned this season</th><th class="num">From credits won</th></tr></thead><tbody>${table}</tbody></table></div></section>
+          <th class="num">Bananas</th><th class="num">Earned this season</th><th class="num">Games</th></tr></thead><tbody>${table}</tbody></table></div></section>
       ${business}`;
   }
 
@@ -492,7 +489,7 @@ window.FiveShop = (() => {
       `<span class="muted small">${fmt.ago(x.created_ts)}</span></li>`).join('');
     const bet = p.betting || {};
     const isMe = state.me && state.me.name.toLowerCase() === p.name.toLowerCase();
-    const per = Math.round(1 / (p.rate || 0.1));
+    const per = p.per_game ?? 5;
     return `${back}
       <section class="card pf-card"><div class="pf-banner big ${w.banner ? w.banner.cls : ''}"></div>
         <div class="pf-head"><span class="pf-avatar big">${avatarOf(look)}</span>
@@ -500,7 +497,7 @@ window.FiveShop = (() => {
             <div class="muted small">${p.claimed ? 'Bettor' : 'Unclaimed account'}${p.created_at ? ` since ${fmt.date(p.created_at * 1000)}` : ''}${isMe ? ' · this is you, <a href="#shop">go shopping ›</a>' : ''}</div></div></div>
         <div class="ov-tiles pf-stats">
           <div class="ov-tile"><div class="ov-tile-label">Bananas</div><div class="ov-tile-value">${bananas(p.wallet)}</div><div class="ov-tile-sub">${bn(p.spent)} spent in all</div></div>
-          <div class="ov-tile"><div class="ov-tile-label">Earned this season</div><div class="ov-tile-value">${bn(p.season_earned)} ${BANANA}</div><div class="ov-tile-sub">${fmt.credits(p.season_credits)} credits won ÷ ${per}</div></div>
+          <div class="ov-tile"><div class="ov-tile-label">Earned this season</div><div class="ov-tile-value">${bn(p.season_earned)} ${BANANA}</div><div class="ov-tile-sub">${p.season_games} game${p.season_games === 1 ? '' : 's'} × ${per}</div></div>
           <div class="ov-tile"><div class="ov-tile-label">Collection</div><div class="ov-tile-value">${p.owned.length} <span class="ov-unit">/ ${p.catalog_size}</span></div><div class="ov-tile-sub">${bn(p.collection)} ${BANANA} of swag</div></div>
           <div class="ov-tile"><div class="ov-tile-label">Credits</div><div class="ov-tile-value">${fmt.credits(bet.balance)}</div><div class="ov-tile-sub">${bet.won ?? 0}-${bet.lost ?? 0} · profit <span class="${bet.profit > 0 ? 'up' : bet.profit < 0 ? 'down' : ''}">${fmt.signed(bet.profit, 0)}</span></div></div>
         </div></section>
