@@ -17,9 +17,43 @@ window.FiveSlots = (() => {
   // (BIG_OPENING) comes with every banana, Onkey or Golden Onkey win and one spin in ten besides, so it's no giveaway.
   const PAUSE = { cherry: 0, bell: 60, spike: 150, diamond: 300, banana: 450, monkey: 650, golden: 900 };
   const BIG_OPENING = ['banana', 'monkey', 'golden'];
+  // The Golden Onkey (the secret symbol) is wild: it matches anything, and it pays when spotted (slots.py's payouts()).
+  const wildIndex = () => data.symbols.findIndex((s) => s.secret);
+  const matches = (a, b) => a === b || a === wildIndex() || b === wildIndex();
+  // The symbol a matching pair stands for: the other one when one of them is the Golden Onkey.
+  const pairSymbol = (a, b) => (a === wildIndex() ? b : a);
+  // The line a spin's reels make (the symbols that aren't Golden Onkeys all match), or -1.
+  function lineOf(reels) {
+    const rest = reels.filter((r) => r !== wildIndex());
+    return !rest.length ? wildIndex() : rest.every((r) => r === rest[0]) ? rest[0] : -1;
+  }
+  // What a spin paid, part by part (the server's "parts"; a line, then the Golden Onkey spotted).
+  const partsOf = (spin) => spin?.parts || [];
+  // The order the reels stop in: a matching pair first when the result has one (either of the two first; a real pair
+  // before one the Golden Onkey makes), so the last reel to stop is always the one that decides the line; with no pair
+  // at all, any order. It only changes which reel stops when, never what any reel shows.
+  function stopOrder(reels) {
+    const pairs = [[0, 1], [0, 2], [1, 2]], pick = (list) => list[Math.floor(Math.random() * list.length)];
+    const same = pairs.filter(([a, b]) => reels[a] === reels[b]), wild = pairs.filter(([a, b]) => matches(reels[a], reels[b]));
+    const pair = same.length ? pick(same) : wild.length ? pick(wild) : null;
+    const order = pair ? [...pair, 3 - pair[0] - pair[1]] : [0, 1, 2].sort(() => Math.random() - .5);
+    if (pair && Math.random() < .5) [order[0], order[1]] = [order[1], order[0]];
+    return order;
+  }
   const storageKey = (name) => `fs.slotSpin.${name.toLowerCase()}`;
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance } = ctx); }
+  function init(ctx) {
+    ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance } = ctx);
+    // Space spins (or checks the last spin) on this tab, unless you're typing or on another control.
+    document.addEventListener('keydown', (e) => {
+      if (state.view !== 'slots' || e.code !== 'Space' || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.target.closest?.('input, textarea, select, button, summary, a, [contenteditable], .modal')) return;
+      const button = $('#slot-spin');
+      if (!button) return;
+      e.preventDefault();
+      if (!button.disabled) button.click();
+    });
+  }
   function syncOwner() {
     const name = state.me?.name || null;
     if (owner === name) return;
@@ -48,7 +82,12 @@ window.FiveSlots = (() => {
     return s.img ? `<img class="slots-img${s.glow ? ' golden' : ''}" src="${esc(s.img)}" alt="" draggable="false">` : s.icon;
   };
   const icon = (i) => `<span role="img" aria-label="${esc(data.symbols[i].name)}">${glyph(i)}</span>`;
-  const reelsNow = () => result?.reels || [0, 3, 5];
+  // What the reels show: this visit's last result, else your last jackpot spin (so a reload doesn't change the
+  // machine), else a starting line-up.
+  const reelsNow = () => {
+    const last = data.history?.find((s) => s.machine === 'jackpot' && s.reels?.length === 3 && s.reels.every((r) => data.symbols[r]));
+    return result?.reels || last?.reels || [0, 3, 5];
+  };
   // The LED frame: lights at fixed spots on a rounded outline 8px inside the cabinet's edge, clockwise from the top
   // left: the straight runs end where the corners curve (20px round at the top, 12px at the bottom, following the
   // cabinet's 28px and 20px corners), with a light on each top curve. Each carries its place in a repeating run of 9
@@ -109,11 +148,17 @@ window.FiveSlots = (() => {
     const strip = $$('.slots-strip')[i], n = cells();
     if (strip) [cell, n + cell, 2 * n + cell].forEach((c) => { strip.children[c].innerHTML = glyph(value); });
   }
-  const tierOf = (spin) => spin && spin.net > 0 && spin.reels.every((r) => r === spin.reels[0]) ? FX[data.symbols[spin.reels[0]]?.key] || 0 : 0;
-  // Three copies make the wrap invisible: the visible window always sits in the middle copy.
+  // A win's celebration tier comes from its line's symbol (a Golden Onkey filling in doesn't change it).
+  const lineSymbol = (spin) => partsOf(spin).find((p) => p.kind === 'line')?.symbol;
+  const tierOf = (spin) => (spin && spin.net > 0 ? FX[data.symbols[lineSymbol(spin)]?.key] || 0 : 0);
+  // The spin that just landed: its Golden Onkeys pop and its cash-outs deal in on the first draw after it, not again.
+  let freshId = null;
+  // Three copies make the wrap invisible: the visible window always sits in the middle copy. A Golden Onkey resting on
+  // the line after a spin glows (.spotted).
   const reel = (value, i) => {
     const strip = stripsNow()[i], at = cellFor(i, value), swap = swapped[i];
-    return `<div class="slots-reel" role="img" aria-label="${esc(data.symbols[value].name)}"><div class="slots-strip" aria-hidden="true" style="transform:translate3d(0,${70 - (strip.length + at) * 140}px,0)">${[...strip, ...strip, ...strip].map((s, c) => `<span class="slots-symbol">${glyph(swap && c % strip.length === swap.cell ? swap.value : s)}</span>`).join('')}</div></div>`;
+    const spotted = !busy && result && value === wildIndex();
+    return `<div class="slots-reel${spotted ? ' spotted' : ''}" role="img" aria-label="${esc(data.symbols[value].name)}"><div class="slots-strip" aria-hidden="true" style="transform:translate3d(0,${70 - (strip.length + at) * 140}px,0)">${[...strip, ...strip, ...strip].map((s, c) => `<span class="slots-symbol">${glyph(swap && c % strip.length === swap.cell ? swap.value : s)}</span>`).join('')}</div>${spotted ? spotTag() : ''}</div>`;
   };
 
   // Win fanfares grow with the tier: a short arpeggio, then longer runs with a lower voice under them.
@@ -126,7 +171,8 @@ window.FiveSlots = (() => {
   ];
   // Every sound is synthesized. kind: start (the lever and a whoosh), stop (a reel's thunk; index = reel), tick (a
   // teased reel creeping past a symbol; index = tease level), beat (a heartbeat while it teeters), snap (its final
-  // snap), teaseWin (a crash and a rising sting), teaseLose (a sad trombone), win (the fanfare; index = tier).
+  // snap), teaseWin (a crash and a rising sting), teaseLose (a sad trombone), win (the fanfare; index = tier), spot (a
+  // Golden Onkey landing; index = how many have landed before it), cash (a cash-out chip; index = its place).
   let noiseBuf = null;
   function sound(kind, index = 0) {
     if (muted || document.hidden || state.view !== 'slots') return;
@@ -175,6 +221,15 @@ window.FiveSlots = (() => {
         // A metal ratchet: a short bright click with a little body under it, a touch different per reel.
         noise(now, .026, .04, 'bandpass', 1500 + index * 450 + Math.random() * 300);
         tone(190 + index * 35, now, 'square', .009, .03, { lp: 1200 });
+      } else if (kind === 'spot') {
+        // A Golden Onkey landing: a bright two-note glint over a shimmer, higher for the second one.
+        const lift = index ? 1.26 : 1;
+        [1567.98, 2093].forEach((f, k) => tone(f * lift, now + k * .07, 'triangle', .06, .35));
+        noise(now, .5, .04, 'highpass', 7000);
+      } else if (kind === 'cash') {
+        // A cash-out chip dealing in: a coin tick, rising with each one (index).
+        tone(1318.51 * 1.12 ** index, now, 'square', .035, .09, { lp: 4000 });
+        tone(2637 * 1.12 ** index, now + .03, 'sine', .03, .12);
       } else if (kind === 'tick') {
         tone(900 + index * 120, now, 'square', .03, .05);
       } else if (kind === 'beat') {
@@ -276,6 +331,10 @@ window.FiveSlots = (() => {
   function celebrate(spin) {
     const tier = tierOf(spin);
     if (spin.net > 0) sound('win', tier);
+    // Golden Onkeys spotted or doubling a line (not the three-of-a-kind jackpot, which is tier 4): golden sparkles out
+    // of each one, at the same time as the line's own celebration rather than after it.
+    const spotted = partsOf(spin).find((p) => p.kind === 'spotted' || p.kind === 'wild');
+    if (spotted) $$('.slots-reel.spotted').forEach((el) => confetti?.(el, spotted.count > 1, { emoji: ['🌟', '✨'] }));
     if (!tier) return;
     const glass = $('.slots-glass'), cabinet = $('.slots-cabinet'), calm = reduced();
     const payout = `${money(spin.payout)} credits`;
@@ -303,6 +362,35 @@ window.FiveSlots = (() => {
     rain(layer, image('/assets/onkey-logo.png', 'slots-fx-onkey golden'), 90, 3600);
   }
 
+  // A Golden Onkey landing on the line: its reel flashes gold and a "Spotted!" tag pops up on it, with a glint. The
+  // redraw after the spin keeps the animation going where it was (spotAt), so it plays once, smoothly.
+  const SPOT_MS = 900, spotAt = [0, 0, 0];
+  const spotTag = () => `<span class="slots-spot-tag" aria-hidden="true">Spotted!</span>`;
+  function spotPop(el, elapsed) {
+    if (reduced() || elapsed >= SPOT_MS) return;
+    const ring = el.animate([
+      { boxShadow: 'inset 0 0 0 0 rgba(255, 210, 60, 0), 0 0 0 rgba(255, 196, 0, 0)' },
+      { boxShadow: 'inset 0 0 0 8px rgba(255, 210, 60, .95), 0 0 46px rgba(255, 196, 0, .85)', offset: .25 },
+      { boxShadow: 'inset 0 0 0 3px rgba(255, 210, 60, .8), 0 0 18px rgba(255, 196, 0, .45)' },
+    ], { duration: SPOT_MS, easing: 'ease-out' });
+    const tag = el.querySelector('.slots-spot-tag');
+    const pop = tag?.animate([
+      { opacity: 0, transform: 'translateX(-50%) translateY(14px) scale(.4)' },
+      { opacity: 1, transform: 'translateX(-50%) translateY(-4px) scale(1.18)', offset: .35 },
+      { opacity: 1, transform: 'translateX(-50%) translateY(0) scale(1)' },
+    ], { duration: SPOT_MS * .6, easing: 'cubic-bezier(.2, .8, .3, 1.2)', fill: 'backwards' });
+    [ring, pop].forEach((a) => { if (a) a.currentTime = elapsed; });
+  }
+  function landSpotted(i, before) {
+    const el = $$('.slots-reel')[i];
+    spotAt[i] = performance.now();
+    sound('spot', before);
+    if (!el) return;
+    el.classList.add('spotted');
+    if (!el.querySelector('.slots-spot-tag')) el.insertAdjacentHTML('beforeend', spotTag());
+    spotPop(el, 0);
+  }
+
   // Cubic Hermite: from `from`, cover `dist` in `dur` seconds, starting at velocity m0 / dur and ending at m1 / dur.
   const hermite = (from, dist, m0, m1) => (t) => from + m0 * (t * t * t - 2 * t * t + t) + dist * (-2 * t * t * t + 3 * t * t) + m1 * (t * t * t - t * t);
   // A snap with a little overshoot before it settles.
@@ -310,7 +398,9 @@ window.FiveSlots = (() => {
   function startMotion() {
     const start = performance.now(), positions = reelsNow().map((value, i) => cellFor(i, value)), brakes = [], stopped = [false, false, false];
     const origin = [...positions];
-    let previous = start, frame = 0, targets = null, dues = null, ended = false, resolve, tease = null;
+    // order[k] is the reel that stops k-th (stopOrder(), set in settle()); last() is the one that decides the spin.
+    let previous = start, frame = 0, targets = null, dues = null, ended = false, resolve, tease = null, order = [0, 1, 2];
+    const last = () => order[2];
     const clanked = [0, 0, 0];
     let lastClank = 0;
     const done = new Promise((r) => { resolve = r; });
@@ -319,10 +409,10 @@ window.FiveSlots = (() => {
       $$('.slots-strip').forEach((strip, i) => {
         strip.style.transform = `translate3d(0,${70 - (cells() + wrap(positions[i])) * 140}px,0)`;
         strip.parentElement.classList.toggle('stopped', stopped[i]);
-        strip.parentElement.classList.toggle('teasing', !!tease?.on && i === 2 && !stopped[i]);
+        strip.parentElement.classList.toggle('teasing', !!tease?.on && i === last() && !stopped[i]);
         if (stopped[i]) strip.parentElement.setAttribute('aria-label', data.symbols[targets[i]].name);
       });
-      $('.slots-glass')?.classList.toggle('teasing', !!tease?.on && !stopped[2]);
+      $('.slots-glass')?.classList.toggle('teasing', !!tease?.on && !stopped[last()]);
       $('.slots-glass')?.classList.toggle('teetering', !!tease?.teeter);
     }
     // Where a reel stops: the first cell holding the result after `run` cells; a secret symbol has no cell, so it
@@ -336,7 +426,7 @@ window.FiveSlots = (() => {
       return { cell, secret, dist: run + wrap(cell - from - run) };
     }
     function brake(i, now, from, velocity) {
-      if (tease && i === 2) {
+      if (tease && i === last()) {
         // Keep going flat out, slow to a crawl, then creep (longer and slower for bigger pairs) to stop half on the
         // matching symbol and half on its neighbour, teeter there to a heartbeat, and snap: forward or back onto the
         // match on a win; on a loss, back when the match was just short (the cell below) or forward off it when it
@@ -344,13 +434,17 @@ window.FiveSlots = (() => {
         const lvl = tease.level, hold = .5 + lvl * .2, crawl = 2.6 - lvl * .25, creep = 1.5 + lvl * .15;
         const slowDur = 1 + lvl * .1, slowDist = (velocity + crawl) / 2 * slowDur, creepDur = 2 * creep / crawl;
         const teeterDur = 1.1 + lvl * .15, beats = lvl >= 3 ? 4 : 3, snapDur = .34;
-        const pair = targets[0], win = targets[2] === pair, strip = stripsNow()[i], n = strip.length;
+        // The pair may be one the Golden Onkey makes; a win is any line (the Golden Onkey filling in too).
+        const pair = pairSymbol(targets[order[0]], targets[order[1]]), win = lineOf(targets) !== -1;
+        const strip = stripsNow()[i], n = strip.length;
         const below = (c) => strip[(c + 1) % n] === pair, above = (c) => strip[(c + n - 1) % n] === pair;
         const { cell, secret, dist } = landing(i, from, velocity * hold + slowDist + creep, win ? null : (c) => below(c) || above(c));
         const back = win ? Math.random() < .5 : below(cell) && (!above(cell) || Math.random() < .5);
         const off = back ? .5 : -.5;  // where it teeters, from the landing cell
         const holdDist = dist + off - slowDist - creep, holdDur = holdDist / velocity, edge = from + dist + off;
-        tease.on = true; tease.won = win;
+        // A miss that still lands a Golden Onkey isn't a loss: it ends on its glint, not the trombone.
+        tease.on = true; tease.won = win; tease.spotted = !win && targets[i] === wildIndex();
+        window.FiveOnkey?.note('slots_tease'); // Onkey gasps along
         tease.quiet = drone(holdDur + slowDur + creepDur + teeterDur, lvl);
         const segs = [
           { dur: holdDur, at: hermite(from, holdDist, velocity * holdDur, velocity * holdDur) },
@@ -362,7 +456,7 @@ window.FiveSlots = (() => {
         ];
         return { at: now, segs, end: from + dist, cell, secret };
       }
-      const dur = (1100 + i * 160) / 1000, run = velocity * dur / 2;
+      const dur = (1100 + order.indexOf(i) * 160) / 1000, run = velocity * dur / 2;
       const { cell, secret, dist } = landing(i, from, run);
       return { at: now, segs: [{ dur, at: hermite(from, dist, velocity * dur, 0) }], end: from + dist, cell, secret };
     }
@@ -411,7 +505,8 @@ window.FiveSlots = (() => {
         if (k === b.segs.length - 1 && u === 1) {
           positions[i] = b.end;
           stopped[i] = true; rest[i] = b.cell; sound('stop', i);
-          if (tease && i === 2) { tease.quiet?.(); sound(tease.won ? 'teaseWin' : 'teaseLose'); }
+          if (targets[i] === wildIndex()) landSpotted(i, stopped.filter((x, k) => x && targets[k] === wildIndex()).length - 1);
+          if (tease && i === last()) { tease.quiet?.(); if (!tease.spotted) sound(tease.won ? 'teaseWin' : 'teaseLose'); }
         }
       });
       paint();
@@ -427,22 +522,24 @@ window.FiveSlots = (() => {
     else finish();
     return {
       paint, cancel: finish,
-      // Whether the last spin teased, and if so whether it won (for the flash after the redraw).
-      teased: () => (tease?.on ? { won: tease.won } : null),
+      // Whether the last spin teased, and if so which reel and whether it won (for the flash after the redraw).
+      teased: () => (tease?.on && !tease.spotted ? { reel: last(), won: tease.won } : null),
       settle: (reels) => {
-        targets = reels;
+        targets = reels; order = stopOrder(reels);
         const stopAt = Math.max(performance.now(), start + 800), keyOf = (r) => data.symbols[r]?.key;
-        // Decided from the first two reels only.
-        const key = reels[0] === reels[1] ? keyOf(reels[0]) : null;
+        const [a, b] = order.map((i) => reels[i]);
+        // Decided from the first two reels to stop only (a Golden Onkey pairs with anything).
+        const key = matches(a, b) ? keyOf(pairSymbol(a, b)) : null;
         if (key && Math.random() < (TEASE[key] || 0)) tease = { level: TEASE_LEVEL[key] || 0, on: false };
-        // When each reel starts braking (they take 1.1, 1.26 and 1.42 s): 180 ms apart plus the pauses; a teased
-        // third reel starts its run-in once the second has stopped.
-        const bigWin = reels.every((r) => r === reels[0]) && BIG_OPENING.includes(keyOf(reels[0]));
+        // When each reel starts braking, in stop order (they take 1.1, 1.26 and 1.42 s): 180 ms apart plus the pauses;
+        // a teased last reel starts its run-in once the second has stopped. Two different symbols first means no
+        // pair anywhere (stopOrder() puts one first), so the last reel follows close behind instead of making you wait.
+        const bigWin = BIG_OPENING.includes(keyOf(lineOf(reels)));
         const opening = bigWin || Math.random() < .1 ? 700 + Math.random() * 500 : 0;
-        const gap1 = PAUSE[keyOf(reels[0])] || 0;
-        const gap2 = reels[0] === reels[1] ? (PAUSE[keyOf(reels[1])] || 0) * 1.5 + 150 : (PAUSE[keyOf(reels[1])] || 0) * .5;
-        const first = stopAt + opening, second = first + 180 + gap1;
-        dues = [first, second, tease ? second + 1260 + 150 : second + 180 + gap2];
+        const first = stopAt + opening, second = first + 180 + (PAUSE[keyOf(a)] || 0);
+        const third = tease ? second + 1260 + 150 : matches(a, b) ? second + 180 + (PAUSE[keyOf(b)] || 0) * 1.5 + 150 : second + 120;
+        dues = [];
+        [first, second, third].forEach((due, k) => { dues[order[k]] = due; });
         return done;
       },
     };
@@ -457,7 +554,7 @@ window.FiveSlots = (() => {
   function season(m) {
     const me = data.me;
     if (!me) return '<section class="card slots-season"><h2>Your season</h2><p class="muted">Sign in to see your season at the slots.</p></section>';
-    const expected = 1 / m.chances.reduce((a, c) => a + c, 0);
+    const expected = 1 / (m.win_chance || m.chances.reduce((a, c) => a + c, 0));
     const tile = (label, value, sub = '', cls = '') => `<div class="slots-stat"><span>${label}</span><b class="${cls}">${value}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     return `<section class="card slots-season"><h2>Your season</h2><div class="slots-stats">
       ${tile('Spins', fmt.n0(me.spins), `${money(me.staked)} credits staked`)}
@@ -482,10 +579,42 @@ window.FiveSlots = (() => {
       ? `Your hits count ${fmt.n0(lines.spins)} spin${lines.spins === 1 ? '' : 's'} since ${esc(fmt.date(lines.since * 1000))}.`
       : 'Your hits are counted from your next spin.';
     return `<aside class="card slots-paytable"><h2>The payouts</h2><p class="muted small">Match three on the centre line.<br>Payouts include your stake.</p>
-      <div class="slots-prizes">${rows.map((i) => `<div class="slots-prize ${win && result.reels.every((r) => r === i) ? 'won' : ''}"><span class="slots-pay-left"><span class="slots-pay-symbol" aria-hidden="true">${glyph(i).repeat(3)}</span><span class="sr-only">Three ${esc(data.symbols[i].name)}</span><small>1 in ${fmt.n0(Math.round(1 / m.chances[i]))}${lines ? ` · <span class="slots-hits">you've hit ${fmt.n0(lines.hits[i])}</span>` : ''}</small></span><span><b>${m.triples[i]}×</b><small>${money(m.triples[i] * stake)} credits</small></span></div>`).join('')}</div>
+      <div class="slots-prizes">${rows.map((i) => `<div class="slots-prize ${win && lineSymbol(result) === i ? 'won' : ''}"><span class="slots-pay-left"><span class="slots-pay-symbol" aria-hidden="true">${glyph(i).repeat(3)}</span><span class="sr-only">Three ${esc(data.symbols[i].name)}</span><small>1 in ${fmt.n0(Math.round(1 / m.chances[i]))}${lines ? ` · <span class="slots-hits">you've hit ${fmt.n0(lines.hits[i])}</span>` : ''}</small></span><span><b>${m.triples[i]}×</b><small>${money(m.triples[i] * stake)} credits</small></span></div>`).join('')}</div>
       ${note ? `<p class="muted small slots-lines-note">${note}</p>` : ''}
-      <details class="how"><summary>Every spin is independent.</summary><p>Each reel stops on a symbol at random; the chance beside each line is for all three reels matching it. Pairs and mixed symbols pay 0. Average return: ${m.rtp}% over many spins. Results settle immediately and cannot be cancelled.</p><p>Slot results have their own season totals. Match-betting ROI stays separate. Slots do not earn shop bananas.</p></details>
+      <details class="how"><summary>Every spin is independent.</summary><p>Each reel stops on a symbol at random; the chance beside each line is for all three reels matching it. Pairs and mixed symbols pay 0, unless the rare Golden Onkey is among them: it's wild, finishing any line it's part of and multiplying it (×2 for one, ×3 for two, never past 100×), and alone with no line it still pays 2× when spotted; three of them are the 100× jackpot, the top prize. Average return: ${m.rtp}% over many spins. Results settle immediately and cannot be cancelled.</p><p>Slot results have their own season totals. Match-betting ROI stays separate. Slots do not earn shop bananas.</p></details>
     </aside>`;
+  }
+  // A win's cash-outs side by side, one chip per part (the line; the Golden Onkey doubling it, or spotted on its own),
+  // and with more than one a total. A fresh win deals them in quickly one after another (CSS, --k) with a coin tick each and counts the total
+  // up (cashIn()); otherwise they just sit there.
+  function cashouts(spin) {
+    const parts = partsOf(spin), w = wildIndex(), name = (i) => esc(data.symbols[i].name);
+    const chip = (k, cls, icons, label, amount) => `<span class="slots-cash ${cls}" style="--k:${k}"><span class="slots-cash-icons" aria-hidden="true">${icons}</span><span class="slots-cash-text"><small>${label}</small><b>+${money(amount)}</b></span></span>`;
+    const chips = parts.map((p, k) => {
+      if (p.kind === 'spotted') return chip(k, 'spotted', glyph(w), `Golden Onkey spotted · ${p.mult}×`, spin.stake * p.mult);
+      if (p.kind === 'wild') return chip(k, 'spotted wild', glyph(w).repeat(p.count), `Golden Onkey${p.count > 1 ? 's' : ''} wild · line ×${p.factor}${p.capped ? ', capped at 100×' : ''}`, spin.stake * p.mult);
+      if (p.symbol === w) return chip(k, 'line jackpot', glyph(w).repeat(3), `Three Golden Onkeys · ${p.mult}×`, spin.stake * p.mult);
+      return chip(k, `line${p.wild ? ' wild' : ''}`, glyph(p.symbol).repeat(3 - p.wild) + glyph(w).repeat(p.wild),
+        `${name(p.symbol)} line${p.wild ? ' (wild)' : ''} · ${p.mult}×`, spin.stake * p.mult);
+    });
+    const total = parts.length > 1 ? `<span class="slots-cash-join" style="--k:${parts.length}" aria-hidden="true">=</span><span class="slots-cash total" style="--k:${parts.length}"><span class="slots-cash-text"><small>${spin.multiplier}× in all</small><b data-count="${spin.payout}">+${money(spin.payout)}</b></span></span>` : '';
+    const joined = chips.map((c, k) => (k ? `<span class="slots-cash-join" style="--k:${k - .5}" aria-hidden="true">+</span>` : '') + c).join('');
+    return `<div class="slots-cashouts">${joined}${total}</div>`;
+  }
+  const CASH_GAP = 120;
+  function cashIn() {
+    const chips = $$('.slots-result.fresh .slots-cash');
+    chips.forEach((el, k) => setTimeout(() => sound('cash', k), k * CASH_GAP));
+    const total = $('.slots-result.fresh [data-count]');
+    if (!total || reduced()) return;
+    const to = Number(total.dataset.count), begin = performance.now() + (chips.length - 1) * CASH_GAP, ms = 520;
+    const step = (now) => {
+      if (!total.isConnected) return;
+      const u = Math.max(0, Math.min((now - begin) / ms, 1));
+      total.textContent = `+${money(Math.round(to * (1 - (1 - u) ** 3)))}`;
+      if (u < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
   // The pull lever on the cabinet's side: another way to spin, which swings down when you do.
   function lever(insufficient) {
@@ -510,17 +639,18 @@ window.FiveSlots = (() => {
     const insufficient = state.me && state.me.balance < stake;
     const win = !busy && result?.net > 0, tier = busy ? 0 : tierOf(result);
     const message = result ? result.payout ? `${money(result.payout)} credits returned` : 'No winning line' : 'Ready when you are';
-    const detail = result ? `${signed(result.net)} credits net` : 'Three matching symbols on the centre line pays.';
+    const cashing = !busy && partsOf(result).length;
+    const detail = result ? `${signed(result.net)} credits net` : 'Three matching symbols on the centre line pays. Space spins.';
     return `<div class="slots-layout"><section class="slots-cabinet ${win ? 'slots-win' : ''} ${tier ? `slots-tier-${tier}` : ''} ${busy ? 'slots-busy' : ''}"><div class="slots-leds" aria-hidden="true">${LEDS}</div><div class="slots-body">
         <div class="slots-marquee"><h2>Slots</h2><button class="slots-sound" id="slot-sound" aria-pressed="${!muted}" aria-label="${soundLabel()}" title="${soundLabel()}">${speaker(muted)}</button></div>
-        <div class="slots-stage"><div class="slots-window"><div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><div class="slots-payline" aria-hidden="true"></div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span></div>${lever(insufficient)}
+        <div class="slots-stage"><div class="slots-window"><div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span></div>${lever(insufficient)}
 </div>
-          <div class="slots-result" role="status" aria-live="polite"><b>${busy ? 'Spinning…' : esc(message)}</b><span>${busy ? 'Let them roll.' : esc(detail)}</span></div>
+          <div class="slots-result${cashing && freshId === result.id ? ' fresh' : ''}" role="status" aria-live="polite">${cashing ? cashouts(result) : `<b>${busy ? 'Spinning…' : esc(message)}</b>`}<span>${busy ? 'Let them roll.' : esc(detail)}</span></div>
         </div>
         <div class="slots-deck"><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span>
           <div class="slots-well slots-stakes" role="group" aria-label="Credits per spin">${data.stakes.map((s) => `<button type="button" data-slot-stake="${s}" aria-pressed="${s === stake}" aria-label="Bet ${s} credits" ${locked ? 'disabled' : ''}><small>Bet</small><b>${s}</b></button>`).join('')}</div>
           ${readout()}
-          <div class="slots-well slots-spin-well"><div class="slots-spin-ring">${state.me ? `<button class="slots-spin" id="slot-spin" ${busy || (insufficient && !pending) ? 'disabled' : ''} aria-label="${busy ? 'Spinning' : pending ? 'Check last spin' : `Spin for ${stake} credits`}"><span>${busy ? '···' : pending ? 'Check' : 'Spin'}</span>${pending && !busy ? '<small>last spin</small>' : ''}</button>` : '<button class="slots-spin" data-signin><span>Sign in</span><small>to spin</small></button>'}</div></div>
+          <div class="slots-well slots-spin-well"><div class="slots-spin-ring">${state.me ? `<button class="slots-spin" id="slot-spin" aria-keyshortcuts="Space" ${busy || (insufficient && !pending) ? 'disabled' : ''} aria-label="${busy ? 'Spinning' : pending ? 'Check last spin' : `Spin for ${stake} credits`}"><span>${busy ? '···' : pending ? 'Check' : 'Spin'}</span>${pending && !busy ? '<small>last spin</small>' : ''}</button>` : '<button class="slots-spin" data-signin><span>Sign in</span><small>to spin</small></button>'}</div></div>
         </div>
         <p class="slots-error" role="alert">${esc(error || (insufficient && !pending ? 'Not enough credits. Choose a smaller stake.' : ''))}</p>
       </div></section>${paytable(m, win)}</div>
@@ -559,13 +689,16 @@ window.FiveSlots = (() => {
       rolling.cancel(); motion = null; busy = false;
       releaseBalance();
       if (state.view === 'slots') {
+        if (landed) freshId = landed.id;
         draw(); $('#slot-spin')?.focus();
-        if (landed && teased) $$('.slots-reel')[2]?.classList.add(teased.won ? 'tease-won' : 'tease-lost');
+        if (landed) { cashIn(); freshId = null; }
+        if (landed && teased) $$('.slots-reel')[teased.reel]?.classList.add(teased.won ? 'tease-won' : 'tease-lost');
         if (landed) {
           celebrate(landed);
-          const sym = data.symbols[landed.reels[0]] || {};
+          const line = lineSymbol(landed), sym = data.symbols[line ?? landed.reels[0]] || {};
           window.FiveOnkey?.note('slots', { stake: landed.stake, payout: landed.payout, multiplier: landed.multiplier,
-            symbol: sym.name, golden: !!sym.secret && landed.payout > 0 });
+            symbol: sym.name, golden: !!sym.secret && landed.payout > 0,
+            spotted: partsOf(landed).some((p) => p.kind === 'spotted'), wild: partsOf(landed).find((p) => p.kind === 'wild')?.factor });
         }
       }
     }
@@ -573,6 +706,7 @@ window.FiveSlots = (() => {
   function bind(viewEl) {
     $$('[data-slot-stake]', viewEl).forEach((button) => button.addEventListener('click', () => {
       stake = Number(button.dataset.slotStake); error = ''; draw();
+      window.FiveOnkey?.note('slots_stake', { stake });
       $(`[data-slot-stake="${stake}"]`)?.focus();
     }));
     $('#slot-spin', viewEl)?.addEventListener('click', spin);
@@ -583,6 +717,11 @@ window.FiveSlots = (() => {
       b.innerHTML = speaker(muted); b.setAttribute('aria-pressed', String(!muted)); b.setAttribute('aria-label', soundLabel()); b.title = soundLabel();
     });
     if (state.view === 'slots') motion?.paint();
+    // A Golden Onkey that has only just landed carries on its pop where it was before the redraw.
+    $$('.slots-reel.spotted', viewEl).forEach((el) => {
+      const i = $$('.slots-reel', viewEl).indexOf(el);
+      if (i >= 0) spotPop(el, performance.now() - spotAt[i]);
+    });
   }
   return { init, load, view, bind };
 })();

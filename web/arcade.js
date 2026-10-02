@@ -563,6 +563,10 @@ window.FiveArcade = (() => {
     const score = r.game ? r.game.score : 0;
     try {
       r.result = await api('/api/arcade/finish', { method: 'POST', body: JSON.stringify({ token: r.token, score }) });
+      // What Onkey says when you leave the machine: the best moment of the visit (a #1, a new best, else the last game).
+      const now = { game: r.info.name, score, best: !!r.result.new_best, champion: !!r.result.champion };
+      const rank = (t) => (t ? (t.champion ? 3 : t.best ? 2 : 1) : 0);
+      if (rank(now) >= rank(tell)) tell = now;
       // The reward: a new personal best gets the fanfare, then Onkey sings his song, whole.
       if (r.result.new_best && score > 0) setTimeout(() => { Sound.fx.fanfare(); setTimeout(() => Sound.song({ vol: 1 }), 700); }, 900);
     } catch (e) {
@@ -581,8 +585,11 @@ window.FiveArcade = (() => {
     } finally { quitting = false; }
   }
 
-  function close() {
+  // The visit's best game for Onkey (finish()), told when you leave the machine, not between replays.
+  let tell = null;
+  function close(replaying = false) {
     if (!run) return;
+    if (!replaying && tell) { window.FiveOnkey?.note('arcade', tell); tell = null; }
     cancelAnimationFrame(run.raf);
     run.game?.stop();
     run.cleanup();
@@ -595,7 +602,7 @@ window.FiveArcade = (() => {
 
   async function again() {
     const key = run.key;
-    close();
+    close(true);
     await insertCoin(key, null);
   }
 

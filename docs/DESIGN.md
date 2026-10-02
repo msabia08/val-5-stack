@@ -118,7 +118,7 @@ Reuse these before inventing new ones.
 | Line-up tables | `table.roster`, `tbody.drop-target[data-zone]`, `.grip`, `tr.slot-empty`, `tr.me` (Squad, `viewSquad()`) | Two tables with the same columns, Active squad above Bench. Rows drag between them (a ⋮⋮ grip in the first cell, the target tbody outlined with a dashed accent while a row is over it) and every row also has a Bench / Swap in button, so the page works without a mouse. The squad's open spots are dashed `slot-empty` rows that say what to do; a button that can't apply (full squad, minimum size) stays visible but disabled with a `title` saying why. Your own row is tinted like your Standings row. A line-up change posts the whole order, so dropping a row also reorders the colours |
 | The house | `houseCard()` → `.house-card` (Standings sidebar, first), `.house-pots`, `.house-goals` (✓ met / ✗ missed / – no result), `.house-recent`; recap `house()` (`.status` pills) | The pot and jackpot as two small tiles, the next game's objectives as a count and prizes only (they're secret), the last game's objectives revealed with who got what (`plainName()`), the latest giveaways. Rules are folded in a `how()` |
 | Odds boost | `.boost-card` (Place bets sidebar, under the odds format toggle), `.odd.boosted` | A sidebar card: the pick, then the usual price struck through beside its `oddBtn()`, then the rule. Wherever the boosted pick shows on the board, its button gets a static gold ring (`--warn`); a hot or cold streak's border wins over it. Added to a parlay, that leg carries the same ⚡ mark and a `--warn` accent stripe in the slip (`.parlay-leg.boosted`) and on its ticket (`.bet-leg.boosted`), and `parlayQuoteHtml()` notes the cap |
-| Onkey talks | `web/onkey.js` → `.onkey-says` under the top-left logo, `.brand.onkey-talking` / `.onkey-excited` | The casino dealer's voice site-wide: his noises in italics over a bold line in a card-coloured bubble, tail up to the logo, which hops and jabbers while he talks (three hops when excited). A line stays up about 8 seconds for 10 words (the dealer's about 7). Idle lines come every 70-140 s while the tab is visible, now and then an ominous one in a dark bubble that looks the same in every theme, while Onkey turns black and white under a shadow falling on him from above (darkest over his head, clearing down him, cut to his outline so the top bar around him is untouched) and sways slowly instead of hopping (`.onkey-ominous`, more often after midnight; reduced motion drops the sway), reactions straight away after something you did (at the slots he cheers every win but says something about a spin that didn't win only rarely: he's company, not a nag); at the blackjack and poker tables he walks from the logo to the dealer's seat (the logo stays empty and the dealer's face waits for him; `.onkey-walker`, a waddle with a bob and tilt per step) and walks back when you leave, and he's silent there; idle lines make no sound, and clicking the bubble hushes him for 15 minutes. `aria-live` is off: it's chatter, not news. New lines go in `IDLE`, `SAY` or `DYNAMIC`; pages report events with `FiveOnkey.note(kind, detail)` |
+| Onkey talks | `web/onkey.js` → `.onkey-says` under the top-left logo, `.brand.onkey-talking` / `.onkey-excited` | The casino dealer's voice site-wide: his noises in italics over a bold line in a card-coloured bubble, tail up to the logo, which hops and jabbers while he talks (three hops when excited). A line stays up about 8 seconds for 10 words (the dealer's about 7). Idle lines come every 70-140 s while the tab is visible, now and then an ominous one in a dark bubble that looks the same in every theme, while Onkey turns black and white under a shadow falling on him from above (darkest over his head, clearing down him, cut to his outline so the top bar around him is untouched) and sways slowly instead of hopping (`.onkey-ominous`, more often after midnight; reduced motion drops the sway), reactions straight away after something you did (at the slots he cheers every win but says something about a spin that didn't win only rarely: he's company, not a nag); at the blackjack and poker tables he walks from the logo to the dealer's seat (the logo stays empty and the dealer's face waits for him; `.onkey-walker`, a waddle with a bob and tilt per step) and walks back when you leave, and he's silent there; idle lines make no sound, and clicking the bubble hushes him for 15 minutes. `aria-live` is off: it's chatter, not news. He notices the small things too, a pick added to the slip, a theme change, an equipped look, a prank, a max bet, a tease (he gasps along), an arcade score when you leave the machine, a sync, new squad games coming in, coming back to the tab, a hover over him, but those go through `chime()`: only some of the time and never within 12 s of his last line, so he feels alive without chattering over himself. New lines go in `IDLE`, `SAY` or `DYNAMIC`; pages report events with `FiveOnkey.note(kind, detail)` |
 | A result still turning | `holdBalance()` / `releaseBalance()` / `displayBalance()` (app.js) | A spin the server has already settled (slots, the daily wheel) holds the balance shown in the top bar and on the machine (less the stake for slots) until its animation lands, so a background refresh can't give the result away; releasing it counts the chip up to the real balance. Any new game whose result is known before its animation ends should do the same |
 | Wheel tokens in the bet slip | `tokenRow()` → `.slip-tokens` > `.token-btn` (`.on`), `.token-price`, `perkNote()` → `.bet-perk` on tickets (bets.js) | Shown on each single only while you hold a token: a pill per kind with the count; one token per pick, each token on one pick at a time, a boost greyed out on the game-boosted pick. Turned on, the pick shows its boosted price in gold and its to-win says so; the ticket names the token |
 | A waiting reminder | `#me-wheel` (top bar), `.nav-alert` (a nav trigger or menu entry) | Something the signed-in bettor can do now that they'd miss otherwise (today: their daily wheel spin, `wheelReady()`): a gold chip in the top bar that goes there, hidden on that page, and a small pulsing gold dot on its nav group and menu entry. Both go away once it's done. Reduced motion keeps the dot still |
@@ -164,7 +164,7 @@ buttons reading "Bet 5", dim amber at rest and lit when chosen), the machine's
 readout (`readout()`: Credits, Bet and Win in amber digits) and the Spin button, a
 red domed arcade button reading just "Spin" (its label says the stake), with a
 glossy highlight in a stepped chrome bezel with an amber glow, which sinks a
-little when pressed. Chrome is `--slot-chrome` / `--slot-chrome-dark`. There's no footer. The gold centre line marks the paying symbols;
+little when pressed. Chrome is `--slot-chrome` / `--slot-chrome-dark`. There's no footer. Two gold arrows (`.slots-line-arrow`) mark the centre line, with no rule drawn across the symbols (thin lines over the reels were distracting); the reels' shading leaves the middle row brightest;
 adjacent symbols remain partly visible above and below. Seven stake buttons show
 the selection. Payouts list largest first, with multipliers and current credits,
 each line's chance ("1 in 20") and how often you've hit it, with a note on when
@@ -187,12 +187,17 @@ next to itself, laid out differently on each reel, so rarer symbols pass by less
 Secret symbols have no cells: when a reel stops on the Golden Onkey, it takes over
 the landing cell (`swapped`, `setCell()`) just before it rolls into view, and gives
 it back once it has rolled away on the next spin, so it's only seen where it lands
-(about 1 spin in 150).
-They accelerate, then decelerate with matching incoming velocity and stop left
-to right on the server's result. Repaints retain their positions; leaving the tab
+(about 1 spin in 272, and it always pays when it does).
+They accelerate, then decelerate with matching incoming velocity and stop on the
+server's result, one at a time in `stopOrder()`'s order: a matching pair first
+(either of the two first) when the result has one, so the last reel to stop is
+always the one that decides the spin; with no pair, any order, and the last reel
+follows 120 ms behind the second instead of keeping you waiting. The reels show
+your last spin when the page loads (`reelsNow()`). Space spins too (the Spin
+button's shortcut, ignored while a control or text field has focus). Repaints retain their positions; leaving the tab
 cancels motion. Reduced motion skips rolling (and the tease).
 
-The tease: when the first two reels match, the third may keep spinning after the
+The tease: when the first two reels to stop match, the last may keep spinning after the
 others stop, pulse gold (`.slots-reel.teasing`, the other two dimmed) over a
 rising drone, then slow to a crawl and creep the last cells with a tick per
 symbol, so you can't tell whether it will land. Whether it happens comes from the
@@ -211,15 +216,16 @@ giveaway.
 
 The tease's ending: the creep stops half on
 the pair's symbol and half on its neighbour, teeters there for a second or so to a
-heartbeat while the payline flickers red (`.slots-glass.teetering`), then snaps a
+heartbeat while the line's arrows flicker red (`.slots-glass.teetering`), then snaps a
 half cell with a little overshoot, a thump and a nudge of the cabinet. On a win it
-snaps onto the match from either side; on a loss the third reel lands on a cell of
+snaps onto the match from either side; on a loss the last reel lands on a cell of
 its real result next to the pair's symbol where the strip has one, and snaps back
 when the match was just short (below) or forward when it had crept just past
 (above): a deliberate near miss. It only picks between identical-looking cells,
 never changes a result or the odds. The reel then flashes gold with a crash and a
 rising sting, or red with a sad trombone (`.tease-won` / `.tease-lost`).
-Wins light the cabinet and the matching pay-table row. The marquee glows while
+Wins light the cabinet, the winning row (a gold glow behind the symbols,
+`.slots-win .slots-reel::before`) and the matching pay-table row. The marquee glows while
 the reels spin (`.slots-busy`). Synthesized sounds (`sound()`: tones and filtered
 noise) mark the spin (a lever and a whoosh), a ratchet clank as each symbol passes
 the line while the reels turn (one stream for the machine, at most every 70 ms
@@ -233,6 +239,30 @@ burst; banana a banana burst, a light shake and falling bananas; Onkey a gold
 flash, a harder shake, gold confetti, falling Onkeys and an "ONKEY!" banner; the
 Golden Onkey dims the page, flashes three times, shakes hardest, fires five
 confetti bursts, rains golden Onkeys and shows a "GOLDEN ONKEY!!!" banner. Each fanfare is longer than the last.
+
+The Golden Onkey is wild and pays when spotted (`payouts()` in `slots.py`; the page
+mirrors the rule in `lineOf()` / `matches()` for the stop order and the tease, and
+reads what was paid from the spin's `parts`). The moment its reel stops it pops
+(`landSpotted()` / `spotPop()`: a gold ring burst on the reel and a gold "Spotted!"
+pill, `.slots-spot-tag`, springing up at its top, with a two-note glint, higher for
+the second one), and it keeps the ring, the glow behind it and the tag while the
+result shows (`.slots-reel.spotted`). The redraw after the spin picks the pop up
+where it was (`spotAt`, Web Animations `currentTime`), so it plays once without a
+restart. A miss on a tease that still lands a Golden Onkey ends on its glint, not
+the trombone or the red flash.
+
+A win's payouts are cash-out chips side by side where the result line sits
+(`cashouts()`, `.slots-cashouts`): one `.slots-cash` per part, the line (its three
+symbols, the Golden Onkey drawn in where it filled in, "Bell line (wild) · 4×",
+"+40") and, in gold, what the Golden Onkey adds: multiplying the line ("Golden Onkey
+wild · line ×2", "+40"; ", capped at 100×" when the cap cut it) or, alone, spotted ("Golden Onkey spotted · 2×"), joined by
+"+", and with more than one part "=" and a gold total chip ("8× in all"). A fresh win (`freshId`, only the
+first draw after it lands) deals them in 120 ms apart with a springy pop
+(`slots-cash-in`, `--k`) and a rising coin tick each (`sound('cash', k)`), then
+counts the total up (`cashIn()`), all inside about a second, so two payouts read as
+one result rather than a queue. Their celebrations run together too: the line's
+tier and golden sparkles out of each spotted reel at once. Reduced motion shows the
+chips still and the total at once.
 The moving parts live in a fixed `.slots-fx-layer` that removes itself, so they
 play once and never replay on a redraw. Reduced motion keeps the glow, the sound
 and the banner (faded, not scaled) and drops the shake, flashes, rain and

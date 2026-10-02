@@ -1560,15 +1560,44 @@ body.modal-open { overflow: hidden; }
 .slots-reel::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, color-mix(in srgb, var(--slot-shadow) 60%, transparent), transparent 34%, transparent 66%, color-mix(in srgb, var(--slot-shadow) 60%, transparent)); }
 .slots-strip { position: absolute; top: 0; left: 0; width: 100%; will-change: transform; }
 .slots-symbol { display: grid; place-items: center; height: 140px; line-height: 1; font-size: 88px; user-select: none; }
-.slots-payline { position: absolute; top: calc(50% - 70px); left: 20px; right: 20px; height: 140px; border-top: 1px solid color-mix(in srgb, var(--slot-gold) 65%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--slot-gold) 65%, transparent); pointer-events: none; }
-.slots-line-arrow { position: absolute; top: 50%; transform: translateY(-50%); color: var(--slot-gold); font-size: 32px; }
+/* The centre line is marked by the two arrows alone, with no rule across the symbols; the reels' shading
+   (.slots-reel::after) leaves the middle row brightest. */
+.slots-line-arrow { position: absolute; top: 50%; transform: translateY(-50%); color: var(--slot-gold); font-size: 32px;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--slot-gold) 60%, transparent); transition: color .2s; }
 .slots-line-arrow.left { left: -3px; } .slots-line-arrow.right { right: -3px; }
+/* A win lights the winning row from behind (under the strip, over the reel's paper). */
+.slots-win .slots-reel::before { content: ''; position: absolute; z-index: -1; left: 0; right: 0; top: calc(50% - 70px); height: 140px;
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, color-mix(in srgb, var(--slot-gold) 55%, transparent), transparent 75%); }
 /* Spans the stage's full width (past its lopsided padding for the lever) so it centres under the reels and marquee. */
 .slots-result { display: flex; flex-direction: column; justify-content: center; gap: 4px; height: 100px; margin: 0 -24px 0 -108px; text-align: center; }
-.slots-result b { font: 700 24px/1.2 ui-monospace, Consolas, monospace; color: var(--slot-paper); }
-.slots-result span { font-size: 13px; color: var(--slot-muted); }
+.slots-result > b { font: 700 24px/1.2 ui-monospace, Consolas, monospace; color: var(--slot-paper); }
+.slots-result > span { font-size: 13px; color: var(--slot-muted); }
 .slots-win .slots-glass { box-shadow: 0 0 0 3px var(--slot-gold), 0 0 28px color-mix(in srgb, var(--slot-gold) 25%, transparent); }
-.slots-win .slots-result b { color: var(--slot-gold); }
+.slots-win .slots-result > b { color: var(--slot-gold); }
+/* A win's cash-outs (slots.js's cashouts()): a chip per part side by side, joined by + and = with the total. A fresh
+   win deals them in 120 ms apart (--k), each popping up with a little overshoot, so several read as one payout. */
+.slots-cashouts { display: flex; justify-content: center; align-items: center; gap: 10px; }
+.slots-cash { display: inline-flex; align-items: center; gap: 10px; height: 52px; padding: 0 14px 0 10px; border-radius: 12px;
+  color: var(--slot-paper); background: linear-gradient(#3a2547, #22142d); box-shadow: 0 0 0 2px var(--slot-gold), 0 4px 0 #0e0814, 0 0 18px color-mix(in srgb, var(--slot-gold) 30%, transparent); }
+.slots-cash-icons { display: inline-flex; gap: 2px; font-size: 22px; line-height: 1; }
+.slots-cash-icons .slots-img { width: 28px; height: 25px; }
+.slots-cash-text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.slots-cash small { font-size: 11px; color: var(--slot-muted); white-space: nowrap; }
+.slots-cash b { font: 800 20px/1.1 ui-monospace, Consolas, monospace; color: var(--slot-gold); text-shadow: 0 0 10px color-mix(in srgb, var(--slot-gold) 45%, transparent); }
+.slots-cash.spotted, .slots-cash.jackpot { background: linear-gradient(#5a4310, #2c1f06); box-shadow: 0 0 0 2px #ffe27a, 0 4px 0 #0e0814, 0 0 24px rgba(255, 200, 40, .55); }
+.slots-cash.spotted small, .slots-cash.jackpot small { color: #ffe9a8; }
+.slots-cash.total { padding: 0 16px; background: linear-gradient(#fff1b0, #ffc533 55%, #e89200); box-shadow: 0 0 0 2px var(--slot-chrome), 0 4px 0 #120a18, 0 0 26px rgba(255, 190, 40, .7); }
+.slots-cash.total small { color: #5a3a00; } .slots-cash.total b { color: #3b2400; text-shadow: 0 1px 0 rgba(255, 255, 255, .35); }
+.slots-cash-join { font: 800 22px ui-monospace, Consolas, monospace; color: var(--slot-gold); }
+.slots-result.fresh .slots-cash, .slots-result.fresh .slots-cash-join { animation: slots-cash-in .34s cubic-bezier(.2, .9, .3, 1.35) backwards; animation-delay: calc(var(--k, 0) * 120ms); }
+@keyframes slots-cash-in { from { opacity: 0; transform: translateY(14px) scale(.6); } }
+/* A Golden Onkey on the line: its reel keeps a gold ring and a "Spotted!" tag (popped in by slots.js's spotPop()). */
+.slots-reel.spotted { box-shadow: inset 0 0 0 3px rgba(255, 210, 60, .8), 0 0 18px rgba(255, 196, 0, .45); }
+.slots-reel.spotted::before { content: ''; position: absolute; z-index: -1; left: 0; right: 0; top: calc(50% - 70px); height: 140px;
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(255, 214, 80, .6), transparent 75%); }
+.slots-spot-tag { position: absolute; z-index: 2; left: 50%; top: 10px; transform: translateX(-50%); padding: 3px 12px; border-radius: 999px; white-space: nowrap;
+  font: 800 13px/1.3 ui-monospace, Consolas, monospace; letter-spacing: .06em; text-transform: uppercase; color: #3b2400;
+  background: linear-gradient(#fff1b0, #ffc533 60%, #e89200); box-shadow: 0 2px 0 #7a4a00, 0 0 14px rgba(255, 196, 0, .7); }
 /* The deck: one sloped control panel in a chrome trim with screws at its corners, lit from above, with a lip in front.
    The bet keys, the readout and the Spin button each sit in a recessed well in it and share its amber light. */
 .slots-deck { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 24px; margin: 4px 22px 30px; padding: 22px 32px;
@@ -1668,20 +1697,21 @@ body.modal-open { overflow: hidden; }
   filter: sepia(1) saturate(3.2) hue-rotate(-8deg) brightness(1.18) drop-shadow(0 0 4px #ffe066) drop-shadow(0 0 12px rgba(255, 196, 0, .75)); }
 .slots-fx-banner b { font: 900 64px/1 ui-monospace, 'Cascadia Code', Consolas, monospace; letter-spacing: .08em; color: var(--slot-gold); text-shadow: 0 0 24px color-mix(in srgb, var(--slot-gold) 60%, transparent); }
 .slots-fx-banner span { font: 700 22px ui-monospace, Consolas, monospace; }
-/* While the reels spin the marquee glows; while a teased reel teeters the payline flickers; when it lands the reel
+/* While the reels spin the marquee glows; while a teased reel teeters the line's arrows flicker red; when it lands the reel
    flashes gold (won) or red (lost). */
 .slots-busy .slots-marquee h2 { animation: slots-marquee .7s ease-in-out infinite alternate; }
 @keyframes slots-marquee { to { color: var(--slot-gold); text-shadow: 0 0 34px var(--slot-gold), 0 0 8px var(--slot-gold); } }
-.slots-glass.teetering .slots-payline { animation: slots-teeter .24s steps(2) infinite; }
-@keyframes slots-teeter { 50% { border-color: #ff4d4d; box-shadow: 0 0 24px rgba(255, 77, 77, .55), inset 0 0 18px rgba(255, 77, 77, .3); } }
+.slots-glass.teetering .slots-line-arrow { animation: slots-teeter .24s steps(2) infinite; }
+@keyframes slots-teeter { 50% { color: #ff4d4d; text-shadow: 0 0 14px rgba(255, 77, 77, .9); } }
 .slots-reel.tease-won { animation: slots-tease-won 1.2s ease-out; }
 .slots-reel.tease-lost { animation: slots-tease-lost 1.2s ease-out; }
 @keyframes slots-tease-won { 0%, 40% { box-shadow: inset 0 0 0 6px var(--slot-gold), 0 0 60px var(--slot-gold); } }
 @keyframes slots-tease-lost { 0%, 40% { box-shadow: inset 0 0 0 6px #ff4d4d, 0 0 40px rgba(255, 77, 77, .7); filter: saturate(.4) brightness(.8); } }
 @media (prefers-reduced-motion: reduce) {
   .slots-fx-layer.dim { animation: none; background: rgba(0, 0, 0, .45); }
-  .slots-busy .slots-marquee h2, .slots-glass.teetering .slots-payline, .slots-reel.tease-won, .slots-reel.tease-lost,
-  .slots-leds i, .slots-win .slots-leds i, .slots-lever.pulled .slots-lever-rod, .slots-lever.pulled .slots-lever-knob { animation: none; }
+  .slots-busy .slots-marquee h2, .slots-glass.teetering .slots-line-arrow, .slots-reel.tease-won, .slots-reel.tease-lost,
+  .slots-leds i, .slots-win .slots-leds i, .slots-lever.pulled .slots-lever-rod, .slots-lever.pulled .slots-lever-knob,
+  .slots-result.fresh .slots-cash, .slots-result.fresh .slots-cash-join { animation: none; }
   .slots-spin { transition: none; }
 }
 /* Below the machine, side by side: recent spins, your season and the squad's biggest wins. */

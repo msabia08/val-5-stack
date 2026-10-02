@@ -412,7 +412,7 @@ window.FiveShop = (() => {
         previewTarget.text = '';
         if (item.slot === 'theme') setTheme(item.look.theme);
         toast(item.slot ? `${item.name} is yours, and you're wearing it.` : `${item.name} used on ${r.target}.`, 'good');
-        window.FiveOnkey?.note('buy', { item: item.name });
+        window.FiveOnkey?.note('buy', { item: item.name, target: item.slot ? null : r.target });
         if (item.slot === 'celebration' || item.price >= 600) confetti($('#me-bananas') || e.currentTarget, item.price >= 600, myCelebration());
         state.me && (state.me.bananas = r.wallet);
         draw();
@@ -525,6 +525,7 @@ window.FiveShop = (() => {
       state.shop = r.shop;
       await loadTroop();
       if (msg) toast(msg, 'good');
+      if (path === '/api/shop/equip') window.FiveOnkey?.note('equip', { item: body.item ? itemsById().get(body.item)?.name || 'it' : '' });
       draw();
     } catch (e) { toast(e.message, 'bad'); }
   }

@@ -9,8 +9,9 @@ from .bets import BetError
 STAKES = (5, 10, 25, 50, 100, 250, 500)
 # Saved spins store these indexes, so keep the order and add new symbols at the end; a symbol's rank comes from its
 # multiplier in "triples". "img" replaces the emoji on the page ("glow" adds a golden glow to it). A "secret" symbol is
-# left out of the pay table and off the page's reel strips (it only shows where a reel stops on it), and its jackpot is
-# a bonus on top of the house edge: rtp() leaves it out unless asked.
+# left out of the pay table and off the page's reel strips (it only shows where a reel stops on it). It is wild (it
+# fills any gap in a line) and pays on its own when spotted (payouts()); everything it pays is a bonus on top of the
+# house edge: rtp() leaves it out unless asked.
 SYMBOLS = [
     {"key": "banana", "icon": "🍌", "name": "Banana"},
     {"key": "cherry", "icon": "🍒", "name": "Cherry"},
@@ -21,21 +22,53 @@ SYMBOLS = [
     {"key": "golden", "icon": "🌟", "name": "Golden Onkey", "img": "/assets/onkey-logo.png", "glow": True, "secret": True},
 ]
 MACHINES = {
-    # A spin picks its line first (draw_spin): each symbol's triple has "lines" tickets out of "tickets", so the
-    # bigger the payout the rarer the line: cherry 1 in 20 (3x), bell 1 in 25 (4x), spike 1 in 50 (8x), diamond 1 in
-    # 125 (20x), banana 1 in 250 (40x) and Onkey 1 in 500 (80x), a win about every 8 spins. Each line pays back 15-16%
-    # of stakes, 95.00% in all: a 5% house edge. The secret Golden Onkey, 1 in 10,000 (200x), adds 2% on top (97% in
-    # all). A losing spin is then shown with each reel drawn from "show" (cherries most, Onkey least, the Golden Onkey
-    # on 1 reel in 421, so it's rarely seen unless it hits); the page builds its reel strips from it too.
-    "jackpot": {"name": "Slots", "icon": "🎰", "desc": "Match three symbols. Win up to 200× your stake.",
-                "tickets": 100_000, "lines": [400, 5000, 4000, 800, 2000, 200, 10],
-                "triples": [40, 3, 4, 20, 8, 80, 200], "show": [50, 100, 90, 60, 80, 40, 1]},
+    # A spin picks its outcome first (draw_spin), each with its tickets out of "tickets" (outcomes()). The six regular
+    # lines, by "lines": the bigger the payout the rarer the line: cherry 1 in 20 (3x), bell 1 in 25 (4x), spike 1 in
+    # 50 (8x), diamond 1 in 125 (20x), banana 1 in 250 (40x) and Onkey 1 in 500 (80x). Each pays back 15-16% of
+    # stakes, 95.00% in all: a 5% house edge. The secret Golden Onkey's outcomes come on top (rtp(m, True)), and one
+    # spin in 272 shows one: three of them, 1 in 20,000 (100x, "lines"' last entry, the top prize); a lone one, "spot1"
+    # tickets ("spotted" pays 2x the stake); a pair it finishes, "wild1" tickets per symbol, and a symbol with two of
+    # them, "wild2" per symbol: filling in a line, one Golden Onkey doubles it and two triple it ("wild_factors"), and
+    # no win with a Golden Onkey pays more than "golden_cap" (100x, the jackpot), so the credit economy can take a hit
+    # at the biggest stake. A win about every 8 spins. Every other spin loses,
+    # and is shown with each reel drawn from "show" without the Golden Onkey (cherries most, Onkey least); the page
+    # builds its reel strips from "show" too.
+    "jackpot": {"name": "Slots", "icon": "🎰", "desc": "Match three symbols. Win up to 100× your stake.",
+                "tickets": 1_000_000, "lines": [4000, 50000, 40000, 8000, 20000, 2000, 50],
+                "triples": [40, 3, 4, 20, 8, 80, 100], "show": [50, 100, 90, 60, 80, 40, 1],
+                "spotted": 2, "spot1": 3000, "wild_factors": [1, 2, 3], "golden_cap": 100,
+                "wild1": [20, 250, 200, 40, 100, 10, 0], "wild2": [2, 2, 2, 2, 2, 2, 0]},
 }
+WILD = next(i for i, s in enumerate(SYMBOLS) if s.get("secret"))
+
+
+def payouts(machine, reels):
+    """What a spin's reels pay, as parts that add up. A line ({"kind": "line", "symbol", "mult", "wild": how many
+    Golden Onkeys filled it in}) when the symbols that aren't Golden Onkeys all match, and then what the Golden Onkeys
+    add ("wild": {"count", "factor": x2 for one, x3 for two, "mult": what that adds, "capped": true when the line
+    times the factor went over "golden_cap" and was cut to it}). A lone Golden Onkey with no line is "spotted"
+    ({"count": 1, "mult": 2}, on the stake). Three Golden Onkeys are their own 100x line, the top prize."""
+    golden = reels.count(WILD)
+    if golden == 3:
+        return [{"kind": "line", "symbol": WILD, "mult": machine["triples"][WILD], "wild": 0}]
+    rest = [r for r in reels if r != WILD]
+    if len(set(rest)) == 1:
+        base = machine["triples"][rest[0]]
+        parts = [{"kind": "line", "symbol": rest[0], "mult": base, "wild": golden}]
+        if golden:
+            factor = machine["wild_factors"][golden]
+            total = min(base * factor, machine.get("golden_cap", base * factor))
+            parts.append({"kind": "wild", "count": golden, "factor": factor, "mult": total - base,
+                          "capped": total < base * factor})
+        return parts
+    if golden and machine.get("spotted"):
+        return [{"kind": "spotted", "count": golden, "mult": machine["spotted"]}]
+    return []
 
 
 def multiplier(machine, reels):
-    """Only three of a kind pays."""
-    return machine["triples"][reels[0]] if reels[0] == reels[1] == reels[2] else 0
+    """The whole spin's multiplier: every part payouts() finds."""
+    return sum(p["mult"] for p in payouts(machine, reels))
 
 
 def draw_reel(weights):
@@ -48,38 +81,111 @@ def draw_reel(weights):
     raise AssertionError("unreachable")
 
 
+def outcomes(machine):
+    """Every outcome draw_spin() picks from, in ticket order, as (kind, symbol, tickets): "line" (three of a kind),
+    "wild1" (a pair and a Golden Onkey), "wild2" (one symbol and two Golden Onkeys) or "spot1" (a lone Golden Onkey)."""
+    out = [("line", i, n) for i, n in enumerate(machine["lines"])]
+    out += [("wild1", i, n) for i, n in enumerate(machine.get("wild1", [])) if n]
+    out += [("wild2", i, n) for i, n in enumerate(machine.get("wild2", [])) if n]
+    if machine.get("spot1"):
+        out.append(("spot1", WILD, machine["spot1"]))
+    return out
+
+
+def example(kind, symbol):
+    """One set of reels for an outcome, for pricing it (where the Golden Onkeys sit doesn't change the pay)."""
+    return {"line": [symbol] * 3, "wild1": [symbol, symbol, WILD], "wild2": [symbol, WILD, WILD], "spot1": [WILD, 0, 1]}[kind]
+
+
 def draw_spin(machine):
-    """A spin's three reels. The line comes first, each symbol's triple with its chance in chances(); otherwise a
-    losing combination, each reel drawn from the display weights "show" and redrawn if all three match."""
+    """A spin's three reels. The outcome comes first, with its chance from outcomes(), its Golden Onkeys on random
+    reels. Otherwise a loss, each reel drawn from the display weights "show" without the Golden Onkey and redrawn if
+    all three match; a lone Golden Onkey's other two reels are drawn the same way, redrawn if they match."""
+    plain = [0 if s.get("secret") else w for w, s in zip(machine["show"], SYMBOLS)]
     ticket = secrets.randbelow(machine["tickets"])
-    for i, n in enumerate(machine["lines"]):
-        if ticket < n:
+    for kind, i, n in outcomes(machine):
+        if ticket >= n:
+            ticket -= n
+            continue
+        if kind == "line":
             return [i, i, i]
-        ticket -= n
+        spot = secrets.randbelow(3)
+        if kind == "wild1":
+            return [WILD if k == spot else i for k in range(3)]
+        if kind == "wild2":
+            return [i if k == spot else WILD for k in range(3)]
+        while True:  # spot1
+            pair = [draw_reel(plain), draw_reel(plain)]
+            if pair[0] != pair[1]:
+                pair.insert(spot, WILD)
+                return pair
     while True:
-        reels = [draw_reel(machine["show"]) for _ in range(3)]
+        reels = [draw_reel(plain) for _ in range(3)]
         if not reels[0] == reels[1] == reels[2]:
             return reels
 
 
 def chances(machine):
-    """Each symbol's chance of landing three in a row."""
+    """Each symbol's chance of landing three of itself in a row (Golden Onkeys filling in aren't counted)."""
     return [n / machine["tickets"] for n in machine["lines"]]
 
 
+def win_chance(machine):
+    """The chance a spin pays anything."""
+    return sum(n for _, _, n in outcomes(machine)) / machine["tickets"]
+
+
 def rtp(machine, secret=False):
-    """The expected return per credit staked (only triples pay): the house edge's side, without the secret jackpot
-    unless secret=True."""
-    return sum(m * c for m, c, s in zip(machine["triples"], chances(machine), SYMBOLS) if secret or not s.get("secret"))
+    """The expected return per credit staked: the house edge's side (the regular lines), plus everything the secret
+    Golden Onkey pays only when secret=True."""
+    total = 0
+    for kind, i, n in outcomes(machine):
+        if kind == "line" and not SYMBOLS[i].get("secret"):
+            total += machine["triples"][i] * n
+        elif secret:
+            total += multiplier(machine, example(kind, i)) * n
+    return total / machine["tickets"]
+
+
+def boosted(machine, factor):
+    """A copy of a machine with every Golden Onkey outcome `factor` times as likely and the regular lines as they are,
+    for testing in demo mode (DEMO_GOLDEN_BOOST): it pays far more than it takes, so never on the real site."""
+    out = {**machine, "lines": [n * factor if SYMBOLS[i].get("secret") else n for i, n in enumerate(machine["lines"])]}
+    for key in ("wild1", "wild2"):
+        out[key] = [n * factor for n in machine.get(key, [])]
+    out["spot1"] = machine.get("spot1", 0) * factor
+    assert sum(n for _, _, n in outcomes(out)) <= out["tickets"], "boost too big for the machine's tickets"
+    return out
+
+
+# Demo mode (app.py) makes the Golden Onkey this many times as likely: about 1 spin in 14 instead of 1 in 272.
+DEMO_GOLDEN_BOOST = 20
 
 
 class SlotManager:
-    def __init__(self, db):
+    def __init__(self, db, golden_boost=1):
         self.db = db
+        self.machines = {k: boosted(m, golden_boost) if golden_boost != 1 else m for k, m in MACHINES.items()}
 
     @staticmethod
     def public(row):
-        return {**row, "reels": json.loads(row["reels"]), "net": row["payout"] - row["stake"]}
+        reels = json.loads(row["reels"])
+        return {**row, "reels": reels, "net": row["payout"] - row["stake"], "parts": SlotManager.parts(row, reels)}
+
+    @staticmethod
+    def parts(row, reels):
+        """What a stored spin paid, part by part (payouts()). A spin from before Golden Onkeys paid on their own
+        keeps what it recorded: a three of a kind, or nothing."""
+        m = MACHINES.get(row["machine"])
+        if m and len(reels) == 3 and all(0 <= r < len(SYMBOLS) for r in reels):
+            parts = payouts(m, reels)
+            if sum(p["mult"] for p in parts) == row["multiplier"]:
+                return parts
+        if row["multiplier"] and reels and all(0 <= r < len(SYMBOLS) for r in reels):
+            rest = [r for r in reels if r != WILD]
+            symbol = rest[0] if rest and len(set(rest)) == 1 else reels[0]
+            return [{"kind": "line", "symbol": symbol, "mult": row["multiplier"], "wild": 0}]
+        return []
 
     def spin(self, name, machine, stake, request_id):
         machine = "jackpot" if machine is None else machine
@@ -101,11 +207,11 @@ class SlotManager:
                     raise BetError("That spin reference has already been used.")
                 return {"spin": self.public(old), "balance": round(bettor["balance"], 2)}
             # Old results remain recoverable, but retired machines cannot take new stakes.
-            if machine not in MACHINES:
+            if machine not in self.machines:
                 raise BetError("This machine is no longer available. Reload the page.")
             if bettor["balance"] < stake:
                 raise BetError("Not enough credits for that spin. Choose a smaller stake.")
-            m = MACHINES[machine]
+            m = self.machines[machine]
             reels = draw_spin(m)
             mult = multiplier(m, reels)
             payout = stake * mult
@@ -127,8 +233,8 @@ class SlotManager:
 
     def house(self):
         """What the house has taken from slots, every season, since spins recorded their return (rtp): the estimate
-        (each stake times the edge it was played at, which leaves out the secret jackpot), what actually happened
-        (stakes minus every payout), and the secret jackpots paid, which the edge doesn't cover."""
+        (each stake times the edge it was played at, which leaves out the secret symbol), what actually happened
+        (stakes minus every payout), and what spins showing the secret symbol paid, which the edge doesn't cover."""
         r = self.db.query_one(
             "SELECT COUNT(*) AS spins, MIN(created_ts) AS since, COALESCE(SUM(stake),0) AS staked, "
             "COALESCE(SUM(payout),0) AS paid, COALESCE(SUM(stake * (1 - rtp)),0) AS expected "
@@ -136,7 +242,7 @@ class SlotManager:
         secret = {i for i, s in enumerate(SYMBOLS) if s.get("secret")}
         jackpots = sum(row["payout"] for row in self.db.query(
             "SELECT reels, payout FROM slot_spins WHERE rtp IS NOT NULL AND payout > 0")
-            if json.loads(row["reels"])[0] in secret)
+            if secret & set(json.loads(row["reels"])))
         return {"since": r["since"], "spins": r["spins"], "staked": r["staked"], "paid": r["paid"],
                 "secret_paid": jackpots, "expected_take": round(r["expected"], 2),
                 "actual_take": round(r["staked"] - r["paid"], 2)}
@@ -149,19 +255,21 @@ class SlotManager:
                     (limit,)))]
 
     def lines(self, name):
-        """How often a bettor has hit each symbol's triple, every season, since spins recorded their return."""
-        rows = self.db.query("SELECT reels, created_ts FROM slot_spins WHERE bettor=? AND rtp IS NOT NULL", (name,))
+        """How often a bettor has hit each symbol's line (Golden Onkeys filling in included), every season, since
+        spins recorded their return."""
+        rows = self.db.query(
+            "SELECT machine, reels, multiplier, created_ts FROM slot_spins WHERE bettor=? AND rtp IS NOT NULL", (name,))
         hits = [0] * len(SYMBOLS)
         for r in rows:
-            reels = json.loads(r["reels"])
-            if reels[0] == reels[1] == reels[2] and reels[0] < len(SYMBOLS):
-                hits[reels[0]] += 1
+            for p in self.parts(r, json.loads(r["reels"])):
+                if p["kind"] == "line":
+                    hits[p["symbol"]] += 1
         return {"spins": len(rows), "since": min((r["created_ts"] for r in rows), default=None), "hits": hits}
 
     def summary(self, me=None):
         machines = [{"key": key, **m, "rtp": round(rtp(m) * 100, 2), "rtp_with_secret": round(rtp(m, True) * 100, 2),
-                     "chances": chances(m)}
-                    for key, m in MACHINES.items()]
+                     "chances": chances(m), "win_chance": win_chance(m)}
+                    for key, m in self.machines.items()]
         out = {"machines": machines, "symbols": SYMBOLS, "stakes": STAKES, "me": None, "history": [], "lines": None,
                "house": self.house(), "big_wins": self.big_wins()}
         if me:

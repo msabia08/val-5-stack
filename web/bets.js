@@ -339,6 +339,7 @@ window.FiveBets = (() => {
         desc: mk.type === 'ou' ? `${mk.member} ${mk.stat_label}` : mk.label,
         american: sel.american, decimal: sel.decimal, line: mk.line, stake: state.stake, gameBoost: !!sel.boost,
       });
+      window.FiveOnkey?.note('slip', { added: true, desc: `${state.slip[state.slip.length - 1].desc} ${sel.label}`, n: state.slip.length });
     }
     drawSlip();
     syncOddButtons();
@@ -500,7 +501,7 @@ window.FiveBets = (() => {
       if (it) { it[b.dataset.token] = !it[b.dataset.token]; drawSlip(); }
     }));
     bindRemove(slip);
-    $('#clear-slip')?.addEventListener('click', () => { state.slip = []; drawSlip(); syncOddButtons(); });
+    $('#clear-slip')?.addEventListener('click', () => { state.slip = []; drawSlip(); syncOddButtons(); window.FiveOnkey?.note('slip', { cleared: true }); });
     $('#place-bets')?.addEventListener('click', placeSlip);
     if ($('#parlay-quote', slip)) fetchParlayQuote();
   }

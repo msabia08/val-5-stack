@@ -19,6 +19,7 @@ window.FiveOnkey = (() => {
   const IDLE_MIN = 70, IDLE_MAX = 140; // seconds between idle lines
   const FIRST_IDLE = 18; // seconds before the first one
   const HUSH_MIN = 15;
+  const AWAY_MS = 3 * 60 * 1000, POKE_GAP = 45000; // welcome back after 3 minutes away; a poke at most every 45 s
   const BUBBLE_MS = 5500, BUBBLE_PER_WORD = 280; // how long a line stays up: a 10-word line about 8 seconds
   const OMINOUS_CHANCE = 0.12, OMINOUS_NIGHT = 0.35; // share of idle lines that are OMINOUS (more after midnight)
   const QUIET_VIEWS = new Set(['blackjack', 'poker']); // the dealer talks there
@@ -76,6 +77,42 @@ window.FiveOnkey = (() => {
     'Onkey once went 0-13 on Onkey Says. It was a bad day.',
     'Remember to stretch between games. Monkeys do.',
     'The over/under on Onkey\'s naps today is 4.5. Take the over.',
+    'Onkey just peeled a banana with one foot. Nobody clapped.',
+    'Psst. The good picks are the ones with the little flames. Probably.',
+    'Onkey has been sitting in this corner all day. Somebody bring snacks.',
+    'If you need Onkey, Onkey will be right here. Forever. In the corner.',
+    'Onkey practised his dealer shuffle. Only dropped the deck twice.',
+    'Another day, another banana. Onkey lives simply.',
+    'Somebody whiffed a Judge at point blank once. Onkey still thinks about it.',
+    'Onkey has strong opinions about Bind. Mostly about the teleporters.',
+    'Rotate! Rotate! Sorry, Onkey was dreaming about a retake.',
+    'Onkey would main Sova. Onkey likes throwing things.',
+    'Remember: one more game always means three more games.',
+    'Onkey polished the slot machine. It\'s very shiny now.',
+    'Onkey\'s tail is tingling. Big night incoming.',
+    'Have you checked your forecasts lately? The numbers are lonely.',
+    'Onkey is humming the Onkey Says song again. Sorry.',
+    'The Golden Onkey hasn\'t been seen in a while. Onkey is worried about him.',
+    'Onkey bought himself a hat. Onkey can\'t show you. It\'s too powerful.',
+    'Ook ook ook. That one doesn\'t translate. Monkey thing.',
+    'Every time someone places a parlay, Onkey gets a little thrill.',
+    'Onkey tried counting all the credits once. Fell asleep at 4,000.',
+    'Your bet slip looks empty. Onkey is just saying.',
+    'An eco round is just a full buy with extra hope.',
+    'Onkey believes in you. Onkey also believes in the house edge.',
+    'Onkey checked: the squad still hasn\'t learned to trade kills. Classic.',
+    'Banana break! Back in five. Onkey is always back in five.',
+    'Onkey\'s cousin is gold. Onkey is brown. Onkey is fine with it. Mostly.',
+    'Did you know Onkey can see your cursor? Onkey is following it. Ook.',
+    'The standings shuffle every game night. Onkey loves the chaos.',
+    'Onkey called the last game. He called it wrong, but he called it.',
+    'Somewhere a smoke is landing in the wrong spot. Onkey can sense it.',
+    'Onkey\'s banana stash is at an all-time high. Thanks for asking.',
+    'Onkey asked the wheel for advice. The wheel just spun.',
+    'Onkey dealt a blackjack to himself once. Then ate the cards.',
+    'Tip: stretch your wrists. Onkey stretches his tail.',
+    'If the squad goes 13-0 tonight, Onkey will do a backflip. Probably.',
+    'Onkey keeps the shop tidy. Mostly by eating the clutter.',
   ];
   // Now and then, instead of an idle line: something Onkey maybe shouldn't have said. Shown in a dark bubble.
   const OMINOUS = [
@@ -99,61 +136,144 @@ window.FiveOnkey = (() => {
     'When the jackpot is won, something else wakes up.',
     'Onkey has a list. You are on it. It\'s probably fine.',
     'Shhh. Listen. The parlays are whispering.',
+    'Onkey sees one more tab open than you think you have.',
+    'The reels stop when Onkey says they stop.',
+    'Last night the scoreboard showed a sixth player. Just for a second.',
+    'Onkey isn\'t smiling. That\'s just the shape of the logo.',
+    'There is a banana in the ledger that nobody bought.',
+    'The arcade machines play by themselves after you close the tab.',
+    'Onkey knows what you\'re going to bet. Onkey always knows.',
+    'Don\'t check the standings at 3 AM. They look different.',
+    'Something in the shop has been bought by no one. It\'s still sold out.',
+    'The Golden Onkey blinked. Golden Onkeys don\'t blink.',
+    'Greg left a note. Onkey hasn\'t opened it. Onkey never will.',
+    'Every bet you cancel goes to the same place.',
+    'Ook. Ook. Ook. Onkey is counting down. To what, Onkey can\'t say.',
+    'Shh. If you listen closely, you can hear the house edge.',
+    'Onkey was a different colour yesterday. Nobody noticed.',
   ];
   // Reactions: one line is picked at random; {name}-style blanks are filled from the event.
   const SAY = {
     greet_morning: ['Morning, {name}! Coffee first, parlays second.', 'Up early, {name}? Onkey respects that.',
-      'Rise and shine, {name}. The bananas are fresh.'],
+      'Rise and shine, {name}. The bananas are fresh.', 'Good morning, {name}! Onkey has been up for hours. Eating.',
+      'Morning, {name}. The odds woke up before you did.'],
     greet_day: ['Ook! Welcome back, {name}.', 'Look who it is. Hi, {name}.', '{name}! Onkey saved you a banana.',
-      'Afternoon, {name}. The odds missed you.'],
+      'Afternoon, {name}. The odds missed you.', 'Hey {name}! Onkey was just talking about you. Nice things. Mostly.',
+      '{name}! Onkey\'s favourite human. Don\'t tell the others.'],
     greet_night: ['Evening, {name}. Game night?', 'Ook ook, {name}. The squad\'s online, Onkey can feel it.',
-      'There you are, {name}. Lines are up, bananas are ripe.'],
+      'There you are, {name}. Lines are up, bananas are ripe.', 'Evening, {name}. Onkey put the good lights on.',
+      '{name}! Perfect timing. The night is young and so are the odds.'],
     greet_late: ['It\'s {time}, {name}. Onkey respects the grind.', 'Still up, {name}? One more game. Onkey knows.',
-      'The night shift, {name}? Onkey never sleeps either.'],
-    bet_token: ['Token on {desc}? Onkey likes a monkey with a plan.', 'Using a token! Onkey approves of free stuff.'],
+      'The night shift, {name}? Onkey never sleeps either.', '{time}? {name}, your bed misses you. Onkey doesn\'t judge.'],
+    welcome_back: ['Oh! You\'re back. Onkey totally wasn\'t asleep.', 'Welcome back, {name}. Onkey kept your seat warm.',
+      'There you are! Onkey thought you\'d gone to bet somewhere else.', 'Back already? Onkey missed you. A little.',
+      '{name} returns! Onkey did not touch anything while you were gone.'],
+    poke: ['Ook? You looking at Onkey?', 'Hey! That tickles.', 'Onkey sees you hovering.', 'Yes? Onkey is listening.',
+      'Pat pat. Onkey accepts pats.', 'Careful, Onkey bites. Gently.', 'Onkey is busy. Doing monkey stuff.',
+      'Click Onkey to go to the shop. Or just admire him.'],
+    bet_token: ['Token on {desc}? Onkey likes a monkey with a plan.', 'Using a token! Onkey approves of free stuff.',
+      'A token on {desc}. Free stuff tastes better.'],
     bet: ['{stake} on {desc}? Bold.', 'Onkey has written down your bet. In crayon.', 'Locked in at {odds}. No take-backs after a minute.',
       '{desc}. Onkey likes it. Onkey likes everything.', '{desc} at {odds}. Onkey would have done the same. Probably.',
-      'Bet received. Onkey will pretend he isn\'t watching.'],
-    bet_big: ['{stake} credits?! Onkey needs to sit down.', '{stake} on one pick. Onkey is sweating for you.'],
-    parlay: ['A {legs}-leg parlay. Onkey admires the optimism.', 'Parlays: where dreams go to... sometimes win!', '{legs} legs. That\'s more legs than Onkey has.'],
-    bets: ['{n} bets in. The slip is empty and your heart is full.', '{n} picks placed. Onkey will be watching every one.'],
+      'Bet received. Onkey will pretend he isn\'t watching.', '{desc}? Onkey is putting a banana on that too.',
+      'Ooh, {desc}. Onkey has a good feeling about this one.', 'Ticket stamped. {stake} credits riding on {desc}.'],
+    bet_big: ['{stake} credits?! Onkey needs to sit down.', '{stake} on one pick. Onkey is sweating for you.',
+      '{stake}! Onkey is clutching his banana very tightly now.'],
+    parlay: ['A {legs}-leg parlay. Onkey admires the optimism.', 'Parlays: where dreams go to... sometimes win!', '{legs} legs. That\'s more legs than Onkey has.',
+      '{legs} legs, one dream. Onkey is rooting for every one.', 'Parlay locked. Onkey is lighting a candle.'],
+    bets: ['{n} bets in. The slip is empty and your heart is full.', '{n} picks placed. Onkey will be watching every one.',
+      '{n} tickets! Onkey needs a bigger clipboard.'],
+    slip_add: ['{desc}? Ooh.', 'Onkey sees you eyeing {desc}.', 'In the slip it goes.', '{desc}. Onkey nods slowly.',
+      'Adding {desc}? Onkey is intrigued.', 'That\'s {n} in the slip. Onkey is counting.'],
+    slip_many: ['{n} picks in the slip. Parlay? Onkey whispers parlay.', '{n} picks! The slip is getting heavy.'],
+    slip_clear: ['Cleared! A fresh start.', 'Slip wiped. Onkey respects second thoughts.', 'All gone. Onkey didn\'t like those either.'],
     won: ['Cha-ching! {desc} paid {net}.', 'You won {net}. Onkey is happy. The house is not.', 'Called it. +{net} on {desc}.',
-      '{desc} came in. +{net}. Do a little dance.', 'Winner! Onkey always believed in {desc}. Always.'],
-    won_long: ['A long shot came in! +{net}! Onkey is screaming!', 'At {odds}?! +{net}! Somebody hold Onkey\'s banana!'],
+      '{desc} came in. +{net}. Do a little dance.', 'Winner! Onkey always believed in {desc}. Always.',
+      '+{net}! Onkey is doing the banana dance.', '{desc} delivered. +{net}. Onkey told you so. Didn\'t he?'],
+    won_long: ['A long shot came in! +{net}! Onkey is screaming!', 'At {odds}?! +{net}! Somebody hold Onkey\'s banana!',
+      '{odds}! Onkey fell off the logo! +{net}!'],
     lost: ['{desc} didn\'t hit. Onkey felt that.', 'Lost one. Shake it off.', '{desc}... Onkey isn\'t going to talk about it.',
-      'Not this time. The next one\'s yours.', '{desc} let you down. Onkey will have a word with it.'],
-    lose_run: ['That\'s {n} losing bets in a row. Maybe bet the other side?', '{n} straight losses. The comeback starts now. Probably.'],
-    lose_run_big: ['{n} losses in a row. Onkey is holding your bananas for safekeeping.', '{n} straight. Onkey is hiding the parlay button.'],
+      'Not this time. The next one\'s yours.', '{desc} let you down. Onkey will have a word with it.',
+      'Oof. {desc}. Onkey brings you a consolation banana.', '{desc} said no. Rude.'],
+    lose_run: ['That\'s {n} losing bets in a row. Maybe bet the other side?', '{n} straight losses. The comeback starts now. Probably.',
+      '{n} in a row. Onkey is rubbing his lucky banana for you.'],
+    lose_run_big: ['{n} losses in a row. Onkey is holding your bananas for safekeeping.', '{n} straight. Onkey is hiding the parlay button.',
+      '{n} straight losses. Onkey has seen worse. Onkey has not seen worse.'],
+    squad_won: ['The squad won! Onkey is doing laps around the logo.', 'W! That\'s {wins}-{losses} now. Onkey is proud.',
+      'Another win for the squad. Onkey called it. Loudly.', 'GG! The squad takes it. Bananas for everyone.'],
+    squad_lost: ['The squad lost one. Onkey is staring at the scoreboard.', 'L. {wins}-{losses}. Onkey needs a minute.',
+      'A loss. Onkey blames the teleporter. Every time.', 'That one hurt. Shake it off, squad.'],
+    squad_games: ['{n} new games came in! The recaps are hot.', '{n} games just landed. Onkey is reading the scoreboard.'],
+    sync: ['Fetching the latest games. Onkey is pressing all the buttons.', 'Sync started. Onkey is jogging to the server.',
+      'Checking for new games. Onkey loves fresh data.'],
     slots_lose: ['The reels hate you today. Onkey doesn\'t. Mostly.', 'So close. Not really. But so close.', 'Spin it again. Onkey dares you.',
-      'The machine says thank you.', 'Nothing. The reels are being shy.'],
-    slots_run: ['{n} spins without a win. The machine is just warming up.', '{n} dry spins. Onkey can hear the machine laughing.'],
+      'The machine says thank you.', 'Nothing. The reels are being shy.', 'The reels went for a walk.',
+      'Hmm. The machine is thinking about it.', 'Not that one. The next one, maybe.'],
+    slots_run: ['{n} spins without a win. The machine is just warming up.', '{n} dry spins. Onkey can hear the machine laughing.',
+      '{n} spins. Onkey is checking the machine is plugged in.'],
     slots_win: ['A little win! {payout} back.', 'Ding ding! +{net}.', 'Three {symbol}s. Onkey approves.',
-      'A hit! The machine coughs up {payout}.', '{symbol}s! Small, but Onkey will take it.'],
-    slots_big: ['{mult}x! Onkey heard that from up here!', '{symbol}s across! +{net}!', 'Somebody call security, {name} is robbing the machine!'],
-    slots_golden: ['THE GOLDEN ONKEY! That\'s Onkey\'s cousin!', 'GOLDEN ONKEY!! +{net}! Onkey is crying!'],
-    slots_down: ['You\'re down {net} on slots this visit. Onkey suggests a snack break.'],
+      'A hit! The machine coughs up {payout}.', '{symbol}s! Small, but Onkey will take it.', 'Ding! {symbol}s in a row.',
+      'The machine blinked first. +{net}.'],
+    slots_big: ['{mult}x! Onkey heard that from up here!', '{symbol}s across! +{net}!', 'Somebody call security, {name} is robbing the machine!',
+      '{mult}x! The machine is crying. Onkey is not.', '+{net}! Onkey is buying you a hat. With your money.'],
+    slots_golden: ['THE GOLDEN ONKEY! That\'s Onkey\'s cousin!', 'GOLDEN ONKEY!! +{net}! Onkey is crying!',
+      'All three golden cousins?! Onkey is calling his mum!'],
+    slots_spotted: ['Golden Onkey spotted! +{net}!', 'Was that Onkey\'s golden cousin? +{net}!', 'A golden Onkey sighting! Onkey waves at him.',
+      'Cousin! Over here! +{net}!', 'There he is! The Golden Onkey says hi. +{net}.'],
+    slots_wild: ['The Golden Onkey doubled it! +{net}!', '{symbol}s, times {factor}! Onkey\'s cousin is generous. +{net}!',
+      'Wild! The Golden Onkey filled in and doubled up. +{net}!', 'Times {factor}?! Onkey owes his cousin a banana. +{net}!'],
+    slots_tease: ['Ooh ooh ooh...', 'Come on, come on...', 'Onkey can\'t look!', 'Is it? Is it?!', 'Stop. STOP. Please stop.',
+      'Onkey is holding his breath...'],
+    slots_max: ['500 a spin? Onkey loves a high roller.', 'Max bet! The machine just sat up straight.', 'Big stakes. Onkey is watching closely.'],
+    slots_down: ['You\'re down {net} on slots this visit. Onkey suggests a snack break.',
+      'Down {net} this visit. The bet page misses you.'],
     wheel_jackpot: ['THE JACKPOT! {amount} credits! Onkey is fainting!', 'You took the whole jackpot! Onkey has to sit down.'],
-    wheel_nothing: ['Onkey ate your prize. It was delicious.', 'Nom. Sorry. Onkey was hungry.'],
+    wheel_nothing: ['Onkey ate your prize. It was delicious.', 'Nom. Sorry. Onkey was hungry.', 'Nothing! The wheel owes you one.'],
     wheel_big: ['{amount} credits from the wheel! Onkey spun it with love.', '{amount}! Big wheel energy.'],
-    wheel_credits: ['{amount} free credits. Don\'t spend them all at once.', 'Free money! {amount} credits.'],
-    wheel_bananas: ['{amount} bananas! Onkey would like a few.', 'Bananas! Onkey approves of this prize.'],
+    wheel_credits: ['{amount} free credits. Don\'t spend them all at once.', 'Free money! {amount} credits.', '{amount} credits. The wheel provides.'],
+    wheel_bananas: ['{amount} bananas! Onkey would like a few.', 'Bananas! Onkey approves of this prize.', '{amount} bananas! Onkey is drooling.'],
     wheel_token: ['A {label}. Use it wisely. Or don\'t.', '{label}! Tap it on a pick in your bet slip.'],
     wheel_item: ['Free swag! Onkey picked it himself.', 'A free cosmetic! Go put it on.'],
     wheel_again: ['Spin again! The wheel likes you.', 'Again! Onkey didn\'t see that coming.'],
-    transfer: ['Sending {amount} to {to}? The generous monkey gets rewarded.', '{amount} to {to}. Onkey hopes they say thanks.'],
-    buy: ['Nice {item}. Very you.', '{item}! Onkey approves of this purchase.', 'Ooh, {item}. Fancy.'],
-    view_shop: ['Welcome to Onkey\'s Shop. Touch everything.', 'Browsing again? Onkey has bananas to take.'],
-    view_arcade: ['The arcade! Onkey\'s high score is untouchable.', 'Insert banana to play.', 'Five bananas a go. Onkey takes exact change.'],
-    view_slots: ['Pull the lever. Onkey dares you.', 'The machine is hungry. Feed it.', 'Somewhere in there is a Golden Onkey. Go find him.'],
+    transfer: ['Sending {amount} to {to}? The generous monkey gets rewarded.', '{amount} to {to}. Onkey hopes they say thanks.',
+      '{amount} credits for {to}. Onkey is touched. Genuinely.'],
+    buy: ['Nice {item}. Very you.', '{item}! Onkey approves of this purchase.', 'Ooh, {item}. Fancy.',
+      '{item}! You look fantastic. Onkey would know.', 'Bananas well spent. {item} suits you.'],
+    prank: ['Pranking {to}? Onkey saw nothing. Nothing!', 'Ook ook! {to} won\'t know what hit them.',
+      'Onkey loves monkey business. Poor {to}.', '{item} on {to}! Onkey is giggling.'],
+    equip: ['Wearing {item}. Strut it.', '{item} on. Onkey is impressed.', 'Ooh, {item}. The troop will notice.'],
+    unequip: ['Taken off. Onkey liked it, but okay.', 'Back to basics. Classic.'],
+    theme_dark: ['Lights off. Onkey can see in the dark. Mostly.', 'Dark mode. Very mysterious.'],
+    theme_light: ['Light mode! Onkey needs sunglasses.', 'So bright. Onkey\'s eyes!'],
+    'theme_th-greg': ['GREG MODE. Onkey has mixed feelings.', 'Greg is here. Greg is everywhere now.', 'Hi Greg. Onkey says hi, Greg.'],
+    'theme_th-onkey': ['Onkey Mode! Finally, good taste.', 'An Onkey theme? Onkey is blushing.'],
+    'theme_th-jungle': ['Welcome to the jungle. Onkey\'s home turf.', 'Ah, the jungle. Smells like bananas.'],
+    arcade_best: ['A new best! {score} on {game}! Onkey is singing!', '{score}?! Onkey\'s record is in danger!',
+      'Personal best on {game}! Onkey bows.'],
+    arcade_champ: ['NUMBER ONE on {game}! Onkey bows down!', 'The {game} crown is yours! {score}!'],
+    arcade_done: ['{score} on {game}. Onkey has seen better. Onkey has also seen worse.', '{score}! Another banana, another go?',
+      'Game over. Onkey had fun watching.', '{score} on {game}. Not bad for a human.'],
+    arcade_zero: ['Zero? Onkey won\'t tell anyone.', 'That was a warm-up. Right?'],
+    view_shop: ['Welcome to Onkey\'s Shop. Touch everything.', 'Browsing again? Onkey has bananas to take.',
+      'New stock! Onkey says that every time.', 'Onkey recommends the hat. Any hat.'],
+    view_arcade: ['The arcade! Onkey\'s high score is untouchable.', 'Insert banana to play.', 'Five bananas a go. Onkey takes exact change.',
+      'Onkey Says is Onkey\'s favourite. Obviously.'],
+    view_slots: ['Pull the lever. Onkey dares you.', 'The machine is hungry. Feed it.', 'Somewhere in there is a Golden Onkey. Go find him.',
+      'Space bar spins. Onkey checked.', 'The Golden Onkey is wild now. Onkey taught him that.'],
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.', 'Onkey greased the wheel. For luck.'],
-    view_bettors: ['The standings. Find yourself. Onkey will wait.', 'Who\'s on top? Onkey already knows.'],
-    view_matches: ['Recaps! Relive the glory. Or the pain.', 'Onkey watched every round. Twice.'],
-    view_players: ['The stats don\'t lie. Onkey sometimes does.', 'Somebody\'s carrying. Find out who.'],
+    view_bettors: ['The standings. Find yourself. Onkey will wait.', 'Who\'s on top? Onkey already knows.',
+      'Leaderboard time. Onkey loves a rivalry.'],
+    view_matches: ['Recaps! Relive the glory. Or the pain.', 'Onkey watched every round. Twice.', 'Pick a game. Onkey remembers them all.'],
+    view_players: ['The stats don\'t lie. Onkey sometimes does.', 'Somebody\'s carrying. Find out who.', 'Look at those numbers. Onkey is impressed. Mostly.'],
     view_viz: ['Charts! Onkey loves a line that goes up.', 'Pretty colours. Onkey picked them himself.'],
-    view_troop: ['The monkeys. Onkey knows every one of them.', 'Check out everyone\'s drip.'],
-    view_forecasts: ['Forecasts: like weather, but for frags.'],
-    view_odds: ['Place bets. Onkey\'s watching.', 'The odds are fresh. Onkey baked them himself.', 'Look for the flames. Hot picks run hot. Sometimes.'],
-    hush: ['Fine. Onkey will be quiet for a bit.'],
+    view_troop: ['The monkeys. Onkey knows every one of them.', 'Check out everyone\'s drip.', 'The troop! Onkey\'s whole family.'],
+    view_forecasts: ['Forecasts: like weather, but for frags.', 'Onkey predicts... bananas. Always bananas.'],
+    view_odds: ['Place bets. Onkey\'s watching.', 'The odds are fresh. Onkey baked them himself.', 'Look for the flames. Hot picks run hot. Sometimes.',
+      'Frosty buttons are cold picks. Onkey shivers.'],
+    view_overview: ['The front page. Onkey reads it every morning.', 'Everything at a glance. Onkey glances a lot.'],
+    view_squad: ['The squad! Drag them around. They don\'t mind.', 'Who\'s in, who\'s benched? Onkey has opinions.'],
+    view_setup: ['The settings. Don\'t break anything. Onkey is watching.', 'Ooh, the knobs and dials.'],
+    hush: ['Fine. Onkey will be quiet for a bit.', 'Okay, okay. Shh. Onkey is shushing.', 'Onkey zips his lips. For now.'],
   };
   // Idle lines built from what the page knows; each returns a line or nothing when it doesn't apply.
   const DYNAMIC = [
@@ -196,6 +316,12 @@ window.FiveOnkey = (() => {
     },
     () => { const roi = mine()?.roi; return roi != null && roi >= 0.15 ? `${Math.round(roi * 100)}% return on your bets this season. Onkey suspects insider bananas.` : null; },
     () => { const c = mine()?.casino; return c >= 200 ? `Up ${credits(c)} at the casino this season. The house is keeping an eye on you.` : null; },
+    () => { const m = Math.floor((Date.now() - startedAt) / 60000); return m >= 45 ? `You've been here ${m} minutes. Onkey is honoured.` : null; },
+    () => { const n = state?.slip?.length; return n > 0 && state.view !== 'odds' ? `${n} pick${n === 1 ? '' : 's'} waiting in your slip. They're getting cold.` : null; },
+    () => (state && !me() ? 'Sign in so Onkey knows who to cheer for.' : null),
+    () => (state?.view === 'slots' ? pick(['The Golden Onkey is somewhere in there. Onkey can smell him.', 'Space bar spins. Your thumb deserves it.']) : null),
+    () => (state?.view === 'arcade' ? 'Onkey Says is the hardest one. Onkey made it that way.' : null),
+    () => (state?.view === 'shop' ? 'Preview anything. Onkey won\'t charge for looking.' : null),
     () => {
       const rec = state?.status?.record;
       if (!rec || rec.games < 5) return null;
@@ -210,6 +336,8 @@ window.FiveOnkey = (() => {
   const me = () => state && state.me;
   const balance = () => (me() ? me().balance : null);
   const credits = (v) => (fmt ? fmt.credits(v) : String(Math.round(v)));
+  const fmtN = (v) => (fmt && fmt.n0 ? fmt.n0(v) : String(Math.round(v)));
+  const startedAt = Date.now();
   function rank() {
     const list = (state && state.bettors) || [], name = me()?.name;
     if (!name || !list.length) return null;
@@ -223,7 +351,7 @@ window.FiveOnkey = (() => {
   // comes out SLOT_LOSS_TALK of the times it otherwise would (wins are always cheered).
   const SLOT_RUN_EVERY = 12, SLOT_DOWN_FIRST = 750, SLOT_DOWN_STEP = 1500, SLOT_NAG_MS = 15 * 60 * 1000, SLOT_LOSE_CHANCE = 0.2;
   const SLOT_LOSS_TALK = 0.6;
-  const memory = { slotLosses: 0, slotNet: 0, slotDownMark: -SLOT_DOWN_FIRST, slotNagAt: 0, settledSeen: null };
+  const memory = { slotLosses: 0, slotNet: 0, slotDownMark: -SLOT_DOWN_FIRST, slotNagAt: 0, settledSeen: null, record: null };
 
   // ---- talking -------------------------------------------------------------------------------------------------------
   let el = null, hideTimer = null, idleTimer = null, lastSaid = '', lastAt = 0;
@@ -252,6 +380,13 @@ window.FiveOnkey = (() => {
   const react = (kind, vars = {}, opts = {}) => {
     const list = SAY[kind];
     if (list) speak(fill(pick(list), { name: me()?.name || 'friend', ...vars }), { loud: true, ...opts });
+  };
+  // A small reaction (a pick added to the slip, a theme change, a poke): only `chance` of the time, and never within
+  // CHIME_GAP of the last thing he said, so he chimes in without talking over himself. Silent unless asked.
+  const CHIME_GAP = 12000;
+  const chime = (kind, vars = {}, chance = 0.5, opts = {}) => {
+    if (Date.now() - lastAt < CHIME_GAP || Math.random() >= chance) return;
+    react(kind, vars, { loud: false, ...opts });
   };
 
   function idle() {
@@ -296,6 +431,8 @@ window.FiveOnkey = (() => {
         if (down) memory.slotDownMark -= SLOT_DOWN_STEP; // each mark comes up at most once
         const nag = Date.now() - memory.slotNagAt >= SLOT_NAG_MS;
         if (d.golden) react('slots_golden', vars, { excited: true });
+        else if (d.wild) react('slots_wild', { ...vars, factor: d.wild }, { excited: true });
+        else if (d.spotted) react('slots_spotted', vars, { excited: d.multiplier >= 10 });
         else if (d.multiplier >= 20) react('slots_big', vars, { excited: true });
         else if (d.payout > 0) react('slots_win', vars);
         else if (Math.random() >= SLOT_LOSS_TALK) { /* a losing spin: he keeps quiet most of the time */ }
@@ -314,7 +451,28 @@ window.FiveOnkey = (() => {
       } else if (kind === 'transfer') {
         react('transfer', { amount: credits(d.amount), to: d.to });
       } else if (kind === 'buy') {
-        react('buy', { item: d.item });
+        if (d.target) react('prank', { item: d.item, to: d.target }, { excited: true });
+        else react('buy', { item: d.item });
+      } else if (kind === 'equip') {
+        chime(d.item ? 'equip' : 'unequip', { item: d.item }, 0.7);
+      } else if (kind === 'slip') {
+        if (d.cleared) chime('slip_clear', {}, 0.5);
+        else if (d.added) chime(d.n >= 3 ? 'slip_many' : 'slip_add', { desc: desc(d.desc), n: d.n }, d.n >= 3 ? 0.5 : 0.3);
+      } else if (kind === 'theme') {
+        chime(`theme_${d.theme}`, {}, d.theme.startsWith('th-') ? 0.9 : 0.5, { excited: d.theme === 'th-greg' });
+      } else if (kind === 'slots_tease') {
+        // The tease: he gasps along with the reel (no chatter over its drone), whatever else he said a moment ago.
+        speak(pick(SAY.slots_tease), { excited: true });
+      } else if (kind === 'slots_stake') {
+        if (d.stake >= 500) chime('slots_max', {}, 0.8, { excited: true });
+      } else if (kind === 'arcade') {
+        const vars = { game: d.game, score: fmtN(d.score) };
+        if (d.champion) react('arcade_champ', vars, { excited: true });
+        else if (d.best && d.score > 0) react('arcade_best', vars, { excited: true });
+        else if (!d.score) chime('arcade_zero', vars, 0.7);
+        else chime('arcade_done', vars, 0.6);
+      } else if (kind === 'sync') {
+        chime('sync', {}, 0.6);
       } else if (kind === 'view') {
         walk(d.view);
         if (SAY[`view_${d.view}`] && Math.random() < 0.4) react(`view_${d.view}`, {}, { loud: false });
@@ -340,6 +498,20 @@ window.FiveOnkey = (() => {
     } else if (run >= 5) react('lose_run_big', { n: run });
     else if (run >= 3) react('lose_run', { n: run });
     else react('lost', { desc: desc(fresh[0].description) });
+  }
+
+  // The squad's record from /api/status (loadStatus() passes it on every poll): when games come in, he cheers a win
+  // or mourns a loss (more than one at once, he just says how many). The first look on a page load only remembers it.
+  function status(s) {
+    const rec = s && s.record;
+    if (!rec) return;
+    const was = memory.record;
+    memory.record = { games: rec.games, wins: rec.wins, losses: rec.losses };
+    if (!was || rec.games <= was.games) return;
+    const n = rec.games - was.games, vars = { wins: rec.wins, losses: rec.losses, n };
+    if (n > 1) react('squad_games', vars, { excited: true });
+    else if (rec.wins > was.wins) react('squad_won', vars, { excited: true });
+    else if (rec.losses > was.losses) react('squad_lost', vars);
   }
 
   // ---- walking to the tables ----------------------------------------------------------------------------------------
@@ -451,8 +623,22 @@ window.FiveOnkey = (() => {
     });
     setTimeout(greet, 2500);
     idleTimer = setTimeout(idle, FIRST_IDLE * 1000);
+    // Coming back to the tab after AWAY_MS or more: he notices.
+    let hiddenAt = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt >= AWAY_MS) setTimeout(() => react('welcome_back', {}, { loud: false }), 1200);
+      hiddenAt = 0;
+    });
+    // Hovering over him now and then gets a word (POKE_GAP apart at most).
+    let pokedAt = 0;
+    brand.querySelector('.logo-link')?.addEventListener('mouseenter', () => {
+      if (Date.now() - pokedAt < POKE_GAP) return;
+      pokedAt = Date.now();
+      chime('poke', {}, 0.5);
+    });
     if (state && QUIET_VIEWS.has(state.view)) walk(state.view); // opened straight onto a table
   }
 
-  return { init, start, note, settled, speak, IDLE, SAY, DYNAMIC, OMINOUS };
+  return { init, start, note, settled, status, speak, IDLE, SAY, DYNAMIC, OMINOUS };
 })();

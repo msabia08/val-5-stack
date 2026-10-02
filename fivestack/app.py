@@ -22,7 +22,7 @@ from .arcade import ArcadeManager
 from .blackjack import BlackjackManager
 from .house import HouseManager
 from .poker import PokerManager
-from .slots import SlotManager
+from .slots import DEMO_GOLDEN_BOOST, SlotManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bananas import BananaManager
 from .bets import TAX_MIN_TRANSFER, TAX_RATE, BetError, BetManager
@@ -79,7 +79,7 @@ class App:
         self.rewards = RewardManager(cfg, self.db, load_bettor_names())
         self.bananas = BananaManager(cfg, self.db, self.bets)
         self.arcade = ArcadeManager(self.db)
-        self.slots = SlotManager(self.db)
+        self.slots = SlotManager(self.db, golden_boost=DEMO_GOLDEN_BOOST if demo else 1)  # demo: Golden Onkeys to test
         self.house = HouseManager(self.db, self.bets, self.rewards)  # the take (bets and the casino) and what it gives back
         self.wheel = WheelManager(self.db, self.house, unlimited=demo)  # demo: spin as often as you like
         self.blackjack = BlackjackManager(self.db)
