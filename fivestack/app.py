@@ -244,6 +244,15 @@ class App:
         }
 
 
+class Server(ThreadingHTTPServer):
+    """The stdlib threading server with a longer queue of waiting connections. Its default, request_queue_size 5, is
+    the listen() backlog: how many connections can wait to be accepted at once. A page load opens about a dozen at the
+    same moment (the scripts, the stylesheet and the first API calls), and on Windows the ones past the backlog are
+    refused outright instead of retried, which left the page half-loaded with a script missing."""
+    request_queue_size = 64
+    daemon_threads = True
+
+
 class Handler(BaseHTTPRequestHandler):
     app = None
     server_version = "FiveStack/1.0"
@@ -810,8 +819,7 @@ def main():
 
     app = App(cfg, demo=demo, port=port)
     Handler.app = app
-    srv = ThreadingHTTPServer((host, port), Handler)
-    srv.daemon_threads = True
+    srv = Server((host, port), Handler)
 
     url = f"http://{'localhost' if host in ('0.0.0.0', '127.0.0.1', '') else host}:{port}"
     print(f"5-Stack Tracker {'(DEMO MODE) ' if demo else ''}running at {url}")
