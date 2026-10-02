@@ -219,8 +219,10 @@ window.FiveOnkey = (() => {
   const mine = () => { const n = me()?.name?.toLowerCase(); return n ? ((state && state.bettors) || []).find((b) => b.name.toLowerCase() === n) : null; };
   // Slots: losing spins in a row and this visit's net. He brings up a losing run or a losing visit rarely: a run at
   // every SLOT_RUN_EVERY dry spins, a visit the first time it's SLOT_DOWN_FIRST down and then every further
-  // SLOT_DOWN_STEP, and either at most once per SLOT_NAG_MS.
+  // SLOT_DOWN_STEP, and either at most once per SLOT_NAG_MS. On top of that, any line about a spin that didn't win only
+  // comes out SLOT_LOSS_TALK of the times it otherwise would (wins are always cheered).
   const SLOT_RUN_EVERY = 12, SLOT_DOWN_FIRST = 750, SLOT_DOWN_STEP = 1500, SLOT_NAG_MS = 15 * 60 * 1000, SLOT_LOSE_CHANCE = 0.2;
+  const SLOT_LOSS_TALK = 0.6;
   const memory = { slotLosses: 0, slotNet: 0, slotDownMark: -SLOT_DOWN_FIRST, slotNagAt: 0, settledSeen: null };
 
   // ---- talking -------------------------------------------------------------------------------------------------------
@@ -296,6 +298,7 @@ window.FiveOnkey = (() => {
         if (d.golden) react('slots_golden', vars, { excited: true });
         else if (d.multiplier >= 20) react('slots_big', vars, { excited: true });
         else if (d.payout > 0) react('slots_win', vars);
+        else if (Math.random() >= SLOT_LOSS_TALK) { /* a losing spin: he keeps quiet most of the time */ }
         else if (down && nag) { memory.slotNagAt = Date.now(); react('slots_down', { net: credits(-memory.slotNet) }); }
         else if (nag && memory.slotLosses % SLOT_RUN_EVERY === 0) { memory.slotNagAt = Date.now(); react('slots_run', { n: memory.slotLosses }); }
         else if (Math.random() < SLOT_LOSE_CHANCE) react('slots_lose'); // not every losing spin
