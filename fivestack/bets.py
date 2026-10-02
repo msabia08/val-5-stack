@@ -35,8 +35,9 @@ NOTE_MAX = 80  # characters in a transfer's note
 TAX_RATE = 0.10
 TAX_MIN_TRANSFER = 250
 # The odds boost of the game: one pick on the board, drawn again after every game, pays BOOST more profit (2.00 becomes
-# 2.50) on singles of up to BOOST_MAX_STAKE credits. It's a promotion, not paid from the house's pot: the pot counts a
-# boosted bet at its price before the boost. Picks the model gives a chance in BOOST_CHANCE are eligible.
+# 2.50) on singles and parlay legs, up to BOOST_MAX_STAKE credits staked on it. It's a promotion, not paid from the
+# house's pot: the pot counts a boosted bet (or a boosted leg's share of a parlay) at its price before the boost.
+# Picks the model gives a chance in BOOST_CHANCE are eligible.
 BOOST = 0.5
 BOOST_MAX_STAKE = 100
 BOOST_CHANCE = (0.3, 0.6)
@@ -162,7 +163,8 @@ class BetManager:
                 legs = [leg for leg in ctx.get("legs") or [] if leg.get("result") != "void"]
                 ret = 1.0
                 for leg in legs:  # the correlation cut lowers the price and raises the joint chance alike
-                    ret *= leg["odds_decimal"] * leg.get("fair_prob", fair_chance(leg["odds_decimal"], leg["market_type"], edge))
+                    dec = leg.get("boost") or leg["odds_decimal"]  # a boosted leg counts at its price before the boost
+                    ret *= dec * leg.get("fair_prob", fair_chance(leg["odds_decimal"], leg["market_type"], edge))
             else:  # a boosted bet counts at its price before the boost: the boost isn't paid from the pot
                 dec = ctx.get("boost") or b["odds_decimal"]
                 ret = dec * ctx.get("fair_prob", fair_chance(dec, b["market_type"], edge))
@@ -360,7 +362,8 @@ class BetManager:
         they're stored on the bet, the board, the price: odds_decimal, independent_decimal, factor, games, linked).
 
         Legs that decide each other are refused (parlay.score_conflict); legs that tend to land together have their
-        multiplied odds cut by how much more often they won together on recent games (parlay.correlation)."""
+        multiplied odds cut by how much more often they won together on recent games (parlay.correlation). A leg on
+        the odds boost of the game's pick prices at its boosted decimal (see BOOST, apply_boost)."""
         if not isinstance(legs, list) or len(legs) < 2:
             raise BetError("A parlay needs at least 2 legs.")
         if len(legs) > 10:
@@ -369,6 +372,7 @@ class BetManager:
         board = self.engine.build(self.db, context or {}, alts=alts)
         if not board.get("ready"):
             raise BetError(board.get("message", "Odds are not available yet."))
+        self.apply_boost(board)
 
         seen, built = set(), []
         for leg in legs:
@@ -386,6 +390,7 @@ class BetManager:
                 "market_id": market_id, "market_type": market["type"], "description": desc,
                 "selection": sel_key, "selection_label": sel["label"], "line": market.get("line"),
                 "odds_decimal": sel["decimal"], "fair_prob": sel["fair_prob"], "meta": meta,
+                "boost": sel["boost"]["from_decimal"] if sel.get("boost") else None,
             })
         conflict = score_conflict(built, self._evaluate)
         if conflict:
@@ -415,6 +420,8 @@ class BetManager:
         if stake > bettor["balance"] + 1e-9:
             raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
         built, board, quote = self.quote_parlay(legs, context)
+        if any(leg.get("boost") for leg in built) and stake > BOOST_MAX_STAKE:
+            raise BetError(f"A parlay with the odds boost of the game takes up to {BOOST_MAX_STAKE} credits.")
 
         bet = {
             "bettor": bettor["name"],

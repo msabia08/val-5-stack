@@ -1,9 +1,40 @@
 """Blackjack against Onkey, for betting credits (never bananas).
 
 Rules, fixed: six decks, reshuffled when less than a quarter is left; the dealer stands on every 17; blackjack pays
-3:2; double down on any first two cards (after a split too, except split aces); split once, into two hands, with split
-aces taking one card each; the dealer checks for blackjack under an ace or ten-value card, so a dealer blackjack only
-takes the original stakes; no insurance, no surrender. That's a house edge of about 0.5% (EDGE), the house's cut.
+3:2; double down on any first two cards (after a split too, except split aces); split any pair, and split again as
+often as a new pair comes, with split aces taking one card each (a new ace splits again); the dealer checks for
+blackjack under an ace or ten-value card, so a dealer blackjack only takes the original stakes; no insurance, no
+surrender. Onkey's save (below) is part of the rules too. That's a house edge of about 0.11% (EDGE,
+bjstrategy.house_edge()), the house's cut.
+
+Onkey's hint: on your turn `me.hint` is the move worth most on average and every legal move's value
+(bjstrategy.best(): basic strategy, worked out for these rules), which the page has him say after a pause.
+
+Onkey's peek: on PEEK_CHANCE of your decisions (where hitting is allowed) he peeks at a card he shouldn't, the next
+card in the shoe or (PEEK_HOLE of the time, once a round) his own hole card, and tells you its rank, lying PEEK_LIE of
+the time (a small card for a big one or the other way round). `me.peek` carries only what he claims; the truth stays
+here until the card shows (the next card when you hit, double or split, standing keeps it secret; the hole card when
+the round ends), and then `me.peek_result` says what it was and whether he lied, so the page can have him gloat or
+own up.
+
+Onkey's save: SAVE_CHANCE (bjstrategy's, 1 in 100) of the busts a hit or a double causes, Onkey takes his pen to the
+card and makes it the one that gives exactly 21, same suit (there always is one: you can only bust from 12 or more).
+The hand keeps `saved` (`index`, `was`: the card that came out of the shoe) so the page can draw it crossed out.
+
+Side bets, optional, each 0 or a stake no bigger than the main one, taken with it: Perfect Pairs on your first two
+cards (PAIRS_PAY) and 21+3 on those two plus Onkey's upcard read as a three-card poker hand (PLUS3_PAY). They're decided
+at the deal (shown at once, logged as `side`) and paid with the hand; their house edges (SIDE_EDGE, worked out exactly
+for six decks by side_edge()) go into the round's expected take.
+
+Streaks: each bettor's run of winning or losing rounds (pushes leave it alone), kept across tables while the server
+runs; the seats carry it and the log marks a hot run (`streak`) or a cold one (`slump`) at STREAK_MARKS.
+
+Emotes: anyone at a table can send one of EMOTES (one every EMOTE_GAP_S), logged as `emote` for the page to pop over
+their seat; a banana is thrown at Onkey.
+
+Tips: after a round you won, you can tip Onkey one of TIPS, up to what you won and once a round, until the next round
+opens. It comes off your balance and goes to the house: kept on the round's row (`tip`, counted against your casino net)
+and added to that round's house_ledger take.
 
 Tables: every bettor has their own solo table ("solo"), and there is ONE shared table ("shared", SHARED_SEATS seats)
 where whoever sits down plays against the same dealer hand. On the shared table a round opens for bets; betting
@@ -17,23 +48,40 @@ writes its house_ledger row (house.record) in one transaction. Round state lives
 reset) voids any row still 'playing' and refunds its stake.
 """
 import json
+import random
 import time
 
-from . import cards, house
+from . import bjstrategy, cards, house
 from .bets import BetError
 from .tables import LiveManager, LiveTable, check_ref
 
 STAKES = (5, 10, 25, 50, 100, 250, 500)
 DECKS = 6
 RESHUFFLE_AT = DECKS * 52 // 4
-EDGE = 0.005
+EDGE = 0.0011  # bjstrategy.house_edge() for these rules, the save included; the self-test checks it
+SAVE_CHANCE = bjstrategy.SAVE_CHANCE
 SHARED_SEATS = 5
 BET_WINDOW_S = 15
 TURN_S = 30
 RESULT_S = 5
+PEEK_CHANCE = 0.15
+PEEK_HOLE = 0.5
+PEEK_LIE = 0.4
+SIDE_BETS = ("pairs", "plus3")
+SIDE_BETS_OPEN = False  # side bets are switched off for now: True brings them back (the page follows `side_bets.open`)
+PAIRS_PAY = {"perfect": 25, "coloured": 12, "mixed": 6}
+PLUS3_PAY = {"suited_trips": 100, "straight_flush": 40, "trips": 30, "straight": 10, "flush": 5}
+SIDE_NAMES = {"perfect": "Perfect pair", "coloured": "Coloured pair", "mixed": "Mixed pair", "suited_trips": "Suited trips",
+              "straight_flush": "Straight flush", "trips": "Three of a kind", "straight": "Straight", "flush": "Flush"}
+SIDE_EDGE = {"pairs": 0.0611, "plus3": 0.0462}  # side_edge() for six decks; the self-test checks them
+STREAK_MARKS = (3, 5, 8, 12)  # a run of wins (streak) or losses (slump) this long is logged
+EMOTES = ("👏", "😂", "😬", "🔥", "🙈", "🍌")
+EMOTE_GAP_S = 1.5
+TIPS = (5, 10, 25)
 TEN = set("TJQK")
 RULES = ["Six decks, reshuffled when a quarter is left", "Dealer stands on all 17s", "Blackjack pays 3 to 2",
-         "Double down on any first two cards, after a split too", "Split once; split aces get one card each",
+         "Double down on any first two cards, after a split too",
+         "Split and re-split pairs as often as you like; split aces get one card each",
          "No insurance or surrender"]
 
 
@@ -54,6 +102,52 @@ def total(hand):
 
 def is_blackjack(hand, split=False):
     return not split and len(hand) == 2 and total(hand)[0] == 21
+
+
+RED = set("hd")
+
+
+def pairs_result(a, b):
+    """Perfect Pairs on two cards: perfect (same card), coloured (same rank and colour), mixed, or None."""
+    if a[0] != b[0]:
+        return None
+    return "perfect" if a[1] == b[1] else "coloured" if (a[1] in RED) == (b[1] in RED) else "mixed"
+
+
+def plus3_result(a, b, up):
+    """21+3 on your two cards and the dealer's upcard as a poker hand, or None."""
+    order = "23456789TJQKA"
+    ranks = sorted(order.index(c[0]) for c in (a, b, up))
+    flush = a[1] == b[1] == up[1]
+    trips = ranks[0] == ranks[2]
+    straight = (ranks[1] == ranks[0] + 1 and ranks[2] == ranks[1] + 1) or ranks == [0, 1, 12]  # A-2-3 counts
+    if trips:
+        return "suited_trips" if flush else "trips"
+    if straight:
+        return "straight_flush" if flush else "straight"
+    return "flush" if flush else None
+
+
+def side_edge(kind, decks=DECKS):
+    """The house edge of a side bet, exactly, over every first deal from a fresh shoe of `decks` decks."""
+    faces = [r + s for r in "23456789TJQKA" for s in "shdc"]
+    n = 52 * decks
+    ev = 0.0
+    if kind == "pairs":
+        for a in faces:
+            for b in faces:
+                w = decks * (decks - (a == b)) / (n * (n - 1))
+                res = pairs_result(a, b)
+                ev += w * (PAIRS_PAY[res] if res else -1)
+        return round(-ev, 6)
+    for a in faces:
+        for b in faces:
+            wab = decks * (decks - (a == b))
+            for c in faces:
+                w = wab * (decks - (c == a) - (c == b)) / (n * (n - 1) * (n - 2))
+                res = plus3_result(a, b, c)
+                ev += w * (PLUS3_PAY[res] if res else -1)
+    return round(-ev, 6)
 
 
 def dealer_should_hit(hand):
@@ -99,6 +193,8 @@ class BlackjackManager(LiveManager):
     def __init__(self, db, clock=None):
         super().__init__(db, clock or time.time)
         self.tables = {"shared": Table("shared", True)}
+        self.streaks = {}      # bettor -> wins in a row (positive) or losses in a row (negative)
+        self.last_emote = {}   # bettor -> when they last sent one
         with self.lock:
             self.void_open("The server restarted mid-hand")
 
@@ -162,7 +258,7 @@ class BlackjackManager(LiveManager):
             if p and t.phase == "playing" and not all(h["done"] for h in p["hands"]):
                 raise BetError("Finish your hand first.")
             if p and t.phase == "betting":  # a bet placed but not dealt yet comes back
-                self._txn(lambda: self._void_row(name, p["row"], p["stake"], "Left before the deal"))
+                self._txn(lambda: self._void_row(name, p["row"], p["stake"] + p["side_total"], "Left before the deal"))
                 del t.players[name]
             if name in t.seats:
                 t.seats.remove(name)
@@ -189,9 +285,11 @@ class BlackjackManager(LiveManager):
             self.changed(t)
 
     # ---- betting and dealing -----------------------------------------------------
-    def bet(self, name, which, stake, request_id):
+    def bet(self, name, which, stake, request_id, side=None):
         if type(stake) not in (int, float) or stake not in STAKES:
             raise BetError(f"Choose a stake of {', '.join(map(str, STAKES[:-1]))} or {STAKES[-1]} credits.")
+        side = self._check_side(side, stake)
+        side_total = sum(side.values())
         check_ref(request_id, "bet")
         with self.lock:
             now = self.clock()
@@ -213,24 +311,62 @@ class BlackjackManager(LiveManager):
                     raise BetError("Finish your hand first.")
                 t.reset_round()
                 t.round += 1
-            if b["balance"] < stake:
-                raise BetError("Not enough credits for that bet. Choose a smaller stake.")
+            if b["balance"] < stake + side_total:
+                raise BetError("Not enough credits for that bet. Choose a smaller stake." if b["balance"] < stake
+                               else "Not enough credits for those side bets too.")
 
             def run():
-                self.db.conn.execute("UPDATE bettors SET balance=ROUND(balance - ?, 2) WHERE name=?", (stake, name))
+                self.db.conn.execute("UPDATE bettors SET balance=ROUND(balance - ?, 2) WHERE name=?",
+                                     (stake + side_total, name))
                 cur = self.db.conn.execute(
                     "INSERT INTO blackjack_hands(bettor, tbl, round, stake, payout, hands, dealer, status, created_ts, "
-                    "request_id, edge) VALUES(?,?,?,?,0,'[]','[]','playing',?,?,?)",
-                    (name, "shared" if t.shared else "solo", t.round, stake, now, request_id, EDGE))
+                    "request_id, edge, side) VALUES(?,?,?,?,0,'[]','[]','playing',?,?,?,?)",
+                    (name, "shared" if t.shared else "solo", t.round, stake + side_total, now, request_id, EDGE,
+                     json.dumps(side) if side else None))
                 return cur.lastrowid
             row = self._txn(run)
-            t.players[name] = {"row": row, "stake": stake, "hands": [], "step": 0}
-            t.add_log("bet", name, now, amount=stake)
+            t.players[name] = {"row": row, "stake": stake, "side": side, "side_total": side_total, "side_results": {},
+                               "hands": [], "step": 0}
+            t.add_log("bet", name, now, amount=stake + side_total)
             if t.shared and t.deadline is None:
                 t.deadline = now + BET_WINDOW_S
             self._maybe_deal(t, now)
             self.changed(t)
             return self.view(name, which)
+
+    @staticmethod
+    def _check_side(side, stake):
+        """Side bets from a request: {kind: stake} for the ones placed, each one of STAKES and at most the main stake."""
+        if not side or (isinstance(side, dict) and not any(side.values())):  # none placed
+            return {}
+        if not SIDE_BETS_OPEN:
+            raise BetError("Side bets are closed for now.")
+        if not isinstance(side, dict) or set(side) - set(SIDE_BETS):
+            raise BetError("Unknown side bet.")
+        out = {}
+        for kind, amount in side.items():
+            if amount in (0, None):
+                continue
+            if type(amount) not in (int, float) or amount not in STAKES:
+                raise BetError("Side bets use the same chips as the main bet.")
+            if amount > stake:
+                raise BetError("A side bet can't be bigger than your main bet.")
+            out[kind] = amount
+        return out
+
+    def _settle_sides(self, t, now):
+        """Decide every side bet on the first two cards (and the upcard), right after the deal."""
+        for name in t.order:
+            p = t.players[name]
+            a, b = p["hands"][0]["cards"]
+            for kind, amount in p["side"].items():
+                res = pairs_result(a, b) if kind == "pairs" else plus3_result(a, b, t.dealer[0])
+                pays = (PAIRS_PAY if kind == "pairs" else PLUS3_PAY).get(res, 0)
+                payout = amount * (pays + 1) if res else 0
+                p["side_results"][kind] = {"stake": amount, "result": res, "name": SIDE_NAMES.get(res), "pays": pays,
+                                           "payout": payout}
+                if res:
+                    t.add_log("side", name, now, bet=kind, hand=SIDE_NAMES[res], amount=payout - amount)
 
     def _maybe_deal(self, t, now, force=False):
         if t.phase != "betting" or not t.players:
@@ -253,6 +389,7 @@ class BlackjackManager(LiveManager):
             t.dealer.append(self._draw(t))
         t.phase, t.deadline = "playing", None
         t.add_log("deal", None, now, players=len(t.order))
+        self._settle_sides(t, now)
         if card_value(t.dealer[0]) >= 10 and is_blackjack(t.dealer):  # the peek
             for name in t.order:
                 t.players[name]["hands"][0]["done"] = True
@@ -284,14 +421,40 @@ class BlackjackManager(LiveManager):
         p = t.players[name]
         h = p["hands"][t.turn[1]]
         balance = self.db.get_bettor(name)["balance"]
-        out = ["hit", "stand"]
         split_aces = h["split"] and h["cards"][0][0] == "A"
+        out = ["stand"] if split_aces else ["hit", "stand"]  # a split ace still open drew another ace: stand or split
         if len(h["cards"]) == 2 and not split_aces and balance >= h["stake"]:
             out.append("double")
-        if (len(p["hands"]) == 1 and len(h["cards"]) == 2 and card_value(h["cards"][0]) == card_value(h["cards"][1])
-                and balance >= h["stake"]):
+        if len(h["cards"]) == 2 and card_value(h["cards"][0]) == card_value(h["cards"][1]) and balance >= h["stake"]:
             out.append("split")
         return out
+
+    def hint(self, t, name):
+        """The best move for `name`'s hand right now and every legal move's value (bjstrategy.best), or None."""
+        acts = self.actions(t, name)
+        if not acts:
+            return None
+        return bjstrategy.best(t.players[name]["hands"][t.turn[1]]["cards"], t.dealer[0], acts)
+
+    def _peek(self, t, name):
+        """What Onkey claims about a card for `name`'s decision now (decided once per step), or None."""
+        p = t.players[name]
+        if p.get("peek_step") != p["step"]:
+            p["peek_step"], p["peek"] = p["step"], None
+            if "hit" in self.actions(t, name) and t.shoe and random.random() < PEEK_CHANCE:
+                kind = "hole" if not p.get("hole_peek") and random.random() < PEEK_HOLE else "next"
+                truth = (t.dealer[1] if kind == "hole" else t.shoe[0])[0]
+                lie = random.random() < PEEK_LIE
+                big = "89" if kind == "hole" and t.dealer[0][0] == "A" else "89TJQK"  # never a blackjack he's ruled out
+                claim = random.choice("23456" if card_value(truth) >= 7 else big) if lie else truth
+                p["peek"] = {"kind": kind, "card": claim, "step": p["step"]}
+                if kind == "hole":
+                    p["hole_peek"] = p["peek"]
+        return p["peek"]
+
+    def _reveal(self, p, pk, actual):
+        p["peek_result"] = {"kind": pk["kind"], "claimed": pk["card"], "actual": actual, "honest": pk["card"] == actual,
+                            "step": pk["step"]}
 
     def action(self, name, which, act, step):
         with self.lock:
@@ -314,11 +477,14 @@ class BlackjackManager(LiveManager):
         p = t.players[name]
         i = t.turn[1]
         h = p["hands"][i]
+        pk = p.get("peek")
+        if pk and pk["kind"] == "next" and pk["step"] == p["step"] and act != "stand":
+            self._reveal(p, pk, t.shoe[0][0])  # the card this move draws first
         p["step"] += 1
         if act in ("double", "split"):
             extra = h["stake"]
             total_stake = sum(x["stake"] for x in p["hands"]) + extra
-            self._txn(lambda: self._move(name, -extra, p["row"], total_stake))
+            self._txn(lambda: self._move(name, -extra, p["row"], total_stake + p["side_total"]))
             p["stake"] = total_stake
         if act == "stand":
             h["done"] = True
@@ -332,22 +498,35 @@ class BlackjackManager(LiveManager):
             h["cards"].append(self._draw(t))
             h["done"] = True
             t.add_log("double", name, now, amount=h["stake"], card=h["cards"][-1])
-        elif act == "split":
+        elif act == "split":  # the new hand goes right after this one, so hands are played left to right
             second = {"cards": [h["cards"].pop()], "stake": h["stake"], "doubled": False, "split": True,
                       "done": False, "result": None, "payout": 0}
             h["split"] = True
-            p["hands"].append(second)
-            for x in p["hands"]:
+            p["hands"].insert(i + 1, second)
+            for x in (h, second):
                 x["cards"].append(self._draw(t))
-            if h["cards"][0][0] == "A":  # split aces: one card each
-                for x in p["hands"]:
+                if x["cards"][0][0] == "A" and x["cards"][1][0] != "A":  # split aces: one card each, unless another ace
                     x["done"] = True
-            t.add_log("split", name, now)
+            t.add_log("split", name, now, hands=len(p["hands"]))
+        if act in ("hit", "double"):
+            self._maybe_save(t, name, h, now)
         for x in p["hands"]:
             if not x["done"] and total(x["cards"])[0] >= 21:
                 x["done"] = True  # a bust, or 21 (stands by itself)
         if total(h["cards"])[0] > 21:
             t.add_log("bust", name, now, total=total(h["cards"])[0])
+
+    def _maybe_save(self, t, name, h, now):
+        """Rarely, a bust gets Onkey's pen: the card that busted becomes the one that makes 21 (same suit)."""
+        if total(h["cards"])[0] <= 21 or random.random() >= SAVE_CHANCE:
+            return
+        was = h["cards"][-1]
+        for r in "A23456789T":
+            if total(h["cards"][:-1] + [r + was[1]])[0] == 21:
+                h["cards"][-1] = r + was[1]
+                h["saved"] = {"index": len(h["cards"]) - 1, "was": was}
+                t.add_log("save", name, now, was=was, card=h["cards"][-1])
+                return
 
     def _finish(self, t, now):
         live = [h for n in t.order for h in t.players[n]["hands"]
@@ -362,23 +541,92 @@ class BlackjackManager(LiveManager):
             t.add_log("dealer_stands", None, now, total=dt)
         for name in t.order:
             p = t.players[name]
+            if p.get("hole_peek"):
+                self._reveal(p, p["hole_peek"], t.dealer[1][0])
             for h in p["hands"]:
                 h["result"], h["payout"] = outcome(h, t.dealer)
-            staked = sum(h["stake"] for h in p["hands"])
-            paid = sum(h["payout"] for h in p["hands"])
+            main = sum(h["stake"] for h in p["hands"])
+            staked = main + p["side_total"]
+            paid = sum(h["payout"] for h in p["hands"]) + sum(r["payout"] for r in p["side_results"].values())
+            expected = main * EDGE + sum(amount * SIDE_EDGE[kind] for kind, amount in p["side"].items())
+            side = json.dumps({k: {"stake": r["stake"], "result": r["result"], "payout": r["payout"]}
+                               for k, r in p["side_results"].items()}) if p["side"] else None
 
-            def run(name=name, p=p, staked=staked, paid=paid):
+            def run(name=name, p=p, staked=staked, paid=paid, expected=expected, side=side):
                 self._move(name, paid, p["row"])
                 self.db.conn.execute(
-                    "UPDATE blackjack_hands SET stake=?, payout=?, hands=?, dealer=?, status='settled', settled_ts=? "
-                    "WHERE id=?", (staked, paid, json.dumps(p["hands"]), json.dumps(t.dealer), now, p["row"]))
-                house.record(self.db.conn, "blackjack", f"hand:{p['row']}", name, staked, staked - paid, staked * EDGE, now)
+                    "UPDATE blackjack_hands SET stake=?, payout=?, hands=?, dealer=?, side=?, status='settled', "
+                    "settled_ts=? WHERE id=?",
+                    (staked, paid, json.dumps(p["hands"]), json.dumps(t.dealer), side, now, p["row"]))
+                house.record(self.db.conn, "blackjack", f"hand:{p['row']}", name, staked, staked - paid, expected, now)
             self._txn(run)
+            p["net"] = round(paid - staked, 2)
             kind = "win" if paid > staked else "push" if paid == staked else "lose"
             t.add_log(kind, name, now, amount=round(paid - staked, 2), staked=staked,
                       blackjack=any(h["result"] == "blackjack" for h in p["hands"]))
+            self._streak(t, name, kind, now)
         t.phase, t.turn, t.deadline = "done", None, None
         t.next_round_at = now + RESULT_S if t.shared else None
+
+    def _streak(self, t, name, kind, now):
+        s = self.streaks.get(name, 0)
+        if kind == "win":
+            s = s + 1 if s > 0 else 1
+        elif kind == "lose":
+            s = s - 1 if s < 0 else -1
+        self.streaks[name] = s
+        if abs(s) in STREAK_MARKS or abs(s) > STREAK_MARKS[-1] and abs(s) % 4 == 0:
+            t.add_log("streak" if s > 0 else "slump", name, now, n=abs(s))
+
+    # ---- emotes ----------------------------------------------------------------------
+    def emote(self, name, which, emote):
+        with self.lock:
+            now = self.clock()
+            name = self._bettor(name)["name"]
+            t = self._table(name, which)
+            if emote not in EMOTES:
+                raise BetError("Onkey doesn't know that one.")
+            if t.shared and name not in t.seats:
+                raise BetError("Take a seat at the shared table first.")
+            if now - self.last_emote.get(name, 0) < EMOTE_GAP_S:
+                raise BetError("Easy. One at a time.")
+            self.last_emote[name] = now
+            t.add_log("emote", name, now, emote=emote)
+            self.changed(t)
+            return self.view(name, which)
+
+    # ---- tips ------------------------------------------------------------------------
+    def tip(self, name, which, amount):
+        if type(amount) not in (int, float) or amount not in TIPS:
+            raise BetError(f"Tip Onkey {', '.join(map(str, TIPS[:-1]))} or {TIPS[-1]} credits.")
+        with self.lock:
+            now = self.clock()
+            b = self._bettor(name)
+            name = b["name"]
+            t = self._table(name, which)
+            p = t.players.get(name)
+            if not p or t.phase != "done":
+                raise BetError("Tips go to Onkey once a round is over.")
+            if p.get("tip"):
+                raise BetError("Onkey already has your tip. Thank you!")
+            if p.get("net", 0) <= 0:
+                raise BetError("Tips come out of a win.")
+            if amount > p["net"]:
+                raise BetError(f"You can tip up to {p['net']:g} from that win.")
+            if b["balance"] < amount:
+                raise BetError("Not enough credits for that tip.")
+
+            def run():
+                self.db.conn.execute("UPDATE bettors SET balance=ROUND(balance - ?, 2) WHERE name=?", (amount, name))
+                self.db.conn.execute("UPDATE blackjack_hands SET tip=? WHERE id=?", (amount, p["row"]))
+                self.db.conn.execute(
+                    "UPDATE house_ledger SET take=ROUND(take + ?, 2), expected=ROUND(COALESCE(expected, 0) + ?, 4) "
+                    "WHERE game='blackjack' AND ref=?", (amount, amount, f"hand:{p['row']}"))
+            self._txn(run)
+            p["tip"] = amount
+            t.add_log("tip", name, now, amount=amount)
+            self.changed(t)
+            return self.view(name, which)
 
     # ---- the clock -----------------------------------------------------------------
     def tick(self, now=None):
@@ -418,13 +666,19 @@ class BlackjackManager(LiveManager):
                                   "blackjack": is_blackjack(h["cards"], h["split"]),
                                   "turn": t.turn == (n, i)})
                 seats.append({"bettor": n, "seated": n in t.seats, "stake": p["stake"] if p else None,
-                              "hands": hands, "playing": n in t.order})
+                              "side": p["side"] if p else {}, "side_results": p["side_results"] if p else {},
+                              "hands": hands, "playing": n in t.order, "streak": self.streaks.get(n, 0)})
             me = None
             if name:
                 p = t.players.get(name)
                 b = self.db.get_bettor(name)
                 me = {"name": name, "seated": name in t.seats, "bet": bool(p), "step": p["step"] if p else 0,
-                      "actions": self.actions(t, name), "turn": bool(t.turn and t.turn[0] == name),
+                      "actions": self.actions(t, name), "hint": self.hint(t, name),
+                      "peek": self._peek(t, name) if p and t.turn and t.turn[0] == name else None,
+                      "peek_result": p.get("peek_result") if p else None,
+                      "tip": {"open": t.phase == "done" and p.get("net", 0) > 0 and not p.get("tip"), "max": p.get("net", 0),
+                              "tipped": p.get("tip"), "amounts": TIPS} if p else None,
+                      "turn": bool(t.turn and t.turn[0] == name),
                       "balance": round(b["balance"], 2) if b else 0, "season": self.season(name)}
             return {"table": "shared" if t.shared else "solo", "phase": t.phase, "round": t.round,
                     "version": t.version, "seats": seats, "max_seats": SHARED_SEATS if t.shared else 1,
@@ -434,6 +688,9 @@ class BlackjackManager(LiveManager):
                     "deadline": t.deadline, "next_round_at": t.next_round_at, "server_time": self.clock(),
                     "shoe_left": len(t.shoe), "log": list(t.log), "me": me,
                     "stakes": STAKES, "rules": RULES, "edge": EDGE, "turn_s": TURN_S, "bet_window_s": BET_WINDOW_S,
+                    "side_bets": {"open": SIDE_BETS_OPEN, "pairs": {"pays": PAIRS_PAY, "edge": SIDE_EDGE["pairs"]},
+                                  "plus3": {"pays": PLUS3_PAY, "edge": SIDE_EDGE["plus3"]}, "names": SIDE_NAMES},
+                    "emotes": EMOTES,
                     "shared_seats": {"taken": len(self.tables["shared"].seats), "max": SHARED_SEATS,
                                      "names": list(self.tables["shared"].seats)}}
 
@@ -441,6 +698,7 @@ class BlackjackManager(LiveManager):
         r = self.db.query_one(
             "SELECT COUNT(*) AS hands, COALESCE(SUM(stake),0) AS staked, COALESCE(SUM(payout),0) AS returned, "
             "COUNT(CASE WHEN payout > stake THEN 1 END) AS wins, "
-            "COUNT(CASE WHEN hands LIKE '%\"result\": \"blackjack\"%' THEN 1 END) AS blackjacks "
+            "COUNT(CASE WHEN hands LIKE '%\"result\": \"blackjack\"%' THEN 1 END) AS blackjacks, "
+            "COALESCE(SUM(tip),0) AS tips "
             "FROM blackjack_hands WHERE bettor=? AND status='settled' AND season_id IS NULL", (name,))
-        return {**r, "net": round(r["returned"] - r["staked"], 2)}
+        return {**r, "net": round(r["returned"] - r["staked"] - r["tips"], 2)}

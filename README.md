@@ -84,9 +84,26 @@ Open **Casino → Blackjack**, sign in, and pick a table:
   yet comes back.
 
 The rules are fixed: six decks, reshuffled when less than a quarter is left; the dealer stands on every 17;
-blackjack pays 3 to 2; double down on any first two cards (after a split too, except split aces); split once, and
-split aces take one card each; the dealer checks for blackjack under an ace or a ten, so a dealer blackjack only
-takes your original stake; no insurance or surrender. That leaves the house about 0.5% over time, which is its cut.
+blackjack pays 3 to 2; double down on any first two cards (after a split too, except split aces); split any pair,
+and split again as often as a new pair comes; split aces take one card each, though a new ace can be split again;
+the dealer checks for blackjack under an ace or a ten, so a dealer blackjack only takes your original stake; no
+insurance or surrender; and once in a while (1 bust in 100) Onkey takes his pen to the card that busted you,
+crosses out its number and writes in the one that makes 21. That leaves the house about 0.11% over time, which is its
+cut. Take more than 3 seconds over
+a move and Onkey may tip you off (about one pause in three, at most once a round; basic strategy: the move that
+loses least, or wins most, on average), in his own words, and lights that button up. Now and then he peeks instead and tells you the next card, or his own hole card.
+He's the house, so he lies about it fairly often, and he'll let you know once the card shows.
+
+Side bets (switched off for now; `SIDE_BETS_OPEN` in `fivestack/blackjack.py` brings them back) sit either side of
+the Deal button: Perfect Pairs (your first two cards: a mixed pair pays 6 to 1, a
+coloured pair 12 to 1, a perfect pair 25 to 1) and 21+3 (your two cards and Onkey's upcard as a poker hand: flush 5
+to 1, straight 10, three of a kind 30, straight flush 40, suited trips 100). Tap a spot to put a chip on it (up to
+your main bet), right-click to take it off. The house keeps about 6.1% and 4.6% on them. Three wins in a row and
+your seat runs hot; three losses and it frosts over, and Onkey has something to say either way. Anyone at the
+shared table can send an emote, and a banana goes straight at Onkey. Every so often Greg is sitting in the dealer's
+chair when you get to a table (blackjack or poker), until Onkey turns up and throws him out. After a round you won,
+you can tip Onkey 5, 10 or 25 credits (up to what you won, once a round); it goes to the house and counts against your
+casino results, and he thanks you for it.
 Keys: H hit, S stand, D double, P split, Enter deals. Onkey deals each card in turn and turns his hole card over
 before he draws, and the result shows once the last card is down. A hand still open when the server restarts or the
 season ends is refunded.
@@ -875,8 +892,9 @@ pays all of it.
 Separate from the house's money: one pick on the board pays **50% more
 profit** than its usual price until the next game is recorded, when a new one
 is picked. It's shown under the odds format toggle on Place bets and with a gold ring on its
-button. It's for singles of up to 100 credits; in a parlay that pick is at its
-usual price.
+button. It's for singles of up to 100 credits; put that pick in a **parlay**
+and the leg prices at its boosted odds too (marked with ⚡ in the slip and on
+the ticket), but the whole parlay's stake is capped the same way.
 
 Giveaways don't count toward betting profit or ROI. The Rankings show them in their
 own House column, and a season reset clears that column but not the pot or
