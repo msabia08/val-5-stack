@@ -307,6 +307,8 @@ CREATE TABLE IF NOT EXISTS blackjack_hands (
     request_id TEXT NOT NULL,
     edge REAL,
     season_id INTEGER REFERENCES seasons(id),
+    side TEXT,                   -- JSON: side bets, {kind: {stake, result, payout}} once settled; NULL without any
+    tip REAL,                    -- credits tipped to Onkey after the round (to the house)
     UNIQUE(bettor, request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_blackjack_season ON blackjack_hands(season_id, bettor);
@@ -428,6 +430,7 @@ MIGRATIONS = {
     "members": (("previous_name", "TEXT"), ("name_checked_ts", "REAL"), ("bettor", "TEXT"), ("active", "INTEGER DEFAULT 1")),
     "member_games": (("team", "TEXT"),),
     "slot_spins": (("rtp", "REAL"),),
+    "blackjack_hands": (("side", "TEXT"), ("tip", "REAL")),
 }
 ARCHIVED_BET_COLUMNS = [
     "id", "bettor", "market_id", "market_type", "description", "selection", "selection_label", "line", "odds_decimal",

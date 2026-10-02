@@ -107,7 +107,7 @@ window.FivePoker = (() => {
   function centerHtml() {
     const h = data.hand;
     const board = h ? h.board : [];
-    const slots = [0, 1, 2, 3, 4].map((i) => C.card(board[i] || '', { size: 'lg', key: h ? `pk:${h.no}:board:${i}` : undefined, seq: 1000 + i })).join('');
+    const slots = [0, 1, 2, 3, 4].map((i) => C.card(board[i] || '', { size: 'xl', key: h ? `pk:${h.no}:board:${i}` : undefined, seq: 1000 + i })).join('');
     let line = '';
     if (h && h.street === 'done' && data.last) {
       line = data.last.pots.map((p) => `<span>${p.winners.map(esc).join(' and ')} ${p.winners.length > 1 ? 'split' : 'wins'} ${fmt.credits(p.amount)}${p.hand ? ` with ${esc(p.hand.toLowerCase())}` : ''}</span>`).join('') +
@@ -137,8 +137,8 @@ window.FivePoker = (() => {
       const isMe = s.seat === mine;
       const back = C.style(s.bettor, 'card_back');  // the card backs they bought, for everyone at the table
       const key = h ? `pk:${h.no}:s${i}` : undefined;
-      const cardsHtml = s.cards ? C.cards(s.cards, { size: isMe ? 'md' : 'sm', cls: best.has(i) ? 'shown' : '', key, seq: (j) => dealSeq(i, j) })
-        : s.hidden ? [0, 1].map((j) => C.card(null, { size: 'sm', cls: back, key: key && `${key}:${j}`, seq: dealSeq(i, j) })).join('') : '';
+      const cardsHtml = s.cards ? C.cards(s.cards, { size: isMe ? 'lg' : 'md', cls: best.has(i) ? 'shown' : '', key, seq: (j) => dealSeq(i, j) })
+        : s.hidden ? [0, 1].map((j) => C.card(null, { size: 'md', cls: back, key: key && `${key}:${j}`, seq: dealSeq(i, j) })).join('') : '';
       const badges = `${s.button ? '<span class="pk-btn" title="Dealer button">D</span>' : ''}${s.sb ? '<span class="pk-blind">SB</span>' : ''}${s.bb ? '<span class="pk-blind">BB</span>' : ''}`;
       const sub = data.phase === 'lobby' || !s.dealt
         ? (s.ready ? '<span class="pk-ready on">Ready</span>' : '<span class="pk-ready">Not ready</span>')
@@ -146,7 +146,7 @@ window.FivePoker = (() => {
       const handName = best.get(i)?.hand ? `<span${C.after('pk-hand-name')}>${esc(best.get(i).hand)}</span>` : '';
       // The chips in front of a seat sit part-way to the middle.
       const bx = x + (50 - x) * 0.42, by = y + (50 - y) * 0.42;
-      const bet = s.bet ? `<div class="pk-bet" style="left:${bx}%;top:${by}%"><span class="chip-dot ${C.style(s.bettor, 'chips')}" aria-hidden="true"></span>${fmt.credits(s.bet)}</div>` : '';
+      const bet = s.bet ? `<div class="pk-bet" style="left:${bx}%;top:${by}%"><span class="chip-dot ${C.denom(s.bet)} ${C.style(s.bettor, 'chips')}" aria-hidden="true"></span>${fmt.credits(s.bet)}</div>` : '';
       return `${bet}<div class="pk-seat ${isMe ? 'me' : ''} ${s.to_act ? 'turn' : ''} ${s.folded ? 'folded' : ''} ${winners.has(i) ? 'winner' : ''} ${s.dealt ? '' : 'out'} ${C.style(s.bettor, 'seat')}" data-bettor="${esc(s.bettor)}" style="left:${x}%;top:${y}%">
         <div class="pk-cards">${cardsHtml}</div>
         <div class="pk-plate"><div class="pk-name">${C.who(s.bettor)}${badges}</div>${C.title(s.bettor) ? `<div class="pk-title">${C.title(s.bettor)}</div>` : ''}
@@ -382,7 +382,7 @@ window.FivePoker = (() => {
         if (b && !b.disabled) { e.preventDefault(); b.click(); }
       });
     }
-    if (!bind.greeted) { bind.greeted = true; setTimeout(() => C.say($('#pk-onkey'), 'greet'), 500); }
+    if (!bind.greeted) { bind.greeted = true; setTimeout(() => { if (!C.gregHere()) C.say($('#pk-onkey'), 'greet'); }, 500); }
     startLoop();
   }
   return { init, load, view, bind };

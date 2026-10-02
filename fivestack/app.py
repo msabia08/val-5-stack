@@ -296,7 +296,9 @@ class Handler(BaseHTTPRequestHandler):
         routes = {
             "/api/blackjack/sit": lambda: bj.sit(name),
             "/api/blackjack/leave": lambda: bj.leave(name),
-            "/api/blackjack/bet": lambda: bj.bet(name, which, body.get("stake"), body.get("request_id")),
+            "/api/blackjack/bet": lambda: bj.bet(name, which, body.get("stake"), body.get("request_id"), body.get("side")),
+            "/api/blackjack/emote": lambda: bj.emote(name, which, body.get("emote")),
+            "/api/blackjack/tip": lambda: bj.tip(name, which, body.get("amount")),
             "/api/blackjack/action": lambda: bj.action(name, which, body.get("action"), body.get("step")),
             "/api/poker/sit": lambda: pk.sit(name, body.get("buyin")),
             "/api/poker/leave": lambda: pk.leave(name),

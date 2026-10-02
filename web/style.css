@@ -87,7 +87,24 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .brand.onkey-talking .onkey-says { opacity: 1; transform: none; pointer-events: auto; }
 .brand.onkey-talking .logo-link { animation: onkey-hop 0.5s ease-out; }
 .brand.onkey-excited .logo-link { animation: onkey-hop 0.42s ease-out 3; }
+/* An ominous line: the bubble goes dark, the same in every theme. */
+.brand.onkey-ominous .onkey-says { background: #17121f; color: #ddd3f5; box-shadow: 0 0 18px rgba(120, 70, 200, 0.45); }
+.brand.onkey-ominous .onkey-says::before { border-bottom-color: #17121f; }
+.brand.onkey-ominous .onkey-says .ook { color: #8f80b8; }
 .brand.onkey-talking .logo { animation: onkey-jabber 0.18s ease-in-out 8 alternate; }
+/* ...and Onkey goes black and white under a shadow falling on him from above: darkest over his head, clearing as it
+   goes down him. The shadow is cut to his outline (masked with the logo image, so the top bar around him stays as it
+   is), and he sways slowly instead of hopping. Both fade back when the bubble goes. */
+.logo-link { position: relative; }
+.logo-link::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.9s ease;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.6) 40%, rgba(0, 0, 0, 0.15) 80%, rgba(0, 0, 0, 0));
+  -webkit-mask: url("/assets/onkey-logo.png") center / 100% 100% no-repeat; mask: url("/assets/onkey-logo.png") center / 100% 100% no-repeat; }
+:root[data-theme="greg"] .logo-link::after { -webkit-mask-image: url("/assets/greg-logo.png"); mask-image: url("/assets/greg-logo.png"); }
+.brand.onkey-ominous .logo-link::after { opacity: 1; }
+.brand.onkey-ominous .logo { filter: grayscale(1) contrast(1.1); }
+.brand.onkey-talking.onkey-ominous .logo { animation: none; }
+.brand.onkey-talking.onkey-ominous .logo-link { transform-origin: 50% 90%; animation: onkey-dread 1.1s ease-in-out infinite alternate; }
+@keyframes onkey-dread { from { transform: rotate(-2.5deg) translateX(-0.5px); } to { transform: rotate(2.5deg) translateX(0.5px); } }
 /* At the blackjack and poker tables Onkey walks from the logo to the dealer's seat (walk() in onkey.js): the logo
    empties while he's away and the dealer's face waits for him; .onkey-walker is him on the way. */
 html.onkey-away .topbar .brand .logo-link { visibility: hidden; }
@@ -96,7 +113,7 @@ html.onkey-walking .onkey-dealer .onkey-face { visibility: hidden; }
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 @keyframes onkey-hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-7px) rotate(-6deg); } 65% { transform: translateY(0) rotate(4deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .brand.onkey-talking .logo-link, .brand.onkey-excited .logo-link, .brand.onkey-talking .logo { animation: none; }
+  .brand.onkey-talking .logo-link, .brand.onkey-excited .logo-link, .brand.onkey-talking .logo, .brand.onkey-talking.onkey-ominous .logo-link { animation: none; }
   .onkey-says { transition: none; }
 }
 .logo { display: block; width: 62px; height: 36px; object-fit: contain; flex: none; }  /* web/assets/onkey-logo.png: a 124 x 72 crop of onkey.png */
@@ -104,7 +121,7 @@ html.onkey-walking .onkey-dealer .onkey-face { visibility: hidden; }
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .logo-greg { display: none; }  /* Greg Mode's logo: a 124 x 72 head-and-shoulders crop of greg.png (transparent) */
 /* Hovering the logo: a quick wiggle, then it stays a little bigger until the pointer leaves. */
-.logo { transform-origin: 50% 85%; transition: transform 0.2s ease; }
+.logo { transform-origin: 50% 85%; transition: transform 0.2s ease, filter 0.9s ease; }
 .logo:hover { animation: logo-wiggle 0.6s ease-in-out forwards; }
 @keyframes logo-wiggle {
   0% { transform: rotate(0deg) scale(1); }
@@ -1829,13 +1846,22 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .felt { position: relative; color: var(--felt-ink); background: radial-gradient(ellipse at 50% 35%, var(--felt-2), var(--felt) 70%);
   border: 12px solid var(--felt-edge); border-radius: 28px; padding: 20px 24px 24px; box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45), var(--shadow); }
 .felt .muted { color: var(--felt-dim); }
-.felt-top { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.felt-print { text-align: center; font-style: italic; letter-spacing: 0.04em; color: var(--felt-dim); margin: 14px 0 18px; font-size: 13px; }
-.felt-status { text-align: center; min-height: 24px; margin: 16px 0 12px; font-variant-numeric: tabular-nums; }
-.felt-controls { display: flex; justify-content: center; min-height: 64px; align-items: center; }
+.felt-top { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+/* Tipping Onkey sits to his left (blackjack.js tipHtml()). */
+.bj-tip { position: absolute; top: 24px; right: calc(50% + 76px); z-index: 2; }
+/* The table print (blackjack.js feltPrint()): like a real layout, the payout in gold capitals along a dark band edged in
+   gold that curves round the dealer, the dealer's rule in a smaller arc under it. */
+.felt-print { display: flex; justify-content: center; margin: 14px 0 auto; pointer-events: none; } /* just under Onkey's hand; the spare space goes below it */
+.felt-print svg { width: min(540px, 100%); height: auto; overflow: visible; }
+.fp-band-edge { fill: none; stroke: #c9a227; stroke-width: 35; stroke-linecap: round; opacity: 0.9; }
+.fp-band { fill: none; stroke: #0a3f24; stroke-width: 30; stroke-linecap: round; }
+.fp-main { fill: #e8c255; font: 700 19px/1 Georgia, "Times New Roman", serif; letter-spacing: 0.16em; }
+.fp-sub { fill: rgba(243, 241, 232, 0.82); font: 700 12.5px/1 Georgia, "Times New Roman", serif; letter-spacing: 0.24em; }
+.felt-status { text-align: center; min-height: 28px; margin: 18px 0 14px; font-size: 18px; font-variant-numeric: tabular-nums; }
+.felt-controls { display: flex; justify-content: center; min-height: 76px; align-items: center; }
 .countdown { font-variant-numeric: tabular-nums; }
 .countdown.urgent { color: var(--turn); }
-.timer-bar { display: block; height: 4px; width: 100%; border-radius: 2px; background: rgba(255, 255, 255, 0.15); margin-top: 6px; overflow: hidden; position: relative; }
+.timer-bar { display: block; height: 5px; width: 100%; border-radius: 2px; background: rgba(255, 255, 255, 0.15); margin-top: 6px; overflow: hidden; position: relative; }
 .timer-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--left, 1) * 100%); background: var(--turn); transition: width 0.25s linear; }
 .timer-bar.urgent::after { background: #ff6b6b; }
 
@@ -1844,8 +1870,10 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
   background: var(--card-face); color: var(--card-ink); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45); vertical-align: middle; user-select: none; }
 .pcard.xs { --w: 22px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
 .pcard.sm { --w: 34px; }
-.pcard.md { --w: 52px; }
-.pcard.lg { --w: 64px; }
+.pcard.md { --w: 56px; }
+.pcard.lg { --w: 76px; }
+.pcard.xl { --w: 100px; }
+.bj-felt .pcard.xl { --w: 120px; } /* blackjack's cards (Onkey's hand, and yours at the solo table) are bigger than poker's board */
 .pcard.red { color: var(--card-red); }
 .pc-corner { position: absolute; top: 6%; left: 9%; display: flex; flex-direction: column; align-items: center; line-height: 1; font-size: calc(var(--w) * 0.3); }
 .pc-corner b { font-weight: 800; letter-spacing: -0.04em; }
@@ -1859,101 +1887,117 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 
 /* Onkey, the dealer: his picture, and a speech bubble with his monkey noises and what they mean. */
 .onkey-dealer { position: relative; display: flex; flex-direction: column; align-items: center; z-index: 3; }
-.onkey-face { width: 88px; height: auto; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5)); transform-origin: 50% 90%; }
+.onkey-face { width: 112px; height: auto; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5)); transform-origin: 50% 90%; }
 .onkey-dealer.talking .onkey-face { animation: onkey-jabber 0.18s ease-in-out 8 alternate; }
 @keyframes onkey-jabber { from { transform: rotate(-4deg) scale(1); } to { transform: rotate(4deg) scale(1.06); } }
-.onkey-bubble { position: absolute; left: calc(100% + 14px); top: -4px; width: max-content; max-width: 300px; min-width: 160px; background: var(--card-face); color: var(--card-ink);
+.onkey-bubble { position: absolute; left: calc(100% + 14px); top: -4px; width: max-content; max-width: 380px; min-width: 180px; background: var(--card-face); color: var(--card-ink);
   border-radius: 14px; padding: 8px 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); opacity: 0; transform: translateY(4px) scale(0.96);
-  transform-origin: 0 50%; transition: opacity 0.2s, transform 0.2s; pointer-events: none; font-size: 14px; line-height: 1.35; }
+  transform-origin: 0 50%; transition: opacity 0.2s, transform 0.2s; pointer-events: none; font-size: 16px; line-height: 1.35; }
 .onkey-bubble::before { content: ""; position: absolute; left: -8px; top: 16px; border: 8px solid transparent; border-left: 0; border-right-color: var(--card-face); }
 .onkey-dealer.talking .onkey-bubble { opacity: 1; transform: none; }
-.onkey-bubble .ook { display: block; font-style: italic; font-size: 12px; color: #6b6a64; margin-bottom: 2px; }
+.onkey-bubble .ook { display: block; font-style: italic; font-size: 13px; color: #6b6a64; margin-bottom: 2px; }
 .onkey-bubble .say { display: block; font-weight: 600; }
 
 /* Chips and buttons on the felt. */
-.casino-deck, .casino-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
-.casino-stakes { display: flex; gap: 6px; }
-.stake-key { width: 46px; height: 46px; border-radius: 50%; border: 3px dashed rgba(255, 255, 255, 0.75); background: var(--chip); color: var(--chip-ink);
-  font: 700 14px var(--font); cursor: pointer; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); font-variant-numeric: tabular-nums; }
+.casino-deck, .casino-actions { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.casino-stakes { display: flex; gap: 8px; }
+.stake-key { width: 58px; height: 58px; border-radius: 50%; border: 3px dashed rgba(255, 255, 255, 0.75); background: var(--chip); color: var(--chip-ink);
+  font: 700 16px var(--font); cursor: pointer; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); font-variant-numeric: tabular-nums; }
 .stake-key[aria-pressed="true"] { outline: 3px solid var(--turn); outline-offset: 2px; transform: translateY(-2px); }
 .stake-key:disabled { opacity: 0.4; cursor: not-allowed; }
 .stake-key:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.btn.casino-cta { min-width: 180px; padding: 10px 18px; font-size: 16px; width: auto; margin-top: 0; }
+.btn.casino-cta { min-width: 220px; padding: 14px 26px; font-size: 18px; width: auto; margin-top: 0; }
 .btn.casino-act { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-.casino-act { min-width: 112px; padding: 9px 16px; font-size: 16px; font-weight: 700; display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; }
-.casino-act small { font-size: 12px; font-weight: 500; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.casino-act { min-width: 140px; padding: 12px 20px; font-size: 19px; font-weight: 700; display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.casino-act small { font-size: 13px; font-weight: 500; opacity: 0.85; font-variant-numeric: tabular-nums; }
 .btn.casino-act.act-fold { color: var(--down); }
 .btn.casino-act.act-raise, .btn.casino-act.act-hit { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-.chip-stake { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 15px;
-  background: var(--chip); color: var(--chip-ink); font-weight: 700; font-size: 12px; border: 2px dashed rgba(255, 255, 255, 0.7); font-variant-numeric: tabular-nums; }
-.chip-stake.big { min-width: 44px; height: 44px; border-radius: 22px; font-size: 14px; }
+/* Onkey's pick (blackjack.js hint): a gold ring that breathes until you move. */
+.btn.casino-act.hinted { box-shadow: 0 0 0 3px var(--turn), 0 0 18px rgba(255, 210, 63, 0.55); animation: hint-glow 1.4s ease-in-out infinite alternate; }
+@keyframes hint-glow { from { box-shadow: 0 0 0 3px var(--turn), 0 0 8px rgba(255, 210, 63, 0.3); } to { box-shadow: 0 0 0 3px var(--turn), 0 0 22px rgba(255, 210, 63, 0.7); } }
+.chip-stake { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px; padding: 0 8px; border-radius: 18px;
+  background: var(--chip); color: var(--chip-ink); font-weight: 700; font-size: 14px; border: 2px dashed rgba(255, 255, 255, 0.7); font-variant-numeric: tabular-nums; }
+.chip-stake.big { min-width: 54px; height: 54px; border-radius: 27px; font-size: 16px; }
 
 /* Blackjack */
-.bj-dealer { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 120px; }
+/* The felt fills the screen under the bar: Onkey and his hand at the top, the spots in the middle, the controls at the
+   bottom. Splits add hands side by side, wrapping onto a new row when they run out of room. */
+.bj-felt { display: flex; flex-direction: column; min-height: max(720px, calc(100vh - 230px)); padding: 24px 28px 26px; }
+.bj-dealer { display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 186px; }
 .bj-cards { display: flex; justify-content: center; }
-.bj-cards .pcard + .pcard { margin-left: -22px; }
+.bj-cards .pcard + .pcard { margin-left: calc(var(--w) * -0.36); }
 .bj-total { display: flex; align-items: center; gap: 8px; }
-.hand-total { display: inline-block; min-width: 30px; text-align: center; padding: 2px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.hand-total { display: inline-block; min-width: 38px; text-align: center; padding: 3px 11px; border-radius: 999px; background: rgba(0, 0, 0, 0.5); color: #fff; font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
 .hand-total.bust { background: var(--down); }
 .hand-total.bj { background: var(--chip); color: var(--chip-ink); }
-.hand-result { padding: 2px 9px; border-radius: 999px; font-weight: 700; font-size: 13px; background: rgba(0, 0, 0, 0.5); }
+.hand-result { padding: 3px 11px; border-radius: 999px; font-weight: 700; font-size: 15px; background: rgba(0, 0, 0, 0.5); }
 .hand-result.win, .hand-result.blackjack { background: var(--up); color: #fff; }
 .hand-result.lose, .hand-result.bust { background: var(--down); color: #fff; }
-.bj-spots { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
-.bj-spot { min-width: 190px; padding: 12px; border-radius: 14px; border: 1px dashed rgba(255, 255, 255, 0.2); display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.bj-spots.solo .bj-spot { min-width: 320px; }
-.bj-spot.open { justify-content: center; min-height: 150px; }
+.bj-spots { flex: none; display: flex; justify-content: center; align-items: center; align-content: center; gap: 16px; flex-wrap: wrap; }
+.bj-spot { min-width: 200px; max-width: 100%; padding: 12px 14px 8px; border-radius: 14px; border: 1px dashed rgba(255, 255, 255, 0.2); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bj-spots.solo .bj-spot { min-width: 440px; }
+/* The shared table keeps its five seats on one row: a seat with several hands narrows the others and wraps its own. */
+.bj-spots.shared { flex-wrap: nowrap; }
+.bj-spots.shared .bj-spot { flex: 0 1 auto; min-width: 170px; }
+.bj-spot.open { justify-content: center; min-height: 220px; }
 .bj-spot.me { background: rgba(255, 255, 255, 0.05); }
 .bj-spot.turn { border: 2px solid var(--turn); box-shadow: 0 0 18px rgba(255, 210, 63, 0.35); }
-.bj-hands { display: flex; gap: 14px; }
-.bj-hand { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px; border-radius: 10px; }
+.bj-hands { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+.bj-hand { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 8px 6px; border-radius: 12px; }
+.bj-felt .felt-status { margin: 12px 0 12px; } /* the result sits right under the players' spots */
 .bj-hand.active { background: rgba(255, 210, 63, 0.12); }
-.bj-hand.waiting { min-height: 120px; justify-content: center; }
-.bj-hand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
-.bj-spot-name { font-weight: 600; }
+.bj-hand.active:only-child { background: none; } /* the highlight only picks out the hand being played after a split */
+.bj-hand.waiting { min-height: 170px; justify-content: center; }
+/* Under a hand: its total centred under the cards, the settled chips to the right of it (no result label: the status
+   line says how the round went, and a hand that lost is dimmed). */
+.bj-hand-meta { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; width: 100%; }
+.bj-hand-chips { display: flex; gap: 4px; justify-content: flex-start; white-space: nowrap; }
+.bj-hand.lose .bj-cards, .bj-hand.bust .bj-cards { opacity: 0.62; transition: opacity 0.4s; }
+.bj-spot-name { font-weight: 600; font-size: 17px; }
 
 /* Poker: an oval table with eight seats round the rail; your seat is turned to the bottom. */
 .pk-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.pk-phase { padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+.pk-phase { padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; }
 .pk-phase.lobby { background: var(--accent-soft); color: var(--accent); }
 .pk-phase.live { background: rgba(12, 163, 12, 0.18); color: var(--up); }
-.pk-rules { font-weight: 600; }
-.pk-felt { height: 600px; margin: 40px 84px 64px; padding: 0; border: 0; background: none; box-shadow: none; border-radius: 0; }
+.pk-rules { font-weight: 600; font-size: 17px; }
+.pk-felt { height: 660px; margin: 40px 96px 56px; padding: 0; border: 0; background: none; box-shadow: none; border-radius: 0; }
 .pk-rail { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(ellipse at 50% 40%, var(--felt-2), var(--felt) 70%);
   border: 16px solid var(--felt-edge); box-shadow: inset 0 0 70px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.35); }
-.pk-onkey { position: absolute; left: 50%; top: 26px; transform: translateX(-50%); }
-.pk-center { position: absolute; left: 50%; top: 53%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 1; }
-.pk-pot { font-size: 15px; color: var(--felt-dim); min-height: 22px; }
-.pk-pot b { color: var(--felt-ink); font-size: 18px; font-variant-numeric: tabular-nums; }
-.pk-board { display: flex; gap: 8px; }
-.pk-result { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 40px; color: var(--turn); font-weight: 600; text-align: center; }
+.pk-onkey { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); }
+.pk-center { position: absolute; left: 50%; top: 54%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 1; }
+.pk-pot { font-size: 17px; color: var(--felt-dim); min-height: 26px; }
+.pk-pot b { color: var(--felt-ink); font-size: 22px; font-variant-numeric: tabular-nums; }
+.pk-board { display: flex; gap: 10px; }
+.pk-result { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; color: var(--turn); font-weight: 600; font-size: 17px; text-align: center; }
 .pk-seats { position: absolute; inset: 0; }
-.pk-seat { position: absolute; transform: translate(-50%, -50%); width: 150px; display: flex; flex-direction: column; align-items: center; z-index: 2; color: var(--felt-ink); }
-.pk-seat.empty { width: 110px; height: 44px; justify-content: center; border: 1px dashed rgba(255, 255, 255, 0.28); border-radius: 12px; background: rgba(12, 12, 12, 0.62); }
-.pk-cards { display: flex; gap: 3px; justify-content: center; margin-bottom: -10px; min-height: 20px; position: relative; z-index: 1; }
-.pk-plate { width: 100%; text-align: center; background: rgba(12, 12, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 12px; padding: 12px 10px 7px; }
+.pk-seat { position: absolute; transform: translate(-50%, -50%); width: 184px; display: flex; flex-direction: column; align-items: center; z-index: 2; color: var(--felt-ink); }
+.pk-seat.empty { width: 132px; height: 52px; justify-content: center; border: 1px dashed rgba(255, 255, 255, 0.28); border-radius: 12px; background: rgba(12, 12, 12, 0.62); }
+.pk-cards { display: flex; gap: 4px; justify-content: center; margin-bottom: -12px; min-height: 20px; position: relative; z-index: 1; }
+.pk-plate { width: 100%; text-align: center; background: rgba(12, 12, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 14px; padding: 15px 12px 9px; }
 .pk-seat.me .pk-plate { border-color: var(--accent); }
 .pk-seat.turn .pk-plate { border-color: var(--turn); box-shadow: 0 0 0 2px var(--turn), 0 0 18px rgba(255, 210, 63, 0.35); }
 .pk-seat.winner .pk-plate { box-shadow: 0 0 0 2px var(--up), 0 0 20px rgba(12, 163, 12, 0.45); }
 .pk-seat.folded, .pk-seat.out { opacity: 0.55; }
-.pk-name { display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; }
-.pk-stack { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pk-name { display: flex; align-items: center; justify-content: center; gap: 5px; font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; }
+.pk-stack { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pk-allin { color: var(--turn); }
-.pk-btn { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; color: #111; font-size: 11px; font-weight: 800; }
-.pk-blind { font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.16); }
-.pk-ready, .pk-label { display: block; font-size: 12px; color: var(--felt-dim); }
+.pk-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #fff; color: #111; font-size: 13px; font-weight: 800; }
+.pk-blind { font-size: 12px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.16); }
+.pk-ready, .pk-label { display: block; font-size: 14px; color: var(--felt-dim); }
 .pk-ready.on { color: #6fdc6f; font-weight: 600; }
 .pk-label.folded { font-style: italic; }
-.pk-hand-name { display: block; font-size: 12px; color: var(--turn); font-weight: 600; }
-.pk-bet { position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 3px; border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55); color: #fff; font-weight: 700; font-size: 13px; z-index: 1; font-variant-numeric: tabular-nums; }
-.chip-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--chip); border: 2px dashed rgba(255, 255, 255, 0.8); }
+.pk-hand-name { display: block; font-size: 14px; color: var(--turn); font-weight: 600; }
+.pk-bet { position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px 3px 4px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; font-weight: 700; font-size: 15px; z-index: 1; font-variant-numeric: tabular-nums; }
+.chip-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--chip); border: 2px dashed rgba(255, 255, 255, 0.8); }
 .pk-status { margin-top: 0; }
-.pk-controls { min-height: 72px; }
+.pk-controls { min-height: 80px; }
 .pk-raise { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pk-raise input[type="range"] { width: 200px; accent-color: var(--accent); padding: 0; }
-.pk-raise input[type="number"] { width: 90px; }
-.pk-presets { display: flex; gap: 4px; }
+.pk-raise input[type="range"] { width: 260px; accent-color: var(--accent); padding: 0; }
+.pk-raise input[type="number"] { width: 110px; font-size: 16px; }
+.pk-presets { display: flex; gap: 6px; }
+.pk-presets .btn { font-size: 14px; padding: 8px 12px; }
 .pk-field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .pk-field input, .pk-field select { width: 100%; }
 .pk-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -1976,6 +2020,7 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 @media (prefers-reduced-motion: reduce) {
   .onkey-dealer.talking .onkey-face { animation: none; }
   .onkey-bubble, .timer-bar::after { transition: none; }
+  .btn.casino-act.hinted { animation: none; }
 }
 
 
@@ -1988,6 +2033,40 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .pcard.back.cbk-neon { background: repeating-linear-gradient(135deg, #ff2fa0 0 4px, #1a0b2e 4px 7px, #1fe0ff 7px 11px, #1a0b2e 11px 14px); }
 .pcard.back.cbk-gold { background: linear-gradient(120deg, #a87600, #ffd700 30%, #fff3c4 45%, #ffd700 60%, #a87600); background-size: 250% 100%; animation: cbk-shimmer 3s linear infinite; }
 @keyframes cbk-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+
+/* Chips (FiveCasino.chip() / denom()): drawn like real casino chips, one colour per value: a ring of edge spots round
+   the rim, a solid band, and a pale inlay with the value centred in it. len-N shrinks three- and four-digit values so they
+   stay inside the inlay; --d is the chip's size. 5 red, 10 blue, 25 green, 50 orange, 100 black with gold spots, 250
+   purple with gold, 500 gold. Stake keys, the chips on a hand, your bet beside the buttons and poker's bets all use them;
+   a bought chip style (.chp-*, below) wins. */
+.dn-5 { --chip-bg: #c0262f; --chip-edge: #fff; --chip-inlay: #fff; --chip-ink: #a01d25; }
+.dn-10 { --chip-bg: #2457c5; --chip-edge: #fff; --chip-inlay: #fff; --chip-ink: #1b45a3; }
+.dn-25 { --chip-bg: #178a46; --chip-edge: #fff; --chip-inlay: #fff; --chip-ink: #11703a; }
+.dn-50 { --chip-bg: #e06d12; --chip-edge: #fff; --chip-inlay: #fff; --chip-ink: #a9500a; }
+.dn-100 { --chip-bg: #1d1d22; --chip-edge: #e5bf45; --chip-inlay: #f7ebc0; --chip-ink: #1d1d22; }
+.dn-250 { --chip-bg: #6a2fc4; --chip-edge: #e5bf45; --chip-inlay: #fff; --chip-ink: #5123a0; }
+.dn-500 { --chip-bg: #c9971a; --chip-edge: #fff3c8; --chip-inlay: #fffaea; --chip-ink: #6b4b00; }
+.stake-key[class*="dn-"], .chip-stake[class*="dn-"] {
+  --d: 38px; --f: 0.34;
+  width: var(--d); height: var(--d); min-width: 0; padding: 0; border: 0; border-radius: 50%; box-sizing: border-box;
+  display: inline-grid; place-items: center; line-height: 1; text-shadow: none; font: 800 calc(var(--d) * var(--f))/1 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.stake-key.drawn, .chip-stake.drawn { background: none; color: var(--chip-ink); box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45); }
+.chip-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chip-svg .c-body { fill: var(--chip-bg); stroke: rgba(0, 0, 0, 0.35); stroke-width: 1.5; }
+.chip-svg .c-spots { fill: none; stroke: var(--chip-edge); stroke-width: 13; }
+.chip-svg .c-ring { fill: none; stroke: var(--chip-edge); stroke-width: 1.6; stroke-dasharray: 4 3.2; opacity: 0.9; }
+.chip-svg .c-inlay { fill: var(--chip-inlay); stroke: rgba(0, 0, 0, 0.2); stroke-width: 1; }
+.chip-svg .c-val { fill: var(--chip-ink); font-family: var(--font); font-weight: 800; text-anchor: middle;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.chip-dot[class*="dn-"] { background: var(--chip-bg); border-color: var(--chip-edge); }
+.stake-key[class*="dn-"] { --d: 58px; }
+.chip-stake.big[class*="dn-"] { --d: 52px; }
+.chip-stake.mini[class*="dn-"] { --d: 30px; }
+[class*="dn-"].len-3 { --f: 0.26; }
+[class*="dn-"].len-4 { --f: 0.23; }
+[class*="dn-"].len-5 { --f: 0.2; }
 
 /* Chips: your bets at poker, your stake chips at blackjack. */
 .chp-jungle { --chip-bg: #2f9a45; --chip-fg: #fff; }
@@ -2053,6 +2132,173 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 @media (prefers-reduced-motion: reduce) {
   .pcard.deal-in, .pcard.flip-in, .after-deal { animation: none; }
 }
+
+/* Onkey's save (casino.js card() with opts.fix): the number in the corner of the card that busted you is crossed out
+   in blue pen and the one that makes 21 is written next to it, crooked, in a handwriting font; the suits stay. Dealt,
+   the card lands as the bust, then (.fix-in) the X strikes through and the new number pops on. Totals and Onkey wait
+   for it (FIX_MS). */
+.pcard.fixed { --pen: #1d4fd8; }
+.pc-was { position: relative; }
+.pc-was::before, .pc-was::after { content: ""; position: absolute; inset: -6% -14%; pointer-events: none; }
+.pc-was::before { background: linear-gradient(to bottom right, transparent 45%, var(--pen) 46.5% 53.5%, transparent 55%); }
+.pc-was::after { background: linear-gradient(to bottom left, transparent 45%, var(--pen) 46.5% 53.5%, transparent 55%); }
+.pc-scrawl { position: absolute; left: calc(100% + 0.08em); top: -0.18em; color: var(--pen); white-space: nowrap; pointer-events: none;
+  font: 700 1.5em/1 "Segoe Print", "Comic Sans MS", "Chalkboard SE", "Marker Felt", cursive; letter-spacing: -0.06em;
+  transform: rotate(-12deg); transform-origin: 0 100%; text-shadow: 0.5px 0.4px 0 var(--pen), -0.3px 0 0 var(--pen); }
+.pcard.fixed.fix-in .pc-was::before { animation: fix-stroke-a 0.18s ease-out both; animation-delay: calc(var(--deal-delay, 0ms) + 1000ms); }
+.pcard.fixed.fix-in .pc-was::after { animation: fix-stroke-b 0.18s ease-out both; animation-delay: calc(var(--deal-delay, 0ms) + 1180ms); }
+.pcard.fixed.fix-in .pc-scrawl { animation: fix-scrawl 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; animation-delay: calc(var(--deal-delay, 0ms) + 1450ms); }
+@keyframes fix-stroke-a { from { clip-path: inset(0 100% 100% 0); } to { clip-path: inset(0); } }
+@keyframes fix-stroke-b { from { clip-path: inset(0 0 100% 100%); } to { clip-path: inset(0); } }
+@keyframes fix-scrawl { from { opacity: 0; transform: rotate(-30deg) scale(1.6); } }
+@media (prefers-reduced-motion: reduce) {
+  .pcard.fixed.fix-in .pc-was::before, .pcard.fixed.fix-in .pc-was::after, .pcard.fixed.fix-in .pc-scrawl { animation: none; }
+}
+
+/* The Deal button (blackjack.js dealBtn()): a cream card with gold lettering and corner pips, sitting on a small fan of
+   card backs. Hovering spreads the fan, a shine sweeps across the face now and then, and pressing it flicks the top
+   card. It never shows the stake: that's the chip you picked. */
+.deal-btn { position: relative; width: 176px; height: 78px; padding: 0; border: 0; background: none; cursor: pointer; flex: none; }
+.deal-fan i { position: absolute; inset: -12px 30px 16px; border-radius: 10px; border: 3px solid var(--card-face);
+  background: repeating-linear-gradient(45deg, var(--card-back) 0 4px, var(--card-back-2) 4px 8px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  transition: transform 0.28s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.deal-fan i:nth-child(1) { transform: rotate(-9deg) translate(-12px, 3px); }
+.deal-fan i:nth-child(2) { transform: rotate(8deg) translate(12px, 3px); }
+.deal-fan i:nth-child(3) { transform: rotate(-2deg) translateY(-3px); }
+.deal-btn:hover:not(:disabled) .deal-fan i:nth-child(1) { transform: rotate(-18deg) translate(-30px, 6px); }
+.deal-btn:hover:not(:disabled) .deal-fan i:nth-child(2) { transform: rotate(17deg) translate(30px, 6px); }
+.deal-btn:hover:not(:disabled) .deal-fan i:nth-child(3) { transform: rotate(-4deg) translateY(-12px); }
+.deal-btn:active:not(:disabled) .deal-fan i:nth-child(3) { transform: rotate(24deg) translate(40px, -40px); opacity: 0; transition-duration: 0.18s; }
+.deal-face { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 13px;
+  background: linear-gradient(170deg, #fffdf6, #f3e6c4); border: 2px solid #c9a227;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), inset 0 0 0 4px #fffdf6, inset 0 0 0 5.5px rgba(201, 162, 39, 0.7); transition: transform 0.12s; }
+.deal-face b { font: 900 27px/1 var(--font); letter-spacing: 0.2em; margin-right: -0.2em;
+  background: linear-gradient(180deg, #8a6200, #e8b923 40%, #fff1b0 52%, #c99a12 64%, #7a5600); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8)); }
+.deal-face::after { content: ""; position: absolute; inset: -20% auto -20% -60%; width: 40%; transform: skewX(-20deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent); animation: deal-shine 3.6s ease-in-out infinite; }
+@keyframes deal-shine { 0%, 55% { left: -60%; } 85%, 100% { left: 130%; } }
+.deal-pip { position: absolute; font-size: 15px; line-height: 1; color: #1b1b1b; }
+.deal-pip.tl { top: 7px; left: 10px; }
+.deal-pip.br { bottom: 7px; right: 10px; color: var(--card-red); transform: rotate(180deg); }
+.deal-btn:hover:not(:disabled) .deal-face { transform: translateY(-2px); }
+.deal-btn:active:not(:disabled) .deal-face { transform: translateY(2px) scale(0.97); }
+.deal-btn:focus-visible { outline: 3px solid var(--turn); outline-offset: 4px; border-radius: 14px; }
+.deal-btn:disabled { cursor: not-allowed; }
+.deal-btn:disabled .deal-face { filter: grayscale(0.85) brightness(0.8); }
+.deal-btn:disabled .deal-face::after { display: none; }
+.deal-btn:disabled .deal-fan i { transform: none; opacity: 0.5; }
+
+/* Side bets (blackjack.js sideSpot()): a round spot either side of the Deal button, a chip on it when it's on. */
+.side-spot { width: 66px; height: 66px; border-radius: 50%; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  border: 2px dashed rgba(243, 241, 232, 0.5); background: rgba(0, 0, 0, 0.18); color: var(--felt-dim); cursor: pointer; font: 700 11px var(--font);
+  letter-spacing: 0.06em; text-transform: uppercase; transition: border-color 0.15s, transform 0.15s; }
+.side-spot:hover:not(:disabled) { border-color: var(--felt-ink); color: var(--felt-ink); transform: translateY(-2px); }
+.side-spot.on { border-style: solid; border-color: var(--turn); color: var(--felt-ink); }
+.side-spot:disabled { opacity: 0.45; cursor: not-allowed; }
+.side-plus { font-size: 18px; line-height: 1; }
+.bj-sides { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.side-res { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.4); font-size: 13px; font-weight: 600; }
+.side-res.win { background: var(--up); color: #fff; }
+.side-res.lose { color: var(--felt-dim); }
+.side-res.lose .chip-stake { position: absolute; } /* swept off the pill, leaving what was lost */
+.side-res { position: relative; }
+.casino-rules + .side-rules-h { margin: 12px 0 6px; font-size: 15px; }
+.side-rules { margin: 0 0 6px; display: grid; gap: 2px; }
+.side-rules dt { margin-top: 6px; font-weight: 600; }
+.side-rules dd { margin: 0; display: flex; justify-content: space-between; font-size: 14px; }
+
+/* Chips that move (blackjack.js motion()): a bet slides in from your side, winnings fly over from Onkey's, a lost stake
+   is swept up to him. */
+.chip-stake.chip-in { animation: chip-in 0.45s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+@keyframes chip-in { from { transform: translateY(80px) scale(0.6); opacity: 0; } 60% { opacity: 1; } }
+/* At a settled hand (handHtml()): the chips play out and leave nothing behind. A loss: the stake pops up and is swept
+   off to Onkey. A win: the winnings fly over from Onkey, sit a moment by the stake, and both slide back down to you.
+   A push: the stake slides back to you. */
+.chip-stake.chip-lost { animation: chip-lost 1.3s ease-in-out both; }
+@keyframes chip-lost { 0% { transform: translateY(26px) scale(0.7); opacity: 0; } 18% { transform: none; opacity: 1; } 45% { transform: none; opacity: 1; }
+  100% { transform: translateY(-300px) scale(0.55) rotate(150deg); opacity: 0; } }
+.chip-stake.chip-pay { animation: chip-pay 1.7s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+@keyframes chip-pay { 0% { transform: translateY(-320px) scale(0.7) rotate(-180deg); opacity: 0; } 12% { opacity: 1; } 38% { transform: none; opacity: 1; }
+  68% { transform: none; opacity: 1; } 100% { transform: translateY(170px) scale(0.75); opacity: 0; } }
+.chip-stake.chip-back { animation: chip-back 1.7s ease-in-out both; }
+@keyframes chip-back { 0% { transform: translateY(26px) scale(0.7); opacity: 0; } 15% { transform: none; opacity: 1; } 68% { transform: none; opacity: 1; }
+  100% { transform: translateY(170px) scale(0.75); opacity: 0; } }
+.chip-stake.chip-lost-done, .chip-stake.chip-pay-done, .chip-stake.chip-back-done { display: none; }
+
+/* Streaks (blackjack.py): three wins in a row and the seat runs hot, three losses and it frosts over. The turn outline
+   still wins. */
+.bj-spot.hot { border: 2px solid #ff8a00; animation: streak-hot 1.6s ease-in-out infinite; }
+@keyframes streak-hot { 0%, 100% { box-shadow: 0 0 12px 2px rgba(255, 120, 0, 0.5), inset 0 0 14px rgba(255, 140, 0, 0.2); }
+  50% { box-shadow: 0 0 24px 6px rgba(255, 70, 0, 0.65), inset 0 0 22px rgba(255, 140, 0, 0.35); } }
+.bj-spot.cold { border: 2px solid #8fd3ff; box-shadow: 0 0 16px rgba(120, 190, 255, 0.45), inset 0 0 18px rgba(170, 215, 255, 0.25); }
+.bj-spot.turn.hot, .bj-spot.turn.cold { border-color: var(--turn); }
+.streak-tag { display: inline-block; margin-top: 2px; padding: 1px 9px; border-radius: 999px; font-size: 13px; font-weight: 700; background: rgba(255, 120, 0, 0.22); color: #ffb347; }
+.streak-tag.cold { background: rgba(120, 190, 255, 0.2); color: #a8dcff; }
+
+/* Emotes (blackjack.js popEmote()): the tray in the felt's top-left corner; an emote floats up from the sender's seat,
+   a banana spins over to Onkey, who gets bonked. */
+.bj-emotes { position: absolute; left: 18px; top: 16px; display: flex; gap: 4px; z-index: 4; }
+.emote-btn { width: 40px; height: 40px; border: 0; border-radius: 10px; background: rgba(0, 0, 0, 0.25); font-size: 21px; line-height: 1; cursor: pointer; transition: transform 0.15s, background 0.15s; }
+.emote-btn:hover { transform: scale(1.15); background: rgba(0, 0, 0, 0.4); }
+.emote-pop { position: fixed; z-index: 70; font-size: 38px; line-height: 1; pointer-events: none; transform: translate(-50%, 0); animation: emote-float 1.8s ease-out forwards;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45)); }
+.emote-pop.thrown { animation: none; }
+@keyframes emote-float { 0% { transform: translate(-50%, 0) scale(0.4); opacity: 0; } 15% { transform: translate(-50%, -14px) scale(1.25); opacity: 1; }
+  100% { transform: translate(-50%, -110px) scale(1); opacity: 0; } }
+.onkey-dealer.bonked .onkey-face { animation: onkey-bonk 0.5s ease-out; }
+@keyframes onkey-bonk { 0% { transform: rotate(0); } 20% { transform: rotate(-16deg) translateX(-6px); } 45% { transform: rotate(10deg); } 70% { transform: rotate(-5deg); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .chip-stake.chip-in, .chip-stake.chip-pay, .chip-stake.chip-lost, .chip-stake.chip-back, .bj-spot.hot, .deal-face::after, .emote-pop, .onkey-dealer.bonked .onkey-face { animation: none; }
+  .chip-stake.chip-lost, .chip-stake.chip-pay, .chip-stake.chip-back { display: none; }
+}
+
+/* Blackjack's action buttons (blackjack.js controlsHtml()): one shape and one height for all four, dark with a coloured
+   top edge for each move (Hit green, Stand red, Double gold, Split blue), the key in the corner, the extra stake on a
+   second line (kept even when empty so they line up), and a press that sinks the button into the felt. */
+.bj-actions { align-items: center; }
+.bj-act { --acc: #8a8f98; --base: color-mix(in srgb, var(--acc) 55%, #000); width: 136px; height: 60px; padding: 0 12px; border: 0;
+  border-radius: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 92%, #fff), var(--acc)); box-shadow: 0 4px 0 var(--base), 0 8px 14px rgba(0, 0, 0, 0.3);
+  transition: transform 0.08s, box-shadow 0.08s, filter 0.15s; font-family: var(--font); }
+.bj-act b { font-size: 19px; font-weight: 800; line-height: 1; }
+.bj-act small { font-size: 12px; font-weight: 600; line-height: 1; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.bj-act.act-hit { --acc: #34b26a; }
+.bj-act.act-stand { --acc: #e05252; }
+.bj-act.act-double { --acc: #e3b23c; color: #2b1f00; }
+.bj-act.act-split { --acc: #4b8df6; }
+.bj-act:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.bj-act:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--base), 0 3px 6px rgba(0, 0, 0, 0.3); }
+.bj-act:focus-visible { outline: 3px solid var(--turn); outline-offset: 3px; }
+.bj-act:disabled { filter: grayscale(0.7) brightness(0.7); opacity: 0.55; cursor: not-allowed; }
+.bj-act.hinted { box-shadow: 0 0 0 3px var(--turn), 0 0 18px rgba(255, 210, 63, 0.55), 0 4px 0 var(--base); animation: bj-hint-glow 1.4s ease-in-out infinite alternate; }
+@keyframes bj-hint-glow { from { box-shadow: 0 0 0 3px var(--turn), 0 0 8px rgba(255, 210, 63, 0.3), 0 4px 0 var(--base); }
+  to { box-shadow: 0 0 0 3px var(--turn), 0 0 22px rgba(255, 210, 63, 0.7), 0 4px 0 var(--base); } }
+.streak-tag.big { font-size: 16px; padding: 6px 14px; margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .bj-act.hinted { animation: none; } }
+
+/* Tipping Onkey after a win (blackjack.js tipRow()): a row of three tip chips over the rack; afterwards a thank-you. */
+.bj-controls .casino-controls, .bj-controls .casino-controls.after-deal { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.tip-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.28);
+  color: var(--felt-ink); font-size: 14px; font-weight: 600; }
+.tip-row.tipped { padding: 7px 16px; color: var(--turn); }
+.tip-chip { padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; transition: transform 0.12s; }
+.tip-chip:hover:not(:disabled) { transform: translateY(-2px) scale(1.08); }
+.tip-chip:disabled { opacity: 0.35; cursor: not-allowed; }
+.tip-chip:focus-visible { outline: 3px solid var(--turn); outline-offset: 2px; }
+
+/* Your bet mid-hand sits to the left of the action buttons (blackjack.js controlsHtml()). */
+.wager { position: relative; display: flex; align-items: center; margin-right: 10px; font-size: 12px; color: var(--felt-dim); }
+/* The action buttons are centred as a group; the bet chip and the streak badge sit outside it, either side. */
+.bj-act-group { position: relative; display: flex; align-items: center; gap: 14px; }
+.bj-act-group > .wager { position: absolute; right: calc(100% + 18px); top: 50%; transform: translateY(-50%); margin: 0; }
+.bj-act-group > .streak-tag { position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%); margin: 0; white-space: nowrap; }
+.wager-label { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); white-space: nowrap; } /* the label hangs below, so the chip centres on the buttons */
+
+/* Greg in the dealer's chair (casino.js): his face shows even while Onkey is still walking over, and when Onkey kicks
+   him out he spins off the table (.greg-flying). */
+html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
+.greg-flying { position: fixed; z-index: 100; pointer-events: none; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 
 /* The daily wheel's tokens in the bet slip (tokenRow() in bets.js): a Boost and an Insure toggle on each single, and
    the boosted price and notes once one is on. */

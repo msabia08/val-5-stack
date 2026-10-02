@@ -41,6 +41,7 @@ window.FiveCasino = (() => {
   // its time. A card drawn again before it has landed keeps its place in the animation (a negative delay), so table
   // updates mid-deal don't skip it. `after()` holds results (totals, wins, the status line) until the last card lands.
   const DEAL_GAP = 380, FLIP_GAP = 520, DEAL_MS = 420;
+  const FIX_MS = 1900; // a card Onkey fixes (opts.fix) lands as dealt, then he crosses out its number and writes a new one; results wait
   const seen = new Map();          // card key -> { start } (performance.now() time it starts moving)
   let planning = null, landAt = 0, quiet = true;
   const now = () => performance.now();
@@ -52,10 +53,10 @@ window.FiveCasino = (() => {
     let t = now() + 60;
     for (const p of fresh) {
       if (quiet || reduced()) { seen.set(p.key, { start: -1e9 }); continue; } // first sight of a table: no replay
-      seen.set(p.key, { start: t, flip: p.flip });
+      seen.set(p.key, { start: t, flip: p.flip, hold: p.hold });
       setTimeout(() => sound('card'), Math.max(0, t - now()));
-      landAt = Math.max(landAt, t + (p.flip ? FLIP_GAP : DEAL_MS));
-      t += p.flip ? FLIP_GAP : DEAL_GAP;
+      landAt = Math.max(landAt, t + (p.flip ? FLIP_GAP : DEAL_MS) + (p.hold || 0));
+      t += (p.flip ? FLIP_GAP : DEAL_GAP) + (p.hold || 0); // the next card waits while Onkey fixes this one
     }
     quiet = false;
     if (seen.size > 600) [...seen.keys()].slice(0, seen.size - 400).forEach((k) => seen.delete(k));
@@ -75,14 +76,40 @@ window.FiveCasino = (() => {
     if (!key) return none;
     const k = `${key}:${c || 'back'}`;
     if (planning) {
-      planning.push({ key: k, seq: opts.seq || 0, flip: !!c && seen.has(`${key}:back`) });
+      planning.push({ key: k, seq: opts.seq || 0, flip: !!c && seen.has(`${key}:back`), hold: opts.fix ? FIX_MS : 0 });
       return none;
     }
     const e = seen.get(k);
     if (!e || e.start < 0) return none;
     const delay = Math.round(e.start - now());
-    if (delay < -(e.flip ? FLIP_GAP : DEAL_MS)) return none;
+    if (delay < -((e.flip ? FLIP_GAP : DEAL_MS) + (e.hold || 0))) return none;
     return { cls: e.flip ? ' flip-in' : ' deal-in', style: ` style="--deal-delay:${delay}ms"` };
+  }
+
+  // ---- chips -------------------------------------------------------------------------
+  // Every chip is drawn in its denomination's design (.dn-5 ... .dn-500 in style.css, plainer at the bottom, fancier at
+  // the top); an amount between denominations takes the largest one it covers. A bought chip style (.chp-*) wins.
+  const DENOMS = [5, 10, 25, 50, 100, 250, 500];
+  const denom = (v) => `dn-${DENOMS.filter((d) => d <= v).pop() || DENOMS[0]}`;
+  // A chip with its value in the middle: opts.cls (size: mini / big; a bought chip style; a motion class), opts.style,
+  // opts.title. len-N sizes the number so three or four digits still sit inside the inlay.
+  const chipLabel = (n) => (Number.isInteger(n) ? n.toLocaleString('en-US') : n.toFixed(1));
+  function chip(amount, opts = {}) {
+    const n = Number(amount) || 0;
+    const label = chipLabel(n);
+    const bought = /\bchp-/.test(opts.cls || ''); // a bought chip style draws its own flat face
+    return `<span class="chip-stake ${denom(n)} len-${Math.min(5, label.length)}${bought ? '' : ' drawn'}${opts.cls ? ` ${opts.cls}` : ''}"${opts.style || ''}${opts.title ? ` title="${esc(opts.title)}"` : ''}>${bought ? label : chipFace(n)}</span>`;
+  }
+  // The face of a chip, as a small SVG so it stays sharp at any size: the body, eight edge spots round the rim, a dashed
+  // ring, the inlay, and the value centred in it. Colours come from the .dn-* class on the element around it.
+  // The edge spots are a dashed ring (eight dashes), so the chip's outline stays a true circle.
+  const SPOTS = '<circle cx="50" cy="50" r="41.5" pathLength="80" stroke-dasharray="3 7" stroke-dashoffset="1.5"/>';
+  function chipFace(amount) {
+    const label = chipLabel(Number(amount) || 0);
+    const size = [34, 34, 34, 29, 24, 21][Math.min(5, label.length)];
+    return `<svg class="chip-svg" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle class="c-body" cx="50" cy="50" r="48"/>` +
+      `<g class="c-spots">${SPOTS}</g><circle class="c-ring" cx="50" cy="50" r="35.5"/><circle class="c-inlay" cx="50" cy="50" r="30.5"/>` +
+      `<text class="c-val" x="50" y="${(50 + size * 0.355).toFixed(1)}" font-size="${size}">${label}</text></svg>`; // digits sit on the baseline: lift by half their height
   }
 
   // ---- cards -------------------------------------------------------------------------
@@ -97,17 +124,39 @@ window.FiveCasino = (() => {
     const r = c[0], s = c[1];
     const red = s === 'h' || s === 'd';
     const label = `${RANK_NAME[r] || r} of ${SUIT_NAME[s]}`;
+    if (opts.fix) { // Onkey's save: the number in the corner (opts.fix's rank) crossed out, the new one written beside it in pen
+      const wr = opts.fix[0];
+      return `<span class="pcard fixed${red ? ' red' : ''}${size}${extra}${anim.cls ? ' fix-in' : ''}"${style} role="img" aria-label="${label}, corrected by Onkey from the ${RANK_NAME[wr] || wr} of ${SUIT_NAME[s]}">` +
+        `<span class="pc-corner"><b class="pc-was">${RANK[wr] || wr}<span class="pc-scrawl" aria-hidden="true">${RANK[r] || r}</span></b><i>${SUIT[s]}</i></span>` +
+        `<span class="pc-pip" aria-hidden="true">${SUIT[s]}</span></span>`;
+    }
     return `<span class="pcard${red ? ' red' : ''}${size}${extra}"${style} role="img" aria-label="${label}">` +
       `<span class="pc-corner"><b>${RANK[r] || r}</b><i>${SUIT[s]}</i></span><span class="pc-pip" aria-hidden="true">${SUIT[s]}</span></span>`;
   }
-  // A row of cards; with opts.key each is dealt as `${key}:${i}`, seq from opts.seq(i).
+  // A row of cards; with opts.key each is dealt as `${key}:${i}`, seq from opts.seq(i). opts.saved ({index, was}) marks
+  // the card Onkey fixed.
   const cards = (list, opts = {}) => (list || []).map((c, i) => card(c, { ...opts, key: opts.key ? `${opts.key}:${i}` : undefined,
-    seq: opts.seq ? opts.seq(i) : 0 })).join('');
+    seq: opts.seq ? opts.seq(i) : 0, fix: opts.saved && opts.saved.index === i ? opts.saved.was : undefined })).join('');
 
   // ---- Onkey the dealer ------------------------------------------------------------------
   // What Onkey says, by log event. {name} and {amount} are filled in; one line is picked at random.
   const QUIPS = {
-    greet: ['Welcome to Onkey\'s table. No throwing bananas at the dealer.', 'Onkey deals. Onkey judges. Sit down.', 'Step right up. The house always has bananas.'],
+    side: ['{name} hits a {hand} on the side! +{amount}.', 'Side bet lands: {hand}. Onkey did not see that coming.',
+      '{hand}! {name} collects {amount} on the side. Onkey is counting his bananas.'],
+    streak: ['That\'s {n} in a row for {name}. Onkey is checking the deck for bananas.', '{n} straight wins? Onkey would like to speak to the manager. Onkey is the manager.',
+      'Onkey is starting to think {name} can see through cards.', '{name} has won {n} in a row. Onkey is sweating through his fur.'],
+    slump: ['{n} in a row against {name}. Onkey feels bad. Not bad enough to stop.', 'Rough patch, {name}. Onkey brought you a banana.',
+      '{name}, the cards owe you one. Onkey will remind them.', '{n} losses straight. Onkey is shuffling extra nicely for you, {name}.'],
+    tip: ['Thank you, {name}! Onkey will buy a banana with this.', 'A tip! {name}, you are Onkey\'s favourite. Today.',
+      'Onkey accepts your {amount} with great dignity. Eek!', 'Onkey will remember this kindness, {name}. Probably.'],
+    tip_big: ['{amount}?! {name}, Onkey is going to cry.', 'Big tipper! Onkey owes you a banana, {name}. Several.',
+      'Onkey is framing this tip, {name}. Right next to the jackpot.'],
+    banana: ['Hey! No throwing bananas at Onkey!', '{name} threw a banana. Onkey is eating it as evidence.', 'Rude. Delicious, but rude.',
+      'Onkey will remember this, {name}.'],
+    save: ['Whoops. That card had a typo. Onkey fixed it. 21!', 'Bust? Onkey sees no bust. Onkey sees 21.',
+      'That was {was}. Now it\'s {card}. Onkey has a pen and no shame.', 'Don\'t ask questions. Enjoy your 21.',
+      'Onkey\'s handwriting says {card}. The handwriting is final.'],
+    greet: ['Welcome to Onkey\'s table. No throwing bananas at Onkey.', 'Onkey deals. Onkey judges. Sit down.', 'Step right up. The house always has bananas.'],
     shuffle: ['New shoe. Onkey shuffles like a pro.', 'Shuffling. No peeking, you animals.'],
     deal: ['Cards coming out.', 'Fresh hands, fresh hopes.', 'Here we go. Good luck, you\'ll need it.'],
     blackjack: ['Blackjack! {name} gets paid 3 to 2.', 'Twenty-one, first try. Show-off.', '{name} hits blackjack. Onkey is impressed. Slightly.'],
@@ -116,7 +165,7 @@ window.FiveCasino = (() => {
     dealer_bust: ['Onkey busts! Everybody still standing gets paid.', 'Onkey went over. Nobody saw that. Right?'],
     double: ['Doubling down? Bold monkey.', '{name} doubles. Onkey respects the confidence.'],
     split: ['Splitting? Two hands, twice the trouble.', '{name} splits. Onkey loves extra work.'],
-    win: ['{name} wins {amount}. Onkey is mildly upset.', 'Pay the monkey! {name} takes {amount}.'],
+    win: ['{name} wins {amount}. Onkey is mildly upset.', 'Onkey pays up. {name} takes {amount}.'],
     push: ['A push. Nobody\'s happy, nobody\'s sad.'],
     lose: ['Onkey takes {amount}. Thank you kindly.', 'The house thanks {name} for the {amount}.'],
     timeout: ['{name} fell asleep. Onkey moves on.', 'Tick tock, {name}. Too slow.'],
@@ -143,7 +192,7 @@ window.FiveCasino = (() => {
     topup: ['{name} reloads. Onkey approves.'],
   };
   // Lines that excite Onkey get more squeaks (eeks) than grunts (ooks).
-  const EXCITED = new Set(['blackjack', 'dealer_bust', 'allin', 'pwin', 'chop', 'win', 'start', 'double', 'split', 'bust', 'entrance']);
+  const EXCITED = new Set(['tip', 'tip_big', 'greg_out', 'save', 'side', 'streak', 'banana', 'blackjack', 'dealer_bust', 'allin', 'pwin', 'chop', 'win', 'start', 'double', 'split', 'bust', 'entrance']);
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   function quip(kind, vars = {}) {
     const list = QUIPS[kind];
@@ -155,7 +204,8 @@ window.FiveCasino = (() => {
       `<img class="onkey-face" src="/assets/onkey-logo.png" alt="Onkey, the dealer" width="88" height="51">` +
       `<div class="onkey-bubble" role="status" aria-live="polite"><span class="ook" aria-hidden="true"></span><span class="say"></span></div></div>`;
   }
-  // Onkey speaks: the bubble shows the monkey noises, then what they mean, while the chatter plays.
+  // Onkey speaks: the bubble shows the monkey noises, then what they mean, while the chatter plays. Greg (kind 'greg')
+  // just talks.
   const timers = new WeakMap();
   function say(el, kind, vars, line) {
     if (!el) return;
@@ -166,17 +216,18 @@ window.FiveCasino = (() => {
     const n = Math.max(2, Math.min(6, Math.round(words / 2)));
     const excited = EXCITED.has(kind);
     const noises = Array.from({ length: n }, (_, i) => (excited ? (i % 3 === 2 ? 'ook' : 'eek') : (i % 3 === 1 ? 'eek' : 'ook')));
-    bubble.querySelector('.ook').textContent = noises.map((x) => x[0].toUpperCase() + x.slice(1) + (excited ? '!' : '')).join(' ');
+    bubble.querySelector('.ook').textContent = kind === 'greg' ? '*Greg clears his throat*'
+      : noises.map((x) => x[0].toUpperCase() + x.slice(1) + (excited ? '!' : '')).join(' ');
     bubble.querySelector('.say').textContent = text;
     el.classList.remove('talking');
     void el.offsetWidth; // restart the animation
     el.classList.add('talking');
-    chatter(noises);
+    if (kind !== 'greg') chatter(noises);
     clearTimeout(timers.get(el));
-    timers.set(el, setTimeout(() => el.classList.remove('talking'), 2400 + words * 160));
+    timers.set(el, setTimeout(() => el.classList.remove('talking'), 4500 + words * 240)); // a 10-word line about 7 seconds
   }
   // The log entries since the last one seen, as one line from Onkey (the most interesting one).
-  const PRIORITY = ['dealer_blackjack', 'blackjack', 'allin', 'pwin', 'chop', 'dealer_bust', 'start', 'settings', 'bust_out',
+  const PRIORITY = ['tip_big', 'tip', 'save', 'side', 'streak', 'slump', 'dealer_blackjack', 'blackjack', 'allin', 'pwin', 'chop', 'dealer_bust', 'start', 'settings', 'bust_out',
     'sit_out', 'timeout', 'double', 'split', 'bust', 'win', 'raise', 'shuffle', 'hand', 'deal', 'river', 'turn', 'flop',
     'stop', 'sit', 'leave', 'topup', 'ready', 'bet', 'lose', 'push', 'fold', 'call', 'check'];
   function react(el, entries, kindOf = (e) => e.kind, varsOf = (e) => ({ name: e.bettor, amount: e.amount })) {
@@ -191,6 +242,66 @@ window.FiveCasino = (() => {
     const entrance = best.kind === 'sit' && best.bettor && wornBy(best.bettor, 'entrance');
     if (entrance) say(el, 'entrance', {}, entrance.text.replace(/\{name\}/g, best.bettor));
     else say(el, kindOf(best), varsOf(best));
+  }
+
+  // ---- Greg ------------------------------------------------------------------------------------
+  // Now and then (GREG_CHANCE of the times Onkey walks to a table, onkey.js's 'onkey:walking') Greg is sitting in the
+  // dealer's chair when you get there. He says his piece; when Onkey arrives ('onkey:seated', or straight away if he's
+  // already there), and Greg has had GREG_MIN_MS to talk, Onkey kicks him out of the chair with a line of his own.
+  const GREG_CHANCE = 0.05, GREG_MIN_MS = 3200;
+  const GREG_IN = ['Hi! I\'m Greg. I\'ll be your dealer today.', 'Onkey\'s on a banana break. Greg\'s dealing. How hard can it be?',
+    'Greg here. Do aces count as one or eleven? Asking for a friend.', 'Welcome to Greg\'s table. Greg has never done this before.'];
+  const GREG_OUT = ['GREG. Out of Onkey\'s chair. Now.', 'Who let Greg in? Sorry, folks. Onkey is back.', 'Greg, we talked about this. OUT!',
+    'Onkey leaves for one banana, and this happens. Shoo, Greg.'];
+  let greg = null;
+  const gregHere = () => !!(greg && greg.el.isConnected);
+  document.addEventListener('onkey:walking', () => {
+    if (Math.random() >= GREG_CHANCE) return;
+    const t0 = Date.now();
+    const look = () => {
+      const el = document.querySelector('.onkey-dealer');
+      if (el) seatGreg(el, true);
+      else if (Date.now() - t0 < 5000) setTimeout(look, 60);
+    };
+    look();
+  });
+  document.addEventListener('onkey:seated', () => { if (greg) kickLater(greg); });
+  function seatGreg(el, walking) {
+    const face = el.querySelector('.onkey-face');
+    if (!face) return;
+    el.classList.add('greg');
+    face.src = '/assets/greg-logo.png';
+    face.alt = 'Greg, in the dealer\'s chair';
+    greg = { el, since: Date.now() };
+    say(el, 'greg', {}, pick(GREG_IN));
+    if (!walking || !document.documentElement.classList.contains('onkey-walking')) kickLater(greg);
+  }
+  function kickLater(g) {
+    setTimeout(() => kickGreg(g), Math.max(0, GREG_MIN_MS - (Date.now() - g.since)));
+  }
+  function kickGreg(g) {
+    if (greg !== g) return;
+    greg = null;
+    const el = g.el, face = el.querySelector('.onkey-face');
+    if (!el.isConnected || !face) return;
+    const r = face.getBoundingClientRect();
+    const fly = document.createElement('img');
+    fly.src = '/assets/greg-logo.png';
+    fly.alt = '';
+    fly.className = 'greg-flying';
+    Object.assign(fly.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+    document.body.appendChild(fly);
+    face.src = '/assets/onkey-logo.png';
+    face.alt = 'Onkey, the dealer';
+    el.classList.remove('greg', 'bonked');
+    void el.offsetWidth;
+    el.classList.add('bonked');
+    if (reduced()) fly.remove();
+    else fly.animate([{ transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
+      { transform: 'translate(160px, -70px) rotate(220deg)', opacity: 1, offset: 0.45 },
+      { transform: 'translate(520px, 260px) rotate(620deg) scale(0.5)', opacity: 0 }], { duration: 1100, easing: 'cubic-bezier(0.25, 0.1, 0.6, 1)', fill: 'forwards' })
+      .onfinish = () => fly.remove();
+    say(el, 'greg_out', {}, pick(GREG_OUT));
   }
 
   // ---- monkey noises (Web Audio, nothing to download) ---------------------------------------------
@@ -317,6 +428,6 @@ window.FiveCasino = (() => {
   const countdown = (deadline) => (deadline ? `<b class="countdown" data-deadline="${deadline}">${Math.ceil(secondsLeft(deadline))}s</b>` : '');
   const ref = () => (crypto.randomUUID ? crypto.randomUUID() : `r${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9-]/g, '').padEnd(16, '0');
 
-  return { init, card, cards, dealer, say, react, quip, sound, chatter, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref, reduced,
+  return { init, denom, chip, chipFace, gregHere, card, cards, dealer, say, react, quip, sound, chatter, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref, reduced,
     absorb, wornBy, style, who, title, seatBurst, deal, dealReset, landing, after };
 })();
