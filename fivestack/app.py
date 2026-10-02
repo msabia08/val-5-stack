@@ -267,6 +267,15 @@ class App:
         }
 
 
+class Server(ThreadingHTTPServer):
+    """The stdlib threading server with a longer queue of waiting connections. Its default, request_queue_size 5, is
+    the listen() backlog: how many connections can wait to be accepted at once. A page load opens about a dozen at the
+    same moment (the scripts, the stylesheet and the first API calls), and on Windows the ones past the backlog are
+    refused outright instead of retried, which left the page half-loaded with a script missing."""
+    request_queue_size = 64
+    daemon_threads = True
+
+
 class Handler(BaseHTTPRequestHandler):
     app = None
     server_version = "FiveStack/1.0"
@@ -319,7 +328,9 @@ class Handler(BaseHTTPRequestHandler):
         routes = {
             "/api/blackjack/sit": lambda: bj.sit(name),
             "/api/blackjack/leave": lambda: bj.leave(name),
-            "/api/blackjack/bet": lambda: bj.bet(name, which, body.get("stake"), body.get("request_id")),
+            "/api/blackjack/bet": lambda: bj.bet(name, which, body.get("stake"), body.get("request_id"), body.get("side")),
+            "/api/blackjack/emote": lambda: bj.emote(name, which, body.get("emote")),
+            "/api/blackjack/tip": lambda: bj.tip(name, which, body.get("amount")),
             "/api/blackjack/action": lambda: bj.action(name, which, body.get("action"), body.get("step")),
             "/api/poker/sit": lambda: pk.sit(name, body.get("buyin")),
             "/api/poker/leave": lambda: pk.leave(name),
@@ -714,7 +725,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"bettor": app.bets.public(b), "bettors": app.bets.leaderboard()})
             if path == "/api/odds/parlay":  # the bet slip's parlay price, before placing it
                 legs, _, quote = app.bets.quote_parlay(body.get("legs"), body.get("context") or {})
-                return self._json({**quote, "legs": [{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal")}
+                return self._json({**quote, "legs": [{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal", "boost")}
                                                      for leg in legs]})
             if path in ("/api/hunt/start", "/api/hunt/click"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
@@ -854,8 +865,7 @@ def main():
 
     app = App(cfg, demo=demo, port=port)
     Handler.app = app
-    srv = ThreadingHTTPServer((host, port), Handler)
-    srv.daemon_threads = True
+    srv = Server((host, port), Handler)
 
     url = f"http://{'localhost' if host in ('0.0.0.0', '127.0.0.1', '') else host}:{port}"
     print(f"5-Stack Tracker {'(DEMO MODE) ' if demo else ''}running at {url}")

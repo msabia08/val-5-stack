@@ -61,23 +61,30 @@ window.FiveBets = (() => {
   function parlayQuoteHtml() {
     const pq = currentQuote(), q = pq && pq.quote;
     const linked = new Set(q ? q.linked.flat() : []);
+    const boostIdx = q && q.legs ? q.legs.findIndex((l) => l.boost) : -1;
     const legs = state.slip.map((x, i) =>
-      `<div class="slip-item parlay-leg${linked.has(i) ? ' linked' : ''}"><div><div class="slip-desc">${esc(x.desc)}</div>` +
+      `<div class="slip-item parlay-leg${linked.has(i) ? ' linked' : ''}${i === boostIdx ? ' boosted' : ''}"><div><div class="slip-desc">${i === boostIdx ? '⚡ ' : ''}${esc(x.desc)}</div>` +
       `<div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)}${linked.has(i) ? ' · <span class="linked-tag">linked</span>' : ''}</div></div>` +
       `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
     const dec = parlayDecimal();
-    let note = '';
-    if (!pq) note = '<p class="muted small">Checking how these legs go together…</p>';
-    else if (pq.error) note = `<p class="small down parlay-blocked">${esc(pq.error)}</p>`;
-    else if (q.odds_decimal < q.independent_decimal) {
-      note = how(`Linked legs: odds cut from ${fmt.oddsDec(q.independent_decimal)} to ${fmt.oddsDec(q.odds_decimal)}.`,
-        `The legs marked "linked" won together more often than chance over the last ${q.games} games at today's lines ` +
-        `(a player's kills and ACS, say), so multiplying their odds would overpay. The price is cut by how much more often ` +
-        `they all landed together than they would have if they were unrelated, pulled toward "unrelated" when there are few ` +
-        `games. Odds are only ever cut, never raised, and a parlay never pays less than its longest leg.`);
+    const notes = [];
+    if (!pq) notes.push('<p class="muted small">Checking how these legs go together…</p>');
+    else if (pq.error) notes.push(`<p class="small down parlay-blocked">${esc(pq.error)}</p>`);
+    else {
+      if (q.odds_decimal < q.independent_decimal) {
+        notes.push(how(`Linked legs: odds cut from ${fmt.oddsDec(q.independent_decimal)} to ${fmt.oddsDec(q.odds_decimal)}.`,
+          `The legs marked "linked" won together more often than chance over the last ${q.games} games at today's lines ` +
+          `(a player's kills and ACS, say), so multiplying their odds would overpay. The price is cut by how much more often ` +
+          `they all landed together than they would have if they were unrelated, pulled toward "unrelated" when there are few ` +
+          `games. Odds are only ever cut, never raised, and a parlay never pays less than its longest leg.`));
+      }
+      if (boostIdx >= 0) {
+        const cap = (state.odds && state.odds.boost && state.odds.boost.max_stake) || 100;
+        notes.push(`<p class="muted small">⚡ Odds boost of the game, up from ${fmt.oddsDec(q.legs[boostIdx].boost)} on "${esc(q.legs[boostIdx].description)}". A parlay with it is capped at ${fmt.credits(cap)} credits.</p>`);
+      }
     }
     return `${legs}<div class="parlay-summary"><span>${state.slip.length}-leg parlay</span>` +
-      `<b>${pq && pq.error ? '–' : fmt.oddsDec(dec)}</b></div>${note}`;
+      `<b>${pq && pq.error ? '–' : fmt.oddsDec(dec)}</b></div>${notes.join('')}`;
   }
 
   async function fetchParlayQuote() {
@@ -194,8 +201,8 @@ window.FiveBets = (() => {
       ? `<div class="muted small bet-note">Linked legs: odds cut from ${fmt.oddsDec(ctx.corr.independent_decimal)}</div>` : '';
     const legIcon = { won: '✓', lost: '✗', void: '↺' };
     const legRows = legs ? legs.map((l) =>
-      `<div class="bet-leg ${l.result || ''}"><span class="leg-icon">${legIcon[l.result] || '•'}</span>` +
-      `<span class="leg-desc">${esc(l.description)}</span><span class="muted small">@ ${fmt.oddsDec(l.odds_decimal)}</span></div>`).join('') : '';
+      `<div class="bet-leg ${l.result || ''}${l.boost ? ' boosted' : ''}"><span class="leg-icon">${legIcon[l.result] || '•'}</span>` +
+      `<span class="leg-desc">${l.boost ? '⚡ ' : ''}${esc(l.description)}</span><span class="muted small">@ ${fmt.oddsDec(l.odds_decimal)}</span></div>`).join('') : '';
     // Bettors can take a bet back only within bet_cancel_minutes of placing it (the server enforces this too).
     const canCancel = Date.now() / 1000 - b.placed_ts < (state.status.bet_cancel_minutes ?? 1) * 60;
     const cancelBtn = isMine(b) && canCancel ? `<button class="btn ghost small cancel-bet" data-id="${b.id}">Cancel</button>`

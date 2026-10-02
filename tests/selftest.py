@@ -988,8 +988,8 @@ def blackjack(shared):
     import threading
     from contextlib import contextmanager
     from unittest.mock import patch
-    from fivestack import cards
-    from fivestack.blackjack import BlackjackManager, is_blackjack, outcome, total
+    from fivestack import bjstrategy, cards
+    from fivestack.blackjack import EDGE, BlackjackManager, is_blackjack, outcome, total
     from fivestack.house import HouseManager, casino_nets
 
     assert total(["As", "Kd"]) == (21, True) and is_blackjack(["As", "Kd"]) and not is_blackjack(["As", "Kd"], split=True)
@@ -1002,6 +1002,18 @@ def blackjack(shared):
     assert outcome(hand(["Th", "9d"]), ["Th", "6c", "Kd"]) == ("win", 20)
     assert outcome(hand(["Th", "9d", "5c"]), ["Th", "6c", "Kd"]) == ("bust", 0)
     assert outcome(hand(["Th", "7d"]), ["Th", "7c"]) == ("push", 10)
+    # Onkey's hint is basic strategy for these rules, and the house edge it implies is EDGE.
+    best = lambda cs, up, moves=("hit", "stand", "double"): bjstrategy.best(cs, up, moves)["move"]
+    assert best(["Th", "6c"], "Ks") == "hit" and best(["Th", "3c"], "4s") == "stand" and best(["6h", "5c"], "6s") == "double"
+    assert best(["6h", "5c"], "As") == "hit" and best(["Ah", "7c"], "9s") == "hit" and best(["Ah", "7c"], "4s") == "double"
+    assert best(["Ah", "7c"], "4s", ("hit", "stand")) == "stand"  # can't double a third card: then soft 18 stands
+    assert best(["8h", "8c"], "As", ("hit", "stand", "double", "split")) == "split"
+    assert best(["Th", "Kc"], "6s", ("hit", "stand", "double", "split")) == "stand"
+    assert best(["9h", "9c"], "7s", ("hit", "stand", "double", "split")) == "stand"
+    assert best(["Ah", "Ac"], "Ts", ("stand", "split")) == "split" and bjstrategy.best(["Th", "Kc"], "6s", ()) is None
+    ev = bjstrategy.values(["Th", "6c"], "Ks", ("hit", "stand"))
+    assert -0.56 < ev["stand"] < -0.52 and ev["hit"] > ev["stand"]  # 16 against a ten: hitting loses a hair less
+    assert abs(bjstrategy.house_edge() - EDGE) < 0.00005
 
     db = DB(os.path.join(shared.tmp, "casino.db"))
     for n in ("Ace", "Bea", "Cy", "S1", "S2", "S3"):
@@ -1026,6 +1038,7 @@ def blackjack(shared):
         r1 = next(ref)
         v = bj.bet("Ace", "solo", 10, r1)
         assert bal("Ace") == 990 and v["phase"] == "playing" and v["me"]["actions"] == ["hit", "stand", "double"]
+        assert v["me"]["hint"]["move"] == "stand" and set(v["me"]["hint"]["ev"]) == {"hit", "stand", "double"}  # 17 v 9
         assert v["dealer"]["cards"] == ["9s", None] and v["dealer"]["total"] == 9  # the hole card stays hidden
         _expect_error(bj.action, "Ace", "solo", "hit", 5, contains="moved on")
         _expect_error(bj.action, "Ace", "solo", "split", 0, contains="can't do that")
@@ -1035,7 +1048,7 @@ def blackjack(shared):
     assert bj.bet("Ace", "solo", 10, r1)["me"]["balance"] == 1010  # a retried bet isn't charged again
     row = db.query_one("SELECT * FROM blackjack_hands WHERE request_id=?", (r1,))
     assert row["status"] == "settled" and row["stake"] == 10 and row["payout"] == 20
-    assert db.query_one("SELECT take, expected FROM house_ledger WHERE ref=?", (f"hand:{row['id']}",)) == {"take": -10, "expected": 0.05}
+    assert db.query_one("SELECT take, expected FROM house_ledger WHERE ref=?", (f"hand:{row['id']}",)) == {"take": -10, "expected": 0.011}
     # A natural pays 3:2 straight away (the dealer's 9 up means no peek, and the dealer doesn't draw).
     with stack("As", "9s", "Kd", "7c"):
         v = bj.bet("Ace", "solo", 10, next(ref))
@@ -1056,7 +1069,7 @@ def blackjack(shared):
         bj.bet("Ace", "solo", 10, next(ref))
         v = bj.action("Ace", "solo", "split", 0)
         assert bal("Ace") == 1015 and [h["total"] for h in v["seats"][0]["hands"]] == [18, 18]
-        assert v["me"]["actions"] == ["hit", "stand", "double"]  # double after a split, but no second split
+        assert v["me"]["actions"] == ["hit", "stand", "double"]  # double after a split; 8 + 10 isn't a pair to split again
         bj.action("Ace", "solo", "stand", 1)
         v = bj.action("Ace", "solo", "stand", 2)
     assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "win"] and bal("Ace") == 1055
@@ -1135,6 +1148,128 @@ def blackjack(shared):
     assert nets["ace"] == {"total": 70, "blackjack": 70} and nets["bea"] == {"total": 10, "blackjack": 10} and "cy" not in nets
     games = {g["game"]: g for g in HouseManager(db).summary()["games"]}
     assert games["blackjack"]["season"]["rounds"] == 8 and games["blackjack"]["season"]["take"] == -80
+    # Splits have no limit. Eights against a 9: split, a third eight splits again (the new hand goes next to its
+    # pair), 8 + 2 doubles (the hint says so), and the dealer's 16 busts: three wins on 40 staked.
+    db.create_bettor("Splitz", 1000)
+    with stack("8h", "9s", "8d", "7c", "8c", "Kd", "Th", "2c", "Ks", "Qh"):
+        bj.bet("Splitz", "solo", 10, next(ref))
+        v = bj.action("Splitz", "solo", "split", 0)
+        assert [h["cards"] for h in v["seats"][0]["hands"]] == [["8h", "8c"], ["8d", "Kd"]] and "split" in v["me"]["actions"]
+        v = bj.action("Splitz", "solo", "split", 1)
+        assert [h["total"] for h in v["seats"][0]["hands"]] == [18, 10, 18] and bal("Splitz") == 970
+        assert v["log"][-1] == {**v["log"][-1], "kind": "split", "hands": 3}
+        v = bj.action("Splitz", "solo", "stand", 2)
+        assert v["turn"]["hand"] == 1 and v["me"]["hint"]["move"] == "double"
+        bj.action("Splitz", "solo", "double", 3)
+        v = bj.action("Splitz", "solo", "stand", 4)
+    assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "win", "win"] and bal("Splitz") == 1040
+    assert db.query_one("SELECT stake, payout FROM blackjack_hands ORDER BY id DESC LIMIT 1") == {"stake": 40, "payout": 80}
+    # Split aces take one card each, but a new ace can be split again (stand or split, nothing else); a split 21
+    # pays even money, not 3 to 2.
+    with stack("Ah", "9s", "Ad", "7c", "As", "5d", "Kh", "Qc", "Th"):
+        bj.bet("Splitz", "solo", 10, next(ref))
+        v = bj.action("Splitz", "solo", "split", 0)
+        assert v["turn"]["hand"] == 0 and v["me"]["actions"] == ["stand", "split"] and v["me"]["hint"]["move"] == "split"
+        assert v["seats"][0]["hands"][1]["done"]
+        v = bj.action("Splitz", "solo", "split", 1)
+    assert [h["total"] for h in v["seats"][0]["hands"]] == [21, 21, 16] and v["phase"] == "done"
+    assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "win", "win"] and bal("Splitz") == 1070
+    # Onkey's peek: he names a card he shouldn't (only the claim reaches the page, decided once per decision), and the
+    # truth comes out when the card shows. 16 against a 9: an honest look at the next card, a 4, which the hit draws.
+    from fivestack import blackjack as bjmod
+    with patch.object(bjmod, "PEEK_CHANCE", 1.0), patch.object(bjmod, "PEEK_HOLE", 0.0), patch.object(bjmod, "PEEK_LIE", 0.0):
+        with stack("Th", "9s", "6d", "7c", "4h", "Ks"):
+            v = bj.bet("Splitz", "solo", 10, next(ref))
+            assert v["me"]["peek"] == {"kind": "next", "card": "4", "step": 0} and v["me"]["peek_result"] is None
+            assert bj.view("Splitz", "solo")["me"]["peek"] == v["me"]["peek"]  # the same claim on every look
+            v = bj.action("Splitz", "solo", "hit", 0)
+            assert v["me"]["peek_result"] == {"kind": "next", "claimed": "4", "actual": "4", "honest": True, "step": 0}
+            bj.action("Splitz", "solo", "stand", 1)
+    # A lie about his hole card (a 7, so he names a small card), owned up to when the round ends.
+    with patch.object(bjmod, "PEEK_CHANCE", 1.0), patch.object(bjmod, "PEEK_HOLE", 1.0), patch.object(bjmod, "PEEK_LIE", 1.0):
+        with stack("Th", "9s", "6d", "7c", "4h"):
+            v = bj.bet("Splitz", "solo", 10, next(ref))
+            claim = v["me"]["peek"]
+            assert claim["kind"] == "hole" and claim["card"] in "23456" and v["dealer"]["cards"][1] is None
+            v = bj.action("Splitz", "solo", "stand", 0)
+    assert v["phase"] == "done" and v["me"]["peek_result"] == {
+        "kind": "hole", "claimed": claim["card"], "actual": "7", "honest": False, "step": 0}
+    # Onkey's save: a king that busts 16 becomes a 5 of the same suit (crossed out on the page), the hand stands on 21.
+    with patch.object(bjmod, "SAVE_CHANCE", 1.0), stack("Th", "9s", "6d", "7c", "Ks", "Qh"):
+        bj.bet("Splitz", "solo", 10, next(ref))
+        before = bal("Splitz")
+        v = bj.action("Splitz", "solo", "hit", 0)
+    h = v["seats"][0]["hands"][0]
+    assert h["cards"] == ["Th", "6d", "5s"] and h["total"] == 21 and h["saved"] == {"index": 2, "was": "Ks"}
+    assert any(e["kind"] == "save" and e["was"] == "Ks" and e["card"] == "5s" for e in v["log"])
+    assert v["phase"] == "done" and h["result"] == "win" and bal("Splitz") == before + 20  # the dealer's 16 busts on the queen
+    # Side bets: Perfect Pairs and 21+3, decided at the deal and paid with the hand; their edges are exact for six decks.
+    from fivestack.blackjack import SIDE_EDGE, pairs_result, plus3_result, side_edge
+    assert [pairs_result(*c) for c in (("8h", "8h"), ("8h", "8d"), ("8h", "8s"), ("8h", "9h"))] == ["perfect", "coloured", "mixed", None]
+    assert plus3_result("7h", "7h", "7h") == "suited_trips" and plus3_result("7h", "7d", "7s") == "trips"
+    assert plus3_result("9h", "Th", "Jh") == "straight_flush" and plus3_result("Ah", "2d", "3s") == "straight"
+    assert plus3_result("Qh", "Kd", "As") == "straight" and plus3_result("Kh", "Ad", "2s") is None
+    assert plus3_result("2h", "9h", "Kh") == "flush" and plus3_result("2h", "9d", "Kh") is None
+    assert {k: round(side_edge(k), 4) for k in SIDE_EDGE} == SIDE_EDGE
+    _expect_error(bj.bet, "Splitz", "solo", 10, next(ref), {"pairs": 5}, contains="closed for now")  # switched off
+    side_open = patch.object(bjmod, "SIDE_BETS_OPEN", True)
+    side_open.start()
+    _expect_error(bj.bet, "Splitz", "solo", 10, next(ref), {"pairs": 25}, contains="bigger than your main bet")
+    _expect_error(bj.bet, "Splitz", "solo", 10, next(ref), {"pairs": 7}, contains="same chips")
+    _expect_error(bj.bet, "Splitz", "solo", 10, next(ref), {"lucky": 5}, contains="Unknown side bet")
+    with stack("8h", "9s", "8d", "7c", "Ks"):  # a coloured pair of eights (12 to 1), no 21+3 with the 9
+        before = bal("Splitz")
+        v = bj.bet("Splitz", "solo", 10, next(ref), {"pairs": 5, "plus3": 5})
+        assert bal("Splitz") == before - 20
+        res = v["seats"][0]["side_results"]
+        assert res["pairs"] == {"stake": 5, "result": "coloured", "name": "Coloured pair", "pays": 12, "payout": 65}
+        assert res["plus3"]["result"] is None and res["plus3"]["payout"] == 0
+        assert any(e["kind"] == "side" and e["bet"] == "pairs" and e["amount"] == 60 for e in v["log"])
+        v = bj.action("Splitz", "solo", "stand", 0)  # 16 stands, the dealer's 16 busts on the king
+    assert v["phase"] == "done" and bal("Splitz") == before - 20 + 20 + 65
+    row = db.query_one("SELECT * FROM blackjack_hands ORDER BY id DESC LIMIT 1")
+    assert row["stake"] == 20 and row["payout"] == 85 and json.loads(row["side"])["pairs"]["payout"] == 65
+    assert db.query_one("SELECT expected FROM house_ledger WHERE ref=?", (f"hand:{row['id']}",))["expected"] == round(
+        10 * EDGE + 5 * SIDE_EDGE["pairs"] + 5 * SIDE_EDGE["plus3"], 4)
+    side_open.stop()
+    # Streaks: three wins in a row are logged (and the seat carries the run); a loss turns it round.
+    db.create_bettor("Streaky", 1000)
+    for i in range(3):
+        with stack("Th", "9s", "Tc", "7c", "Ks"):
+            bj.bet("Streaky", "solo", 10, next(ref))
+            v = bj.action("Streaky", "solo", "stand", 0)
+    assert v["seats"][0]["streak"] == 3 and any(e["kind"] == "streak" and e["n"] == 3 for e in v["log"])
+    with stack("Th", "Ts", "6c", "9c"):
+        bj.bet("Streaky", "solo", 10, next(ref))
+        v = bj.action("Streaky", "solo", "stand", 0)  # 16 against 19
+    assert v["seats"][0]["streak"] == -1
+    # Tips: after a win, up to what you won and once a round; off the balance, into the house's take and the casino net.
+    with stack("Th", "9s", "Tc", "7c", "Ks"):
+        bj.bet("Streaky", "solo", 10, next(ref))
+        v = bj.action("Streaky", "solo", "stand", 0)  # 20 against a busted 26: +10
+    assert v["me"]["tip"]["open"] and v["me"]["tip"]["max"] == 10 and v["me"]["tip"]["tipped"] is None
+    before, row = bal("Streaky"), db.query_one("SELECT id FROM blackjack_hands ORDER BY id DESC LIMIT 1")["id"]
+    take = db.query_one("SELECT take FROM house_ledger WHERE ref=?", (f"hand:{row}",))["take"]
+    _expect_error(bj.tip, "Streaky", "solo", 25, contains="up to 10")
+    _expect_error(bj.tip, "Streaky", "solo", 7, contains="Tip Onkey")
+    v = bj.tip("Streaky", "solo", 10)
+    assert bal("Streaky") == before - 10 and v["me"]["tip"]["tipped"] == 10 and not v["me"]["tip"]["open"]
+    assert v["log"][-1]["kind"] == "tip" and v["log"][-1]["amount"] == 10
+    assert db.query_one("SELECT tip FROM blackjack_hands WHERE id=?", (row,))["tip"] == 10
+    assert db.query_one("SELECT take FROM house_ledger WHERE ref=?", (f"hand:{row}",))["take"] == take + 10
+    assert casino_nets(db)["streaky"]["blackjack"] == 20 and v["me"]["season"]["net"] == 20  # +30 -10 +10, less the tip
+    _expect_error(bj.tip, "Streaky", "solo", 5, contains="already has your tip")
+    with stack("Th", "Ts", "6c", "9c"):
+        bj.bet("Streaky", "solo", 10, next(ref))
+        bj.action("Streaky", "solo", "stand", 0)  # a loss: nothing to tip from
+    _expect_error(bj.tip, "Streaky", "solo", 5, contains="out of a win")
+    # Emotes: one of the set, one at a time, and only at a table you're at.
+    v = bj.emote("Streaky", "solo", "🍌")
+    assert v["log"][-1]["kind"] == "emote" and v["log"][-1]["emote"] == "🍌"
+    _expect_error(bj.emote, "Streaky", "solo", "👏", contains="One at a time")
+    clock[0] += 2
+    _expect_error(bj.emote, "Streaky", "solo", "🤡", contains="doesn't know")
+    _expect_error(bj.emote, "Streaky", "shared", "👏", contains="Take a seat")
     shared.casino_db = db
 
 
@@ -2431,6 +2566,39 @@ def house_giveaways(shared):
     boosted = hbets.place("Bea", boost["market_id"], boost["selection"], 20, {})
     assert boosted["odds_decimal"] == boost["decimal"] and json.loads(boosted["context"])["boost"] == boost["from_decimal"]
     assert hdb.get_meta("odds_boost")["after"] == "h-ff"
+
+    # A parlay leg on the same pick prices at the boosted decimal too, under the same stake cap. Paired with a
+    # player prop (never a score market), so it can never conflict with whatever market the boost landed on.
+    second = ("ou:deaths:puuid-1", "over") if boost["market_id"] == "ou:kills:puuid-1" else ("ou:kills:puuid-1", "over")
+    parlay_legs = [{"market_id": boost["market_id"], "selection": boost["selection"]}, {"market_id": second[0], "selection": second[1]}]
+    built, _, quote = hbets.quote_parlay(parlay_legs, {})
+    boosted_leg = next(l for l in built if l["market_id"] == boost["market_id"])
+    other_leg = next(l for l in built if l["market_id"] != boost["market_id"])
+    assert boosted_leg["boost"] == boost["from_decimal"] and boosted_leg["odds_decimal"] == boost["decimal"]
+    assert not other_leg["boost"]
+    try:
+        hbets.place_parlay("Bea", parlay_legs, BOOST_MAX_STAKE + 1, {})
+        raise AssertionError("a parlay with a boosted leg has the same stake cap")
+    except BetError:
+        pass
+    boosted_parlay = hbets.place_parlay("Bea", parlay_legs, 15, {})
+    placed_legs = json.loads(boosted_parlay["context"])["legs"]
+    assert next(l for l in placed_legs if l["market_id"] == boost["market_id"])["boost"] == boost["from_decimal"]
+    assert boosted_parlay["odds_decimal"] == quote["odds_decimal"]
+    hbets.cancel(boosted_parlay["id"], by="Bea")
+
+    # house() backs a boosted parlay leg out of the pot at its pre-boost price, like a boosted single.
+    before_house = hbets.house()
+    ctx = json.dumps({"legs": [{"odds_decimal": 3.0, "fair_prob": 0.3, "boost": 2.0, "market_type": "ou"},
+                               {"odds_decimal": 1.8, "fair_prob": 0.55, "market_type": "team_win"}]})
+    dec = round(3.0 * 1.8, 2)
+    fake = hdb.insert_bet({"bettor": "Bea", "market_id": "parlay", "market_type": "parlay", "selection": "parlay",
+                          "odds_decimal": dec, "stake": 10, "placed_ts": 1, "context": ctx, "status": "pending"})
+    hdb.update_bet(fake, status="won", payout=round(10 * dec, 2), settled_match_id="h-ff", settled_ts=3)
+    after_house = hbets.house()
+    ret = 2.0 * 0.3 * 1.8 * 0.55  # the boosted leg counts at its pre-boost decimal (2.0), not its priced 3.0
+    assert abs((after_house["expected_take"] - before_house["expected_take"]) - 10 * (1 - ret)) < 0.01, (before_house, after_house)
+
     hdb.insert_match({"match_id": "h-later", "map": "Bind", "mode": "competitive", "started_ts": time.time() + 20,
                       "rounds_won": 13, "rounds_lost": 2, "result": "win"}, line({}))
     assert hbets.apply_boost(engine.build(hdb))["boost"] and hdb.get_meta("odds_boost")["after"] == "h-later"  # drawn again
