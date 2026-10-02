@@ -36,5 +36,7 @@
   "banana_per_game": 5,
   "starting_bananas": 50,
   "loan_max": 1000,
-  "loan_interest": 0.1
+  "loan_interest": 0.1,
+  "hunt_daily_max": 250,
+  "hunt_floor": 250
 }

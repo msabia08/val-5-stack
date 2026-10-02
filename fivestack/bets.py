@@ -195,19 +195,21 @@ class BetManager:
         house = {r["k"]: r["total"] for r in self.db.query(
             "SELECT lower(bettor) AS k, SUM(amount) AS total FROM house_payouts WHERE season_id IS NULL GROUP BY k")}
         loans = self.db.loan_totals()
+        hunts = self.db.hunt_totals()
         out = []
         for b in self.db.bettors():
             s = per.get(b["name"].lower(), dict(EMPTY_STATS))
             earned = rewards.get(b["name"].lower(), 0.0)
             received = transfers.get(b["name"].lower(), 0.0)
             loan = loans.get(b["name"].lower()) or {}
-            # Match-betting profit only: game rewards, transfers, the casino, the house's giveaways and bank loans
-            # change the balance too, but they are reported separately (a loan's credits aren't profit, and the
-            # interest isn't a loss).
+            hunted = (hunts.get(b["name"].lower()) or {}).get("season") or 0.0
+            # Match-betting profit only: game rewards, transfers, the casino, the house's giveaways, bank loans and
+            # the Banana Hunt change the balance too, but they are reported separately (a loan's credits aren't
+            # profit, and the interest isn't a loss).
             nets = casino.get(b["name"].lower(), {})
             given = house.get(b["name"].lower(), 0.0)
             profit = (b["balance"] + s["pending_stake"] - self.starting - earned - received - nets.get("total", 0.0)
-                      - given - (loan.get("net") or 0.0))
+                      - given - (loan.get("net") or 0.0) - hunted)
             row = {
                 "name": b["name"],
                 "claimed": bool(b.get("password_hash")),
@@ -220,6 +222,7 @@ class BetManager:
                 "casino": round(nets.get("total", 0.0), 2),  # every casino game this season
                 "slots": round(nets.get("slots", 0.0), 2),
                 "giveaways": round(given, 2),
+                "hunt": round(hunted, 2),  # credits from the Banana Hunt this season
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,
             }
             for k, v in s.items():

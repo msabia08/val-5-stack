@@ -582,7 +582,8 @@ window.FiveBets = (() => {
     const inPlay = bettors.reduce((a, b) => a + b.balance + (b.pending_stake || 0), 0);
     const rewarded = bettors.reduce((a, b) => a + (b.rewards || 0), 0);
     const given = bettors.reduce((a, b) => a + (b.giveaways || 0), 0);
-    const issued = bettors.length * start + rewarded + given;
+    const hunted = bettors.reduce((a, b) => a + (b.hunt || 0), 0);
+    const issued = bettors.length * start + rewarded + given + hunted;
     const house = issued - inPlay;
     const leader = bettors[0];
     const kpis = [
@@ -606,6 +607,7 @@ window.FiveBets = (() => {
         `<td class="num">${b.transfers ? fmt.signed(b.transfers, 0) : '–'}</td>` +
         `<td class="num ${b.casino > 0 ? 'up' : b.casino < 0 ? 'down' : ''}">${b.casino ? fmt.signed(b.casino, 0) : '–'}</td>` +
         `<td class="num">${b.giveaways ? '+' + fmt.credits(b.giveaways) : '–'}</td>` +
+        `<td class="num">${b.hunt ? '+' + fmt.credits(b.hunt) : '–'}</td>` +
         `<td class="num">${b.won}-${b.lost}${b.void ? '-' + b.void : ''}</td>` +
         `<td class="num">${settled ? fmt.pct(b.won / settled) : '–'}</td>` +
         `<td class="num">${b.roi != null ? fmt.signed(b.roi * 100, 0) + '%' : '–'}</td>` +
@@ -615,8 +617,8 @@ window.FiveBets = (() => {
     // Laid out like Place bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
       <div class="odds-layout bettors-layout"><div>
-      <section class="card"><h2>Rankings</h2>${how('Ordered by credits minus bank debt.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers, bank loans, casino results and what the house gave back (shown separately). Transfers is what they received minus what they sent, generosity tax included. Casino is payouts minus stakes this season across the casino games. House is what the house gave them this season: secret objectives met, bad beats refunded and daily wheel prizes.`)}
-        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th class="num" title="What they still owe Onkey's Bank, interest included">Debt</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Casino payouts minus stakes this season">Casino</th><th class="num" title="Credits from the house this season: secret objectives met, bad beats refunded and daily wheel prizes">House</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <section class="card"><h2>Rankings</h2>${how('Ordered by credits minus bank debt.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers, bank loans, casino results, what the house gave back and the Banana Hunt (shown separately). Transfers is what they received minus what they sent, generosity tax included. Casino is payouts minus stakes this season across the casino games. House is what the house gave them this season: secret objectives met, bad beats refunded and daily wheel prizes.`)}
+        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th class="num" title="What they still owe Onkey's Bank, interest included">Debt</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Casino payouts minus stakes this season">Casino</th><th class="num" title="Credits from the house this season: secret objectives met, bad beats refunded and daily wheel prizes">House</th><th class="num" title="Credits picked in the Banana Hunt this season">Hunt</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
       ${settledSection()}

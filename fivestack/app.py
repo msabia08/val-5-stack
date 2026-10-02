@@ -26,6 +26,7 @@ from .slots import SlotManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bananas import BananaManager
 from .bank import BankManager
+from .hunt import HuntManager
 from .bets import TAX_MIN_TRANSFER, TAX_RATE, BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
@@ -84,6 +85,7 @@ class App:
         self.rewards = RewardManager(cfg, self.db, load_bettor_names())
         self.bananas = BananaManager(cfg, self.db, self.bets, accounts=self.member_accounts)
         self.bank = BankManager(cfg, self.db)
+        self.hunt = HuntManager(self.db, cfg)
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db)
         self.house = HouseManager(self.db, self.bets, self.rewards)  # the take (bets and the casino) and what it gives back
@@ -103,6 +105,7 @@ class App:
             demo_seed.seed_shop(self.db, self.bananas)
             demo_seed.seed_house(self.db, self.house)
             demo_seed.seed_bank(self.db, self.bank)
+            demo_seed.seed_hunt(self.db)
         elif not self.problems:
             self.client = HenrikClient(cfg["api_key"].strip(), min_interval=float(cfg.get("min_request_interval_s", 1.5)))
             self.tracker = Tracker(cfg, self.db, self.client, on_new_matches=self.on_new_matches, on_sync=self.on_sync)
@@ -232,6 +235,8 @@ class App:
             "banana_per_game": self.bananas.per_game,
             "loan_max": self.bank.max,
             "loan_interest": self.bank.interest,
+            "hunt_daily_max": self.hunt.daily_max,
+            "hunt_floor": self.hunt.floor,
             "tax_rate": TAX_RATE,
             "tax_min_transfer": TAX_MIN_TRANSFER,
             "server_time": time.time(),
@@ -541,6 +546,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/bank":
             me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
             return self._json({"bank": app.bank.terms(), "me": app.bank.status(me["name"]) if me else None})
+        if path == "/api/hunt":
+            return self._json(app.hunt.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/shop":
             return self._json(app.bananas.shop(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/arcade":
@@ -720,6 +727,14 @@ class Handler(BaseHTTPRequestHandler):
                 legs, _, quote = app.bets.quote_parlay(body.get("legs"), body.get("context") or {})
                 return self._json({**quote, "legs": [{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal", "boost")}
                                                      for leg in legs]})
+            if path in ("/api/hunt/start", "/api/hunt/click"):
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to hunt bananas."}, 403)
+                if path.endswith("/start"):
+                    return self._json({"me": app.hunt.start(me["name"])})
+                out = app.hunt.click(me["name"], body.get("x"), body.get("y"))
+                return self._json({**out, "balance": round(app.db.get_bettor(me["name"])["balance"], 2)})
             if path in ("/api/bank/borrow", "/api/bank/repay"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
