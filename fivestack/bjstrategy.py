@@ -23,7 +23,7 @@ ACE = 11
 RANKS = (2, 3, 4, 5, 6, 7, 8, 9, 10, ACE)
 P = {r: (4 / 13 if r == 10 else 1 / 13) for r in RANKS}
 MOVES = ("hit", "stand", "double", "split")
-SAVE_CHANCE = 0.005  # 1 bust in 200 Onkey fixes to 21; blackjack.py uses this one
+SAVE_CHANCE = 0.01  # 1 bust in 100 Onkey fixes to 21; blackjack.py uses this one
 
 
 def add(total, soft, card):

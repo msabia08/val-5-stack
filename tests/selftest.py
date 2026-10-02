@@ -1027,7 +1027,7 @@ def blackjack(shared):
     assert bj.bet("Ace", "solo", 10, r1)["me"]["balance"] == 1010  # a retried bet isn't charged again
     row = db.query_one("SELECT * FROM blackjack_hands WHERE request_id=?", (r1,))
     assert row["status"] == "settled" and row["stake"] == 10 and row["payout"] == 20
-    assert db.query_one("SELECT take, expected FROM house_ledger WHERE ref=?", (f"hand:{row['id']}",)) == {"take": -10, "expected": 0.027}
+    assert db.query_one("SELECT take, expected FROM house_ledger WHERE ref=?", (f"hand:{row['id']}",)) == {"take": -10, "expected": 0.011}
     # A natural pays 3:2 straight away (the dealer's 9 up means no peek, and the dealer doesn't draw).
     with stack("As", "9s", "Kd", "7c"):
         v = bj.bet("Ace", "solo", 10, next(ref))

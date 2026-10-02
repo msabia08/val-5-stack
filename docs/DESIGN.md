@@ -331,7 +331,7 @@ The table is the page's personality, like the slots cabinet; the side cards are 
 - **Streaks and emotes**: three wins in a row and a seat glows like a flame (`.bj-spot.hot`, 🔥 count); three
   losses and it frosts (`.cold`, 🧊). Onkey turns salty or sympathetic at 3, 5, 8 and 12. The emote tray sits in
   the felt's top-left corner; an emote floats up from the sender's seat, a banana spins over and bonks Onkey.
-- **Onkey's save** (blackjack, 1 bust in 200): the card that busted you lands as dealt, then Onkey draws on it in
+- **Onkey's save** (blackjack, 1 bust in 100): the card that busted you lands as dealt, then Onkey draws on it in
   blue pen: an X strikes through the number in the corner and the number that makes 21 pops on next to it, crooked,
   in a handwriting font (about 1.9 s from the deal; `.fix-in`). The suits stay
   as they are. The total, the result and his line ("Onkey has a pen and no shame.") wait until he's finished.
