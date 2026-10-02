@@ -222,7 +222,7 @@ window.FiveOnkey = (() => {
   // SLOT_DOWN_STEP, and either at most once per SLOT_NAG_MS. On top of that, any line about a spin that didn't win only
   // comes out SLOT_LOSS_TALK of the times it otherwise would (wins are always cheered).
   const SLOT_RUN_EVERY = 12, SLOT_DOWN_FIRST = 750, SLOT_DOWN_STEP = 1500, SLOT_NAG_MS = 15 * 60 * 1000, SLOT_LOSE_CHANCE = 0.2;
-  const SLOT_LOSS_TALK = 0.2;
+  const SLOT_LOSS_TALK = 0.6;
   const memory = { slotLosses: 0, slotNet: 0, slotDownMark: -SLOT_DOWN_FIRST, slotNagAt: 0, settledSeen: null };
 
   // ---- talking -------------------------------------------------------------------------------------------------------
