@@ -438,7 +438,7 @@
     const t = s.tracker || {};
     return `<div class="card empty"><h2>No ${stackWord()} games yet</h2>` +
       `<p>${t.syncing ? 'Scanning everyone\'s match history now…' : 'Games where all five of you were on the same team will show up here after the next sync.'}</p>` +
-      `<p class="muted small">Tracked modes: ${esc((s.modes || []).join(', ') || 'all')}. Play a game together, then hit Sync now.</p></div>`;
+      `<p class="muted small">Only Competitive games count. Play one together, then hit Sync now.</p></div>`;
   }
 
   // ---- overview -------------------------------------------------------------
@@ -1153,7 +1153,7 @@
     return `<section class="card"><h2>Status</h2><ul class="plain">
         <li>Config: ${s.demo ? '<span class="status pending">demo mode</span>' : s.configured ? '<span class="status won">ready</span>' : `<span class="status lost">needs attention</span> ${esc((s.problems || []).join(' '))}`}</li>
         <li>API key: ${esc(s.api_key_masked || 'not set')}</li>
-        <li>Region: ${esc(s.region || '–')} · Modes: ${esc((s.modes || []).join(', ') || 'all')} · Poll every ${esc(s.poll_interval_minutes)} min</li>
+        <li>Region: ${esc(s.region || '–')} · Competitive games only · Poll every ${esc(s.poll_interval_minutes)} min</li>
         <li>Squad: ${(s.members || []).length} player${(s.members || []).length === 1 ? '' : 's'} (<a href="#squad">manage on the Squad tab</a>)</li>
         <li>Last sync: ${t.last_sync ? fmt.ago(t.last_sync) : 'never'}${r ? ` · ${r.new_matches} new game(s), ${r.candidates} candidates checked, ${r.api_calls} API calls` : ''}${t.last_error ? ` · <span class="down">${esc(t.last_error)}</span>` : ''}</li>
         <li>Rate limit: ${rl.remaining != null ? `${rl.remaining} of ${rl.limit} requests left in the current window` : 'unknown until the first request'}</li>
@@ -1166,7 +1166,7 @@
         <li>Open <code>config.json</code> next to <code>server.py</code>. Paste the key into <code>api_key</code>, set your <code>region</code>, and (optionally) list your squad's Riot IDs (Name#TAG) under <code>members</code> to seed the squad; the Squad tab manages it from then on.</li>
         <li>Restart the server (<code>python server.py</code> or <code>run.bat</code>). The first sync scans everyone's stored match history and keeps only games where everyone on the squad was on the same team.</li>
         <li>Leave it running. It re-checks every few minutes, records new ${stackWord()} games and settles open bets automatically. Set <code>host</code> to <code>0.0.0.0</code> to let friends on your network open it too.</li></ol>
-        <p class="muted small">Only game modes listed in <code>modes</code> count (default: competitive, unrated, premier). HenrikDev's stored history can have gaps; a game that is missing for one player is verified through the full match record.</p></section>
+        <p class="muted small">Only Competitive games count; every other mode is skipped. HenrikDev's stored history can have gaps; a game that is missing for one player is verified through the full match record.</p></section>
       <section class="card"><h2>Sync log</h2><div class="log">${log || '<span class="muted">Nothing yet.</span>'}</div></section>`;
   }
 

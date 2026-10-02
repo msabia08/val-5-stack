@@ -205,9 +205,11 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
 
   A "night" is a run of games with no break over 3 hours.
 
-Only modes listed under `modes` count. The default is `competitive`, `unrated`
-and `premier`; deathmatch and other non-5v5 modes are ignored so averages stay
-comparable.
+Only **Competitive** games count, for squad games and for each member's other
+games alike; every other mode (Unrated, Premier, Swiftplay, Deathmatch, ...) is
+skipped. The old `modes` key in `config.json` is ignored, and a database that
+still holds games from other modes drops them the next time the tracker starts
+(bets and rewards settled on them stay).
 
 ## The squad (2 to 5 players)
 
@@ -267,9 +269,8 @@ in it too. Anything else is remembered as rejected so it is never re-checked
 ## 5-stack vs. their other games
 
 The same stored-match responses also contain every game each member played
-without the full stack (solo queue, duos, 3- and 4-stacks). Those games, in the
-tracked `modes`, are kept as each player's baseline, so this costs no extra API
-calls. The comparison covers ACS, kills / deaths / assists per round, ADR,
+without the full stack (solo queue, duos, 3- and 4-stacks). Those Competitive
+games are kept as each player's baseline, so this costs no extra API calls. The comparison covers ACS, kills / deaths / assists per round, ADR,
 headshot %, K/D and win rate. It's hidden on the Players page for now
 (`PLAYER_TABLE_OTHER_GAMES` and `PLAYER_CARD_OTHER_GAMES` in `web/app.js` bring it
 back), and `/api/stats` still returns it for each player as `deviation`.
@@ -632,14 +633,16 @@ Bananas 🍌 are a second currency that runs alongside credits and only buys
 cosmetics and pranks. They never turn back into credits, and spending them
 never changes a balance, a bet or the leaderboard.
 
-**Earning:** every credit you *gain* pays `banana_rate` bananas (default 0.1,
-so 10 credits = 1 banana). That covers a won bet's profit (payout minus stake)
-and every game reward. Losing bets never take bananas away, so a season's
-bananas are always exactly your credits won that season ÷ 10: a straight line.
-Bananas are paid on each sync, right after bets settle and rewards are paid.
-Every account also starts with `starting_bananas` (50), which isn't counted as
-earned. A season reset takes every wallet back to zero with the credits, then
-hands everyone a fresh 50; items you bought stay yours.
+**Earning:** every Competitive game a squad member plays pays
+`banana_per_game` bananas (default 5), win or lose, whoever they queued with: a
+solo-queue game counts as much as a squad game. Credits are different: they only
+come from squad games (game rewards) and from betting. Bananas are whole numbers.
+They're paid on each sync, for the games it stored (only games from after
+bananas were switched on, so upgrading doesn't pay for the backlog), and go to
+the member's bettor account, found the same way as game rewards. Every account
+also starts with `starting_bananas` (50), which isn't counted as earned. A
+season reset takes every wallet back to zero with the credits, then hands
+everyone a fresh 50; items you bought stay yours.
 
 **The Onkey's Shop tab** sells one item per slot, worn as soon as you buy it:
 
@@ -725,6 +728,25 @@ minor, the key Onkey sings in. The sound on/off switch is remembered.
 Quitting part-way (Esc or Quit) ends the game and the score so far still
 counts. Scores are sent back with a one-time token from the paid play, and the
 server turns down any score a game couldn't reach in the time it ran.
+
+## Onkey's Bank
+
+Broke before the next game? The Standings page's sidebar has **Onkey's Bank**,
+where any signed-in bettor can borrow credits:
+
+- Borrow any whole amount up to **`loan_max`** (default 1000) at
+  **`loan_interest`** (default 10%): borrow 500 and you owe 550.
+- The limit is on what you have out on loan. Once the full 1000 is borrowed, the
+  bank lends nothing more until every loan is paid back, interest included;
+  borrow 400 and you can still take 600.
+- Borrowed credits land on your balance and can be bet like any other.
+- Pay back any whole amount at a time (the oldest loan is paid first), or
+  everything you can in one click. A loan clears when its full amount with
+  interest is paid.
+- Loans don't count toward betting profit, ROI or record: the Rankings show
+  what each bettor owes in a **Debt** column, and rank by credits minus debt,
+  so borrowed credits don't buy a place on the leaderboard.
+- A season reset archives the loans and forgives every debt with the balances.
 
 ## Sending credits
 
@@ -919,7 +941,6 @@ time you log in.
 | `region` | `na` | Riot affinity of the squad: `na`, `eu`, `ap`, `kr`, `latam`, `br`. |
 | `platform` | `pc` | Game platform (`pc` or `console`) for the HenrikDev endpoints that take one. Reserved: nothing uses it yet. |
 | `members` | – | Seeds the squad the first time the tracker runs (up to 5); afterwards the **Squad** tab manages it and this list is ignored. `"Name#TAG"` strings or `{ "riot_id": "Name#TAG", "nickname": "Matt", "bettor": "Matty" }` objects. `bettor` (optional) is the betting account that receives this member's game rewards; it defaults to the nickname. |
-| `modes` | competitive, unrated, premier | Modes that count. Empty list = every mode. |
 | `poll_interval_minutes` | 10 | How often to check for new games. |
 | `poll_size` | 40 | Stored matches fetched per member on a regular sync (the first sync fetches everything). |
 | `fetch_match_details` | true | Fetch full match records to verify holes and enrich games. |
@@ -942,7 +963,9 @@ time you log in.
 | `win_reward` | 0 | Extra credits each member earns on top for a win. |
 | `performance_bonus_max` | 150 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
 | `starting_bananas` | 50 | Bananas every account starts each season with (new accounts get them straight away). Not counted as earned. `0` turns it off. |
-| `banana_rate` | 0.1 | Bananas paid per credit gained (a won bet's profit, a game reward) for Onkey's Shop. 0.1 = 1 banana per 10 credits. `0` stops paying bananas. |
+| `banana_per_game` | 5 | Bananas each squad member earns for every Competitive game they play, squad game or not, for Onkey's Shop. Whole numbers. `0` stops paying bananas. |
+| `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
+| `loan_interest` | 0.1 | Interest on a loan, as a share of the amount borrowed (0.1 = borrow 500, owe 550). |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
 `--config=path/to/other.json`.
@@ -979,7 +1002,8 @@ fivestack/             the backend package
   bets.py              betting ledger and settlement, plus the odds boost of the game
   house.py             the house giving back: its pot, secret objectives, bad-beat refunds and the jackpot
   wheel.py             the daily wheel: one spin a day (midnight Pacific), prizes, tokens
-  bananas.py           Onkey's Shop: bananas earned from credit gains, the catalogue, buying and wearing items
+  bananas.py           Onkey's Shop: bananas earned per game played, the catalogue, buying and wearing items
+  bank.py              Onkey's Bank: loans with interest, within a limit on what's out
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table

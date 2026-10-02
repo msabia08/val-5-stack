@@ -21,16 +21,18 @@ window.FiveBets = (() => {
     ticketClass = ctx.ticketClass || (() => '');
     ticketExtras = ctx.ticketExtras || (() => '');
     state.transfer = { to: '', amount: '', note: '', confirm: false }; // the Send credits form, kept across redraws
+    state.loan = { amount: '', repay: '', confirm: false }; // Onkey's Bank's forms
   }
 
   // ---- data -------------------------------------------------------------------
   const loadBettingReport = async () => { state.bettingReport = await api('/api/betting-report'); };
   const loadSeasons = async () => { state.seasons = await api('/api/seasons'); };
   const loadBets = async () => {
-    const [b, l, m, r, t, h] = await Promise.all([api('/api/bets?limit=600'), api('/api/bettors'), api('/api/bettor/me'),
-      api('/api/rewards?limit=60'), api('/api/transfers?limit=30'), api('/api/house').catch(() => null)]);
+    const [b, l, m, r, t, h, k] = await Promise.all([api('/api/bets?limit=600'), api('/api/bettors'), api('/api/bettor/me'),
+      api('/api/rewards?limit=60'), api('/api/transfers?limit=30'), api('/api/house').catch(() => null), api('/api/bank')]);
     state.bets = b.bets; state.bettors = l.bettors; state.me = m.bettor || null; state.rewards = r.rewards; state.transfers = t.transfers;
     state.house = h;
+    state.bank = k;
     if (state.me) { state.bettor = state.me.name; localStorage.setItem('fs.bettor', state.bettor); }
   };
   const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
@@ -590,6 +592,7 @@ window.FiveBets = (() => {
       return `<tr class="${b.name.toLowerCase() === me ? 'me' : ''}"><td class="rank">${rank}</td>` +
         `<td><b>${nameHtml(b.name, { link: true })}</b>${b.claimed === false ? ' <span class="muted small">unclaimed</span>' : ''}${bw ? `<div class="muted small">Best win +${fmt.credits(bw.net)} · ${esc(bw.desc)}</div>` : ''}</td>` +
         `<td class="num balance">${fmt.credits(b.balance)}</td>` +
+        `<td class="num ${b.debt ? 'down' : 'muted'}" title="${b.debt ? `Owes Onkey's Bank ${fmt.credits(b.debt)}, interest included` : 'No loans'}">${b.debt ? '−' + fmt.credits(b.debt) : '–'}</td>` +
         `<td class="bar-cell"><div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((b.balance / maxBal) * 100)}%"></div></div></td>` +
         `<td class="num ${b.profit > 0 ? 'up' : b.profit < 0 ? 'down' : ''}">${fmt.signed(b.profit, 0)}</td>` +
         `<td class="num">${b.rewards ? '+' + fmt.credits(b.rewards) : '–'}</td>` +
@@ -605,14 +608,111 @@ window.FiveBets = (() => {
     // Laid out like Place bets: the main cards on the left, Send credits and Game rewards in a narrow sidebar.
     return `<section class="kpis">${kpis.join('')}</section>
       <div class="odds-layout bettors-layout"><div>
-      <section class="card"><h2>Rankings</h2>${how('Ordered by balance.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers, casino results and what the house gave back (shown separately). Transfers is what they received minus what they sent, generosity tax included. Casino is payouts minus stakes this season across the casino games. House is what the house gave them this season: secret objectives met, bad beats refunded and daily wheel prizes.`)}
-        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Casino payouts minus stakes this season">Casino</th><th class="num" title="Credits from the house this season: secret objectives met, bad beats refunded and daily wheel prizes">House</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <section class="card"><h2>Rankings</h2>${how('Ordered by credits minus bank debt.', `Profit and ROI cover match bets only. Profit counts open stakes and is measured against the ${fmt.credits(start)} everyone started with, leaving out game rewards, transfers, bank loans, casino results and what the house gave back (shown separately). Transfers is what they received minus what they sent, generosity tax included. Casino is payouts minus stakes this season across the casino games. House is what the house gave them this season: secret objectives met, bad beats refunded and daily wheel prizes.`)}
+        <div class="table-wrap"><table class="rankings"><thead><tr><th class="rank">#</th><th>Bettor</th><th class="num">Credits</th><th class="num" title="What they still owe Onkey's Bank, interest included">Debt</th><th></th><th class="num">Profit</th><th class="num">Rewards</th><th class="num" title="Credits received from other bettors minus credits sent, generosity tax included">Transfers</th><th class="num" title="Casino payouts minus stakes this season">Casino</th><th class="num" title="Credits from the house this season: secret objectives met, bad beats refunded and daily wheel prizes">House</th><th class="num">W-L-void</th><th class="num">Win %</th><th class="num">ROI</th><th class="num">Open</th></tr></thead><tbody>${rows}</tbody></table></div>
         ${resetPanel()}</section>
       ${state.bettingReport ? window.FiveViz.bettingReport(state.bettingReport, vizHelpers) : ''}
       ${settledSection()}
       ${pastSeasonsCard()}
       ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}
-      </div><aside class="odds-side bettors-side">${houseCard()}${transferCard()}${rewardsCard()}</aside></div>`;
+      </div><aside class="odds-side bettors-side">${houseCard()}${bankCard()}${transferCard()}${rewardsCard()}</aside></div>`;
+  }
+
+  // Onkey's Bank (bank.py, /api/bank): borrow up to the limit at interest and pay it back any time, oldest loan
+  // first. Borrowing takes a second click on a confirm line that spells out what you'll owe, like Send credits.
+  function bankCard() {
+    const me = state.me, bank = state.bank || {}, terms = bank.bank || { max: 1000, interest: 0.1, min: 1, enabled: true };
+    const st = bank.me, l = state.loan;
+    if (!terms.enabled) return '';
+    const pct = fmt.pct(terms.interest);
+    let body;
+    if (!me) body = '<p class="muted small"><a href="#" data-signin>Sign in</a> to borrow credits.</p>';
+    else if (!st) body = '<p class="muted small">Loading…</p>';
+    else {
+      const amount = Number(l.amount), owe = amount + Math.round(amount * terms.interest);
+      const canPay = Math.floor(Math.min(st.debt, me.balance));
+      const confirm = l.confirm && amount >= 1
+        ? `<div class="transfer-confirm" role="group" aria-label="Confirm loan">Borrow <b>${fmt.credits(amount)}</b> credits? You'll owe <b>${fmt.credits(owe)}</b> (${pct} interest)` +
+          `${st.debt ? `, on top of the ${fmt.credits(st.debt)} you already owe` : ''}.` +
+          '<div class="btn-row"><button class="btn primary small" id="loan-go">Borrow</button><button class="btn ghost small" id="loan-cancel">Cancel</button></div></div>'
+        : '';
+      const standing = st.debt
+        ? `<p class="bank-standing">You owe <b class="down">${fmt.credits(st.debt)}</b> on ${st.open.length} loan${st.open.length === 1 ? '' : 's'} (${fmt.credits(st.borrowed)} borrowed). ` +
+          `${st.room ? `You can borrow ${fmt.credits(st.room)} more.` : 'Pay it all back, interest included, before borrowing again.'}</p>`
+        : `<p class="bank-standing">You owe nothing. You can borrow up to <b>${fmt.credits(st.room)}</b> credits.</p>`;
+      const borrow = st.room ? `<div class="transfer-form bank-form">
+          <label>Borrow<input id="loan-amount" type="number" min="1" max="${st.room}" step="1" inputmode="numeric" value="${esc(l.amount)}" placeholder="${Math.min(100, st.room)}"></label>
+          <button class="btn small" id="loan-ask"${l.confirm ? ' disabled' : ''}>Borrow…</button>
+        </div>${confirm}` : '';
+      const repay = st.debt ? `<div class="transfer-form bank-form">
+          <label>Pay back<input id="loan-repay" type="number" min="1" max="${canPay}" step="1" inputmode="numeric" value="${esc(l.repay)}" placeholder="${canPay}"></label>
+          <button class="btn small" id="loan-pay">Pay</button>
+          <button class="btn ghost small" id="loan-pay-all"${canPay < 1 ? ' disabled' : ''}>Pay ${canPay >= st.debt ? 'it all' : 'all you can'}</button>
+        </div>` : '';
+      const open = st.open.map((x) => `<li class="recent-row loan-row"><span><b>${fmt.credits(x.principal)}</b> borrowed ${fmt.date(x.taken_ts * 1000)}</span>` +
+        `<b class="num down">${fmt.credits(x.due)} due</b></li>`).join('');
+      const cleared = st.cleared.slice(0, 3).map((x) => `<li class="recent-row loan-row"><span><b>${fmt.credits(x.principal)}</b> borrowed ${fmt.date(x.taken_ts * 1000)}</span>` +
+        `<span class="num muted small">paid back ${fmt.credits(x.owed)}</span></li>`).join('');
+      body = `${standing}${borrow}${repay}${open ? `<h3 class="small">Open loans</h3><ul class="recent">${open}</ul>` : ''}` +
+        `${cleared ? `<h3 class="small">Paid back</h3><ul class="recent">${cleared}</ul>` : ''}`;
+    }
+    return `<section class="card" id="bank"><h2>Onkey's Bank</h2>
+      ${how(`Borrow up to ${fmt.credits(terms.max)} credits at ${pct} interest. Pay it all back before you can borrow the full amount again.`,
+      `Borrow any whole amount, as long as what you have out on loan stays within ${fmt.credits(terms.max)}: once the full ${fmt.credits(terms.max)} is out, the bank lends nothing more until every loan is paid back, interest included. ` +
+      'Borrowed credits land on your balance and can be bet like any other. Pay back any whole amount at a time; the oldest loan is paid first. ' +
+      'Loans don\'t count toward betting profit, ROI or record: the Rankings show what you owe in their own column and rank by credits minus debt. A season reset forgives every debt along with the balances.')}
+      ${body}</section>`;
+  }
+
+  function bindBank(view) {
+    const l = state.loan;
+    const edited = () => { // a change after "Borrow…" takes the confirm line away: it would be out of date
+      if (!l.confirm) return;
+      l.confirm = false;
+      $('#bank .transfer-confirm', view)?.remove();
+      const ask = $('#loan-ask', view);
+      if (ask) ask.disabled = false;
+    };
+    $('#loan-amount', view)?.addEventListener('input', (e) => { l.amount = e.target.value; edited(); });
+    $('#loan-repay', view)?.addEventListener('input', (e) => { l.repay = e.target.value; });
+    $('#loan-ask', view)?.addEventListener('click', () => {
+      const amount = Number(l.amount), room = (state.bank && state.bank.me ? state.bank.me.room : 0) || 0;
+      if (!(amount >= 1)) { toast('Enter how much to borrow', 'bad'); return; }
+      if (amount > room) { toast(`The bank will lend you ${fmt.credits(room)} more`, 'bad'); return; }
+      l.confirm = true;
+      draw();
+      $('#loan-go')?.focus();
+    });
+    $('#loan-cancel', view)?.addEventListener('click', () => { l.confirm = false; draw(); });
+    $('#loan-go', view)?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        const r = await api('/api/bank/borrow', { method: 'POST', body: JSON.stringify({ amount: Number(l.amount) }) });
+        toast(`Borrowed ${fmt.credits(r.loan.principal)} credits. You owe ${fmt.credits(r.loan.owed)}.`, 'good');
+        state.loan = { amount: '', repay: '', confirm: false };
+      } catch (err) {
+        toast(err.message, 'bad');
+        l.confirm = false;
+      }
+      await loadBets();
+      draw();
+    });
+    const pay = async (amount) => {
+      if (!(amount >= 1)) { toast('Enter how much to pay back', 'bad'); return; }
+      try {
+        const r = await api('/api/bank/repay', { method: 'POST', body: JSON.stringify({ amount }) });
+        const n = r.repaid.cleared.length;
+        toast(`Paid back ${fmt.credits(r.repaid.paid)} credits${n ? `, ${n === 1 ? 'a loan' : n + ' loans'} cleared` : ''}`, 'good');
+        state.loan = { amount: '', repay: '', confirm: false };
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+      await loadBets();
+      draw();
+    };
+    $('#loan-pay', view)?.addEventListener('click', () => pay(Number(l.repay)));
+    $('#loan-pay-all', view)?.addEventListener('click', () =>
+      pay(Math.floor(Math.min(state.bank && state.bank.me ? state.bank.me.debt : 0, state.me ? state.me.balance : 0))));
   }
 
   // The generosity tax (bets.py TAX_RATE / TAX_MIN_TRANSFER, sent in /api/status): send someone enough credits and
@@ -819,6 +919,7 @@ window.FiveBets = (() => {
     bindSlip();
     bindCustom(view);
     bindTransfers(view);
+    bindBank(view);
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
       const headers = {};
       if (b.classList.contains('admin')) {

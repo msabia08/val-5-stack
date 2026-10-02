@@ -33,6 +33,8 @@ from .henrik import HenrikError
 from .timeline import extract_timeline
 
 ROSTER_MIN, ROSTER_MAX = 2, 5  # a squad game needs every member on one team; between two and five of them
+# Only these modes count, for squad games and member lines alike (config.json's old "modes" key is ignored).
+MODES = frozenset({"competitive"})
 NAME_REFRESH_S = 24 * 3600     # how often each member's current Riot ID is looked up, to follow renames
 
 MODE_ALIASES = {
@@ -219,13 +221,14 @@ def parse_details(data, member_puuids):
 
 
 class Tracker:
-    def __init__(self, cfg, db, client, on_new_matches=None):
+    def __init__(self, cfg, db, client, on_new_matches=None, on_sync=None):
         self.cfg = cfg
         self.db = db
         self.client = client
         self.on_new_matches = on_new_matches
+        self.on_sync = on_sync  # called with the summary after every sync that finished
         self.region = (cfg.get("region") or "na").lower()
-        self.modes = {normalize_mode(m) for m in (cfg.get("modes") or []) if m}
+        self.modes = set(MODES)
         self.fetch_details = bool(cfg.get("fetch_match_details", True))
         self.details_per_sync = int(cfg.get("details_per_sync", 6))
         self.poll_size = int(cfg.get("poll_size", 40))
@@ -642,6 +645,8 @@ class Tracker:
             }
             self.state.update({"last_sync": time.time(), "last_result": summary, "last_error": None})
             self.db.set_meta("last_sync", summary)
+            if self.on_sync:
+                self.on_sync(summary)
             self.log(f"Sync done: {len(new_matches)} new game(s), {summary['api_calls']} API call(s), {len(settled)} bet(s) settled")
             return summary
         except (TrackerError, HenrikError) as ex:

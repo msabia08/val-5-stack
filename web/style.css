@@ -457,6 +457,13 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .bettors-side .recent-row { font-size: 13px; gap: 4px 8px; }
 .bettors-side .recent-row.transfer-row { grid-template-columns: minmax(0, 1fr) auto; }
 .bettors-side .transfer-row > :nth-child(2) { text-align: right; }
+/* Onkey's Bank: the same form row as Send credits; the repay row ends in two buttons. */
+.bettors-side .bank-form { grid-template-columns: 1fr auto; }
+.bettors-side .bank-form:has(#loan-pay-all) { grid-template-columns: 1fr auto auto; }
+.bettors-side .bank-form .btn { white-space: nowrap; }
+.bank-standing { margin: 0 0 10px; font-size: 14px; }
+.bettors-side .recent-row.loan-row { grid-template-columns: minmax(0, 1fr) auto; }
+.bettors-side .loan-row > :nth-child(2) { text-align: right; }
 /* Game rewards: a header line per game (result, score, map, date), then who got what in two tidy columns */
 .bettors-side .rewards-card .how { margin-bottom: 4px; }
 /* The house (Standings sidebar, houseCard() in bets.js): the pot and jackpot, the next game's objectives, the last
