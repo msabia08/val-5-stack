@@ -35,17 +35,38 @@ symbols on the centre line pay, and the bigger the payout the rarer the line:
 | Bell | 1 in 25 | 4× |
 | Cherry | 1 in 20 | 3× |
 
-There is also a rarer secret symbol that isn't on the pay table. Pairs and mixed
-symbols pay zero; some line hits about once every 8 spins. Each spin decides its
-line first, with exactly the chances above, and a losing spin then shows a
-random mix of symbols, so the reels show what you won.
+There is also a rarer secret symbol that isn't on the pay table: the Golden
+Onkey, on about one spin in 272. It's wild: it fills in for whatever a line is
+missing and multiplies that line's win, up to a cap of 100× so a lucky spin can't
+break the credit economy:
 
-Pull the lever on the side of the machine or press the red Spin button. The
-reels clank as they turn and stop from left to right, waiting longer before the
-next reel the bigger the symbol already showing; the readout under the reels shows
+| Golden Onkeys on the line | Pays |
+|---|---|
+| One, the other two different | 2× ("Golden Onkey spotted") |
+| One, finishing a pair | the pair's line ×2, at most 100× |
+| Two, with any symbol | that symbol's line ×3, at most 100× |
+| Three | 100× (1 in 20,000), the jackpot and the top prize |
+
+So a bell, a bell and a Golden Onkey pay 4× × 2 = 8×, a diamond with two Golden
+Onkeys 20× × 3 = 60×, and an Onkey pair with a Golden Onkey would be 160× but is
+capped at 100×. Nothing on the machine pays more than 100×. Other pairs and mixed symbols pay zero; something
+pays about once every 8 spins. Each spin decides its outcome first, with exactly
+the chances above, and a losing spin then shows a random mix of symbols (never
+a Golden Onkey, since any one pays), so the reels show what you won. A win with
+more than one payout shows them side by side under the reels as cash-out
+chips, dealt in one after another a moment apart with a coin tick each, then
+the total counting up; a Golden Onkey flashes gold and gets a "Spotted!" tag
+the moment its reel stops.
+
+Pull the lever on the side of the machine, press the red Spin button or press
+Space. The reels clank as they turn and stop one at a time; when the result has
+a matching pair, those two reels stop first, so the last reel to stop is always
+the one that decides the spin (and with no pair it follows close behind). The
+next reel waits longer the bigger the symbol already showing; the readout under the reels shows
 your credits, the bet and the last win. Bigger wins get bigger celebrations: diamonds, then bananas, then
-Onkey each step it up. When the first two reels match, the third may keep
-spinning and creep up to the line so slowly you can't tell whether it will land,
+Onkey each step it up. When the first two reels to stop match, the last may keep
+spinning and creep up to the line so slowly you can't tell whether it will land
+(a Golden Onkey pairs with anything here),
 more often and for longer the bigger the pair (never for cherries, bells or
 spikes); it happens on wins and losses alike, so it never gives the result away.
 Your credits (on the machine and in the top bar) show the stake taken until the
@@ -54,8 +75,11 @@ mutes the sounds and remembers your choice. Reduced motion shows the result imme
 the reels or teasing, and keeps win celebrations to a glow and a banner.
 
 All payouts include the stake; other results return zero. The lines in the table
-return 95% over many spins, a 5% house edge; the secret jackpot is a bonus on top
-of that, so it doesn't make the other lines any harder. The pay table shows each
+return 95% over many spins, a 5% house edge; everything the Golden Onkey pays is
+a bonus on top of that (2.05% more, 97.05% in all), so it doesn't make the other
+lines any harder. A line the Golden Onkey finishes counts as a hit on that line.
+In demo mode (`--demo`) every Golden Onkey outcome is 20 times as likely (about
+one spin in 14), so you can try them out; the real site never does this. The pay table shows each
 line's chance, the credit payout for your selected stake, and how many times
 you've hit it (counted across seasons, from spins made since line stats were
 added). Results settle immediately on the server and cannot be cancelled;
@@ -928,7 +952,10 @@ jackpot, which carry across seasons. The rules live in `fivestack/house.py`
 Onkey, the monkey in the top-left corner, chats like the dealer at the casino tables: a speech bubble with his monkey
 noises and what they mean, with a hop while he talks. Every minute or two he says something, sometimes about you (your
 balance, your place in the standings, a daily spin waiting), and he reacts to what you do: bets you place, bets that win
-or lose (and losing streaks), slot spins (dry runs and big wins), wheel prizes, credits you send and things you buy. He
+or lose (and losing streaks), slot spins (dry runs, big wins, Golden Onkeys, and a gasp while a reel teases), wheel
+prizes, credits you send, things you buy, wear or prank people with, and new squad games (a cheer for a win). Now and
+then he chimes in on smaller things too: a pick added to your slip, a theme change, your arcade score when you leave
+the machine, a sync, coming back to the tab after a few minutes, or hovering over him. He
 walks over to deal at the blackjack and poker tables (leaving the logo empty) and walks back when you leave; he
 keeps quiet there, where the dealer does the talking, and clicking his bubble hushes him
 for 15 minutes. His lines are in `web/onkey.js`.

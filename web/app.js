@@ -96,6 +96,7 @@
     state.status = await api('/api/status');
     window.FiveRoster.size = (state.status.members || []).length; // "5-stack" wording follows the squad size
     renderHeader();
+    window.FiveOnkey?.status(state.status); // new games: Onkey cheers or mourns
   };
   // The signed-in bettor (balance and open bets) for the top-bar chip; bets.js's loadBets refreshes it too.
   const loadMe = async () => {
@@ -1421,6 +1422,7 @@
     try {
       const r = await api('/api/sync', { method: 'POST', body: JSON.stringify({ full }) });
       toast(r.busy ? 'A sync is already running' : full ? 'Full re-scan started' : 'Sync started');
+      if (!r.busy) window.FiveOnkey?.note('sync');
       await loadStatus();
       pollUntilIdle();
     } catch (e) {
@@ -1706,7 +1708,7 @@
     }
     menu.addEventListener('click', (e) => {
       const b = e.target.closest('[data-theme-pick]');
-      if (b) setTheme(b.dataset.themePick);
+      if (b) { setTheme(b.dataset.themePick); window.FiveOnkey?.note('theme', { theme: b.dataset.themePick }); }
       themeMenu(false);
       if (b) themeBtn.focus();
     });
@@ -1736,7 +1738,7 @@
     themeBtn.addEventListener('mouseenter', () => showTheme(current())); // the cycle grows once the shop has loaded
     themeBtn.addEventListener('click', () => {
       if (picker()) themeMenu(menu.classList.contains('hidden'));
-      else setTheme(nextTheme(current()));
+      else { const next = nextTheme(current()); setTheme(next); window.FiveOnkey?.note('theme', { theme: next }); }
     });
     // Greg Mode: every click drops a little Greg from the pointer (never blocks the click; off for reduced motion).
     document.addEventListener('click', (e) => {

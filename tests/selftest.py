@@ -814,7 +814,8 @@ def slots(shared):
     from concurrent.futures import ThreadPoolExecutor
     from itertools import product
     from unittest.mock import patch
-    from fivestack.slots import MACHINES, STAKES, SYMBOLS, SlotManager, chances, draw_reel, draw_spin, multiplier, rtp
+    from fivestack.slots import (MACHINES, STAKES, SYMBOLS, WILD, SlotManager, chances, draw_reel, draw_spin, multiplier,
+                                 outcomes, payouts, rtp, win_chance)
 
     db = DB(os.path.join(shared.tmp, "slots.db"))
     db.create_bettor("Spinner", 1000)
@@ -822,12 +823,30 @@ def slots(shared):
     manager = SlotManager(db)
     bets = BetManager({"starting_balance": 1000}, db, shared.engine)
     m = MACHINES["jackpot"]
-    # Seven triples pay. The six regular lines return 95.00% (a 5% house edge), a win about every 8 spins; the secret
-    # Golden Onkey's jackpot comes on top of that (97% in all).
-    assert len(m["lines"]) == len(m["triples"]) == len(m["show"]) == len(SYMBOLS)
-    assert sum(multiplier(m, r) > 0 for r in product(range(len(SYMBOLS)), repeat=3)) == 7
-    assert abs(rtp(m) - 0.95) < 1e-12 and abs(rtp(m, secret=True) - 0.97) < 1e-12
-    assert abs(sum(chances(m)) - 12410 / 100000) < 1e-12 and [round(1 / c) for c in chances(m)] == [250, 20, 25, 125, 50, 500, 10000]
+    # Without a Golden Onkey only the six triples pay; every line with one pays. The six regular lines return 95.00%
+    # (a 5% house edge), a win about every 8 spins; the secret Golden Onkey's outcomes come on top (97.61% in all).
+    assert len(m["lines"]) == len(m["triples"]) == len(m["show"]) == len(m["wild1"]) == len(m["wild2"]) == len(SYMBOLS)
+    combos = list(product(range(len(SYMBOLS)), repeat=3))
+    assert sum(multiplier(m, r) > 0 for r in combos if WILD not in r) == 6
+    assert all(multiplier(m, r) > 0 for r in combos if WILD in r)
+    assert abs(rtp(m) - 0.95) < 1e-12 and abs(rtp(m, secret=True) - 0.97051) < 1e-12
+    assert abs(sum(chances(m)) - 124050 / 1000000) < 1e-12 and [round(1 / c) for c in chances(m)] == [250, 20, 25, 125, 50, 500, 20000]
+    assert abs(win_chance(m) - 127682 / 1000000) < 1e-12
+    # The Golden Onkey: spotted alone (no line) pays 2x the stake; filling in a line, one doubles it and two triple it,
+    # never past the 100x cap; three of them are the 100x jackpot, the top prize.
+    assert payouts(m, [WILD, 1, 2]) == [{"kind": "spotted", "count": 1, "mult": 2}]
+    assert payouts(m, [2, WILD, 2]) == [{"kind": "line", "symbol": 2, "mult": 4, "wild": 1},
+                                         {"kind": "wild", "count": 1, "factor": 2, "mult": 4, "capped": False}] and multiplier(m, [2, WILD, 2]) == 8
+    assert payouts(m, [WILD, 3, WILD])[1] == {"kind": "wild", "count": 2, "factor": 3, "mult": 40, "capped": False}  # 20x, tripled
+    assert payouts(m, [WILD, 5, WILD]) == [{"kind": "line", "symbol": 5, "mult": 80, "wild": 2},
+                                            {"kind": "wild", "count": 2, "factor": 3, "mult": 20, "capped": True}] and multiplier(m, [WILD, 5, WILD]) == 100
+    assert multiplier(m, [5, 5, WILD]) == multiplier(m, [0, WILD, WILD]) == 100 and multiplier(m, [0, 0, WILD]) == 80
+    assert max(multiplier(m, r) for r in combos) == 100
+    assert payouts(m, [WILD] * 3) == [{"kind": "line", "symbol": WILD, "mult": 100, "wild": 0}] and multiplier(m, [WILD] * 3) == 100
+    assert payouts(m, [3, 3, 3]) == [{"kind": "line", "symbol": 3, "mult": 20, "wild": 0}] and payouts(m, [0, 1, 1]) == []
+    # The exact return, outcome by outcome, matches every combination of reels each outcome covers.
+    assert sum(n * multiplier(m, r) for kind, i, n in outcomes(m) for r in [{"line": [i] * 3, "wild1": [i, i, WILD],
+               "wild2": [i, WILD, WILD], "spot1": [WILD, 0, 1]}[kind]]) == 970510
     # The bigger the payout, the rarer the line.
     by_payout = sorted(range(len(SYMBOLS)), key=lambda i: m["triples"][i])
     assert all(chances(m)[a] > chances(m)[b] for a, b in zip(by_payout, by_payout[1:]))
@@ -835,23 +854,34 @@ def slots(shared):
     with patch("fivestack.slots.secrets.randbelow", side_effect=range(sum(m["show"]))):
         drawn = [draw_reel(m["show"]) for _ in range(sum(m["show"]))]
     assert [drawn.count(i) for i in range(len(SYMBOLS))] == m["show"]
-    # The line is picked first, each triple over exactly its "lines" tickets of the 100,000: banana takes 0-399, ...,
-    # the Golden Onkey, the secret 200x symbol, the last 10 (12,400-12,409); every ticket after that is a loss.
+    # The line is picked first, each triple over exactly its "lines" tickets of the 1,000,000: banana takes 0-3,999,
+    # ..., the Golden Onkey, the secret 200x symbol, 124,000-124,049; then the Golden Onkey's other outcomes.
     tickets = [sum(m["lines"][:i]) for i in range(len(SYMBOLS) + 1)]
     for i in range(len(SYMBOLS)):
         for t in (tickets[i], tickets[i + 1] - 1):
             with patch("fivestack.slots.secrets.randbelow", return_value=t):
                 assert draw_spin(m) == [i, i, i], (i, t)
-    # A loss is shown from the display weights, redrawn if they happen to match; the Golden Onkey shows on under 1% of
-    # those reels.
-    with patch("fivestack.slots.secrets.randbelow", return_value=tickets[-1]), \
-            patch("fivestack.slots.draw_reel", side_effect=[6, 6, 6, 6, 1, 6]):
-        assert draw_spin(m) == [6, 1, 6]
-    assert len(m["show"]) == len(SYMBOLS) and m["show"][6] * 100 < sum(m["show"])
-    assert [s["key"] for s in SYMBOLS if s.get("secret")] == ["golden"] and max(m["triples"]) == m["triples"][6] == 200
+    # Then the Golden Onkey's outcomes, each on random reels: a pair it finishes, a symbol with two of them, a lone one.
+    first = sum(m["lines"])
+    with patch("fivestack.slots.secrets.randbelow", side_effect=[first, 2]):
+        assert draw_spin(m) == [0, 0, WILD]  # the first wild1 ticket: bananas
+    with patch("fivestack.slots.secrets.randbelow", side_effect=[first + sum(m["wild1"]) + 4, 0]):
+        assert draw_spin(m) == [2, WILD, WILD]  # wild2's fifth ticket: a bell
+    spot = first + sum(m["wild1"]) + sum(m["wild2"])
+    with patch("fivestack.slots.secrets.randbelow", side_effect=[spot, 1]), \
+            patch("fivestack.slots.draw_reel", side_effect=[3, 3, 3, 4]):
+        assert draw_spin(m) == [3, WILD, 4]  # the other two redrawn until they differ
+    # A loss is shown from the display weights without the Golden Onkey (any one would pay), redrawn if they match.
+    plain = [w if i != WILD else 0 for i, w in enumerate(m["show"])]
+    with patch("fivestack.slots.secrets.randbelow", return_value=spot + m["spot1"]), \
+            patch("fivestack.slots.draw_reel", side_effect=[1, 1, 1, 0, 1, 1]) as reel:
+        assert draw_spin(m) == [0, 1, 1]
+    assert all(c.args == (plain,) for c in reel.call_args_list)
+    assert spot + m["spot1"] == 127682 and len(m["show"]) == len(SYMBOLS)
+    assert [s["key"] for s in SYMBOLS if s.get("secret")] == ["golden"] and max(m["triples"]) == m["triples"][6] == 100
     assert STAKES == (5, 10, 25, 50, 100, 250, 500)
     for i, (machine, reels, mult, stake) in enumerate([
-            (None, [0, 0, 0], 40, 10), ("jackpot", [1, 1, 1], 3, 10), ("jackpot", [6, 6, 6], 200, 500),
+            (None, [0, 0, 0], 40, 10), ("jackpot", [1, 1, 1], 3, 10), ("jackpot", [6, 6, 6], 100, 500),
             ("jackpot", [0, 1, 2], 0, 250), ("jackpot", [5, 5, 5], 80, 10), ("jackpot", [1, 1, 2], 0, 10)]):
         before = db.get_bettor("Spinner")["balance"]
         with patch("fivestack.slots.draw_spin", return_value=reels):
@@ -917,11 +947,11 @@ def slots(shared):
     assert len(summary["history"]) == 7
     # Line stats: each triple hit (two bananas, a cherry, an Onkey, a Golden Onkey) out of the bettor's tracked spins.
     assert summary["lines"]["spins"] == 7 and summary["lines"]["hits"] == [2, 1, 0, 0, 0, 1, 1]
-    # The house: 800 staked by everyone, 101,430 paid out (100,000 of it the Golden Onkey jackpot), and the 5% edge it
+    # The house: 800 staked by everyone, 51,430 paid out (50,000 of it the Golden Onkey jackpot), and the 5% edge it
     # expected to keep, which leaves the jackpot out (every spin recorded the 95% return without it).
     house = summary["house"]
-    assert house["spins"] == 8 and house["staked"] == 800 and house["paid"] == 101430 and house["actual_take"] == -100630
-    assert house["secret_paid"] == 100000 and house["expected_take"] == round(800 * (1 - rtp(m)), 2) == 40.0
+    assert house["spins"] == 8 and house["staked"] == 800 and house["paid"] == 51430 and house["actual_take"] == -50630
+    assert house["secret_paid"] == 50000 and house["expected_take"] == round(800 * (1 - rtp(m)), 2) == 40.0
     # The house ledger has a row per spin (none for the retries or the failed one), matching slots' own take.
     from fivestack.house import HouseManager, casino_nets
     house_mgr = HouseManager(db)  # its backfill finds every spin already recorded
@@ -932,9 +962,9 @@ def slots(shared):
     assert casino_nets(db)["spinner"] == {"total": before - 1000, "slots": before - 1000}
     # Season stats: 5 wins in 7 spins, the Golden Onkey the biggest, and the last spin (the concurrent banana) a win.
     assert summary["me"]["wins"] == 5 and summary["me"]["since_win"] == 0
-    assert summary["me"]["best"]["payout"] == 100000 and summary["me"]["best"]["reels"] == [6, 6, 6]
+    assert summary["me"]["best"]["payout"] == 50000 and summary["me"]["best"]["reels"] == [6, 6, 6]
     # The squad's biggest wins this season, biggest first.
-    assert [w["payout"] for w in summary["big_wins"]] == [100000, 800, 400, 200, 30]
+    assert [w["payout"] for w in summary["big_wins"]] == [50000, 800, 400, 200, 30]
     assert {w["bettor"] for w in summary["big_wins"]} == {"Spinner"} and summary["big_wins"][0]["reels"] == [6, 6, 6]
     season = bets.reset()
     assert manager.summary(db.get_bettor("Spinner"))["me"]["spins"] == 0
@@ -972,6 +1002,32 @@ def slots(shared):
     legacy = DB(legacy_path)
     assert "rtp" in {r["name"] for r in legacy.query("PRAGMA table_info(slot_spins)")}
     legacy.conn.close()
+    # Golden Onkey payouts: the line and its doubling are both paid and both listed; line stats count the line it
+    # filled in; the house counts it all as the secret symbol's.
+    wild = DB(os.path.join(shared.tmp, "slots-wild.db"))
+    wild.create_bettor("Goldie", 1000)
+    wm = SlotManager(wild)
+    for k, (reels, mult) in enumerate([([2, 2, WILD], 8), ([WILD, 3, WILD], 60), ([1, WILD, 4], 2)]):
+        with patch("fivestack.slots.draw_spin", return_value=reels):
+            out = wm.spin("Goldie", "jackpot", 10, f"golden-spin-{k:08d}")
+        assert out["spin"]["payout"] == 10 * mult and out["spin"]["multiplier"] == mult
+        assert out["spin"]["parts"] == payouts(m, reels)
+    assert wild.get_bettor("Goldie")["balance"] == 1000 - 30 + 80 + 600 + 20
+    # A spin recorded before Golden Onkeys paid on their own (a lone one, paid nothing) still shows it paid nothing.
+    wild.execute("INSERT INTO slot_spins(bettor,machine,stake,reels,multiplier,payout,created_ts,request_id,rtp) "
+                 "VALUES('Goldie','jackpot',10,'[6,0,1]',0,0,1,'before-spotted-1',0.95)")
+    old_spin = wm.summary(wild.get_bettor("Goldie"))
+    assert old_spin["history"][0]["parts"] == [] and old_spin["history"][1]["parts"][0]["kind"] == "spotted"
+    assert old_spin["lines"]["hits"] == [0, 0, 1, 1, 0, 0, 0] and old_spin["me"]["wins"] == 3
+    assert wm.house()["secret_paid"] == 700 and old_spin["machines"][0]["win_chance"] == win_chance(m)
+    wild.conn.close()
+    # Demo mode's machine makes every Golden Onkey outcome DEMO_GOLDEN_BOOST times as likely and leaves the regular
+    # lines alone; the real machine is untouched.
+    from fivestack.slots import DEMO_GOLDEN_BOOST, boosted
+    demo_m = SlotManager(DB(os.path.join(shared.tmp, "slots-demo.db")), golden_boost=DEMO_GOLDEN_BOOST).machines["jackpot"]
+    assert demo_m == boosted(m, DEMO_GOLDEN_BOOST) and demo_m["lines"][:WILD] == m["lines"][:WILD] and rtp(demo_m) == rtp(m)
+    assert demo_m["lines"][WILD] == m["lines"][WILD] * DEMO_GOLDEN_BOOST and demo_m["spot1"] == m["spot1"] * DEMO_GOLDEN_BOOST
+    assert MACHINES["jackpot"]["spot1"] == 3000 and SlotManager(db).machines["jackpot"] is MACHINES["jackpot"]
 
 
 def _expect_error(fn, *args, contains=""):
