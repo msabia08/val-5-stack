@@ -95,7 +95,7 @@ def _player_value(stat, metrics):
 # Each casino game's season net per bettor (payouts minus stakes, current season only). A new game adds its query.
 CASINO_NET_SQL = {
     "slots": "SELECT bettor, SUM(payout - stake) AS net FROM slot_spins WHERE season_id IS NULL GROUP BY bettor",
-    "blackjack": "SELECT bettor, SUM(payout - stake) AS net FROM blackjack_hands "
+    "blackjack": "SELECT bettor, SUM(payout - stake - COALESCE(tip, 0)) AS net FROM blackjack_hands "
                  "WHERE season_id IS NULL AND status='settled' GROUP BY bettor",
     "poker": "SELECT bettor, SUM(net) AS net FROM poker_results WHERE season_id IS NULL GROUP BY bettor",
 }

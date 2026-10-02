@@ -118,7 +118,7 @@ Reuse these before inventing new ones.
 | Line-up tables | `table.roster`, `tbody.drop-target[data-zone]`, `.grip`, `tr.slot-empty`, `tr.me` (Squad, `viewSquad()`) | Two tables with the same columns, Active squad above Bench. Rows drag between them (a ⋮⋮ grip in the first cell, the target tbody outlined with a dashed accent while a row is over it) and every row also has a Bench / Swap in button, so the page works without a mouse. The squad's open spots are dashed `slot-empty` rows that say what to do; a button that can't apply (full squad, minimum size) stays visible but disabled with a `title` saying why. Your own row is tinted like your Standings row. A line-up change posts the whole order, so dropping a row also reorders the colours |
 | The house | `houseCard()` → `.house-card` (Standings sidebar, first), `.house-pots`, `.house-goals` (✓ met / ✗ missed / – no result), `.house-recent`; recap `house()` (`.status` pills) | The pot and jackpot as two small tiles, the next game's objectives as a count and prizes only (they're secret), the last game's objectives revealed with who got what (`plainName()`), the latest giveaways. Rules are folded in a `how()` |
 | Odds boost | `.boost-card` (Place bets sidebar, under the odds format toggle), `.odd.boosted` | A sidebar card: the pick, then the usual price struck through beside its `oddBtn()`, then the rule. Wherever the boosted pick shows on the board, its button gets a static gold ring (`--warn`); a hot or cold streak's border wins over it. Added to a parlay, that leg carries the same ⚡ mark and a `--warn` accent stripe in the slip (`.parlay-leg.boosted`) and on its ticket (`.bet-leg.boosted`), and `parlayQuoteHtml()` notes the cap |
-| Onkey talks | `web/onkey.js` → `.onkey-says` under the top-left logo, `.brand.onkey-talking` / `.onkey-excited` | The casino dealer's voice site-wide: his noises in italics over a bold line in a card-coloured bubble, tail up to the logo, which hops and jabbers while he talks (three hops when excited). Idle lines come every 70-140 s while the tab is visible, reactions straight away after something you did; at the blackjack and poker tables he walks from the logo to the dealer's seat (the logo stays empty and the dealer's face waits for him; `.onkey-walker`, a waddle with a bob and tilt per step) and walks back when you leave, and he's silent there; idle lines make no sound, and clicking the bubble hushes him for 15 minutes. `aria-live` is off: it's chatter, not news. New lines go in `IDLE`, `SAY` or `DYNAMIC`; pages report events with `FiveOnkey.note(kind, detail)` |
+| Onkey talks | `web/onkey.js` → `.onkey-says` under the top-left logo, `.brand.onkey-talking` / `.onkey-excited` | The casino dealer's voice site-wide: his noises in italics over a bold line in a card-coloured bubble, tail up to the logo, which hops and jabbers while he talks (three hops when excited). A line stays up about 8 seconds for 10 words (the dealer's about 7). Idle lines come every 70-140 s while the tab is visible, now and then an ominous one in a dark bubble that looks the same in every theme, while Onkey turns black and white under a shadow falling on him from above (darkest over his head, clearing down him, cut to his outline so the top bar around him is untouched) and sways slowly instead of hopping (`.onkey-ominous`, more often after midnight; reduced motion drops the sway), reactions straight away after something you did (losing streaks at the slots only now and then: he's company, not a nag); at the blackjack and poker tables he walks from the logo to the dealer's seat (the logo stays empty and the dealer's face waits for him; `.onkey-walker`, a waddle with a bob and tilt per step) and walks back when you leave, and he's silent there; idle lines make no sound, and clicking the bubble hushes him for 15 minutes. `aria-live` is off: it's chatter, not news. New lines go in `IDLE`, `SAY` or `DYNAMIC`; pages report events with `FiveOnkey.note(kind, detail)` |
 | A result still turning | `holdBalance()` / `releaseBalance()` / `displayBalance()` (app.js) | A spin the server has already settled (slots, the daily wheel) holds the balance shown in the top bar and on the machine (less the stake for slots) until its animation lands, so a background refresh can't give the result away; releasing it counts the chip up to the real balance. Any new game whose result is known before its animation ends should do the same |
 | Wheel tokens in the bet slip | `tokenRow()` → `.slip-tokens` > `.token-btn` (`.on`), `.token-price`, `perkNote()` → `.bet-perk` on tickets (bets.js) | Shown on each single only while you hold a token: a pill per kind with the count; one token per pick, each token on one pick at a time, a boost greyed out on the game-boosted pick. Turned on, the pick shows its boosted price in gold and its to-win says so; the ticket names the token |
 | A waiting reminder | `#me-wheel` (top bar), `.nav-alert` (a nav trigger or menu entry) | Something the signed-in bettor can do now that they'd miss otherwise (today: their daily wheel spin, `wheelReady()`): a gold chip in the top bar that goes there, hidden on that page, and a small pulsing gold dot on its nav group and menu entry. Both go away once it's done. Reduced motion keeps the dot still |
@@ -263,9 +263,16 @@ The table is the page's personality, like the slots cabinet; the side cards are 
   seats placed round it by percentage (`SPOTS` in `poker.js`), turned so your own seat is at the bottom; the board and
   pot sit in the middle, each seat's bet as a chip part-way to the middle, and the status line and action bar sit
   under the oval.
+- **Size**: the tables are the page, so they're big. Blackjack's felt fills the screen under the bar (`.bj-felt`,
+  `min-height: max(720px, 100vh - 230px)`) with the spots centred between Onkey and the controls; poker's oval is
+  660px tall. Both fit 1920×1080 without scrolling, demo banner included, except the shared blackjack table when a
+  seat wraps its split hands onto a second row. Onkey is 112px, his bubble 16px text.
 - **Cards** (`FiveCasino.card()`, `.pcard`): drawn in CSS, no images: rank and suit top left, a big pip bottom right,
-  red for hearts and diamonds; sizes `xs` (logs and tables), `sm` (other players), `md` (your poker hand), `lg`
-  (blackjack and the board). A face-down card is `.back`, an empty board slot `.empty`. Every card has an
+  red for hearts and diamonds; sizes `xs` (logs and tables), `sm` (22-34px samples), `md` (other poker players,
+  blackjack hands once there are many), `lg` (your poker hand, the shared blackjack table), `xl` (the poker board,
+  100px; Onkey's blackjack hand and yours at the solo table, 120px via `.bj-felt .pcard.xl`). Overlapping blackjack cards overlap by a third of their width.
+  Splits have no limit: a seat's hands sit side by side and wrap, the card size steps down as hands are added, and
+  the shared table's seats stay on one row (`.bj-spots.shared`, nowrap). A face-down card is `.back`, an empty board slot `.empty`. Every card has an
   `aria-label` ("Ace of spades").
 - **Dealing** (`FiveCasino.deal()`): moves are settled on the server at once but played out on the page. Every
   table card has a `key` (table, round or hand, seat, position) and a `seq` (its place in the real deal order:
@@ -286,6 +293,65 @@ The table is the page's personality, like the slots cabinet; the side cards are 
   second line (Hit / Stand / Double / Split; Fold / Check or Call / Raise to), the primary move (Hit, Raise) in the
   accent colour and Fold in red text. Poker's raise has a slider, a number field and presets (Min, ½ pot, Pot, All
   in). Keyboard shortcuts: H S D P and Enter at blackjack, F C R at poker.
+- **Chips** (`FiveCasino.chip()` / `chipFace()` / `denom()`, `.dn-5` ... `.dn-500`): drawn like real casino
+  chips as a small SVG (so they stay sharp at any size), one colour per value: eight edge spots round the rim (a dashed
+  stroke, so the outline stays a true circle), a dashed ring, a pale inlay with the value centred on its height (smaller
+  type for three and four digits). 5 red, 10 blue, 25 green, 50 orange, 100 black with gold spots, 250
+  purple with gold, 500 gold. Stake keys, the chips on a hand, your bet beside the buttons and poker's bets use them;
+  an amount between denominations takes the largest it covers. A bought chip style (`.chp-*`) wins.
+- **The table print** (`feltPrint()`): as on a real layout, BLACKJACK PAYS 3 TO 2 in gold serif capitals on the
+  centre line of a dark band edged in gold that curves round the dealer (sized to the lettering), DEALER MUST STAND ON ALL 17s in a smaller arc
+  beneath. Both are arcs of circles round one centre (`FP`), so the lettering follows the band and the lower line runs
+  exactly parallel (inline SVG, `textPath`). It sits right under Onkey's hand; the felt's spare height goes between it
+  and the players' spots, so each spot, the result line under it (12px) and the controls stay together at the bottom.
+- **Blackjack's action buttons** (`.bj-act`): one size for all four (136 × 60), each filled with its move's colour
+  (Hit green, Stand red, Double gold with dark lettering, Split blue) over a darker base it sinks into when pressed; the
+  extra stake on a second line for Double and Split; the shortcut key in the tooltip. The four are centred on the
+  table as a group (`.bj-act-group`), and the extras hang outside it: your bet is a chip to their left
+  and, at the solo table, your streak (🔥 / 🧊) to their right. Poker keeps `.casino-act`.
+- **Tipping Onkey** (`tipRow()` / `tipHtml()`): after a round you won, a pill to Onkey's left: "Tip Onkey" and 5 / 10 / 25 chips
+  (dimmed above what you won); tipping turns it into "🍌 You tipped Onkey 5." and Onkey thanks you (`tip`, bigger
+  thanks at 25).
+- **Your bet mid-hand** sits to the left of Hit / Stand / Double / Split (`.wager`, the round's stake as a chip); the
+  hands themselves show no chips until they're settled, when the stake comes back with its winnings or is swept away.
+  Under each hand the total is centred under the cards and nothing else stays there: when the hand settles its chips
+  play out beside the total and vanish (a loss is swept off to Onkey; a win's winnings fly over from him and both chips
+  slide back down to you; a push slides back). The status line names the result (Win, Lose, Push, Blackjack, Bust; a
+  split lists each hand) with the round's net and nothing else at the solo table, and a hand that lost is dimmed.
+  The hand being played is only highlighted when a split has left more than one; your bet chip sits level with the
+  middle of the action buttons, its label hanging underneath.
+  The solo table has no name on your spot (it's yours) and no emote tray; the shared table has both.
+- **The Deal button** (`dealBtn()`): a cream card with gold lettering ("DEAL", or "BET" / "BET IN" at the
+  shared table) and corner pips, on a fan of card backs that spreads on hover; a shine sweeps the face, pressing it
+  flicks the top card. It never shows the stake; the picked chip does. Side bets are the round spots either side
+  of it (`sideSpot()`: Pairs, 21+3; tap to add a chip, right-click to clear), their results pills under the hand;
+  they're switched off for now (`side_bets.open` from the server), which hides the spots and their rules.
+- **Chips that move** (`motion()` in `blackjack.js`): a bet slides in, winnings fly over from Onkey's side as a
+  second chip, a lost stake (or side bet) is swept up to him. Each plays once; a redraw mid-flight keeps its place.
+- **Streaks and emotes**: three wins in a row and a seat glows like a flame (`.bj-spot.hot`, 🔥 count); three
+  losses and it frosts (`.cold`, 🧊). Onkey turns salty or sympathetic at 3, 5, 8 and 12. The emote tray sits in
+  the felt's top-left corner; an emote floats up from the sender's seat, a banana spins over and bonks Onkey.
+- **Onkey's save** (blackjack, 1 bust in 200): the card that busted you lands as dealt, then Onkey draws on it in
+  blue pen: an X strikes through the number in the corner and the number that makes 21 pops on next to it, crooked,
+  in a handwriting font (about 1.9 s from the deal; `.fix-in`). The suits stay
+  as they are. The total, the result and his line ("Onkey has a pen and no shame.") wait until he's finished.
+- **Greg in the chair** (casino.js, both tables): 1 time in 20 that Onkey walks to a table, Greg is sitting in the
+  dealer's chair when you get there (his face, "*Greg clears his throat*" and a line). Onkey waits in the logo until
+  Greg has said it (about 3 s), then walks over and throws him out: Greg spins off the felt, Onkey wobbles into the chair
+  and has his say.
+- **Onkey's hint** (blackjack): not every time: about one pause in three, at most once a round and never in the round
+  after one. 3 seconds into your move (after the cards land), Onkey suggests the move the numbers favour
+  in his bubble, as advice, never figures: plain ("{total} won't hold up. Hit it."), a joke ("Split them like a
+  banana. Right down the middle."), or the dealer slipping you help he shouldn't ("Don't tell the house Onkey said
+  this: hit."), about a third each; sarcasm when the call is obvious and you're still thinking ("You've got 20. You're
+  really thinking about this?"); a dig at his own weak upcard when you should stand against a 2-6 ("Onkey's showing a
+  5. Stand and let Onkey sweat."); and a shrug when the top two moves are within 1 per 100 ("Tough one. Onkey's gut
+  says hit.") (`HINTS` in `blackjack.js`). Onkey is the dealer, so every table line has him talking about himself
+  ("Onkey", "I"), never "him" or "the dealer". Now and then (15% of decisions) the pause brings a peek instead: Onkey names the next card in the shoe or his own
+  hole card ("Psst. A 5 on top of the shoe. You didn't hear it from Onkey."), lying 40% of the time, and once the
+  card shows he gloats or owns up ("Told you. A 5." / "Gotcha. A 3, not an 8. Never trust Onkey."). A peek lights no
+  button, and he only follows up claims he actually said. The hint's button gets `.hinted`, a
+  breathing gold ring (static with reduced motion). Once per decision; it never moves for you.
 - **Live updates** (`FiveCasino.live()`): the shared tables long-poll, and `patch()` replaces only the regions whose
   HTML changed, keeping keyboard focus and a text field's caret, so a rules form or raise amount survives other
   players' moves. Results, errors and turns go through a `role="status"` line.
@@ -366,7 +432,9 @@ map, a readable chart that opens recaps). Still open:
   better and worse tiles into one with an above / inside / below bar; a last 20 / 50 / all toggle on the chart.
 - The Casino tables (2026-10-01) were checked in dark and light at 1920×1080 with headless Chromium and three
   signed-in players (solo and shared blackjack, a full poker hand to showdown); a real mouse on the raise slider, the
-  sounds, and the shop themes are still to be checked.
+  sounds, and the shop themes are still to be checked. The bigger tables, re-splits and the hint (2026-10-01) were
+  checked in dark only: blackjack at four split hands solo and a three-hand seat at the shared table (states built
+  with the engine and served to the page), poker preflop with two players.
 - Not yet reviewed: the signed-in top bar and bet slip (the demo has no account to sign in with), and the shop themes
   after the width change. Light mode has been checked on Forecasts and Charts.
 - The Squad page (2026-09-30) was checked in dark at 1920×1080 with a headless browser against the fake API, and its
