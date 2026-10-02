@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'slots', 'blackjack', 'poker', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'hunt', 'slots', 'blackjack', 'poker', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -1189,6 +1189,7 @@
         case 'blackjack': view.innerHTML = window.FiveBlackjack.view(); break;
         case 'poker': view.innerHTML = window.FivePoker.view(); break;
         case 'wheel': view.innerHTML = window.FiveWheel.view(); break;
+        case 'hunt': view.innerHTML = window.FiveHunt.view(); break;
         case 'matches': view.innerHTML = viewMatches(); break;
         default: view.innerHTML = viewSetup();
       }
@@ -1220,6 +1221,7 @@
         case 'blackjack': await window.FiveBlackjack.load(); break;
         case 'poker': await window.FivePoker.load(); break;
         case 'wheel': await window.FiveWheel.load(); break;
+        case 'hunt': await window.FiveHunt.load(); break;
         case 'matches': await Promise.all([loadMatches(), loadRecap()]); break;
         default: await loadStatus();
       }
@@ -1277,6 +1279,7 @@
     window.FiveBlackjack.bind(view);
     window.FivePoker.bind(view);
     window.FiveWheel.bind(view);
+    window.FiveHunt.bind(view);
     $('#copy-url')?.addEventListener('click', async (e) => {
       try { await navigator.clipboard.writeText(e.currentTarget.dataset.url); toast('Link copied'); }
       catch (err) { toast('Could not copy; select the link and copy it manually', 'bad'); }
@@ -1666,6 +1669,7 @@
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance });
+    window.FiveHunt.init({ state, $, api, draw, esc, fmt, kpi, renderMe, toast, plainName });
     window.FiveOnkey.init({ state, fmt, esc });
     window.FiveOnkey.start();
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours

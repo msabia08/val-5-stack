@@ -25,6 +25,7 @@ from fivestack.config import load_bettor_names  # noqa: E402
 from fivestack.db import DB  # noqa: E402
 from fivestack.forecasts import build_forecasts  # noqa: E402
 from fivestack.henrik import HenrikError  # noqa: E402
+from fivestack.hunt import FIELD_H, FIELD_W, MARGIN, MIN_HOP, TARGET_R, HuntManager  # noqa: E402
 from fivestack.insights import AGENT_ROLE, betting_report, build_insights, odds_accuracy  # noqa: E402
 from fivestack.moments import game_facts  # noqa: E402
 from fivestack.gamestate import COMPLETE, FORFEIT, NO_CONTEST, ending, full_game_rounds  # noqa: E402
@@ -1489,6 +1490,92 @@ def bank(shared):
     assert shared.loan_count == 3 and len(db.loans(name, open_only=True)) == 1
 
 
+@section("banana hunt")
+def banana_hunt(shared):
+    from fivestack.wheel import next_reset, wheel_day
+
+    db, bets = shared.db, shared.bets
+    hunt = HuntManager(db, {"hunt_daily_max": 5, "hunt_floor": 250})
+    assert hunt.terms()["daily_max"] == 5 and hunt.terms()["floor"] == 250 and hunt.terms()["per_banana"] == 1 and hunt.enabled
+    name = "Tester"
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name=?", (name,))  # well above the floor, so the cap applies
+    before = db.get_bettor(name)["balance"]
+    board = {r["name"]: r for r in bets.leaderboard()}
+    t0 = 1_800_000_000.0  # a fixed "now", a Pacific morning in 2027
+    st = hunt.start(name, now=t0)
+    tgt = st["target"]
+    assert st["today"] == 0 and st["left"] == 5 and not st["done"] and st["day"] == wheel_day(t0) and st["resets_ts"] == next_reset(t0)
+    assert not st["under_floor"] and st["balance"] == before and before >= 250  # well above the floor: the cap applies
+    assert MARGIN <= tgt["x"] <= FIELD_W - MARGIN and MARGIN <= tgt["y"] <= FIELD_H - MARGIN, tgt
+    # A miss pays nothing and leaves the banana where it is.
+    r = hunt.click(name, tgt["x"] + TARGET_R + 2, tgt["y"], now=t0 + 1)
+    assert r["hit"] is False and r["reason"] == "miss" and r["target"] == tgt and db.get_bettor(name)["balance"] == before, r
+    # A hit pays one credit and moves the banana at least a hop away.
+    r = hunt.click(name, tgt["x"] + 3, tgt["y"] - 3, now=t0 + 1.5)
+    assert r["hit"] and r["paid"] == 1 and r["today"] == 1 and r["left"] == 4 and db.get_bettor(name)["balance"] == before + 1, r
+    new = r["target"]
+    assert new != tgt and math.hypot(new["x"] - tgt["x"], new["y"] - tgt["y"]) >= MIN_HOP, (tgt, new)
+    assert hunt.status(name, now=t0 + 1.5)["target"] == new
+    # Too soon after the last paid pick: not paid, and the banana stays put.
+    r = hunt.click(name, new["x"], new["y"], now=t0 + 1.6)
+    assert r["hit"] is False and r["reason"] == "too_fast" and r["target"] == new and db.get_bettor(name)["balance"] == before + 1, r
+    # Up to the day's cap, then done until the next Pacific day.
+    t = t0 + 2.2  # past the pace limit since the last paid pick
+    for _ in range(4):
+        r = hunt.click(name, r["target"]["x"], r["target"]["y"], now=t)
+        assert r["hit"] and not r["under_floor"], r
+        t += 0.7
+    assert r["left"] == 0 and r["done"] and r["target"] is None and r["today"] == 5
+    r = hunt.click(name, 100, 100, now=t)
+    assert r["hit"] is False and r["reason"] == "done" and r["target"] is None
+    st = hunt.status(name, now=t)
+    assert st["today"] == 5 and st["done"] and st["target"] is None and db.get_bettor(name)["balance"] == before + 5
+    assert hunt.start(name, now=t)["target"] is None  # starting again doesn't help
+    # Under the floor the cap doesn't apply: with 247 credits, three more picks are allowed, then it's done again.
+    db.execute("UPDATE bettors SET balance = 247 WHERE name=?", (name,))
+    st = hunt.start(name, now=t)
+    assert st["under_floor"] and st["left"] == 3 and not st["done"] and st["target"], st
+    for i in range(3):
+        r = hunt.click(name, st["target"]["x"], st["target"]["y"], now=t + 1 + i)
+        assert r["hit"] and r["today"] == 6 + i, r
+        st["target"] = r["target"]
+    assert r["done"] and r["target"] is None and not r["under_floor"] and db.get_bettor(name)["balance"] == 250, r
+    assert hunt.click(name, 100, 100, now=t + 5)["reason"] == "done" and hunt.status(name, now=t + 5)["today"] == 8
+    db.execute("UPDATE bettors SET balance = 249.5 WHERE name=?", (name,))  # half a credit short: one more pick
+    assert hunt.start(name, now=t + 6)["left"] == 1
+    db.execute("UPDATE bettors SET balance = ? WHERE name=?", (before + 8, name))  # the 8 picks so far, as if nothing else moved
+    nxt = next_reset(t) + 1
+    st = hunt.start(name, now=nxt)
+    assert st["today"] == 0 and st["left"] == 5 and st["target"], st
+    r = hunt.click(name, st["target"]["x"], st["target"]["y"], now=nxt + 1)
+    assert r["hit"] and db.get_bettor(name)["balance"] == before + 9 and hunt.today(name, now=nxt) == 1 and r["left"] == 4
+    # Bad input, nobody, and a closed hunt.
+    for bad in [("x", 1), (None, 2), (float("nan"), 3)]:
+        try:
+            hunt.click(name, *bad, now=nxt + 2)
+        except BetError as e:
+            assert "click" in str(e), e
+        else:
+            raise AssertionError(f"click {bad} should fail")
+    for fn in (lambda: hunt.click("Nobody", 1, 1), lambda: hunt.start("Nobody"),
+               lambda: HuntManager(db, {"hunt_daily_max": 0}).click(name, 1, 1)):
+        try:
+            fn()
+        except BetError:
+            pass
+        else:
+            raise AssertionError("should fail")
+    assert not HuntManager(db, {"hunt_daily_max": 0}).enabled
+    # The leaderboard reports the hunt in its own column and keeps it out of profit; the board ranks pickers.
+    row = {r["name"]: r for r in bets.leaderboard()}[name]
+    assert row["hunt"] == 9 and abs(row["profit"] - board[name]["profit"]) < 1e-9, (row, board[name])
+    top = hunt.board()[0]
+    assert top["name"] == name and top["season"] == 9 and top["all_time"] == 9 and top["bananas"] == 9, top
+    assert db.hunt_totals()[name.lower()]["season"] == 9 and len(db.query("SELECT 1 FROM hunt_days")) == 2  # two days
+    assert hunt.summary(db.get_bettor(name), now=nxt + 2)["me"]["today"] == 1 and hunt.summary()["me"] is None
+    shared.hunt_rows = 2
+
+
 @section("seasons")
 def seasons(shared):
     db, bets = shared.db, shared.bets
@@ -1511,6 +1598,9 @@ def seasons(shared):
     # Loans are archived and the debts forgiven with the balances.
     assert db.query_one("SELECT COUNT(*) AS n FROM archived_loans WHERE season_id=?", (season["id"],))["n"] == shared.loan_count
     assert db.loans() == [] and db.loan_totals() == {} and all(r["debt"] == 0 for r in bets.leaderboard())
+    # The hunt's day rows are tagged with the season; this season's column starts from zero.
+    assert db.query_one("SELECT COUNT(*) AS n FROM hunt_days WHERE season_id=?", (season["id"],))["n"] == shared.hunt_rows
+    assert all(r["hunt"] == 0 for r in bets.leaderboard()) and db.hunt_totals()["tester"]["all_time"] == 9
     assert saved["P2"]["transfers"] == before["standings"]["P2"]["transfers"] != 0  # the standings keep them
     assert db.season_counts() == {"started_ts": season["ended_ts"], "bets": 0, "rewards": 0, "transfers": 0,
                                   "bettors": db.season_counts()["bettors"]}

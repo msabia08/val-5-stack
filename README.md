@@ -748,6 +748,27 @@ where any signed-in bettor can borrow credits:
   so borrowed credits don't buy a place on the leaderboard.
 - A season reset archives the loans and forgives every debt with the balances.
 
+## Banana Hunt
+
+Broke and don't fancy a loan? Under Betting, the **Banana Hunt** pays credits
+for a menial task: Onkey dropped his bananas all over a field, and every one
+you click is **1 credit**. After every pick Onkey, in his corner, throws the
+next banana in along an arc; it can't be picked until it lands.
+
+- The server places each banana and judges each click, so only real picks
+  count: a miss pays nothing and leaves the banana where it is, and picks less
+  than about half a second apart aren't paid.
+- Each bettor can pick **`hunt_daily_max`** (default 250) bananas a day. The day
+  turns over at midnight Pacific, like the daily wheel.
+- The cap has a floor: with fewer than **`hunt_floor`** (default 250) credits,
+  you keep picking past the cap until you have that many, so nobody is ever
+  stuck broke.
+- Credits from the hunt show in their own **Hunt** column on Standings and stay
+  out of betting profit, ROI and record, like game rewards. The page's Top
+  pickers table ranks everyone by what they picked this season.
+- A season reset keeps the day rows (tagged with the season), and the daily cap
+  carries on by the day.
+
 ## Sending credits
 
 Bettors can pay each other: settle a side bet, pay off a lost argument, spot a
@@ -966,6 +987,8 @@ time you log in.
 | `banana_per_game` | 5 | Bananas each squad member earns for every Competitive game they play, squad game or not, for Onkey's Shop. Whole numbers. `0` stops paying bananas. |
 | `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
 | `loan_interest` | 0.1 | Interest on a loan, as a share of the amount borrowed (0.1 = borrow 500, owe 550). |
+| `hunt_daily_max` | 250 | Bananas (a credit each) a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
+| `hunt_floor` | 250 | Below this many credits the daily cap doesn't apply: a bettor keeps picking until they have this much. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
 `--config=path/to/other.json`.
@@ -1004,6 +1027,7 @@ fivestack/             the backend package
   wheel.py             the daily wheel: one spin a day (midnight Pacific), prizes, tokens
   bananas.py           Onkey's Shop: bananas earned per game played, the catalogue, buying and wearing items
   bank.py              Onkey's Bank: loans with interest, within a limit on what's out
+  hunt.py              the Banana Hunt: a credit per banana clicked, placed and judged by the server, capped per day
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table

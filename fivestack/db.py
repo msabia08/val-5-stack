@@ -430,6 +430,18 @@ CREATE TABLE IF NOT EXISTS archived_loans (
     taken_ts REAL,
     cleared_ts REAL
 );
+-- The Banana Hunt (see hunt.py): what each bettor picked per Pacific day. Kept through resets; season_id NULL is
+-- the current season, so a day that straddles a reset has one row per season.
+CREATE TABLE IF NOT EXISTS hunt_days (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL,
+    day TEXT NOT NULL,
+    bananas INTEGER NOT NULL DEFAULT 0,
+    credits REAL NOT NULL DEFAULT 0,
+    updated_ts REAL,
+    season_id INTEGER REFERENCES seasons(id)
+);
+CREATE INDEX IF NOT EXISTS idx_hunt_days ON hunt_days(bettor, day, season_id);
 """
 
 MATCH_FIELDS = [
@@ -811,7 +823,7 @@ class DB:
                 self.conn.execute("DELETE FROM loans")  # debts are forgiven with the balances
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
                 for table in ("house_ledger", "house_payouts", "blackjack_hands", "poker_buyins", "poker_hands",
-                              "poker_results"):
+                              "poker_results", "hunt_days"):
                     self.conn.execute(f"UPDATE {table} SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))
                 # Bananas go back to zero with the credits (one ledger row per wallet); owned shop items stay.
@@ -1172,6 +1184,30 @@ class DB:
                       SUM(CASE WHEN cleared_ts IS NULL THEN owed - repaid ELSE 0 END) AS debt,
                       SUM(principal - repaid) AS net
                FROM loans GROUP BY lower(bettor)""")}
+
+    # ---- the Banana Hunt (see hunt.py) ----------------------------------------------
+    def hunt_pay(self, name, day, credits, now=None):
+        """Pay a bettor for one banana: their balance and the day's row (this season's), in one transaction."""
+        now = now or time.time()
+        with self.lock:
+            try:
+                cur = self.conn.execute(
+                    "UPDATE hunt_days SET bananas = bananas + 1, credits = credits + ?, updated_ts = ? "
+                    "WHERE lower(bettor)=lower(?) AND day=? AND season_id IS NULL", (credits, now, name, day))
+                if not cur.rowcount:
+                    self.conn.execute("INSERT INTO hunt_days(bettor, day, bananas, credits, updated_ts) VALUES(?,?,1,?,?)",
+                                      (name, day, credits, now))
+                self.conn.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (credits, name))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
+    def hunt_totals(self):
+        """Per bettor (lower-cased name): credits from the hunt this season and all time, and bananas picked."""
+        return {r["k"]: r for r in self.query(
+            """SELECT lower(bettor) AS k, SUM(CASE WHEN season_id IS NULL THEN credits ELSE 0 END) AS season,
+                      SUM(credits) AS all_time, SUM(bananas) AS bananas FROM hunt_days GROUP BY lower(bettor)""")}
 
     def taxes_collected(self, sender, limit=20):
         """Generosity taxes a bettor collected, newest first, with the bet they came from."""

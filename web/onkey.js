@@ -87,6 +87,9 @@ window.FiveOnkey = (() => {
     view_arcade: ['The arcade! Onkey\'s high score is untouchable.', 'Insert banana to play.'],
     view_slots: ['Pull the lever. Onkey dares you.', 'The machine is hungry. Feed it.'],
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.'],
+    view_hunt: ['Onkey dropped the bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each.'],
+    hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
+    hunt_done: ['{today} bananas! Onkey is full. Come back tomorrow.', 'That\'s the lot for today. Onkey needs a nap.'],
     view_forecasts: ['Forecasts: like weather, but for frags.'],
     view_odds: ['Place bets. Onkey\'s watching.', 'The odds are fresh. Onkey baked them himself.'],
     hush: ['Fine. Onkey will be quiet for a bit.'],
@@ -196,6 +199,10 @@ window.FiveOnkey = (() => {
         else if (d.kind === 'boost' || d.kind === 'insurance') react('wheel_token', { label: d.kind === 'boost' ? 'boost token' : 'insurance token' });
         else if (d.kind === 'item') react('wheel_item', vars, { excited: true });
         else if (d.kind === 'again') react('wheel_again');
+      } else if (kind === 'hunt') {
+        react('hunt', { n: d.n, today: d.today });
+      } else if (kind === 'hunt_done') {
+        react('hunt_done', { today: d.today }, { excited: true });
       } else if (kind === 'transfer') {
         react('transfer', { amount: credits(d.amount), to: d.to });
       } else if (kind === 'buy') {
