@@ -963,10 +963,11 @@
       return `<tr><th scope="row"><span class="swatch s${slot}"></span>${esc(m.nickname)}${m.context_agent || m.borrowed ? `<div class="muted small">${[m.context_agent ? esc(m.context_agent) : '', m.borrowed ? 'thin history, team average blended in' : ''].filter(Boolean).join(' · ')}</div>` : ''}</th>` +
         od.stat_defs.map((sd) => {
           const mk = props.get(`ou:${sd.key}:${m.puuid}`);
-          if (!mk) return '<td class="prop muted">–</td>';
+          // data-label: the stat's name, which the phone layout prints in front of each line (there's no header row there).
+          if (!mk) return `<td class="prop muted" data-label="${esc(sd.label)}">–</td>`;
           const [o, u] = mk.selections;
           // The line as plain bold text, then over / under as one button split down the middle.
-          return `<td class="prop" title="Line ${mk.line} · average ${mk.mean}"><div class="prop-cell"><span class="prop-line">${mk.line}</span>` +
+          return `<td class="prop" data-label="${esc(sd.label)}" title="Line ${mk.line} · average ${mk.mean}"><div class="prop-cell"><span class="prop-line">${mk.line}</span>` +
             `<div class="prop-pair${o.streak || u.streak || o.cold || u.cold ? ' lit' : ''}">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
         }).join('') + '</tr>';
     }).join('');

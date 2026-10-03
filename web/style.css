@@ -530,6 +530,7 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .slip-item.parlay-leg { grid-template-columns: 1fr 30px; }
 .slip-desc { font-weight: 500; font-size: 14px; }
 .slip-total { margin-top: 8px; font-weight: 600; }
+.slip-count { display: none; }  /* how many picks: shown on the phone's slip bar (the phone block at the end) */
 
 /* ---- singles / parlay toggle ------------------------------------------ */
 .slip-mode { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; margin-bottom: 10px; }
@@ -2559,4 +2560,58 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .wheel-banner { font-size: 44px; }
   .wheel-spins.who li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
   .wheel-spins li > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* a long name is cut, not wrapped under its swatch */
+  /* Place bets: one column. The odds format and the boost come first, then team markets, player props, the custom
+     line, the scoreboard cards, your open bets and everyone's. The bet slip is a bar pinned to the bottom of the
+     screen once it holds a pick; tapping it opens the slip as a sheet (bets.js, html.slip-open). */
+  .odds-layout { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding-bottom: 56px; }  /* stretch: every card the full width */
+  .odds-layout > div, .odds-side { display: contents; }
+  .odds-layout .card { margin: 0; }
+  .odds-format { order: 1; }
+  .boost-card { order: 2; }
+  .odds-layout > div > section:nth-child(1) { order: 3; }
+  .odds-layout > div > section:nth-child(2) { order: 4; }
+  #custom-line { order: 5; }
+  .odds-layout > div > section:nth-child(3) { order: 6; }
+  .my-bets { order: 7; }
+  .odds-layout > div > :nth-child(n+4) { order: 8; }
+  /* The match result: Win and Loss side by side, the chances and the last five results under them. */
+  .tm-match { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tm-match > .odd { padding: 12px; }
+  .tm-match > .odd:last-child { order: 1; }
+  .tm-mid { order: 2; grid-column: 1 / -1; }
+  .tm-under { gap: 6px; }
+  /* The questions two to a row, three answers to a row in the wide one. */
+  .tm-qgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tm-q { padding: 10px; gap: 8px; }
+  .tm-q.wide { grid-column: 1 / -1; }
+  .tm-q.wide .tm-answers { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }  /* over the inline six */
+  .tm-question { font-size: 14px; }
+  /* The final score: no room for 26 columns of bars, so the scores are a grid of buttons in the same order, the losses
+     in red, overtime in amber, the wins in green. */
+  .tm-mountain { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+  .tm-mountain i { display: none; }
+  .tm-mountain .loss .odd span { color: var(--down); }
+  .tm-mountain .win .odd span { color: var(--up); }
+  .tm-mountain .ot .odd span { color: var(--warn); }
+  .tm-mountain .odd.on span { color: #fff; }
+  /* Player props: each player a block, each stat a row (its name from data-label, the line, then over and under). */
+  table.props, table.props tbody, table.props tr, table.props th, table.props td { display: block; }
+  table.props thead { display: none; }
+  table.props tr { padding: 8px 0; border-bottom: 1px solid var(--grid); }
+  table.props tr:last-child { border-bottom: 0; padding-bottom: 0; }
+  table.props tbody th[scope="row"] { padding: 0 0 2px; border: 0; font-size: 15px; }
+  table.props td.prop { display: flex; align-items: center; gap: 8px; padding: 3px 0; border: 0; text-align: left; }
+  td.prop::before { content: attr(data-label); flex: 1; font-size: 13px; color: var(--text-2); }
+  td.prop .prop-line { min-width: 40px; }
+  td.prop .prop-pair .odd { min-width: 78px; padding: 9px 8px; justify-content: center; font-size: 13px; }
+  /* The bet slip */
+  #slip { position: fixed; z-index: 15; left: 0; right: 0; bottom: 0; max-height: 72dvh; overflow-y: auto; margin: 0; padding: 0 12px 12px;
+    border-radius: 16px 16px 0 0; border-bottom: 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.5); }
+  #slip:not(:has(.slip-count)) { display: none; }  /* nothing picked: no bar */
+  #slip > h2 { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 2px; font-size: 16px; background: var(--surface); cursor: pointer; }
+  #slip > h2::after { content: ""; width: 8px; height: 8px; margin: 4px 6px 0 auto; border-left: 2px solid var(--text-2); border-top: 2px solid var(--text-2); transform: rotate(45deg); }
+  html.slip-open #slip > h2::after { margin-top: -4px; transform: rotate(225deg); }
+  html:not(.slip-open) #slip > :not(h2) { display: none; }
+  .slip-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+    background: var(--accent); color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; }
 }

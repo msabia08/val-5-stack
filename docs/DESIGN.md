@@ -43,7 +43,7 @@ retire an old one, update this file in the same pull request.
 
 Everything for phones is in one block at the end of `style.css`, `@media (max-width: 640px)`, checked at 393 × 659
 (an iPhone 15 with Safari's bars showing). It rearranges what the desktop page already draws: no separate markup, and the only
-JS is the menu button's. So far it covers the top bar, the Overview, Slots, Blackjack and the Daily wheel; other pages still show their desktop layout.
+JS is the menu button's and the bet slip's handle. So far it covers the top bar, the Overview, Place bets, Slots, Blackjack and the Daily wheel; other pages still show their desktop layout.
 
 - **No sideways scrolling.** `document.documentElement.scrollWidth` equals the screen width. A phone zooms the
   whole page out when anything is wider, which shrinks all the text. Grid columns are `minmax(0, 1fr)` so content
@@ -65,6 +65,16 @@ JS is the menu button's. So far it covers the top bar, the Overview, Slots, Blac
 - **Overview:** Record and Last session side by side, Form and Next game full width under them, then the six cards
   one per row in their desktop order. Who's trending drops its sparkline column. It scrolls; the
   one-screen rule is for the desktop.
+- **Place bets:** one column: the odds format, the boost, team markets, player props, the custom line, the
+  scoreboard cards, your open bets, then everyone's.
+  - *Team markets:* Win and Loss side by side with the chances and the last five results under them; the questions
+    two to a row ("By how much?" full width, three answers to a row); the final score as a six-across grid of
+    buttons in score order (no bars), losses red, overtime amber, wins green.
+  - *Player props:* no table. Each player is a block and each stat a row: its name (the cell's `data-label`), the
+    line, then over and under as two buttons at the right.
+  - *Bet slip:* a bar pinned to the bottom of the screen once it holds a pick, showing the count; tapping it
+    opens the slip as a sheet (up to 72% of the screen) with the stakes and the Place button, and tapping again
+    closes it. `html.slip-open`, toggled from the slip's heading in `bets.js`; an empty slip shows no bar.
 - **Slots:** the cabinet is the screen's width with no lever, no Spin button and no result line under the reels:
   tapping the reel window spins (`slots.js` clicks the hidden Spin button, so a spin under way, too few credits
   and signing in behave the same), and the readout's Win box says what a spin paid. The reels are drawn at 0.65
