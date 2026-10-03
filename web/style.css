@@ -2003,6 +2003,10 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .bj-hand-meta { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; width: 100%; }
 .bj-hand-chips { display: flex; gap: 4px; justify-content: flex-start; white-space: nowrap; }
 .bj-hand.lose .bj-cards, .bj-hand.bust .bj-cards { opacity: 0.62; transition: opacity 0.4s; }
+/* While cards are still being dealt the dimming waits for the last one (blackjack.js handHtml(), --dim), so a lost
+   hand isn't given away before Onkey's cards are out. */
+.bj-hand.dim-wait .bj-cards { animation: hand-dim 0.4s ease-out both; animation-delay: var(--dim, 0ms); }
+@keyframes hand-dim { from { opacity: 1; } }
 .bj-spot-name { font-weight: 600; font-size: 17px; }
 
 /* Poker: an oval table with eight seats round the rail; your seat is turned to the bottom. */
@@ -2180,7 +2184,7 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .casino-controls.after-deal { display: block; }
 @keyframes after-deal { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) {
-  .pcard.deal-in, .pcard.flip-in, .after-deal { animation: none; }
+  .pcard.deal-in, .pcard.flip-in, .after-deal, .bj-hand.dim-wait .bj-cards { animation: none; }
 }
 
 /* Onkey's save (casino.js card() with opts.fix): the number in the corner of the card that busted you is crossed out
