@@ -9,7 +9,7 @@
  *    prizes, credits sent, a shop purchase, and opening some pages. Reactions chatter out loud (the casino's sound
  *    setting); idle lines are silent.
  * He keeps quiet at the blackjack and poker tables, where the dealer Onkey does the talking. Clicking his bubble hushes
- * him for HUSH_MIN minutes (sessionStorage `fs.onkeyHush`). Reduced motion keeps the bubble and drops the hop.
+ * him for HUSH_MIN minutes (sessionStorage `fs.onkeyHush`).
  * Plain JS, no dependencies; loaded before app.js, which calls init() and start().
  */
 window.FiveOnkey = (() => {
@@ -26,7 +26,6 @@ window.FiveOnkey = (() => {
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
   const OMINOUS_CHANCE = 0.12, OMINOUS_NIGHT = 0.35; // share of idle lines that are OMINOUS (more after midnight)
   const QUIET_VIEWS = new Set(['blackjack', 'poker']); // the dealer talks there
-  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   const fill = (line, vars) => line.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
 
@@ -231,13 +230,12 @@ window.FiveOnkey = (() => {
     slots_down: ['You\'re down {net} on slots this visit. Onkey suggests a snack break.',
       'Down {net} this visit. The bet page misses you.'],
     wheel_jackpot: ['THE JACKPOT! {amount} credits! Onkey is fainting!', 'You took the whole jackpot! Onkey has to sit down.'],
-    wheel_nothing: ['Onkey ate your prize. It was delicious.', 'Nom. Sorry. Onkey was hungry.', 'Nothing! The wheel owes you one.'],
     wheel_big: ['{amount} credits from the wheel! Onkey spun it with love.', '{amount}! Big wheel energy.'],
     wheel_credits: ['{amount} free credits. Don\'t spend them all at once.', 'Free money! {amount} credits.', '{amount} credits. The wheel provides.'],
     wheel_bananas: ['{amount} bananas! Onkey would like a few.', 'Bananas! Onkey approves of this prize.', '{amount} bananas! Onkey is drooling.'],
     wheel_token: ['A {label}. Use it wisely. Or don\'t.', '{label}! Tap it on a pick in your bet slip.'],
     wheel_item: ['Free swag! Onkey picked it himself.', 'A free cosmetic! Go put it on.'],
-    wheel_again: ['Spin again! The wheel likes you.', 'Again! Onkey didn\'t see that coming.'],
+    wheel_again: ['Two more spins! The wheel likes you.', 'A respin, twice over! Onkey didn\'t see that coming.'],
     transfer: ['Sending {amount} to {to}? The generous monkey gets rewarded.', '{amount} to {to}. Onkey hopes they say thanks.',
       '{amount} credits for {to}. Onkey is touched. Genuinely.'],
     buy: ['Nice {item}. Very you.', '{item}! Onkey approves of this purchase.', 'Ooh, {item}. Fancy.',
@@ -266,6 +264,7 @@ window.FiveOnkey = (() => {
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.', 'Onkey greased the wheel. For luck.'],
     view_hunt: ['Onkey dropped the bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each.'],
     hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
+    hunt_found: ['You found {label}! Onkey hid that one himself.', 'Ook! {label}. Onkey forgot he buried it there.'],
     hunt_done: ['{today} bananas! Onkey is full. Come back tomorrow.', 'That\'s the lot for today. Onkey needs a nap.'],
     view_bettors: ['The standings. Find yourself. Onkey will wait.', 'Who\'s on top? Onkey already knows.',
       'Leaderboard time. Onkey loves a rivalry.'],
@@ -452,14 +451,15 @@ window.FiveOnkey = (() => {
       } else if (kind === 'wheel') {
         const vars = { amount: credits(d.amount || 0), label: d.label };
         if (d.kind === 'jackpot') react('wheel_jackpot', vars, { excited: true });
-        else if (d.kind === 'nothing') react('wheel_nothing');
-        else if (d.kind === 'credits') react(d.amount >= 200 ? 'wheel_big' : 'wheel_credits', vars, { excited: d.amount >= 200 });
+        else if (d.kind === 'credits') react(d.amount >= 500 ? 'wheel_big' : 'wheel_credits', vars, { excited: d.amount >= 500 });
         else if (d.kind === 'bananas') react('wheel_bananas', vars);
         else if (d.kind === 'boost' || d.kind === 'insurance') react('wheel_token', { label: d.kind === 'boost' ? 'boost token' : 'insurance token' });
         else if (d.kind === 'item') react('wheel_item', vars, { excited: true });
         else if (d.kind === 'again') react('wheel_again');
       } else if (kind === 'hunt') {
         react('hunt', { n: d.n, today: d.today });
+      } else if (kind === 'hunt_found') {
+        react('hunt_found', { label: d.label }, { excited: true });
       } else if (kind === 'hunt_done') {
         react('hunt_done', { today: d.today }, { excited: true });
       } else if (kind === 'transfer') {
@@ -531,7 +531,7 @@ window.FiveOnkey = (() => {
   // ---- walking to the tables ----------------------------------------------------------------------------------------
   // At the blackjack and poker tables Onkey is the dealer, so he gets up from the logo (which stays empty while he's
   // away: html.onkey-away) and waddles across the page to the dealer's seat; the dealer's face stays hidden until he
-  // arrives (html.onkey-walking). Leaving the tables, he walks back from where he sat. Reduced motion just swaps them.
+  // arrives (html.onkey-walking). Leaving the tables, he walks back from where he sat.
   const SEAT = '.onkey-dealer .onkey-face';
   // The tables hear about the walk: 'onkey:walking' when he's about to set off (a listener can set detail.hold, in ms,
   // to keep him in the logo a while first: casino.js does while Greg says his line), 'onkey:seated' when he's in the
@@ -605,14 +605,14 @@ window.FiveOnkey = (() => {
           if (token !== walkToken || !away) return;
           root.classList.add('onkey-away');
           seat = pageRect(face.getBoundingClientRect());
-          if (reduced() || !from) { arrive(); return; }
+          if (!from) { arrive(); return; }
           stride(from, viewRect(seat), arrive);
         }, plan.hold);
       });
     } else {
       root.classList.remove('onkey-walking');
       const to = logoRect();
-      if (reduced() || !seat || !to) { root.classList.remove('onkey-away'); return; }
+      if (!seat || !to) { root.classList.remove('onkey-away'); return; }
       const start = viewRect(seat);
       // Off screen (scrolled away)? Start him just above the top bar instead.
       const begin = start.top + start.height < 0 || start.top > innerHeight ? { ...start, top: -start.height } : start;

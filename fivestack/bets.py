@@ -39,14 +39,15 @@ TAX_MIN_TRANSFER = 250
 # house's pot: the pot counts a boosted bet (or a boosted leg's share of a parlay) at its price before the boost.
 # Picks the model gives a chance in BOOST_CHANCE are eligible.
 BOOST = 0.5
-BOOST_MAX_STAKE = 100
+BOOST_MAX_STAKE = 250
 BOOST_CHANCE = (0.3, 0.6)
-# The daily wheel's tokens (wheel.py, table wheel_perks), used on a single when the bettor asks for them from the bet
-# slip (place()'s `tokens`): a boost token adds TOKEN_BOOST profit to a single of up to TOKEN_MAX_STAKE credits (not on
-# top of the odds boost of the game), and an insurance token gets the stake back, up to TOKEN_MAX_STAKE, if it loses
+# The daily wheel's tokens (wheel.py, table wheel_perks), used when the bettor asks for them from the bet slip: on a
+# single (place()'s `tokens`) or, for a boost token, on a leg of a parlay (a leg with `boost: true`, quote_parlay()).
+# A boost token adds TOKEN_BOOST profit to that pick's price, on a bet of up to TOKEN_MAX_STAKE credits (not on top of
+# the odds boost of the game), and an insurance token gets the stake back, up to TOKEN_MAX_STAKE, if it loses
 # (paid by HouseManager.refunds).
 TOKEN_BOOST = 0.5
-TOKEN_MAX_STAKE = 200
+TOKEN_MAX_STAKE = 250
 
 
 def _credits(v):
@@ -366,7 +367,9 @@ class BetManager:
 
         Legs that decide each other are refused (parlay.score_conflict); legs that tend to land together have their
         multiplied odds cut by how much more often they won together on recent games (parlay.correlation). A leg on
-        the odds boost of the game's pick prices at its boosted decimal (see BOOST, apply_boost)."""
+        the odds boost of the game's pick prices at its boosted decimal (see BOOST, apply_boost), and so does a leg
+        that asks for a boost token (`boost: true`; `boost_token` on the built leg, TOKEN_BOOST): the parlay's price
+        is multiplied from the boosted price, so the payout follows. place_parlay() checks the tokens are held."""
         if not isinstance(legs, list) or len(legs) < 2:
             raise BetError("A parlay needs at least 2 legs.")
         if len(legs) > 10:
@@ -389,11 +392,17 @@ class BetManager:
             if not market or not sel:
                 raise BetError(self._unavailable(board, market_id, sel_key) or "One of the legs is no longer available. Refresh the odds board.")
             desc, meta = self._describe(market, sel)
+            token = bool(leg.get("boost"))
+            if token and sel.get("boost"):
+                raise BetError("That leg already has the odds boost of the game. Keep your token for another one.")
             built.append({
                 "market_id": market_id, "market_type": market["type"], "description": desc,
                 "selection": sel_key, "selection_label": sel["label"], "line": market.get("line"),
-                "odds_decimal": sel["decimal"], "fair_prob": sel["fair_prob"], "meta": meta,
-                "boost": sel["boost"]["from_decimal"] if sel.get("boost") else None,
+                "odds_decimal": self.boosted(sel["decimal"], TOKEN_BOOST) if token else sel["decimal"],
+                "fair_prob": sel["fair_prob"], "meta": meta,
+                # the price before a boost (the game's or a token's), which the house's pot counts
+                "boost": sel["decimal"] if token else sel["boost"]["from_decimal"] if sel.get("boost") else None,
+                **({"boost_token": True} if token else {}),
             })
         conflict = score_conflict(built, self._evaluate)
         if conflict:
@@ -423,26 +432,40 @@ class BetManager:
         if stake > bettor["balance"] + 1e-9:
             raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
         built, board, quote = self.quote_parlay(legs, context)
-        if any(leg.get("boost") for leg in built) and stake > BOOST_MAX_STAKE:
+        token_legs = [leg for leg in built if leg.get("boost_token")]
+        if any(leg.get("boost") and not leg.get("boost_token") for leg in built) and stake > BOOST_MAX_STAKE:
             raise BetError(f"A parlay with the odds boost of the game takes up to {BOOST_MAX_STAKE} credits.")
+        if token_legs and stake > TOKEN_MAX_STAKE:
+            raise BetError(f"A boost token covers a parlay of up to {TOKEN_MAX_STAKE} credits.")
 
-        bet = {
-            "bettor": bettor["name"],
-            "market_id": "parlay",
-            "market_type": "parlay",
-            "description": " + ".join(l["description"] for l in built),
-            "selection": "parlay",
-            "selection_label": f"{len(built)}-leg parlay",
-            "line": None,
-            "odds_decimal": quote["odds_decimal"],
-            "stake": stake,
-            "placed_ts": time.time(),
-            "context": json.dumps({"legs": built, "ctx": board.get("context"), "corr": quote}),
-            "status": "pending",
-        }
         with self.db.lock:
+            # One boost token per boosted leg, used up with the bet (each leg keeps its token's id).
+            ready = self.db.query("SELECT id FROM wheel_perks WHERE lower(bettor)=lower(?) AND status='ready' AND kind='boost' "
+                                  "ORDER BY id", (bettor["name"],)) if token_legs else []
+            if len(ready) < len(token_legs):
+                raise BetError("You don't have a boost token. Win one on the daily wheel." if not ready else
+                               f"You only have {len(ready)} boost token{'' if len(ready) == 1 else 's'}.")
+            for leg, perk in zip(token_legs, ready):
+                leg["boost_token"] = perk["id"]
+            bet = {
+                "bettor": bettor["name"],
+                "market_id": "parlay",
+                "market_type": "parlay",
+                "description": " + ".join(l["description"] for l in built),
+                "selection": "parlay",
+                "selection_label": f"{len(built)}-leg parlay",
+                "line": None,
+                "odds_decimal": quote["odds_decimal"],
+                "stake": stake,
+                "placed_ts": time.time(),
+                "context": json.dumps({"legs": built, "ctx": board.get("context"), "corr": quote}),
+                "status": "pending",
+            }
             self.db.adjust_balance(bettor["name"], -stake)
             bet_id = self.db.insert_bet(bet)
+            for leg in token_legs:
+                self.db.execute("UPDATE wheel_perks SET status='used', bet_id=?, used_ts=? WHERE id=?",
+                                (bet_id, time.time(), leg["boost_token"]))
         return self.db.bet(bet_id)
 
     def cancel(self, bet_id, by=None, admin=False):

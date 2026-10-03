@@ -49,7 +49,10 @@ window.FiveBets = (() => {
   // and legs that decide each other are refused. Until it answers, the slip shows the legs' odds multiplied.
   let parlayQuote = null; // {key, quote} or {key, error} for the slip's legs and odds context
   let parlaySeq = 0, parlayAsking = null; // parlayAsking: the key of the request on its way
-  const parlayKey = () => JSON.stringify([state.slip.map((x) => [x.market_id, x.selection]), state.ctx]);
+  // A leg can carry a daily wheel boost token (x.boost, toggled on the leg), never on the game-boosted pick.
+  const legBoost = (x) => !!x.boost && !x.gameBoost;
+  const parlayLegs = () => state.slip.map((x) => ({ market_id: x.market_id, selection: x.selection, ...(legBoost(x) ? { boost: true } : {}) }));
+  const parlayKey = () => JSON.stringify([state.slip.map((x) => [x.market_id, x.selection, legBoost(x)]), state.ctx]);
   const currentQuote = () => (parlayQuote && parlayQuote.key === parlayKey() ? parlayQuote : null);
   const parlayBlocked = () => !!(currentQuote() || {}).error;
   function parlayDecimal() {
@@ -61,11 +64,13 @@ window.FiveBets = (() => {
   function parlayQuoteHtml() {
     const pq = currentQuote(), q = pq && pq.quote;
     const linked = new Set(q ? q.linked.flat() : []);
-    const boostIdx = q && q.legs ? q.legs.findIndex((l) => l.boost) : -1;
-    const legs = state.slip.map((x, i) =>
-      `<div class="slip-item parlay-leg${linked.has(i) ? ' linked' : ''}${i === boostIdx ? ' boosted' : ''}"><div><div class="slip-desc">${i === boostIdx ? '⚡ ' : ''}${esc(x.desc)}</div>` +
-      `<div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)}${linked.has(i) ? ' · <span class="linked-tag">linked</span>' : ''}</div></div>` +
-      `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button></div>`).join('');
+    const boostIdx = q && q.legs ? q.legs.findIndex((l) => l.boost && !l.boost_token) : -1; // the odds boost of the game
+    const legs = state.slip.map((x, i) => {
+      const token = legBoost(x), lit = i === boostIdx || token;
+      return `<div class="slip-item parlay-leg${linked.has(i) ? ' linked' : ''}${lit ? ' boosted' : ''}"><div><div class="slip-desc">${lit ? '⚡ ' : ''}${esc(x.desc)}</div>` +
+        `<div class="muted small">${esc(x.selLabel)} @ ${esc(x.american)}${token ? ` <b class="token-price">⚡ ${tokenPrice(x).toFixed(2)}</b>` : ''}${linked.has(i) ? ' · <span class="linked-tag">linked</span>' : ''}</div></div>` +
+        `<button class="btn ghost icon rm" data-i="${i}" aria-label="Remove">✕</button>${tokenRow(x, i, true)}</div>`;
+    }).join('');
     const dec = parlayDecimal();
     const notes = [];
     if (!pq) notes.push('<p class="muted small">Checking how these legs go together…</p>');
@@ -79,8 +84,13 @@ window.FiveBets = (() => {
           `games. Odds are only ever cut, never raised, and a parlay never pays less than its longest leg.`));
       }
       if (boostIdx >= 0) {
-        const cap = (state.odds && state.odds.boost && state.odds.boost.max_stake) || 100;
+        const cap = (state.odds && state.odds.boost && state.odds.boost.max_stake) || 250;
         notes.push(`<p class="muted small">⚡ Odds boost of the game, up from ${fmt.oddsDec(q.legs[boostIdx].boost)} on "${esc(q.legs[boostIdx].description)}". A parlay with it is capped at ${fmt.credits(cap)} credits.</p>`);
+      }
+      const tokenLegs = q.legs.filter((l) => l.boost_token);
+      if (tokenLegs.length) {
+        notes.push(`<p class="muted small">⚡ Boost token: ${tokenLegs.map((l) => `"${esc(l.description)}" up from ${fmt.oddsDec(l.boost)} to ${fmt.oddsDec(l.odds_decimal)}`).join(', ')}. ` +
+          `The parlay's price is worked out from the boosted price, and it's capped at ${fmt.credits(TOKEN_CAP)} credits.</p>`);
       }
     }
     return `${legs}<div class="parlay-summary"><span>${state.slip.length}-leg parlay</span>` +
@@ -95,7 +105,7 @@ window.FiveBets = (() => {
     let next;
     try {
       const quote = await api('/api/odds/parlay', { method: 'POST', body: JSON.stringify({
-        legs: state.slip.map((x) => ({ market_id: x.market_id, selection: x.selection })), context: state.ctx }) });
+        legs: parlayLegs(), context: state.ctx }) });
       next = { key, quote };
     } catch (e) {
       next = { key, error: e.message };
@@ -107,6 +117,7 @@ window.FiveBets = (() => {
     if (!box || parlayKey() !== key) return;
     box.innerHTML = parlayQuoteHtml();
     bindRemove(box);
+    bindTokens(box);
     const tw = $('.parlay-towin');
     if (tw) tw.textContent = parlayToWin(Number($('#parlay-stake')?.value) || 0);
     const place = $('#place-bets');
@@ -114,8 +125,9 @@ window.FiveBets = (() => {
   }
 
   // The daily wheel's tokens (bets.py TOKEN_BOOST / TOKEN_MAX_STAKE, counts in /api/bettor/me tokens): each single in
-  // the slip can take one boost and one insurance token, as many as you hold, toggled on the pick itself.
-  const TOKEN_BOOST = 0.5, TOKEN_CAP = 200;
+  // the slip can take one boost and one insurance token, as many as you hold, toggled on the pick itself; a parlay's
+  // legs can each take a boost token (never insurance).
+  const TOKEN_BOOST = 0.5, TOKEN_CAP = 250;
   const tokensHeld = (kind) => (state.me && state.me.tokens ? state.me.tokens[kind] || 0 : 0);
   const tokensFree = (kind, except) => tokensHeld(kind) - state.slip.filter((x, i) => i !== except && x[kind]).length;
   const tokenPrice = (x) => (x.boost ? Math.round((1 + (x.decimal - 1) * (1 + TOKEN_BOOST)) * 100) / 100 : x.decimal);
@@ -126,8 +138,8 @@ window.FiveBets = (() => {
     if (x.insurance) notes.push(`stake back if it loses, up to ${fmt.credits(TOKEN_CAP)}`);
     return [win, ...notes].join(' · ');
   }
-  function tokenRow(x, i) {
-    if (!tokensHeld('boost') && !tokensHeld('insurance')) return '';
+  function tokenRow(x, i, leg) { // `leg`: a parlay leg, which only takes a boost token
+    if (!tokensHeld('boost') && (leg || !tokensHeld('insurance'))) return '';
     const btn = (kind, label, why) => {
       const on = !!x[kind], free = tokensFree(kind, i) > 0;
       const off = !on && (!free || why);
@@ -135,7 +147,7 @@ window.FiveBets = (() => {
         ` title="${esc(why || (free || on ? '' : `No ${kind} tokens left for this slip`))}">${label}</button>`;
     };
     return `<div class="slip-tokens">${tokensHeld('boost') ? btn('boost', `⚡ Boost ${tokensHeld('boost') > 1 ? `(${tokensHeld('boost')})` : ''}`, x.gameBoost ? 'This pick already has the odds boost of the game' : '') : ''}` +
-      `${tokensHeld('insurance') ? btn('insurance', `🛡️ Insure ${tokensHeld('insurance') > 1 ? `(${tokensHeld('insurance')})` : ''}`, '') : ''}</div>`;
+      `${!leg && tokensHeld('insurance') ? btn('insurance', `🛡️ Insure ${tokensHeld('insurance') > 1 ? `(${tokensHeld('insurance')})` : ''}`, '') : ''}</div>`;
   }
 
   function slipHtml() {
@@ -165,7 +177,7 @@ window.FiveBets = (() => {
         <div class="muted small parlay-towin">${parlayToWin(stake)}</div>
         <div class="small slip-after">${afterStake(stake)}</div>
         <p class="muted small">All ${state.slip.length} legs must win. If one is voided (a push), the payout uses the odds of the legs that stood.</p>
-        ${tokensHeld('boost') || tokensHeld('insurance') ? '<p class="muted small">Wheel tokens work on singles only: switch to Singles to use them.</p>' : ''}`;
+        ${tokensHeld('insurance') ? '<p class="muted small">Insurance tokens work on singles only: switch to Singles to use one.</p>' : ''}`;
       placeLabel = 'Place parlay';
     } else {
       const items = state.slip.map((x, i) =>
@@ -503,14 +515,18 @@ window.FiveBets = (() => {
       if (after) after.innerHTML = afterStake(stake);
     });
     $$('.mode-btn', slip).forEach((b) => b.addEventListener('click', () => { state.slipMode = b.dataset.mode; drawSlip(); }));
-    $$('.token-btn', slip).forEach((b) => b.addEventListener('click', () => {
-      const it = state.slip[Number(b.dataset.i)];
-      if (it) { it[b.dataset.token] = !it[b.dataset.token]; drawSlip(); }
-    }));
+    bindTokens(slip);
     bindRemove(slip);
     $('#clear-slip')?.addEventListener('click', () => { state.slip = []; drawSlip(); syncOddButtons(); window.FiveOnkey?.note('slip', { cleared: true }); });
     $('#place-bets')?.addEventListener('click', placeSlip);
     if ($('#parlay-quote', slip)) fetchParlayQuote();
+  }
+
+  function bindTokens(root) {
+    $$('.token-btn', root).forEach((b) => b.addEventListener('click', () => {
+      const it = state.slip[Number(b.dataset.i)];
+      if (it) { it[b.dataset.token] = !it[b.dataset.token]; drawSlip(); }
+    }));
   }
 
   function bindRemove(root) {
@@ -531,7 +547,7 @@ window.FiveBets = (() => {
       try {
         const res = await api('/api/bets', {
           method: 'POST',
-          body: JSON.stringify({ legs: state.slip.map((x) => ({ market_id: x.market_id, selection: x.selection })), stake, context: state.ctx }),
+          body: JSON.stringify({ legs: parlayLegs(), stake, context: state.ctx }),
         });
         state.slip = [];
         stampPlaced([res.bet.id]);

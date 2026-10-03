@@ -22,7 +22,7 @@ window.FiveBlackjack = (() => {
   let stillUntil = 0;
   function motion(key, cls, ms, delay = 0) {
     const now = performance.now();
-    if (!motions.has(key)) motions.set(key, now < stillUntil || C.reduced() ? -1e9 : now + delay);
+    if (!motions.has(key)) motions.set(key, now < stillUntil ? -1e9 : now + delay);
     const ago = now - motions.get(key);
     if (motions.size > 400) [...motions.keys()].slice(0, 200).forEach((k) => motions.delete(k));
     return ago > ms ? { cls: ` ${cls}-done`, style: '' } : { cls: ` ${cls}`, style: ` style="animation-delay:${Math.round(-ago)}ms"` };
@@ -223,7 +223,7 @@ window.FiveBlackjack = (() => {
     el.style.left = `${r.left + r.width / 2}px`;
     el.style.top = `${r.top + 10}px`;
     document.body.appendChild(el);
-    if (e.emote !== '🍌' || !face || C.reduced()) { setTimeout(() => el.remove(), 1900); if (e.emote === '🍌') bonk(e); return; }
+    if (e.emote !== '🍌' || !face) { setTimeout(() => el.remove(), 1900); if (e.emote === '🍌') bonk(e); return; }
     el.classList.add('thrown');
     const f = face.getBoundingClientRect();
     const dx = f.left + f.width / 2 - (r.left + r.width / 2), dy = f.top + f.height / 2 - (r.top + 10);

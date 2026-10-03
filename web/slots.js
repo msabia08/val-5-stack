@@ -41,7 +41,6 @@ window.FiveSlots = (() => {
     return order;
   }
   const storageKey = (name) => `fs.slotSpin.${name.toLowerCase()}`;
-  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   function init(ctx) {
     ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance } = ctx);
     // Space spins (or checks the last spin) on this tab, unless you're typing or on another control.
@@ -142,7 +141,7 @@ window.FiveSlots = (() => {
   const cells = () => stripsNow()[0].length;
   const wrap = (n) => ((n % cells()) + cells()) % cells();
   // The cell a reel shows for a symbol: its swapped-in cell, else where it last stopped if that's the symbol, else the
-  // symbol's first cell. A secret symbol with no cell yet (reduced motion skips the roll) takes over the resting cell.
+  // symbol's first cell. A secret symbol with no cell yet (the roll was skipped) takes over the resting cell.
   function cellFor(i, value) {
     const strip = stripsNow()[i];
     if (swapped[i]?.value === value) return swapped[i].cell;
@@ -320,13 +319,11 @@ window.FiveSlots = (() => {
     el.className = `slots-fx-banner ${cls}`;
     el.innerHTML = `<img src="${esc(img)}" alt=""><b>${esc(title)}</b><span>${esc(line)}</span>`;
     layer.appendChild(el);
-    const frames = reduced()
-      ? [{ opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 1, offset: .85 }, { opacity: 0 }]
-      : [{ opacity: 0, transform: 'translate(-50%, -50%) scale(.2) rotate(-8deg)' },
-        { opacity: 1, transform: 'translate(-50%, -50%) scale(1.12) rotate(3deg)', offset: .12 },
-        { opacity: 1, transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', offset: .2 },
-        { opacity: 1, transform: 'translate(-50%, -50%) scale(1.04)', offset: .85 },
-        { opacity: 0, transform: 'translate(-50%, -50%) scale(1.3)' }];
+    const frames = [{ opacity: 0, transform: 'translate(-50%, -50%) scale(.2) rotate(-8deg)' },
+      { opacity: 1, transform: 'translate(-50%, -50%) scale(1.12) rotate(3deg)', offset: .12 },
+      { opacity: 1, transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', offset: .2 },
+      { opacity: 1, transform: 'translate(-50%, -50%) scale(1.04)', offset: .85 },
+      { opacity: 0, transform: 'translate(-50%, -50%) scale(1.3)' }];
     el.animate(frames, { duration: ms, easing: 'ease-out', fill: 'both' });
   }
   function shake(el, px, ms) {
@@ -337,8 +334,7 @@ window.FiveSlots = (() => {
     });
     el.animate([...frames, { transform: 'none' }], { duration: ms, easing: 'linear' });
   }
-  // Diamond < banana < Onkey < Golden Onkey: each tier adds to the one below it. Reduced motion keeps the glow, the
-  // sound and (for both Onkeys) the banner, without movement or flashes.
+  // Diamond < banana < Onkey < Golden Onkey: each tier adds to the one below it.
   function celebrate(spin) {
     const tier = tierOf(spin);
     if (spin.net > 0) sound('win', tier);
@@ -347,18 +343,17 @@ window.FiveSlots = (() => {
     const spotted = partsOf(spin).find((p) => p.kind === 'spotted' || p.kind === 'wild');
     if (spotted) $$('.slots-reel.spotted').forEach((el) => confetti?.(el, spotted.count > 1, { emoji: ['🌟', '✨'] }));
     if (!tier) return;
-    const glass = $('.slots-glass'), cabinet = $('.slots-cabinet'), calm = reduced();
+    const glass = $('.slots-glass'), cabinet = $('.slots-cabinet');
     const payout = `${money(spin.payout)} credits`;
     if (tier === 1) { confetti?.(glass, false, { emoji: ['💎', '✨'] }); return; }
     if (tier === 2) {
       confetti?.(glass, true, { emoji: ['🍌'] });
-      if (!calm) { shake(cabinet, 5, 450); rain(fxLayer(4000), emoji(['🍌']), 36, 900); }
+      shake(cabinet, 5, 450); rain(fxLayer(4000), emoji(['🍌']), 36, 900);
       return;
     }
     if (tier === 3) {
       const layer = fxLayer(5000);
       banner(layer, '/assets/onkey.png', 'ONKEY!', payout, 3200);
-      if (calm) return;
       flash(layer, 1); shake(cabinet, 10, 900);
       confetti?.(glass, true); setTimeout(() => confetti?.(glass, true), 500);
       rain(layer, image('/assets/onkey-logo.png', 'slots-fx-onkey'), 28, 1400);
@@ -367,7 +362,6 @@ window.FiveSlots = (() => {
     const layer = fxLayer(8000);
     layer.classList.add('dim');
     banner(layer, '/assets/onkey-logo.png', 'GOLDEN ONKEY!!!', payout, 5600, 'golden');
-    if (calm) return;
     flash(layer, 3); shake(cabinet, 16, 1800);
     [0, 450, 900, 1500, 2200].forEach((ms) => setTimeout(() => confetti?.(glass, true), ms));
     rain(layer, image('/assets/onkey-logo.png', 'slots-fx-onkey golden'), 90, 3600);
@@ -378,7 +372,7 @@ window.FiveSlots = (() => {
   const SPOT_MS = 900, spotAt = [0, 0, 0];
   const spotTag = () => `<span class="slots-spot-tag" aria-hidden="true">Spotted!</span>`;
   function spotPop(el, elapsed) {
-    if (reduced() || elapsed >= SPOT_MS) return;
+    if (elapsed >= SPOT_MS) return;
     const ring = el.animate([
       { boxShadow: 'inset 0 0 0 0 rgba(255, 210, 60, 0), 0 0 0 rgba(255, 196, 0, 0)' },
       { boxShadow: 'inset 0 0 0 8px rgba(255, 210, 60, .95), 0 0 46px rgba(255, 196, 0, .85)', offset: .25 },
@@ -473,7 +467,7 @@ window.FiveSlots = (() => {
     }
     function tick(now) {
       if (ended) return;
-      if (state.view !== 'slots' || reduced()) { finish(); return; }
+      if (state.view !== 'slots') { finish(); return; }
       const dt = Math.min((now - previous) / 1000, .05); previous = now;
       positions.forEach((position, i) => {
         if (stopped[i]) return;
@@ -529,8 +523,7 @@ window.FiveSlots = (() => {
       if (now - clanked[i] < 35 || now - lastClank < 70) return;
       clanked[i] = lastClank = now; sound('clank', i);
     }
-    if (!reduced()) frame = requestAnimationFrame(tick);
-    else finish();
+    frame = requestAnimationFrame(tick);
     return {
       paint, cancel: finish,
       // Whether the last spin teased, and if so which reel and whether it won (for the flash after the redraw).
@@ -617,7 +610,7 @@ window.FiveSlots = (() => {
     const chips = $$('.slots-result.fresh .slots-cash');
     chips.forEach((el, k) => setTimeout(() => sound('cash', k), k * CASH_GAP));
     const total = $('.slots-result.fresh [data-count]');
-    if (!total || reduced()) return;
+    if (!total) return;
     const to = Number(total.dataset.count), begin = performance.now() + (chips.length - 1) * CASH_GAP, ms = 520;
     const step = (now) => {
       if (!total.isConnected) return;

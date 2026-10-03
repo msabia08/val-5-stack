@@ -113,10 +113,6 @@ html.onkey-walking .onkey-dealer .onkey-face { visibility: hidden; }
 .onkey-walker { position: fixed; z-index: 100; pointer-events: none; object-fit: contain; transform-origin: 50% 90%;
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 @keyframes onkey-hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-7px) rotate(-6deg); } 65% { transform: translateY(0) rotate(4deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .brand.onkey-talking .logo-link, .brand.onkey-excited .logo-link, .brand.onkey-talking .logo, .brand.onkey-talking.onkey-ominous .logo-link { animation: none; }
-  .onkey-says { transition: none; }
-}
 .logo { display: block; width: 62px; height: 36px; object-fit: contain; flex: none; }  /* web/assets/onkey-logo.png: a 124 x 72 crop of onkey.png */
 .logo-link { display: block; flex: none; border-radius: 8px; }  /* the logo opens Onkey's Shop */
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -357,9 +353,16 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
   50% { box-shadow: inset 0 0 0 1px #ff6d00, 0 0 4px 1px rgba(255, 80, 0, .5), -5px -5px 9px -4px rgba(255, 140, 0, .6), 3px -9px 11px -5px rgba(255, 215, 64, .75); }
   75% { box-shadow: inset 0 0 0 1px #ffc400, 0 0 8px 2px rgba(255, 60, 0, .6), -3px -8px 10px -4px rgba(255, 160, 0, .7), 5px -5px 9px -4px rgba(255, 235, 110, .55); }
 }
-/* The odds boost of the game (bets.py BOOST): a gold ring on its button wherever it shows, and a card above the team
-   markets with the usual price struck through. */
+/* The odds boost of the game (bets.py BOOST): a gold ring on its button wherever it shows, a golden sheen on the
+   button itself (a faint gold wash with a band of light sweeping across it), and a card above the team markets with
+   the usual price struck through. A cold button keeps its own frost glint instead of the sheen. */
 .odd.boosted:not(.hot):not(.cold) { border-color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn); }
+.odd.boosted { position: relative; }
+.odd.boosted:not(.cold)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 236, 160, .6) 50%, transparent 62%) 120% 0 / 260% 100% no-repeat,
+    linear-gradient(rgba(255, 200, 60, .14), rgba(255, 170, 0, .08));
+  animation: boost-sheen 2.6s ease-in-out infinite; }
+@keyframes boost-sheen { 0%, 35% { background-position: 120% 0, 0 0; } 100% { background-position: -20% 0, 0 0; } }
 .boost-card { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); }
 .boost-card h2 { margin: 0 0 6px; }
 .boost-card p { margin: 0; }
@@ -394,7 +397,6 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .nav-trigger.nav-alert::after, .nav-menu a.nav-alert b::after { content: ""; position: absolute; top: 2px; right: -9px; width: 8px; height: 8px;
   border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 60%, transparent); animation: nav-alert 1.8s ease-out infinite; }
 @keyframes nav-alert { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
-@media (prefers-reduced-motion: reduce) { .nav-trigger.nav-alert::after, .nav-menu a.nav-alert b::after { animation: none; } }
 .me-chip b.tick-down { animation: tick-down 1.4s ease-out; }
 @keyframes tick-up { from { color: var(--up); text-shadow: 0 0 10px var(--up); } }
 @keyframes tick-down { from { color: var(--down); text-shadow: 0 0 10px var(--down); } }
@@ -438,6 +440,15 @@ td.prop .prop-pair .odd.hot::before { content: ""; position: absolute; inset: 0;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   animation: flame-flow-ring 1.2s linear infinite; }
 @keyframes flame-flow-ring { to { background-position: 200% 0; } }
+/* The boosted half rounds off the same way, with a flowing gold ring in place of the flames. */
+td.prop .prop-pair .odd.boosted:not(.hot):not(.cold) { z-index: 1; border-radius: 7px; background: var(--surface);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--warn) 45%, transparent); }
+td.prop .prop-pair .odd.boosted:not(.hot):not(.cold).on { background: var(--accent); }
+td.prop .prop-pair .odd.boosted:not(.hot):not(.cold)::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(90deg, #ffb300, #ffe082, #fff8e1, #ffd54a, #ffb300) 0 0 / 200% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: flame-flow-ring 2.4s linear infinite; }
 td.prop .prop-pair .odd.cold { z-index: 1; border-radius: 7px; background: var(--surface); }
 td.prop .prop-pair .odd.cold::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
   background: linear-gradient(90deg, #4fc3f7, #e1f5fe, #81d4fa, #b3e5fc, #4fc3f7) 0 0 / 200% 100%;
@@ -1478,16 +1489,6 @@ body.modal-open { overflow: hidden; }
 .cab-controls .btn.ghost { color: #f3e8ff; border-color: rgba(255, 255, 255, 0.2); }
 .cab-controls .btn.ghost:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 
-/* Reduced motion: no wiggling logo, and hot-streak borders stand still. Last in the file so it wins. */
-@media (prefers-reduced-motion: reduce) {
-  .logo:hover, .odd.hot, td.prop .prop-pair .odd.hot, td.prop .prop-pair .odd.hot::before, .odd.cold, td.prop .prop-pair .odd.cold::before,
-  .me-chip b.tick-up, .me-chip b.tick-down, .bet-ticket.just-placed,
-  .nc-gold, .bname.slipped, .bet-slip-card.tk-gold, .modal, .modal-backdrop, .shop-hero:hover .shop-hero-art, .nav-menu,
-  .nc-rainbow, .bname.glittered, .neon, .attract-art, .attract-text, .coin-slot.coin-drop .coin, .arcade-modal { animation: none; }
-  .odd.hot { box-shadow: inset 0 0 0 1px #ff8a00; } /* a still flame border */
-  .odd.cold { box-shadow: inset 0 0 0 1px #81d4fa; } /* and a still frosty one */
-  .odd.cold::after, .placed-stamp { display: none; }
-}
 /* Slots use a fixed cabinet palette, like the Arcade; surrounding cards follow the chosen theme. */
 :root {
   --slot-case: #21152d; --slot-inset: #090711; --slot-trim: #513654;
@@ -1684,7 +1685,7 @@ body.modal-open { overflow: hidden; }
 .slots-tier-4 .slots-glass { box-shadow: 0 0 0 6px var(--slot-paper), 0 0 0 10px var(--slot-gold), 0 0 96px var(--slot-gold); }
 .slots-tier-3 .slots-marquee h2, .slots-tier-4 .slots-marquee h2 { color: var(--slot-gold); text-shadow: 0 0 28px var(--slot-gold); }
 .slots-tier-4.slots-cabinet { border-color: var(--slot-gold); }
-/* The tease: the third reel pulses gold while the other two dim (slots.js's tease; never under reduced motion). */
+/* The tease: the third reel pulses gold while the other two dim (slots.js's tease). */
 .slots-reel { transition: filter .3s; }
 .slots-glass.teasing .slots-reel:not(.teasing) { filter: brightness(.6) saturate(.7); }
 .slots-reel.teasing { animation: slots-tease .55s ease-in-out infinite alternate; }
@@ -1717,13 +1718,6 @@ body.modal-open { overflow: hidden; }
 .slots-reel.tease-lost { animation: slots-tease-lost 1.2s ease-out; }
 @keyframes slots-tease-won { 0%, 40% { box-shadow: inset 0 0 0 6px var(--slot-gold), 0 0 60px var(--slot-gold); } }
 @keyframes slots-tease-lost { 0%, 40% { box-shadow: inset 0 0 0 6px #ff4d4d, 0 0 40px rgba(255, 77, 77, .7); filter: saturate(.4) brightness(.8); } }
-@media (prefers-reduced-motion: reduce) {
-  .slots-fx-layer.dim { animation: none; background: rgba(0, 0, 0, .45); }
-  .slots-busy .slots-marquee h2, .slots-glass.teetering .slots-line-arrow, .slots-reel.tease-won, .slots-reel.tease-lost,
-  .slots-leds i, .slots-win .slots-leds i, .slots-lever.pulled .slots-lever-rod, .slots-lever.pulled .slots-lever-knob,
-  .slots-result.fresh .slots-cash, .slots-result.fresh .slots-cash-join { animation: none; }
-  .slots-spin { transition: none; }
-}
 /* Below the machine, side by side: recent spins, your season and the squad's biggest wins. */
 .slots-lower { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: stretch; }
 .slots-lower .slots-history { margin: 0; }
@@ -1746,26 +1740,28 @@ body.modal-open { overflow: hidden; }
 .slots-big-pay { text-align: right; }
 .slots-big-pay b { display: block; font: 700 16px ui-monospace, Consolas, monospace; color: var(--up); }
 .slots-big-pay small { font-size: 11px; color: var(--muted); }
-@media (prefers-reduced-motion: reduce) { .slots-spin:active:not(:disabled) { transform: none; } }
 
 /* The daily wheel (web/wheel.js): the wheel on the left, prizes and tokens beside it. Slice colours are tokens so a
    theme can change them; the jackpot is gold. */
-:root { --wheel-credits: #2f7de0; --wheel-credits-2: #1f5fb4; --wheel-bananas: #e8b923; --wheel-boost: #9b5de5;
-  --wheel-insurance: #14a38b; --wheel-nothing: #555550; --wheel-again: #e2557a; --wheel-item: #f07c2a; --wheel-jackpot: #ffd54a;
-  --bulb-1: #ffe9a8; --bulb-2: #ff4d4d; --bulb-3: #4dc3ff;
-  --wheel-rim: #808080; --wheel-rim-edge: #5f5f5f; --wheel-flapper: #0a0a0a; --wheel-flapper-shine: #3a3a3a; --wheel-peg: #e8e6dc; }
-.wheel-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; margin-bottom: 16px; }
+/* The jungle wheel: leaf greens for credits, banana yellow, a wooden rim lit by firefly bulbs, and a leaf for the flapper. */
+:root { --wheel-credits: #2f8f4e; --wheel-credits-2: #1f6a3b; --wheel-bananas: #f2c230; --wheel-boost: #7a4fb5;
+  --wheel-insurance: #3aa6a0; --wheel-again: #c9503c; --wheel-item: #d98a2b; --wheel-jackpot: #ffd54a;
+  --bulb-1: #ffe9a8; --bulb-2: #ffb347; --bulb-3: #b6f26a;
+  --wheel-rim: #7a4a22; --wheel-rim-edge: #3f2410; --wheel-plank: #5a3416; --wheel-hub: #2e1a0b; --wheel-peg: #f1e2b8; }
+.wheel-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; margin-bottom: 16px; }
 .wheel-stage { display: flex; flex-direction: column; align-items: center; padding-bottom: 20px; }
-.wheel-head { align-self: stretch; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+/* The title and the speaker take no height: the wheel starts at the top of the card and they sit in its empty corners. */
+.wheel-head { align-self: stretch; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; height: 0; position: relative; z-index: 2; }
 .wheel-head h2 { margin-bottom: 2px; }
-/* The wheel as big as the card allows with the controls in a column beside it, so the Spin button stays on a 1080p
-   screen. */
-.wheel-row { display: flex; align-items: center; gap: 20px; align-self: stretch; }
-.wheel-box { position: relative; flex: none; width: min(880px, calc(100% - 240px)); aspect-ratio: 1; margin: -14px 0 -8px; }
+/* The wheel as big as the card and the window's height allow (so it never runs off the bottom of a 1080p screen),
+   centred in the card; the result line sits in the space to its right, out of the flow. */
+.wheel-row { --wheel-w: min(960px, calc(100% - 240px), calc(100vh - 40px)); position: relative; display: flex; align-items: center; justify-content: center; align-self: stretch; }
+.wheel-box { position: relative; flex: none; width: var(--wheel-w); aspect-ratio: 1; margin: -14px 0 -8px; }
 .wheel-svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, .45)); }
 #wheel-rotor { transform-origin: 200px 200px; transform-box: view-box; }
 /* The border: a medium grey band round the slices, with the bulbs on its outer edge. */
 .wheel-rim { fill: var(--wheel-rim); stroke: var(--wheel-rim-edge); stroke-width: 2; }
+.wheel-plank { stroke: var(--wheel-plank); stroke-width: 1.4; }
 /* Bulbs round the rim: lit every other one at rest, a chase while it spins, a gold pulse while it teases, all of them
    flashing on a win. */
 /* Each bulb has its own colour (--c: warm white, red and blue, the --bulb-* tokens in turn round the rim); unlit it's a
@@ -1793,7 +1789,6 @@ body.modal-open { overflow: hidden; }
 .wk-bananas { fill: var(--wheel-bananas); }
 .wk-boost { fill: var(--wheel-boost); }
 .wk-insurance { fill: var(--wheel-insurance); }
-.wk-nothing { fill: var(--wheel-nothing); }
 .wk-again { fill: var(--wheel-again); }
 .wk-item { fill: var(--wheel-item); }
 .wk-jackpot { fill: var(--wheel-jackpot); }
@@ -1803,20 +1798,35 @@ body.modal-open { overflow: hidden; }
 .wheel-label { fill: #fff; font-size: 11.5px; font-weight: 700; text-anchor: middle; dominant-baseline: central; letter-spacing: .2px;
   paint-order: stroke; stroke: rgba(0, 0, 0, .35); stroke-width: 2px; }
 .wheel-peg { fill: var(--wheel-peg); stroke: rgba(0, 0, 0, .4); stroke-width: 1; }
-.wheel-hub { fill: var(--surface); stroke: var(--wheel-jackpot); stroke-width: 3; }
+.wheel-hub { fill: var(--wheel-hub); stroke: var(--wheel-jackpot); stroke-width: 3; }
 .wheel-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
-.wheel-center span { font-size: 12px; color: var(--muted); }
-.wheel-center b { font-size: 26px; font-weight: 700; color: var(--wheel-jackpot); font-variant-numeric: tabular-nums; }
-/* The pointer: a gold wedge over the top of the rim, pointing down into the slice that wins. */
-/* Sized as a share of the wheel so it lines up at any size: its tip reaches just inside the rim. */
-/* The pointer is a flapper hanging from a pin above the rim, its tip reaching a little way past the pegs onto the
+/* The jackpot in the hub: a marquee title between twinkling stars over a gold number with a sheen running across it.
+   Sized in cqw (the wheel box is the container), so it fills the hub at any wheel size. */
+.wheel-box { container-type: inline-size; }
+.wheel-center { --jp-gold: linear-gradient(100deg, #ffae00 0%, #ffd54a 30%, #fffbe0 50%, #ffd54a 70%, #ffae00 100%); gap: .5cqw; }
+:root[data-theme="light"] .wheel-center { --jp-gold: linear-gradient(100deg, #b46f00 0%, #e79a00 30%, #ffcf40 50%, #e79a00 70%, #b46f00 100%); }
+.wheel-center span { display: flex; align-items: center; gap: .5em; font-size: clamp(9px, 1.9cqw, 15px); font-weight: 800;
+  letter-spacing: .2em; text-indent: .2em; text-transform: uppercase; color: var(--wheel-jackpot);
+  text-shadow: 0 0 1.2cqw color-mix(in srgb, var(--wheel-jackpot) 60%, transparent); }
+.wheel-center span::before, .wheel-center span::after { content: "★"; letter-spacing: 0; text-indent: 0; font-size: .85em;
+  animation: wheel-jp-twinkle 1.4s ease-in-out infinite alternate; }
+.wheel-center span::after { animation-delay: -.7s; }
+.wheel-center b { font-size: clamp(22px, 6.6cqw, 54px); font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums;
+  color: transparent; background: var(--jp-gold) 0 0 / 250% 100%; -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 1cqw color-mix(in srgb, var(--wheel-jackpot) 55%, transparent));
+  animation: wheel-jp-sheen 3.2s linear infinite, wheel-jp-pulse 1.6s ease-in-out infinite alternate; }
+.wheel-center i { font-style: normal; font-size: clamp(8px, 1.5cqw, 12px); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+@keyframes wheel-jp-sheen { from { background-position: 100% 0; } to { background-position: -66% 0; } }
+@keyframes wheel-jp-pulse { from { transform: scale(1); } to { transform: scale(1.06); } }
+@keyframes wheel-jp-twinkle { from { opacity: .35; transform: scale(.8) rotate(-12deg); } to { opacity: 1; transform: scale(1.15) rotate(12deg); } }
+/* The pointer is a leaf hanging by its stem from a pin above the rim, its tip reaching a little way past the pegs onto the
    slices; wheel.js turns it as the simulated pegs push it aside and it springs back. Sizes are shares of the wheel (the
    pegs straddle the wheel's edge, their tops 10.2% down it), so it lines up at any size. */
-.wheel-pointer { position: absolute; top: 3.7%; left: 50%; width: 4%; height: 7.2%; transform: translateX(-50%); transform-origin: 50% 6%; z-index: 1;
-  background: linear-gradient(90deg, var(--wheel-flapper), var(--wheel-flapper-shine) 45%, #262626 55%, var(--wheel-flapper)); clip-path: polygon(18% 0, 82% 0, 70% 62%, 50% 100%, 30% 62%);
+.wheel-pointer { position: absolute; top: 3.7%; left: 50%; width: 5%; height: 7.2%; transform: translateX(-50%); transform-origin: 50% 6%; z-index: 1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 72' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%232e8f3e'/%3E%3Cstop offset='.5' stop-color='%2362c94f'/%3E%3Cstop offset='1' stop-color='%23247a35'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M20 1C36 12 40 40 20 71C0 40 4 12 20 1Z' fill='url(%23g)' stroke='%2314501f' stroke-width='1.5'/%3E%3Cpath d='M20 4V66M20 18L10 12M20 18L30 12M20 30L7 23M20 30L33 23M20 43L9 37M20 43L31 37M20 55L14 51M20 55L26 51' fill='none' stroke='%2314501f' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   filter: drop-shadow(0 3px 3px rgba(0, 0, 0, .55)); }
 .wheel-pivot { position: absolute; top: 3.35%; left: 50%; width: 1.7%; aspect-ratio: 1; transform: translateX(-50%); z-index: 2; border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #fff, #c9c4b0 40%, #6e6a5c); box-shadow: 0 2px 3px rgba(0, 0, 0, .6); }
+  background: radial-gradient(circle at 35% 35%, #e9c9a0, #9a6a3a 45%, #4a2c12); box-shadow: 0 2px 3px rgba(0, 0, 0, .6); }
 .wheel-box.shaking { animation: wheel-shake .5s cubic-bezier(.36, .07, .19, .97); }
 @keyframes wheel-shake { 15%, 55% { transform: translate(calc(var(--shake) * -1), 1px); } 35%, 75% { transform: translate(var(--shake), -1px); } 90% { transform: translate(calc(var(--shake) / -3), 0); } }
 /* Teasing: the stage darkens round a glowing wheel. */
@@ -1824,32 +1834,39 @@ body.modal-open { overflow: hidden; }
 .wheel-tense { background-color: color-mix(in srgb, var(--surface) 70%, #000); box-shadow: inset 0 0 120px rgba(0, 0, 0, .6); }
 .wheel-tense .wheel-svg { filter: drop-shadow(0 0 22px color-mix(in srgb, var(--wheel-jackpot) 70%, transparent)); }
 .wheel-tense .wheel-pointer { filter: drop-shadow(0 0 10px var(--wheel-jackpot)); }
-.wheel-sad .wheel-svg { filter: grayscale(.85) brightness(.8); transition: filter .4s; }
 /* Screen effects (a fixed layer that removes itself): a coloured flash per prize, the jackpot's banner and rain. */
 .wheel-fx-layer { position: fixed; inset: 0; pointer-events: none; z-index: 60; overflow: hidden; }
 .wheel-flash { position: absolute; inset: 0; opacity: 0; animation: wheel-flash .45s ease-out var(--times, 1); }
-.wheel-flash.fx-credits { background: radial-gradient(circle, rgba(47, 125, 224, .35), transparent 70%); }
-.wheel-flash.fx-bananas { background: radial-gradient(circle, rgba(232, 185, 35, .35), transparent 70%); }
-.wheel-flash.fx-boost { background: radial-gradient(circle, rgba(155, 93, 229, .45), transparent 70%); }
-.wheel-flash.fx-insurance { background: radial-gradient(circle, rgba(20, 163, 139, .4), transparent 70%); }
-.wheel-flash.fx-item { background: radial-gradient(circle, rgba(240, 124, 42, .45), transparent 70%); }
-.wheel-flash.fx-again { background: radial-gradient(circle, rgba(226, 85, 122, .35), transparent 70%); }
+.wheel-flash.fx-credits { background: radial-gradient(circle, rgba(63, 180, 100, .38), transparent 70%); }
+.wheel-flash.fx-bananas { background: radial-gradient(circle, rgba(242, 194, 48, .35), transparent 70%); }
+.wheel-flash.fx-boost { background: radial-gradient(circle, rgba(122, 79, 181, .5), transparent 70%); }
+.wheel-flash.fx-insurance { background: radial-gradient(circle, rgba(58, 166, 160, .4), transparent 70%); }
+.wheel-flash.fx-item { background: radial-gradient(circle, rgba(217, 138, 43, .45), transparent 70%); }
+.wheel-flash.fx-again { background: radial-gradient(circle, rgba(201, 80, 60, .4), transparent 70%); }
 .wheel-flash.fx-jackpot { background: radial-gradient(circle, rgba(255, 230, 120, .85), rgba(255, 170, 0, .35) 60%, transparent 85%); }
 @keyframes wheel-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
-html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 55; pointer-events: none; animation: wheel-dim 4.2s ease-in-out forwards; }
-@keyframes wheel-dim { 0% { opacity: 0; } 10%, 75% { opacity: 1; } 100% { opacity: 0; } }
+html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 55; pointer-events: none; animation: wheel-dim var(--wheel-dim-ms, 4.2s) ease-in-out forwards; }
+@keyframes wheel-dim { 0% { opacity: 0; } 5%, 85% { opacity: 1; } 100% { opacity: 0; } }
 .wheel-banner { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%); font-size: 88px; font-weight: 900; letter-spacing: 2px;
   color: #ffd54a; text-shadow: 0 0 24px #ff9f1c, 0 6px 0 #8a5a00; animation: wheel-banner 3.6s ease-out forwards; white-space: nowrap; }
-@keyframes wheel-banner { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.3); } 12% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
-  20%, 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -60%) scale(1); } }
+.wheel-banner.big { font-size: 64px; color: #fff; text-shadow: 0 0 26px var(--wheel-credits), 0 5px 0 var(--wheel-credits-2); }
+@keyframes wheel-banner { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.3); } 5% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  9%, 90% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -60%) scale(1); } }
 .wheel-rain { position: absolute; top: -60px; animation-name: wheel-fall; animation-timing-function: linear; animation-fill-mode: forwards; }
 @keyframes wheel-fall { to { transform: translateY(115vh) rotate(540deg); } }
-.wheel-nom { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); font-size: 64px; animation: wheel-nom 1.6s ease-out forwards; }
-.wheel-nom span { display: block; font-size: 20px; font-weight: 800; text-align: center; color: var(--text-2); }
-@keyframes wheel-nom { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.5); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
-  70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -70%) scale(.9); } }
-.wheel-controls { flex: 1; min-width: 200px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.wheel-controls { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: calc((100% - var(--wheel-w)) / 2); display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
 .wheel-spin { min-width: 200px; padding: 12px 28px; font-size: 17px; font-weight: 700; background: var(--accent); color: #fff; border-color: var(--accent); }
+/* Grab and throw: the wheel is the only control. A ring on the rim and a dotted arrow show where and which way. */
+.wheel-box.grabbable .wheel-svg { cursor: grab; }
+.wheel-box.grabbable { touch-action: none; user-select: none; -webkit-user-select: none; }
+.wheel-box.grabbing .wheel-svg { cursor: grabbing; }
+.wheel-grab-hint { display: none; pointer-events: none; }
+.wheel-box.grabbable:not(.grabbing) .wheel-grab-hint { display: block; animation: wheel-grab-hint 1.8s ease-in-out infinite; transform-origin: 200px 200px; transform-box: view-box; }
+.wheel-grab-hint circle { fill: rgba(255, 255, 255, .22); stroke: #fff; stroke-width: 3; }
+.wheel-grab-hint .arc { fill: none; stroke: var(--text); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: .5 9; }
+.wheel-grab-hint .tip { fill: none; stroke: var(--text); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes wheel-grab-hint { 0%, 100% { transform: rotate(-5deg); opacity: .65; } 55% { transform: rotate(9deg); opacity: 1; } }
+.wheel-next { margin: 0; font-size: 16px; font-weight: 600; color: var(--muted); }
 .wheel-spin:disabled { background: var(--surface-2); color: var(--muted); border-color: var(--border); cursor: default; }
 .wheel-result { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
 .wheel-result.jackpot { color: var(--wheel-jackpot); font-size: 22px; }
@@ -1861,12 +1878,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .wheel-spins li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }
 .wheel-spins.who li { grid-template-columns: 140px minmax(0, 1fr) auto; }
 .wheel-tokens li:last-child, .wheel-spins li:last-child { border-bottom: 0; }
-@media (prefers-reduced-motion: reduce) {
-  #wheel-rotor { transition: none !important; }
-  .wheel-bulb, .wheel-jp-halo, .wheel-box.shaking { animation: none !important; }
-  .wheel-banner { animation: wheel-fade 3.6s ease-out forwards; transform: translate(-50%, -50%); }
-  @keyframes wheel-fade { 0% { opacity: 0; } 15%, 80% { opacity: 1; } 100% { opacity: 0; } }
-}
 
 /* ---- Casino tables: blackjack (blackjack.js) and poker (poker.js), with casino.js's cards and Onkey ---- */
 .casino-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
@@ -2072,11 +2083,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .pk-log li { padding: 5px 0; border-bottom: 1px solid var(--grid); }
 .pk-log li:last-child { border-bottom: 0; }
 .pk-last-board { display: flex; gap: 3px; margin-bottom: 8px; }
-@media (prefers-reduced-motion: reduce) {
-  .onkey-dealer.talking .onkey-face { animation: none; }
-  .onkey-bubble, .timer-bar::after { transition: none; }
-  .btn.casino-act.hinted { animation: none; }
-}
 
 
 /* ---- Onkey's Casino items (bananas.py, slots card_back / chips / seat): how a player looks at the tables ---- */
@@ -2170,9 +2176,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .cm-group { display: flex; flex-direction: column; gap: 6px; }
 .cm-group-label { align-self: flex-start; background: none; border: 0; padding: 2px 0; font: 600 13px var(--font); color: var(--text-2); cursor: pointer; }
 .cm-group-label:hover, .cm-group-label.on { color: var(--accent); }
-@media (prefers-reduced-motion: reduce) {
-  .pcard.back.cbk-gold, .chp-rainbow.chip-dot, .chp-rainbow.chip-stake, .chp-rainbow.stake-key { animation: none; }
-}
 
 /* Dealing (casino.js deal()): a new card flies in from Onkey at its turn in the deal; a face-down card turns over;
    totals, results and the status line (.after-deal) wait until the last card has landed. */
@@ -2184,9 +2187,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .casino-controls { display: contents; }
 .casino-controls.after-deal { display: block; }
 @keyframes after-deal { from { opacity: 0; transform: translateY(4px); } }
-@media (prefers-reduced-motion: reduce) {
-  .pcard.deal-in, .pcard.flip-in, .after-deal, .bj-hand.dim-wait .bj-cards { animation: none; }
-}
 
 /* Onkey's save (casino.js card() with opts.fix): the number in the corner of the card that busted you is crossed out
    in blue pen and the one that makes 21 is written next to it, crooked, in a handwriting font; the suits stay. Dealt,
@@ -2206,9 +2206,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 @keyframes fix-stroke-a { from { clip-path: inset(0 100% 100% 0); } to { clip-path: inset(0); } }
 @keyframes fix-stroke-b { from { clip-path: inset(0 0 100% 100%); } to { clip-path: inset(0); } }
 @keyframes fix-scrawl { from { opacity: 0; transform: rotate(-30deg) scale(1.6); } }
-@media (prefers-reduced-motion: reduce) {
-  .pcard.fixed.fix-in .pc-was::before, .pcard.fixed.fix-in .pc-was::after, .pcard.fixed.fix-in .pc-scrawl { animation: none; }
-}
 
 /* The Deal button (blackjack.js dealBtn()): a cream card with gold lettering and corner pips, sitting on a small fan of
    card backs. Hovering spreads the fan, a shine sweeps across the face now and then, and pressing it flicks the top
@@ -2303,10 +2300,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
   100% { transform: translate(-50%, -110px) scale(1); opacity: 0; } }
 .onkey-dealer.bonked .onkey-face { animation: onkey-bonk 0.5s ease-out; }
 @keyframes onkey-bonk { 0% { transform: rotate(0); } 20% { transform: rotate(-16deg) translateX(-6px); } 45% { transform: rotate(10deg); } 70% { transform: rotate(-5deg); } 100% { transform: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .chip-stake.chip-in, .chip-stake.chip-pay, .chip-stake.chip-lost, .chip-stake.chip-back, .bj-spot.hot, .deal-face::after, .emote-pop, .onkey-dealer.bonked .onkey-face { animation: none; }
-  .chip-stake.chip-lost, .chip-stake.chip-pay, .chip-stake.chip-back { display: none; }
-}
 
 /* Blackjack's action buttons (blackjack.js controlsHtml()): one shape and one height for all four, dark with a coloured
    top edge for each move (Hit green, Stand red, Double gold, Split blue), the key in the corner, the extra stake on a
@@ -2330,7 +2323,6 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 @keyframes bj-hint-glow { from { box-shadow: 0 0 0 3px var(--turn), 0 0 8px rgba(255, 210, 63, 0.3), 0 4px 0 var(--base); }
   to { box-shadow: 0 0 0 3px var(--turn), 0 0 22px rgba(255, 210, 63, 0.7), 0 4px 0 var(--base); } }
 .streak-tag.big { font-size: 16px; padding: 6px 14px; margin-left: 6px; }
-@media (prefers-reduced-motion: reduce) { .bj-act.hinted { animation: none; } }
 
 /* Tipping Onkey after a win (blackjack.js tipRow()): a row of three tip chips over the rack; afterwards a thank-you. */
 .bj-controls .casino-controls, .bj-controls .casino-controls.after-deal { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -2394,7 +2386,51 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .hunt-pop { position: absolute; transform: translate(-50%, -100%); color: #f5c518; font-weight: 700; font-size: 20px; pointer-events: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .6); animation: hunt-pop .7s ease-out forwards; }
 @keyframes hunt-pop { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -40px; } }
-@media (prefers-reduced-motion: reduce) { .hunt-banana.land, .hunt-pop, .hunt-onkey.throw { animation: none; } }
+.hunt-pop.gold { color: #ffe27a; font-size: 26px; text-shadow: 0 0 10px #ffae00, 0 1px 2px rgba(0, 0, 0, .7); animation-duration: 1.05s; }
+.hunt-pop.air { color: #9ef0ff; font-size: 22px; animation-duration: 1.05s; }
+.hunt-pop.bad { color: #ff8f7a; animation-duration: 1.05s; }
+.hunt-fly.picked { visibility: hidden; }
+/* What Onkey throws besides a plain banana. Golden: a gold glow that pulses, greying as it's about to rot. Rotten (the
+   decoy): brown and dull, so you have to look. A bunch is plain bananas, a little smaller. */
+.hunt-banana.golden, .hunt-fly.golden { filter: drop-shadow(0 0 10px #ffd54a) drop-shadow(0 0 22px #ffae00) saturate(1.5) brightness(1.15); }
+.hunt-banana.golden { animation: hunt-land .22s ease-out, hunt-gold .7s ease-in-out .22s infinite alternate; }
+.hunt-banana.golden.rotting { animation: none; filter: sepia(1) saturate(.6) brightness(.6); transition: filter .5s; }
+@keyframes hunt-gold { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -50%) scale(1.12); } }
+.hunt-banana.rotten, .hunt-fly.rotten { filter: sepia(1) hue-rotate(-28deg) saturate(1.6) brightness(.5) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); cursor: crosshair; }
+.hunt-banana.bunch, .hunt-fly.bunch { font-size: 46px; }
+/* The clock on a golden banana or a bunch: a bar across the top of the field that runs down. */
+.hunt-clock { position: absolute; left: 12px; right: 12px; top: 10px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .35); overflow: hidden; pointer-events: none; }
+.hunt-clock i { display: block; height: 100%; width: 100%; transform-origin: left; background: #9ef0ff; animation: hunt-clock linear forwards; }
+.hunt-clock.golden i { background: #ffd54a; }
+@keyframes hunt-clock { to { transform: scaleX(0); } }
+/* Greg walks in to take the banana; a click sends him off. */
+.hunt-greg { position: absolute; left: 0; top: 0; width: 74px; cursor: pointer; filter: drop-shadow(0 5px 8px rgba(0, 0, 0, .5)); will-change: transform; }
+.hunt-greg.shooed { pointer-events: none; }
+/* The combo, in the field's top-left corner: the multiplier, the run, and a bar to the next step. */
+.hunt-combo { position: absolute; left: 12px; top: 24px; z-index: 2; display: grid; grid-template-columns: auto auto; align-items: baseline; gap: 2px 8px;
+  padding: 6px 12px 8px; border-radius: 12px; background: rgba(0, 0, 0, .5); color: #fff; pointer-events: none; }
+.hunt-combo:empty { display: none; }
+.hunt-combo b { font-size: 24px; font-weight: 900; color: #ffd54a; line-height: 1; }
+.hunt-combo[data-mult="3"] b { color: #ff8a3d; text-shadow: 0 0 10px #ff6d00; }
+.hunt-combo span { font-size: 12px; font-weight: 700; }
+.hunt-combo i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: #ffd54a; transition: width .2s; }
+.hunt-combo.broke { animation: hunt-broke .45s ease-out; }
+@keyframes hunt-broke { 20% { transform: translateX(-6px) rotate(-3deg); } 50% { transform: translateX(6px) rotate(3deg); } 100% { transform: none; } }
+/* A rotten banana: the field greys over until you can pick again. */
+.hunt-field.hunt-frozen { cursor: not-allowed; }
+.hunt-field.hunt-frozen::after { content: "Yuck!"; position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; font-size: 44px; font-weight: 900;
+  color: #d9c48a; background: rgba(40, 28, 8, .45); pointer-events: none; }
+/* The field of the day (hunt.py theme()): the same field, different ground and scenery. */
+.hunt-theme-night { background: radial-gradient(ellipse at 80% 10%, #24365e 0%, #131f3d 45%, #090f22 100%); }
+.hunt-theme-rain { background: radial-gradient(ellipse at 30% 20%, #2c5a52 0%, #1b3f3d 45%, #10282a 100%); }
+.hunt-theme-beach { background: linear-gradient(180deg, #caa25a 0%, #b58a44 62%, #2f7fa8 86%, #1f5f8a 100%); }
+.hunt-theme-ruins { background: radial-gradient(ellipse at 40% 25%, #6b6452 0%, #4a4538 45%, #2c2a22 100%); }
+.hunt-deco.firefly { opacity: .9; animation: hunt-firefly 2.4s ease-in-out infinite alternate; }
+@keyframes hunt-firefly { from { opacity: .25; transform: translate(-50%, -50%) scale(.8); } to { opacity: 1; transform: translate(-40%, -60%) scale(1.1); } }
+.hunt-rain { position: absolute; inset: -40px 0 0; pointer-events: none; opacity: .35;
+  background: repeating-linear-gradient(105deg, transparent 0 14px, rgba(200, 230, 255, .55) 14px 15px, transparent 15px 34px); background-size: 100% 80px;
+  animation: hunt-rain .5s linear infinite; }
+@keyframes hunt-rain { to { background-position: -22px 80px; } }
 
 /* ---- phone ------------------------------------------------------------
    Up to 640px wide; checked at 393 × 659 (an iPhone 15). See "Phone" in docs/DESIGN.md. */
@@ -2552,12 +2588,13 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .wheel-stage { position: relative; padding: 0 0 4px; border: 0; background: none; box-shadow: none; }  /* no card: the wheel runs edge to edge */
   .wheel-head > div { display: none; }  /* no title or description: the page is the wheel */
   .wheel-sound { position: absolute; z-index: 3; top: 2px; right: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; }
-  .wheel-row { flex-direction: column; gap: 4px; }
+  .wheel-row { --wheel-w: calc(100% + 24px); flex-direction: column; gap: 4px; }
   .wheel-box { width: calc(100% + 24px); margin: -8px -12px -6px; }
-  .wheel-controls { flex: none; min-width: 0; align-self: stretch; }
+  .wheel-controls { position: static; transform: none; width: auto; align-self: stretch; }
   .wheel-spin { min-width: 0; width: 100%; }
   .wheel-side .card { margin-bottom: 12px; }
   .wheel-banner { font-size: 44px; }
+  .wheel-banner.big { font-size: 32px; }
   .wheel-spins.who li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
   .wheel-spins li > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* a long name is cut, not wrapped under its swatch */
   /* Place bets: one column. The odds format and the boost come first, then team markets, player props, the custom
@@ -2622,6 +2659,10 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .hunt-stage { margin-top: 0; }
   .hunt-card > #hunt-live { margin: 8px 4px 2px; }
   .hunt-banana, .hunt-fly { font-size: 46px; }
+  .hunt-banana.bunch, .hunt-fly.bunch { font-size: 40px; }
+  .hunt-greg { width: 58px; }
+  .hunt-combo { top: 22px; padding: 4px 10px 6px; }
+  .hunt-combo b { font-size: 20px; }
   .hunt-deco { font-size: 30px; }
   .hunt-onkey { right: 6px; bottom: 4px; width: 84px; }
   .hunt-onkey.full { width: 110px; }

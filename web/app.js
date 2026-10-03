@@ -226,7 +226,6 @@
   }
 
   // ---- little celebrations ----------------------------------------------------------
-  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const LONG_SHOT_DECIMAL = 6; // +500 or longer: gold confetti, and more of it
 
   // Count a balance from its old value to the new one, flashing green (up) or red (down).
@@ -234,7 +233,7 @@
     el.classList.remove('tick-up', 'tick-down');
     void el.offsetWidth; // restart the flash
     el.classList.add(to > from ? 'tick-up' : 'tick-down');
-    if (reducedMotion() || document.hidden) return; // a hidden tab pauses the frames: just show the new balance
+    if (document.hidden) return; // a hidden tab pauses the frames: just show the new balance
     const t0 = performance.now(), dur = 900;
     const step = (now) => {
       const k = Math.min(1, (now - t0) / dur), eased = 1 - (1 - k) ** 3;
@@ -287,7 +286,7 @@
   // A burst of confetti from an element (the credits chip), falling under gravity and fading out.
   // style: a Onkey's Shop celebration, { colors } for its own palette or { emoji } to throw emoji instead.
   function confetti(from, big, style) {
-    if (!from || reducedMotion()) return;
+    if (!from) return;
     const r = from.getBoundingClientRect(), x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
     const emoji = style && style.emoji, n = emoji ? (big ? 70 : 40) : big ? 160 : 80;
     const colors = big ? GOLD : (style && style.colors) || CONFETTI;
@@ -968,7 +967,7 @@
           const [o, u] = mk.selections;
           // The line as plain bold text, then over / under as one button split down the middle.
           return `<td class="prop" data-label="${esc(sd.label)}" title="Line ${mk.line} · average ${mk.mean}"><div class="prop-cell"><span class="prop-line">${mk.line}</span>` +
-            `<div class="prop-pair${o.streak || u.streak || o.cold || u.cold ? ' lit' : ''}">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
+            `<div class="prop-pair${o.streak || u.streak || o.cold || u.cold || o.boost || u.boost ? ' lit' : ''}">${oddBtn(mk, o, 'O')}${oddBtn(mk, u, 'U')}</div></div></td>`;
         }).join('') + '</tr>';
     }).join('');
     // Each scoreboard card is a pair: the "top" market and its counter, flipped with a toggle. No subtitles, so every
@@ -1680,7 +1679,7 @@
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance });
-    window.FiveHunt.init({ state, $, api, draw, esc, fmt, kpi, renderMe, toast, plainName });
+    window.FiveHunt.init({ state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName });
     window.FiveOnkey.init({ state, fmt, esc });
     window.FiveOnkey.start();
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
@@ -1749,9 +1748,9 @@
       if (picker()) themeMenu(menu.classList.contains('hidden'));
       else { const next = nextTheme(current()); setTheme(next); window.FiveOnkey?.note('theme', { theme: next }); }
     });
-    // Greg Mode: every click drops a little Greg from the pointer (never blocks the click; off for reduced motion).
+    // Greg Mode: every click drops a little Greg from the pointer (never blocks the click).
     document.addEventListener('click', (e) => {
-      if (document.documentElement.dataset.theme !== 'greg' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (document.documentElement.dataset.theme !== 'greg') return;
       if (document.querySelectorAll('.greg-drop').length >= 25) return;
       const greg = document.createElement('img');
       greg.src = '/assets/greg-drop.png';

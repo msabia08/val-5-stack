@@ -5,15 +5,34 @@ Onkey has dropped bananas all over the field. The server puts one banana somewhe
 pays CREDIT_PER_BANANA credit and moves the banana somewhere else, at least MIN_HOP away. Misses pay nothing and
 leave the banana where it is. The server decides every position and judges every click, so the page can't fake a
 hit; two more things keep a script from farming it: hits closer than MIN_INTERVAL_S to the last paid one aren't
-paid (the page has Onkey throw the next banana in from his corner, which takes about that long, so a person can't
-click sooner anyway), and each bettor is capped at `hunt_daily_max` bananas a day (`hunt_days`, one row per bettor
-per Pacific day, like the daily wheel; the day turns at midnight Pacific). The cap has a floor under it: a bettor
-with fewer than `hunt_floor` credits keeps picking past the cap until they have that many, so nobody is stuck broke
-(`_room()`). Credits picked are reported on the leaderboard in their own column (`hunt`) and left out of betting
-profit, like game rewards. A season reset tags the day rows with the season and the cap carries on by the day.
+paid (the page has Onkey throw the next banana in from his corner, which takes about that long), and each bettor is
+capped at `hunt_daily_max` credits a day (`hunt_days`, one row per bettor per Pacific day, like the daily wheel; the
+day turns at midnight Pacific). The cap has a floor under it: a bettor with fewer than `hunt_floor` credits keeps
+picking past the cap until they have that many, so nobody is stuck broke (`_room()`). Credits picked are reported on
+the leaderboard in their own column (`hunt`) and left out of betting profit, like game rewards. A season reset tags
+the day rows with the season and the cap carries on by the day.
 
-Targets live in memory (`self.targets`, one per bettor); a restart just means starting the hunt again.
+The extras (all on unless the manager is built with `extras=False`) make it a game. None of them raises the day's cap,
+which counts credits: they only get a bettor there sooner, except the streak's bonus, which sits on top of it.
+
+- What Onkey throws (`_new_target()`): mostly a plain banana; sometimes a golden one (GOLD_VALUE credits, but it rots
+  GOLD_TTL_S after landing), a bunch (BUNCH_SIZE at once, BUNCH_TTL_S to sweep them, BUNCH_BONUS for all of them), a
+  banana with a rotten decoy beside it (picking the decoy freezes the bettor FREEZE_S and breaks the combo), or a
+  banana Greg is walking to (he takes it GREG_S after it lands unless it's picked or he's shooed first).
+- Catching it in the air: a click on the banana while it flies (`air`, the page's progress along the arc, which
+  `arc_at()` turns into a spot to judge the click against) pays double.
+- The combo: picks in a row without a miss (`_mult()`: x2 from COMBO_STEPS[0] in a row, x3 from COMBO_STEPS[1]); a
+  miss, a rotten banana, a theft or COMBO_IDLE_S without a pick resets it.
+- The daily streak (`streak()`): on the N-th day in a row with a pick, the day's first banana pays N credits (up to
+  STREAK_MAX), and the day's cap is that much higher.
+- The hidden item (`_hidden()`): one pick a day, a different one for every bettor, also turns up shop bananas or a
+  daily wheel token (ledger reason `hunt`, once per bettor per day).
+- The field of the day (`theme()`): the scenery the page draws, one of THEMES by the Pacific day.
+
+Targets and combos live in memory (`self.targets`, `self.combos`, one per bettor); a restart just means starting the
+hunt again.
 """
+import hashlib
 import math
 import secrets
 import threading
@@ -31,27 +50,70 @@ CREDIT_PER_BANANA = 1
 DAILY_MAX = 250  # config hunt_daily_max
 FLOOR = 250  # config hunt_floor: with fewer credits than this, the daily cap doesn't apply
 
+# The throw, as the page draws it: from Onkey's hand in the bottom-right corner along an arc, AIR_S in the air.
+HAND = (FIELD_W - 96, FIELD_H - 104)
+AIR_S = 0.87
+AIR_R = 48  # a click within this of the flying banana catches it
+AIR_FROM, AIR_TO = 0.12, 0.96  # the part of the flight a catch counts in
+AIR_MIN_INTERVAL_S = 0.3  # a catch can come sooner after the last paid pick than a pick off the ground
+AIR_MULT = 2
+SLACK_S = 0.8  # the page starts each throw a moment after the server made it: timers allow this much
+# What Onkey throws: chances per throw (the rest are plain bananas).
+GOLD_CHANCE, BUNCH_CHANCE, ROTTEN_CHANCE, GREG_CHANCE = 0.05, 0.04, 0.12, 0.10
+GOLD_VALUE, GOLD_TTL_S = 5, 2.5
+BUNCH_SIZE, BUNCH_TTL_S, BUNCH_BONUS, BUNCH_INTERVAL_S, BUNCH_GAP = 5, 4.0, 3, 0.1, 90
+FREEZE_S = 2.0  # how long a rotten banana stops a bettor picking
+DECOY_GAP = 110  # the rotten decoy lands at least this far from the real banana
+GREG_S = 2.6  # how long Greg takes to walk to the banana once it has landed
+COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
+COMBO_IDLE_S = 8.0
+STREAK_MAX = 7
+HIDDEN_FROM, HIDDEN_TO = 5, 50  # the hidden item is one of the day's picks in this range
+HIDDEN_BANANAS = 25
+THEMES = ("jungle", "night", "rain", "beach", "ruins")
+
+
+def arc_at(x, y, k):
+    """Where a banana thrown to (x, y) is at progress k (0 in Onkey's hand, 1 landed): the page draws the same arc."""
+    x0, y0 = HAND
+    rise = max(110.0, min(240.0, math.hypot(x - x0, y - y0) * 0.4))
+    return x0 + (x - x0) * k, y0 + (y - y0) * k - rise * 4 * k * (1 - k)
+
+
+def theme(day):
+    """The field of the day: one of THEMES, by the Pacific day."""
+    return THEMES[int(hashlib.sha256(f"hunt-field:{day}".encode()).hexdigest(), 16) % len(THEMES)]
+
 
 class HuntManager:
-    def __init__(self, db, cfg=None):
+    def __init__(self, db, cfg=None, extras=True):
         self.db = db
         self.daily_max = max(0, int((cfg or {}).get("hunt_daily_max", DAILY_MAX)))
         self.floor = max(0, int((cfg or {}).get("hunt_floor", FLOOR)))
-        self.targets = {}  # lower-cased bettor name -> {"x", "y", "paid_ts"}
+        self.extras = extras
+        self.targets = {}  # lower-cased bettor name -> the target (see _new_target)
+        self.combos = {}  # lower-cased bettor name -> {"n": picks in a row, "ts": the last pick, "frozen": until when}
         self.lock = threading.Lock()
+        self.rng = secrets.SystemRandom()
+        self._serial = 0
 
     @property
     def enabled(self):
         return self.daily_max > 0
 
-    def terms(self):
+    def terms(self, now=None):
         return {"enabled": self.enabled, "daily_max": self.daily_max, "floor": self.floor, "per_banana": CREDIT_PER_BANANA,
-                "field": {"w": FIELD_W, "h": FIELD_H, "r": TARGET_R}, "min_interval_s": MIN_INTERVAL_S}
+                "field": {"w": FIELD_W, "h": FIELD_H, "r": TARGET_R}, "min_interval_s": MIN_INTERVAL_S,
+                "extras": self.extras, "theme": theme(wheel_day(now or time.time())) if self.extras else THEMES[0],
+                "air": {"s": AIR_S, "r": AIR_R, "from": AIR_FROM, "to": AIR_TO, "mult": AIR_MULT, "hand": list(HAND)},
+                "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S,
+                "bunch": {"size": BUNCH_SIZE, "ttl_s": BUNCH_TTL_S, "bonus": BUNCH_BONUS},
+                "combo": {"steps": list(COMBO_STEPS), "idle_s": COMBO_IDLE_S}, "streak_max": STREAK_MAX}
 
-    def _room(self, today, balance):
-        """How many more bananas a bettor may pick right now, and whether that's only because they're under the
+    def _room(self, today, balance, cap=None):
+        """How many more credits a bettor may pick right now, and whether that's only because they're under the
         floor: what the day's cap leaves, else (with fewer than `hunt_floor` credits) what gets them back to it."""
-        cap_left = max(0, self.daily_max - today)
+        cap_left = max(0, int(math.floor((self.daily_max if cap is None else cap) - today + 1e-9)))
         if cap_left > 0:
             return cap_left, False
         if balance < self.floor:
@@ -59,67 +121,192 @@ class HuntManager:
         return 0, False
 
     # ---- the banana ------------------------------------------------------------------
-    @staticmethod
-    def _place(prev=None):
-        """Somewhere in the field, at least MIN_HOP from `prev` when there's room to be."""
-        rng = secrets.SystemRandom()
+    def _spot(self, away=(), gap=MIN_HOP):
+        """Somewhere in the field, at least `gap` from every point in `away` when there's room to be."""
         for _ in range(40):
-            x = rng.randint(MARGIN, FIELD_W - MARGIN)
-            y = rng.randint(MARGIN, FIELD_H - MARGIN)
-            if prev is None or (x - prev["x"]) ** 2 + (y - prev["y"]) ** 2 >= MIN_HOP ** 2:
+            x = self.rng.randint(MARGIN, FIELD_W - MARGIN)
+            y = self.rng.randint(MARGIN, FIELD_H - MARGIN)
+            if all((x - p["x"]) ** 2 + (y - p["y"]) ** 2 >= gap ** 2 for p in away):
                 break
         return {"x": x, "y": y}
 
-    def _target(self, name, fresh=False):
+    def _new_target(self, prev=None, now=0.0, paid_ts=0.0):
+        """What Onkey throws next. A target is {"id", "kind" (banana / golden / bunch), "x", "y", "born" (when it was
+        thrown), "paid_ts" (the last paid pick), and by kind: "expires" (golden, bunch), "items" (bunch: each
+        {"x", "y", "picked"}), "decoy" (a rotten banana's spot), "greg" ({"x", "y": where he starts, "arrives"})}."""
+        self._serial += 1
+        spot = self._spot([prev] if prev else ())
+        t = {"id": self._serial, "kind": "banana", **spot, "born": now, "paid_ts": paid_ts}
+        if not self.extras:
+            return t
+        roll = self.rng.random()
+        if roll < GOLD_CHANCE:
+            t.update(kind="golden", expires=now + AIR_S + GOLD_TTL_S + SLACK_S)
+        elif roll < GOLD_CHANCE + BUNCH_CHANCE:
+            items = [spot]
+            while len(items) < BUNCH_SIZE:
+                items.append(self._spot(items, BUNCH_GAP))
+            t.update(kind="bunch", items=[{**i, "picked": False} for i in items], expires=now + AIR_S + BUNCH_TTL_S + SLACK_S)
+        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE:
+            t["decoy"] = self._spot([spot], DECOY_GAP)
+        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE:
+            # Greg comes in from the side further from the banana, level with it or thereabouts.
+            gx = 0 if spot["x"] > FIELD_W / 2 else FIELD_W
+            gy = min(FIELD_H - MARGIN, max(MARGIN, spot["y"] + self.rng.randint(-120, 120)))
+            t["greg"] = {"x": gx, "y": gy, "arrives": now + AIR_S + GREG_S + SLACK_S}
+        return t
+
+    def _combo(self, key, now):
+        c = self.combos.setdefault(key, {"n": 0, "ts": 0.0, "frozen": 0.0})
+        if c["n"] and now - c["ts"] > COMBO_IDLE_S:
+            c["n"] = 0
+        return c
+
+    @staticmethod
+    def _mult(n):
+        return 1 + sum(n >= step for step in COMBO_STEPS)
+
+    def _lapse(self, key, t, now):
+        """What became of a target left too long: 'rotted' (a golden banana), 'bunch_over', 'stolen' (Greg got there),
+        or None while it's still good. A lapsed target is replaced."""
+        why = None
+        if t.get("expires") and now > t["expires"]:
+            why = "rotted" if t["kind"] == "golden" else "bunch_over"
+        elif t.get("greg") and now > t["greg"]["arrives"]:
+            why = "stolen"
+            self._combo(key, now)["n"] = 0
+        if why:
+            self.targets[key] = self._new_target(t, now, t["paid_ts"])
+        return why
+
+    def _target(self, name, now, early=0.0):
+        """The bettor's target, a new one if there's none; lapsed ones are replaced (`early`: seconds of the timers'
+        slack to take back, when it's the page's own timer that ran out). Returns (target, what lapsed)."""
         key = name.lower()
         with self.lock:
             t = self.targets.get(key)
-            if fresh or t is None:
-                t = {**self._place(t), "paid_ts": 0.0}
-                self.targets[key] = t
-            return t
+            if t is None:
+                t = self.targets[key] = self._new_target(None, now)
+                return t, None
+            why = self._lapse(key, t, now + early)
+            if why:
+                self.targets[key]['born'] = now
+            return self.targets[key], why
 
     @staticmethod
     def _public(t):
-        return {"x": t["x"], "y": t["y"]} if t else None
+        if not t:
+            return None
+        out = {"id": t["id"], "kind": t["kind"], "x": t["x"], "y": t["y"]}
+        if t["kind"] == "bunch":
+            out["items"] = [{"x": i["x"], "y": i["y"], "picked": i["picked"]} for i in t["items"]]
+        if t.get("decoy"):
+            out["decoy"] = dict(t["decoy"])
+        if t.get("greg"):
+            out["greg"] = {"x": t["greg"]["x"], "y": t["greg"]["y"]}
+        return out
+
+    # ---- the day ---------------------------------------------------------------------
+    def _day(self, name, now):
+        """(bananas picked, credits picked) by this bettor today (whatever season the rows belong to)."""
+        row = self.db.query_one("SELECT COALESCE(SUM(bananas), 0) AS n, COALESCE(SUM(credits), 0) AS c FROM hunt_days "
+                                "WHERE lower(bettor)=lower(?) AND day=?", (name, wheel_day(now)))
+        return (int(row["n"]), float(row["c"])) if row else (0, 0.0)
+
+    def today(self, name, now=None):
+        """Credits this bettor picked today: what the day's cap counts."""
+        return int(round(self._day(name, now or time.time())[1]))
+
+    def streak(self, name, now=None):
+        """Which day in a row this is for the bettor (1 when they didn't pick yesterday), counting today whether
+        they've picked yet or not."""
+        if not self.extras:
+            return 1
+        now = now or time.time()
+        days = {r["day"] for r in self.db.query("SELECT DISTINCT day FROM hunt_days WHERE lower(bettor)=lower(?) AND bananas > 0", (name,))}
+        n, at = 1, now - 86400
+        while wheel_day(at) in days and n < 400:
+            n, at = n + 1, at - 86400
+        return n
+
+    def _streak_bonus(self, name, now):
+        """Credits the day's first banana pays on top, and the day's cap is raised by: the streak's day, less the
+        credit the banana pays anyway."""
+        return (min(self.streak(name, now), STREAK_MAX) - 1) * CREDIT_PER_BANANA
+
+    def _hidden(self, name, day):
+        """(which of the day's picks hides the item, what it is: 'bananas' / 'boost' / 'insurance') for a bettor."""
+        secret = self.db.get_meta("cookie_secret") or ""
+        h = int(hashlib.sha256(f"hunt-item:{secret}:{name.lower()}:{day}".encode()).hexdigest(), 16)
+        roll = (h >> 16) % 100
+        return HIDDEN_FROM + h % (HIDDEN_TO - HIDDEN_FROM + 1), "bananas" if roll < 60 else "boost" if roll < 85 else "insurance"
+
+    def _found(self, name, day, picks, now):
+        """Hand over the day's hidden item if this pick was the one: once per bettor per day."""
+        if not self.extras:
+            return None
+        nth, prize = self._hidden(name, day)
+        if picks != nth:
+            return None
+        amount = HIDDEN_BANANAS if prize == "bananas" else 0
+        with self.db.lock:
+            cur = self.db.conn.execute(
+                "INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES(?,?,'hunt',?,?,?)",
+                (name, amount, f"hunt:{name.lower()}:{day}", f"Banana Hunt: the hidden item ({prize})", now))
+            if cur.rowcount and prize != "bananas":
+                self.db.conn.execute("INSERT INTO wheel_perks(bettor, kind, status, created_ts) VALUES(?,?,'ready',?)", (name, prize, now))
+            self.db.conn.commit()
+            if not cur.rowcount:
+                return None
+        return {"kind": prize, "amount": amount,
+                "label": f"{HIDDEN_BANANAS} bananas" if prize == "bananas" else "a boost token" if prize == "boost" else "an insurance token"}
 
     # ---- reading ---------------------------------------------------------------------
-    def today(self, name, now=None):
-        """Bananas this bettor picked today (whatever season the rows belong to)."""
-        row = self.db.query_one("SELECT COALESCE(SUM(bananas), 0) AS n FROM hunt_days WHERE lower(bettor)=lower(?) AND day=?",
-                                (name, wheel_day(now or time.time())))
-        return int(row["n"]) if row else 0
-
     def status(self, name, now=None):
-        """The bettor's hunt: today's count and what's left (and whether only the floor allows it), their totals,
-        and the banana (None once they're done)."""
+        """The bettor's hunt: today's credits and what's left (and whether only the floor allows it), their totals,
+        streak and combo, and the banana (None once they're done)."""
         now = now or time.time()
         bettor = self.db.get_bettor(name)
         balance = bettor["balance"] if bettor else 0.0
-        today = self.today(name, now)
-        left, under = self._room(today, balance)
+        picks, credits = self._day(name, now)
+        streak, bonus = self.streak(name, now), self._streak_bonus(name, now)
+        left, under = self._room(credits, balance, self.daily_max + bonus)
         totals = self.db.hunt_totals().get(name.lower()) or {}
         t = self.targets.get(name.lower()) if left else None
-        return {"name": name, "today": today, "left": left, "done": left == 0, "under_floor": under, "floor": self.floor,
+        combo = self._combo(name.lower(), now)
+        return {"name": name, "today": int(round(credits)), "picks": picks, "left": left, "done": left == 0, "under_floor": under,
+                "floor": self.floor, "cap": self.daily_max + bonus,
                 "balance": round(balance, 2), "day": wheel_day(now),
                 "resets_ts": next_reset(now), "season": round(totals.get("season") or 0, 2),
                 "all_time": round(totals.get("all_time") or 0, 2), "bananas": int(totals.get("bananas") or 0),
+                "streak": {"days": streak, "bonus": bonus, "paid": picks > 0},
+                "combo": combo["n"], "mult": self._mult(combo["n"]),
                 "target": self._public(t)}
 
     def start(self, name, now=None):
-        """Put a banana down (a fresh one, wherever the last one was) and return the bettor's status."""
+        """Make sure the bettor has a banana to go for and return their status. One already down is thrown again by
+        the page, so its timers start over; it's never swapped for another (that would let a page fish for a golden
+        one)."""
         bettor = self.db.get_bettor(name)
         if not bettor:
             raise BetError("Sign in as a bettor first.")
         if not self.enabled:
             raise BetError("The hunt is closed.")
         now = now or time.time()
-        if self._room(self.today(bettor["name"], now), bettor["balance"])[0] > 0:
-            self._target(bettor["name"], fresh=True)
-        return self.status(bettor["name"], now)
+        name = bettor["name"]
+        if self._room(self._day(name, now)[1], bettor["balance"], self.daily_max + self._streak_bonus(name, now))[0] > 0:
+            t, _ = self._target(name, now)
+            with self.lock:
+                shift = now - t["born"]
+                t["born"] = now
+                if t.get("expires"):
+                    t["expires"] += shift
+                if t.get("greg"):
+                    t["greg"]["arrives"] += shift
+        return self.status(name, now)
 
     def summary(self, me=None, now=None):
-        return {"hunt": self.terms(), "board": self.board(), "me": self.status(me["name"], now) if me else None}
+        return {"hunt": self.terms(now), "board": self.board(), "me": self.status(me["name"], now) if me else None}
 
     def board(self, limit=10):
         """Who has picked the most: this season's credits, with today's and all-time counts."""
@@ -134,9 +321,10 @@ class HuntManager:
                  "bananas": int(r["bananas"] or 0), "today": int(r["today"] or 0)} for r in rows]
 
     # ---- clicking ---------------------------------------------------------------------
-    def click(self, name, x, y, now=None):
-        """Judge a click at (x, y) in field pixels. A hit pays a credit and moves the banana; the reply carries the
-        banana to draw next (None once the day's cap is reached), today's count and what's left."""
+    def click(self, name, x, y, now=None, air=None, shoo=False):
+        """Judge a click at (x, y) in field pixels. A hit pays and moves the banana; the reply carries the banana to
+        draw next (None once the day's cap is reached), today's credits and what's left, and the combo. `air`: the
+        click was on the banana in flight, this far along its arc (0-1). `shoo`: the click was on Greg."""
         bettor = self.db.get_bettor(name)
         if not bettor:
             raise BetError("Sign in as a bettor first.")
@@ -144,31 +332,110 @@ class HuntManager:
             raise BetError("The hunt is closed.")
         try:
             x, y = float(x), float(y)
+            air = None if air is None else float(air)
         except (TypeError, ValueError):
             raise BetError("Where did you click?")
-        if x != x or y != y:  # NaN
+        if x != x or y != y or (air is not None and air != air):  # NaN
             raise BetError("Where did you click?")
         now = now or time.time()
         name = bettor["name"]
-        today = self.today(name, now)
-        left, under = self._room(today, bettor["balance"])
+        key = name.lower()
+        picks, credits = self._day(name, now)
+        bonus = self._streak_bonus(name, now)
+        cap = self.daily_max + bonus
+        left, under = self._room(credits, bettor["balance"], cap)
         if left <= 0:
-            return {"hit": False, "reason": "done", "today": today, "left": 0, "done": True, "under_floor": False, "target": None}
-        t = self._target(name)
-        reply = {"today": today, "left": left, "done": False, "under_floor": under, "target": self._public(t)}
-        if now - t["paid_ts"] < MIN_INTERVAL_S:
-            return {"hit": False, "reason": "too_fast", **reply}
-        if (x - t["x"]) ** 2 + (y - t["y"]) ** 2 > TARGET_R ** 2:
-            return {"hit": False, "reason": "miss", **reply}
-        self.db.hunt_pay(name, wheel_day(now), CREDIT_PER_BANANA, now)
-        today += 1
-        left, under = self._room(today, bettor["balance"] + CREDIT_PER_BANANA)
+            return {"hit": False, "reason": "done", "today": int(round(credits)), "left": 0, "done": True, "under_floor": False,
+                    "target": None, "combo": 0, "mult": 1}
+        t, lapsed = self._target(name, now)
+        combo = self._combo(key, now)
+
+        def reply(hit, reason=None, **more):
+            out = {"hit": hit, "today": int(round(credits)), "left": left, "done": left == 0, "under_floor": under,
+                   "target": self._public(self.targets.get(key)), "combo": combo["n"], "mult": self._mult(combo["n"]), **more}
+            if reason:
+                out["reason"] = reason
+            return out
+
+        if lapsed:  # it rotted, the bunch's time ran out or Greg took it before this click: here's the next one
+            return reply(False, lapsed)
+        if now < combo["frozen"]:
+            return reply(False, "frozen", frozen_s=round(combo["frozen"] - now, 2))
+        if shoo:
+            if t.get("greg"):
+                with self.lock:
+                    t.pop("greg", None)
+                return reply(False, "shooed")
+            return reply(False, "miss")  # nobody there: not a miss that breaks the combo
+        near = lambda p, r=TARGET_R: (x - p["x"]) ** 2 + (y - p["y"]) ** 2 <= r ** 2  # noqa: E731
+        if t.get("decoy") and air is None and near(t["decoy"]):
+            with self.lock:
+                combo["n"], combo["frozen"] = 0, now + FREEZE_S
+                self.targets[key] = self._new_target(t, now, t["paid_ts"])
+            return reply(False, "rotten", frozen_s=FREEZE_S)
+
+        value, item = CREDIT_PER_BANANA, None
+        if t["kind"] == "bunch":
+            item = next((i for i in t["items"] if not i["picked"] and near(i)), None)
+            if item is None:
+                combo["n"] = 0
+                return reply(False, "miss")
+            if now - t["paid_ts"] < BUNCH_INTERVAL_S:
+                return reply(False, "too_fast")
+        elif air is not None:
+            ax, ay = arc_at(t["x"], t["y"], min(1.0, max(0.0, air)))
+            if not (AIR_FROM <= air <= AIR_TO) or now - t["born"] > AIR_S + SLACK_S * 2 or not near({"x": ax, "y": ay}, AIR_R):
+                combo["n"] = 0
+                return reply(False, "miss")
+            if now - t["paid_ts"] < AIR_MIN_INTERVAL_S:
+                return reply(False, "too_fast")
+            value *= AIR_MULT
+        else:
+            if now - t["paid_ts"] < MIN_INTERVAL_S:
+                return reply(False, "too_fast")
+            if not near(t):
+                combo["n"] = 0
+                return reply(False, "miss")
+        if t["kind"] == "golden":
+            value *= GOLD_VALUE
+
+        # A hit. The combo counts it, then multiplies it; the bunch's bonus and the streak's come on top.
+        combo["n"], combo["ts"] = combo["n"] + 1, now
+        mult = self._mult(combo["n"])
+        swept = False
+        if item is not None:
+            item["picked"] = True
+            swept = all(i["picked"] for i in t["items"])
+        pay = value * mult + (BUNCH_BONUS if swept else 0)
+        streak_paid = bonus if picks == 0 else 0  # the day's first banana
+        pay = min(pay + streak_paid, left)
+        self.db.hunt_pay(name, wheel_day(now), pay, now)
+        picks, credits = picks + 1, credits + pay
+        found = self._found(name, wheel_day(now), picks, now)
+        left, under = self._room(credits, bettor["balance"] + pay, cap)
         with self.lock:
-            if left > 0:
-                nxt = {**self._place(t), "paid_ts": now}
-                self.targets[name.lower()] = nxt
-            else:
-                nxt = None
-                self.targets.pop(name.lower(), None)
-        return {"hit": True, "paid": CREDIT_PER_BANANA, "today": today, "left": left, "done": left == 0, "under_floor": under,
-                "target": self._public(nxt)}
+            t["paid_ts"] = now
+            if left <= 0:
+                self.targets.pop(key, None)
+            elif item is None or swept:
+                self.targets[key] = self._new_target(t, now, now)
+        return reply(True, paid=pay, kind=t["kind"], air=air is not None, swept=swept, bunch_bonus=BUNCH_BONUS if swept else 0,
+                     streak_bonus=streak_paid, streak=self.streak(name, now), found=found)
+
+    def nudge(self, name, now=None):
+        """The page's timer ran out (a golden banana rotted, a bunch's time is up, Greg arrived): replace the target
+        if the server agrees, and say what happened. Never swaps a target that's still good."""
+        bettor = self.db.get_bettor(name)
+        if not bettor:
+            raise BetError("Sign in as a bettor first.")
+        now = now or time.time()
+        name = bettor["name"]
+        picks, credits = self._day(name, now)
+        left, under = self._room(credits, bettor["balance"], self.daily_max + self._streak_bonus(name, now))
+        if left <= 0:
+            return {"reason": "done", "today": int(round(credits)), "left": 0, "done": True, "under_floor": False, "target": None,
+                    "combo": 0, "mult": 1}
+        t, lapsed = self._target(name, now, early=SLACK_S + 0.2)
+        combo = self._combo(name.lower(), now)
+        return {"reason": lapsed, "today": int(round(credits)), "left": left, "done": False, "under_floor": under,
+                "target": self._public(t), "combo": combo["n"], "mult": self._mult(combo["n"])}

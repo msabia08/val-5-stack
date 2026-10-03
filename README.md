@@ -18,7 +18,7 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack** and **Poker**, played with betting credits) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack** and **Poker**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
@@ -72,8 +72,7 @@ more often and for longer the bigger the pair (never for cherries, bells or
 spikes); it happens on wins and losses alike, so it never gives the result away.
 Your credits (on the machine and in the top bar) show the stake taken until the
 reels stop, then count up to what you won, so they can't spoil it either. The speaker button in the marquee
-mutes the sounds and remembers your choice. Reduced motion shows the result immediately without rolling
-the reels or teasing, and keeps win celebrations to a glow and a banner.
+mutes the sounds and remembers your choice.
 
 All payouts include the stake; other results return zero. The lines in the table
 return 95% over many spins, a 5% house edge; everything the Golden Onkey pays is
@@ -792,16 +791,36 @@ where any signed-in bettor can borrow credits:
 
 ## Banana Hunt
 
-Broke and don't fancy a loan? Under Betting, the **Banana Hunt** pays credits
-for a menial task: Onkey dropped his bananas all over a field, and every one
-you click is **1 credit**. After every pick Onkey, in his corner, throws the
-next banana in along an arc; it can't be picked until it lands.
+Broke and don't fancy a loan? Under Casino, the **Banana Hunt** pays credits
+for a small game: Onkey, in his corner, throws bananas into a field, and every
+one you click is **1 credit**.
+
+- **Catch it in the air** and it pays double.
+- **Golden bananas** pay 5, but rot 2.5 seconds after they land.
+- A **bunch** is five at once: sweep them all inside 4 seconds for 3 more.
+- A brown **rotten banana** sometimes lands beside the real one. Pick it and
+  you can't pick anything for 2 seconds.
+- **Greg** sometimes walks in to take a banana. Pick it first, or click Greg to
+  send him off.
+- Picks in a row build a **combo**: every banana pays double from 10 in a row
+  and triple from 25, until you miss, pick a rotten one, lose one to Greg or
+  stop for 8 seconds.
+- Hunt on days in a row and the day's first banana pays your **streak**'s day
+  (2 on day 2, up to 7), on top of the day's cap.
+- One of your picks each day turns up a **hidden item**: 25 shop bananas, a
+  boost token or an insurance token.
+- The **field of the day** changes its scenery: jungle, night, rain, beach or
+  ruins.
+
+The rules underneath:
 
 - The server places each banana and judges each click, so only real picks
-  count: a miss pays nothing and leaves the banana where it is, and picks less
-  than about half a second apart aren't paid.
-- Each bettor can pick **`hunt_daily_max`** (default 250) bananas a day. The day
-  turns over at midnight Pacific, like the daily wheel.
+  count: a miss pays nothing and leaves the banana where it is, and picks off
+  the ground less than about half a second apart aren't paid.
+- Each bettor can pick **`hunt_daily_max`** (default 250) credits a day. The
+  extras only get you there sooner; they never raise the cap (the streak's
+  bonus is the one thing on top). The day turns over at midnight Pacific, like
+  the daily wheel.
 - The cap has a floor: with fewer than **`hunt_floor`** (default 250) credits,
   you keep picking past the cap until you have that many, so nobody is ever
   stuck broke.
@@ -895,30 +914,34 @@ The bet's ticket says so. Refunds stop when the pot runs dry.
 
 The Casino's **Daily wheel** page has a prize wheel every bettor can spin **once a
 day** for free. The day turns over at **midnight Pacific, which is 3 AM
-Eastern**, so a late night on the East Coast still counts as the same day. Each
+Eastern**, so a late night on the East Coast still counts as the same day. To
+spin, **grab the wheel and throw it**; the prize is picked the moment you let
+go, and a harder throw only spins longer. Each
 slice's size on the wheel is its chance:
 
 | Prize | Chance |
 |---|---|
-| 50 credits | 1 in 5 |
-| 100 credits | 1 in 7 |
+| 100 credits | 1 in 4 |
+| 250 credits | 1 in 7 |
 | 50 bananas | 1 in 8 |
-| Boost token: a single of up to 200 credits pays 50% more profit | 1 in 11 |
-| Insurance token: if a single loses, you get the stake back (up to 200) | 1 in 13 |
-| 200 credits | 1 in 13 |
+| Boost token: a single or one leg of a parlay, on a bet of up to 250 credits, pays 50% more profit | 1 in 11 |
+| Insurance token: if a single loses, you get the stake back (up to 250) | 1 in 13 |
+| 500 credits | 1 in 13 |
 | 100 bananas | 1 in 14 |
-| Onkey ate it (nothing) | 1 in 18 |
-| 400 credits | 1 in 20 |
-| Spin again | 1 in 20 |
-| A free cosmetic from Onkey's Shop you don't own yet (100 bananas if you own them all) | 1 in 33 |
+| 2x respin: two more spins today | 1 in 18 |
+| A free cosmetic from Onkey's Shop you don't own yet (100 bananas if you own them all) | 1 in 20 |
+| 1000 credits | 1 in 33 |
 | **The jackpot**: all of it | 1 in 200 |
 
 Credit prizes and insurance refunds are free: they don't come out of the
 house's pot, so they never eat into the secret objectives or bad-beat refunds.
 Only the jackpot slice is paid from the house's money: the whole progressive
 jackpot. Tokens keep until you use them: add a pick on Place bets and tap
-**Boost** or **Insure** on it in your bet slip (singles only, never a parlay; a
-boost token doesn't stack with the odds boost of the game). The ticket says
+**Boost** or **Insure** on it in your bet slip. A boost token also works on a
+leg of a **parlay**: tap Boost on the leg, that leg prices at its boosted odds
+and the parlay's price and payout are worked out from it (the parlay is capped
+at 250 credits; one token per boosted leg). Insurance is for singles only, and a
+boost token doesn't stack with the odds boost of the game. The ticket says
 which token it carries. The server picks the
 slice, and the page only animates the wheel to it: the pointer clicks over each
 peg, and sometimes the wheel crawls up to a peg next to a big prize, balances
@@ -938,7 +961,7 @@ pays all of it.
 Separate from the house's money: one pick on the board pays **50% more
 profit** than its usual price until the next game is recorded, when a new one
 is picked. It's shown under the odds format toggle on Place bets and with a gold ring on its
-button. It's for singles of up to 100 credits; put that pick in a **parlay**
+button. It's for singles of up to 250 credits; put that pick in a **parlay**
 and the leg prices at its boosted odds too (marked with ⚡ in the slip and on
 the ticket), but the whole parlay's stake is capped the same way.
 
@@ -1033,7 +1056,7 @@ time you log in.
 | `banana_per_game` | 5 | Bananas each squad member earns for every Competitive game they play, squad game or not, for Onkey's Shop. Whole numbers. `0` stops paying bananas. |
 | `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
 | `loan_interest` | 0.1 | Interest on a loan, as a share of the amount borrowed (0.1 = borrow 500, owe 550). |
-| `hunt_daily_max` | 250 | Bananas (a credit each) a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
+| `hunt_daily_max` | 250 | Credits a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
 | `hunt_floor` | 250 | Below this many credits the daily cap doesn't apply: a bettor keeps picking until they have this much. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
@@ -1073,7 +1096,7 @@ fivestack/             the backend package
   wheel.py             the daily wheel: one spin a day (midnight Pacific), prizes, tokens
   bananas.py           Onkey's Shop: bananas earned per game played, the catalogue, buying and wearing items
   bank.py              Onkey's Bank: loans with interest, within a limit on what's out
-  hunt.py              the Banana Hunt: a credit per banana clicked, placed and judged by the server, capped per day
+  hunt.py              the Banana Hunt: bananas placed and judged by the server (golden, rotten, bunches, Greg, combos, streaks), capped per day
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table
