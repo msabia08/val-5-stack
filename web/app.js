@@ -143,6 +143,7 @@
     bananas.title = me ? `${nb} bananas. Open Onkey's Shop.` : 'Sign in to see your bananas';
     chip.innerHTML = `<span class="me-avatar" aria-hidden="true">${me ? shop.badgeOf(me.name) : '🐒'}</span>` +
       `<span class="me-name">${me ? shop.nameHtml(me.name) : 'Sign in'}</span>`;
+    chip.classList.toggle('me-anon', !me); // a phone shows the avatar alone once you're signed in
     chip.title = me ? `Signed in as ${me.name}: your profile, password and sign out` : 'Sign in to bet and shop';
     accountMenuRefresh();
     if (!me) return;
@@ -363,13 +364,6 @@
     const s = state.status;
     if (!s) return;
     const t = s.tracker || {};
-    const rec = s.record || {};
-    const el = $('#team-record');
-    if (rec.games) {
-      el.textContent = `${rec.wins}-${rec.losses}${rec.draws ? '-' + rec.draws : ''} as a ${stackWord()} · ${Math.round((rec.wins / rec.games) * 100)}% win rate`;
-    } else {
-      el.textContent = s.configured ? `No ${stackWord()} games tracked yet` : 'Setup needed';
-    }
     const pill = $('#status-pill');
     if (s.demo) {
       pill.innerHTML = '<span class="dot ok"></span>Demo data';
@@ -1458,8 +1452,19 @@
     $('.nav-trigger', group).setAttribute('aria-expanded', String(open));
   }
   const closeNavMenus = (except) => navGroups().forEach((g) => { if (g !== except) navMenu(g, false); });
+  // On a phone the nav is one full-screen menu behind the ☰ button: style.css's phone block draws #tabs that way while
+  // <html> has .nav-open, every page under its group, with Sync, Setup and Theme pinned along the bottom. A pick, a
+  // page change, the account menu or Escape closes it.
+  function navSheet(open) {
+    document.documentElement.classList.toggle('nav-open', open);
+    $('#nav-toggle').setAttribute('aria-expanded', String(open));
+    if (open) accountMenu(false);
+  }
   function bindNavMenus() {
     document.documentElement.classList.toggle('no-nav-icons', !NAV_ICONS);
+    $('#nav-toggle').addEventListener('click', () => navSheet(!document.documentElement.classList.contains('nav-open')));
+    $('#tabs').addEventListener('click', (e) => { if (e.target.closest('a')) navSheet(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') navSheet(false); });
     navGroups().forEach((group) => {
       const menu = $('.nav-menu', group), trigger = $('.nav-trigger', group);
       const items = () => $$('a', menu);
@@ -1506,6 +1511,7 @@
     window.FiveViz?.hideTip();
     $$('#tabs a, #setup-btn').forEach((a) => a.classList.toggle('active', a.dataset.view === state.view)); // Setup lives on the ⚙ button
     syncNavGroups();
+    navSheet(false);
     render();
   }
 
@@ -1545,6 +1551,7 @@
     chip.setAttribute('aria-expanded', String(open));
     if (!open) return;
     closeNavMenus();
+    navSheet(false);
     // Right-aligned under the chip (the menu sits in .topbar-right, which is position: relative).
     menu.style.right = `${Math.max(0, menu.parentElement.getBoundingClientRect().right - chip.getBoundingClientRect().right)}px`;
     menu.innerHTML = accountMenuHtml();

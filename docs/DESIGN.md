@@ -26,8 +26,8 @@ retire an old one, update this file in the same pull request.
 - **Cards:** content sits in `.card` (surface colour, 1px border, 12px radius, 16/18px padding, 16px apart). A card
   opens with an `h2`; if it links elsewhere, the heading row is a `.section-head` with a `.go-link` on the right.
 - **Summary row:** `.kpis` is a row of `.tile`s (label 12px muted, value 28px, sub-line 12px) at the top of a tab.
-  Keep it to 4-5 tiles and don't repeat what the card right below shows, or the top bar (the Overview dropped its
-  games and win-rate tiles because the brand line already says "21-27 as a 5-stack · 44% win rate").
+  Keep it to 4-5 tiles and don't repeat what the card right below shows. The top bar's brand is the logo and the
+  title alone; the squad's record and win rate are the Overview's Record tile.
 - **Overview:** fits one 1920×1080 screen without scrolling (about 930px of page under the top bar). `.ov-top` is
   three tiles plus the Next game strip (`.ov-next`, twice as wide), then a 3 × 2 `.ov-grid` of cards whose columns
   are 1.15 : 1 : 0.85 (tables on the left, lists on the right). A new Overview card replaces one of the six rather
@@ -42,20 +42,31 @@ retire an old one, update this file in the same pull request.
 ## Phone
 
 Everything for phones is in one block at the end of `style.css`, `@media (max-width: 640px)`, checked at 393 × 659
-(an iPhone 15 with Safari's bars showing). It only rearranges what the desktop page already draws: no separate
-markup, no JS. So far it covers the top bar and the Overview; other pages still show their desktop layout.
+(an iPhone 15 with Safari's bars showing). It rearranges what the desktop page already draws: no separate markup, and the only
+JS is the menu button's. So far it covers the top bar, the Overview and Slots; other pages still show their desktop layout.
 
 - **No sideways scrolling.** `document.documentElement.scrollWidth` equals the screen width. A phone zooms the
   whole page out when anything is wider, which shrinks all the text. Grid columns are `minmax(0, 1fr)` so content
   can't push them wider.
-- **Top bar:** three rows that scroll away with the page (it isn't pinned): the brand with the ⟳ ⚙ ◐ buttons
-  (no record line under the title, Sync now loses its label, the status pill is hidden), then your chips (the wheel chip is the 🎡 alone), then the
-  nav across the full width. `.topbar-right` is `display: contents`, so its children are ordered as items of the
-  top bar. Every menu (nav groups, account, themes) spans the bar's width.
-  Onkey's bubble covers the chips and the nav, so his lines stay up half as long (`PHONE_BUBBLE` in `onkey.js`).
+- **Top bar:** one pinned row, 51px: Onkey's logo (no title), the 🎡 while a daily spin is waiting, credits,
+  bananas, your avatar (it opens the account menu; signed out it says "Sign in") and ☰. `.topbar-right` is
+  `display: contents`, so its children are items of the top bar itself.
+- **The menu:** ☰ (`#nav-toggle`, hidden on the desktop) opens the nav as a full-screen menu under the bar:
+  `navSheet()` in `app.js` puts `.nav-open` on `<html>`, and the phone block draws `#tabs` as a fixed panel with
+  every page three across under its group's name (names only, the page you're on outlined). Sync now, Setup and
+  Theme (and Log out, on a site with a password) are hidden in the bar and pinned along the menu's bottom edge.
+  A pick, a page change, the account menu or Escape closes it. A new page needs nothing extra: it's the same
+  markup as the desktop dropdowns.
+- **Onkey's bubble** hangs under the logo over the page, so his lines stay up half as long (`PHONE_BUBBLE` in
+  `onkey.js`).
 - **Overview:** Record and Last session side by side, Form and Next game full width under them, then the six cards
   one per row in their desktop order. Who's trending drops its sparkline column. It scrolls; the
   one-screen rule is for the desktop.
+- **Slots:** the cabinet is the screen's width with no lever (the Spin button does the same job). The reels are
+  drawn at 0.65 size with `zoom` on `.slots-reels`, so the 140px cells and offsets `slots.js` works in scale
+  together and the script needs no phone case. The deck is three rows: the seven bet keys, the readout, Spin. The
+  reel window and the Spin button fit one screen together (about 590px). The pay table, recent spins, season
+  and biggest wins follow, one per row.
 - **Tap targets:** things you tap are at least about 30px tall (Form chips, odds buttons, nav entries).
 - **Checking:** open the page in a phone-sized browser with touch (the Playwright `--device "iPhone 15"` profile),
   signed in so the chips show, and check dark first. The desktop page must be unchanged at 1920×1080.

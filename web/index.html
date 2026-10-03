@@ -15,10 +15,7 @@
       <img class="logo logo-main" src="/assets/onkey-logo.png" alt="" width="62" height="36">
       <img class="logo logo-greg" src="/assets/greg-logo.png" alt="" width="62" height="36">
     </a>
-    <div>
-      <h1>5-Stack Tracker</h1>
-      <div class="sub" id="team-record">Loading…</div>
-    </div>
+    <h1>5-Stack Tracker</h1>
   </div>
   <!-- The nav: Overview on its own, then three groups, each a dropdown whose button names the page you're on (app.js
        bindNavMenus). Every entry has an emoji in a .nav-icon span; NAV_ICONS in app.js hides them all. -->
@@ -83,6 +80,8 @@
     <button id="theme-btn" class="btn ghost icon" title="Switch theme: dark, light, and any theme from Onkey's Shop" aria-label="Switch theme">◐</button>
     <!-- With a theme bought in the shop there are more than two, so ◐ opens this picker instead of toggling (app.js). -->
     <div class="nav-menu theme-menu hidden" id="theme-menu" role="menu" aria-label="Themes"></div>
+    <!-- Phones only (style.css's phone block): opens the nav as a full-screen menu (app.js navSheet). -->
+    <button type="button" id="nav-toggle" class="btn ghost icon nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="tabs">☰</button>
   </div>
 </header>
 <div id="banner" class="banner hidden" role="status"></div>
