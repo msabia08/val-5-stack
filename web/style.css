@@ -2446,37 +2446,29 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .ov-trending .ov-spark { display: none; }  /* the sparklines don't fit beside the numbers */
   .ov-trending .trend-delta { min-width: 36px; margin-left: 3px; }
   .ov-trending th, .ov-trending td { padding-left: 4px; padding-right: 4px; }
-  /* Slots: the cabinet at the screen's width with no lever (the Spin button does the same), the reels drawn at
-     0.65 size (zoom, so slots.js's 140px cells and their offsets scale together), and the deck in three rows: bet
-     keys, readout, Spin. The pay table and the three cards follow, one per row. */
+  /* Slots: the cabinet at the screen's width with no lever, Spin button or result line: tapping the reel window
+     spins (slots.js), and the readout's Win box says what a spin paid. The reels are drawn at 0.65 size (zoom, so
+     slots.js's 140px cells and their offsets scale together), and the deck is two rows: bet keys, readout. The pay
+     table and the three cards follow, one per row. */
   .slots-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
   .slots-marquee { min-height: 64px; }
   .slots-marquee h2 { font-size: 34px; }
   .slots-sound { right: 12px; }
-  .slots-stage { padding: 20px 14px 0; }
+  .slots-stage { padding: 20px 14px 22px; }
   .slots-lever { display: none; }
-  .slots-glass { padding: 10px 12px; }
+  .slots-glass { padding: 10px 12px; cursor: pointer; }
   .slots-glass::after { inset: 10px 12px; }
   .slots-reels { zoom: 0.65; }
   .slots-line-arrow { font-size: 22px; }
-  .slots-result { height: 76px; margin: 0 -8px; }
-  .slots-result > b { font-size: 20px; }
-  .slots-cashouts { flex-wrap: wrap; gap: 6px; }
-  .slots-cash { height: 42px; gap: 6px; padding: 0 8px 0 6px; }
-  .slots-cash.total { padding: 0 10px; }
-  .slots-cash b { font-size: 16px; }
-  .slots-cash-icons { font-size: 16px; }
-  .slots-cash-icons .slots-img { width: 20px; height: 18px; }
-  .slots-cash-join { font-size: 16px; }
-  .slots-deck { flex-direction: column; gap: 10px; margin: 4px 8px 20px; padding: 20px 12px 12px; }
+  .slots-result, .slots-spin-well { display: none; }
+  .slots-deck { flex-direction: column; gap: 10px; margin: 0 14px 20px; padding: 0; border-radius: 0; background: none; box-shadow: none; }  /* no panel: the wells sit on the case */
+  .slots-screw { display: none; }
   .slots-stakes, .slots-readout { align-self: stretch; }
   .slots-stakes { gap: 6px; padding: 8px; }
   .slots-stakes button { flex: 1 1 0; min-width: 0; height: 48px; padding: 0 2px; }
   .slots-stakes button b { font-size: 14px; }
   .slots-readout div { flex: 1 1 0; min-width: 0; }
   .slots-readout b { font-size: 20px; }
-  .slots-spin { width: 96px; height: 96px; }
-  .slots-spin-ring { padding: 9px; }
   .slots-error { padding: 0 16px; }
   .slots-paytable { contain: none; overflow: visible; }
   .slots-lower { grid-template-columns: minmax(0, 1fr); gap: 12px; }

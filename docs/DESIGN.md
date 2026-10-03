@@ -62,11 +62,13 @@ JS is the menu button's. So far it covers the top bar, the Overview and Slots; o
 - **Overview:** Record and Last session side by side, Form and Next game full width under them, then the six cards
   one per row in their desktop order. Who's trending drops its sparkline column. It scrolls; the
   one-screen rule is for the desktop.
-- **Slots:** the cabinet is the screen's width with no lever (the Spin button does the same job). The reels are
-  drawn at 0.65 size with `zoom` on `.slots-reels`, so the 140px cells and offsets `slots.js` works in scale
-  together and the script needs no phone case. The deck is three rows: the seven bet keys, the readout, Spin. The
-  reel window and the Spin button fit one screen together (about 590px). The pay table, recent spins, season
-  and biggest wins follow, one per row.
+- **Slots:** the cabinet is the screen's width with no lever, no Spin button and no result line under the reels:
+  tapping the reel window spins (`slots.js` clicks the hidden Spin button, so a spin under way, too few credits
+  and signing in behave the same), and the readout's Win box says what a spin paid. The reels are drawn at 0.65
+  size with `zoom` on `.slots-reels`, so the 140px cells and offsets `slots.js` works in scale together. The deck
+  has no panel or screws, just two rows on the case: the seven bet keys, then the readout. The LED frame is drawn with fewer lights along the top and
+  bottom and more in the corners (`ledFrame(true)` in `slots.js`), so they stay about 12px apart all the way round. The whole machine fits one screen under the bar. The pay table, recent
+  spins, season and biggest wins follow, one per row.
 - **Tap targets:** things you tap are at least about 30px tall (Form chips, odds buttons, nav entries).
 - **Checking:** open the page in a phone-sized browser with touch (the Playwright `--device "iPhone 15"` profile),
   signed in so the chips show, and check dark first. The desktop page must be unchanged at 1920×1080.
