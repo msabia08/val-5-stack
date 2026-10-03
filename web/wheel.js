@@ -426,6 +426,18 @@ window.FiveWheel = (() => {
   let pointerDeg = 0;
   const pointerStyle = () => `transform:translateX(-50%) rotate(${pointerDeg.toFixed(2)}deg)`;
 
+  // From Onkey's lore (docs/onkey-lore.md): on some teases the scientist's hand comes in over the rim, reaching for
+  // the wheel as it crawls; at the deciding moment the leaf snaps and the hand is slapped away. It changes nothing.
+  const REACH_CHANCE = 0.4;
+  function reach(on) {
+    const box = $('.wheel-box');
+    if (!box) return;
+    const old = $('.wheel-hand', box);
+    if (!on) { if (old) { old.classList.add('slapped'); setTimeout(() => old.remove(), 700); } return; }
+    if (old || Math.random() >= REACH_CHANCE) return;
+    box.insertAdjacentHTML('beforeend', '<div class="wheel-hand" aria-hidden="true"><img src="/assets/scientist-face.png" alt=""><span>🫳</span></div>');
+  }
+
   // Play a solved spin: the lead-in (the hand's pull and throw, or for a wheel thrown at speed `thrown` the ease from
   // that speed), then the simulation. `landed` runs as the wheel comes to rest, `done` once the flapper has settled too.
   function play(p, rotor, start, landed, done, thrown) {
@@ -434,7 +446,7 @@ window.FiveWheel = (() => {
       : [{ ms: WIND_MS, at: hermite(start, start - WIND, 0, 0, WIND_MS) }, { ms: THROW_MS, at: hermite(start - WIND, throwFrom(start, p.v0), 0, p.v0, THROW_MS) }];
     const leadMs = lead.reduce((a, l) => a + l.ms, 0);
     const stage = $('.wheel-stage');
-    const tense = (on) => { stage?.classList.toggle('wheel-tense', on); bulbs(on ? 'tease' : 'spin'); sfx.drone(on); };
+    const tense = (on) => { stage?.classList.toggle('wheel-tense', on); bulbs(on ? 'tease' : 'spin'); sfx.drone(on); reach(on); };
     // A tease builds once the wheel is crawling (at most the last 2.5 s before the deciding moment) and ends there.
     const tenseFrom = p.kind ? Math.max(r.slowT ?? p.decisive, p.decisive - 2500) : Infinity;
     let t0 = performance.now(), tick = 0, tensed = false, beatAt = 0, hasLanded = false;

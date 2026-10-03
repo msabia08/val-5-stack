@@ -646,7 +646,7 @@ window.FiveBets = (() => {
       ${settledSection()}
       ${pastSeasonsCard()}
       ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}
-      </div><aside class="odds-side bettors-side">${houseCard()}${bankCard()}${transferCard()}${rewardsCard()}</aside></div>`;
+      </div><aside class="odds-side bettors-side">${offerCard()}${houseCard()}${bankCard()}${transferCard()}${rewardsCard()}</aside></div>`;
   }
 
   // Onkey's Bank (bank.py, /api/bank): borrow up to the limit at interest and pay it back any time, oldest loan
@@ -667,6 +667,8 @@ window.FiveBets = (() => {
           `${st.debt ? `, on top of the ${fmt.credits(st.debt)} you already owe` : ''}.` +
           '<div class="btn-row"><button class="btn primary small" id="loan-go">Borrow</button><button class="btn ghost small" id="loan-cancel">Cancel</button></div></div>'
         : '';
+      // In debt, the scientist is waiting: the plan in the lore is to make Onkey's owner desperate enough to sell.
+      const lurk = st.debt ? window.sciNote('Zere is an easier way to pay zis back. You know my number.') : '';
       const standing = st.debt
         ? `<p class="bank-standing">You owe <b class="down">${fmt.credits(st.debt)}</b> on ${st.open.length} loan${st.open.length === 1 ? '' : 's'} (${fmt.credits(st.borrowed)} borrowed). ` +
           `${st.room ? `You can borrow ${fmt.credits(st.room)} more.` : 'Pay it all back, interest included, before borrowing again.'}</p>`
@@ -684,7 +686,7 @@ window.FiveBets = (() => {
         `<b class="num down">${fmt.credits(x.due)} due</b></li>`).join('');
       const cleared = st.cleared.slice(0, 3).map((x) => `<li class="recent-row loan-row"><span><b>${fmt.credits(x.principal)}</b> borrowed ${fmt.date(x.taken_ts * 1000)}</span>` +
         `<span class="num muted small">paid back ${fmt.credits(x.owed)}</span></li>`).join('');
-      body = `${standing}${borrow}${repay}${open ? `<h3 class="small">Open loans</h3><ul class="recent">${open}</ul>` : ''}` +
+      body = `${standing}${lurk}${borrow}${repay}${open ? `<h3 class="small">Open loans</h3><ul class="recent">${open}</ul>` : ''}` +
         `${cleared ? `<h3 class="small">Paid back</h3><ul class="recent">${cleared}</ul>` : ''}`;
     }
     return `<section class="card" id="bank"><h2>Onkey's Bank</h2>
@@ -720,6 +722,7 @@ window.FiveBets = (() => {
       try {
         const r = await api('/api/bank/borrow', { method: 'POST', body: JSON.stringify({ amount: Number(l.amount) }) });
         toast(`Borrowed ${fmt.credits(r.loan.principal)} credits. You owe ${fmt.credits(r.loan.owed)}.`, 'good');
+        window.FiveOnkey?.note('scientist', { kind: 'bank' }); // debt is his plan: he calls
         state.loan = { amount: '', repay: '', confirm: false };
       } catch (err) {
         toast(err.message, 'bad');
@@ -887,6 +890,26 @@ window.FiveBets = (() => {
   // The house (/api/house, fivestack/house.py): the pot its edge has built from bets and slots, the jackpot, the next
   // game's secret objectives (only how many and their prizes), the last game's objectives revealed, and the latest
   // giveaways.
+  // The scientist's offer for Onkey (app.py: scientist_offer, to a bettor who's nearly broke). It can only be refused.
+  function offerCard() {
+    if (!state.me || !state.me.scientist_offer) return '';
+    return `<section class="card"><h2>A call for you</h2>${window.sciNote('Twenty-five zousand for ze monkey. You look like you need it.',
+      '<button class="btn small" id="sci-refuse">Onkey is not for sale</button>')}</section>`;
+  }
+  function bindOffer(view) {
+    $('#sci-refuse', view)?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        const r = await api('/api/scientist/refuse', { method: 'POST', body: '{}' });
+        state.me.scientist_offer = false;
+        toast(`You turned him down. You earned the title "${r.item.name}": wear it from Onkey's Shop.`, 'good');
+        window.FiveOnkey?.note('sci_refused');
+      } catch (err) { toast(err.message, 'bad'); }
+      draw();
+    });
+  }
+
+  const sciHouse = Math.random() < 0.15; // decided once per visit, so the note doesn't flicker between redraws
   function houseCard() {
     const h = state.house;
     if (!h) return '';
@@ -911,7 +934,9 @@ window.FiveBets = (() => {
     }).join('')}</ul>` : '';
     const recent = h.recent.length ? `<h3>Latest giveaways</h3><ul class="house-recent">${h.recent.map((g) =>
       `<li><span>${plainName(g.bettor)}</span><span class="muted small">${esc(g.note || '')}</span><span class="num up">+${fmt.credits(g.amount)}</span></li>`).join('')}</ul>` : '';
-    return `<section class="card house-card"><h2>The house</h2>${how('Some of what the house takes goes back to you.', rule)}` +
+    // Now and then the scientist has a word about the house's take (`sciHouse`; see docs/onkey-lore.md).
+    const sci = sciHouse ? window.sciNote('Every credit ze house takes is one you cannot spend on bananas. Zis pleases me.') : '';
+    return `<section class="card house-card"><h2>The house</h2>${how('Some of what the house takes goes back to you.', rule)}${sci}` +
       `<div class="house-pots"><div><span class="tile-label">Pot</span><b>${credits(h.pot)}</b></div>` +
       `<div><span class="tile-label">Jackpot</span><b>${credits(h.jackpot)}</b><a class="muted small" href="#wheel">Win it on the daily wheel</a></div></div>` +
       `${next}${last}${recent}</section>`;
@@ -951,6 +976,7 @@ window.FiveBets = (() => {
     bindCustom(view);
     bindTransfers(view);
     bindBank(view);
+    bindOffer(view);
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
       const headers = {};
       if (b.classList.contains('admin')) {

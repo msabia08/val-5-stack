@@ -14,8 +14,6 @@ Their confidence disappears when Onkey approaches. The mirror cannot read his mi
 
 Onkey's home has other visitors as well. Two strange inhabitants of the space beneath the floorboards invite him to join them for a party. His sleeping owner cannot come; they say he would not fit. Onkey stays where he is, and the visitors leave their invitation open. For all the attention he attracts, his life still centers on the man who feeds him and gives him a home.
 
-Meanwhile, the scientist experiments with plush replicas. One prototype comes close enough to the original that he considers selling a legion of copies across the world. Yet the project takes a strange turn: the scientist begins responding to the plush as though it is directing him. When he questions what it stands to gain, he quickly backs down and agrees to do its bidding. Even his attempt to reproduce Onkey leaves him facing something he does not fully understand.
-
 At Halloween, the scientist returns to the owner's house with Man Strudel, posing as trick-or-treaters. This time he plans to create a financial disaster. Man Strudel is to release M&M's whose markings, turned sideways into E's, make them evil. The candies will destroy the house, leaving the owner desperate enough to sell Onkey to pay for repairs.
 
 But Man Strudel tries to befriend the candies. They tie him up with dental floss and threaten him with a toothpick. Onkey comes to investigate, defeats the attackers, and saves the very henchman sent to help steal him. His owner barely grasps what has happened, and the pair leave to go trick-or-treating themselves.

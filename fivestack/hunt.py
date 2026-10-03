@@ -18,7 +18,9 @@ which counts credits: they only get a bettor there sooner, except the streak's b
 - What Onkey throws (`_new_target()`): mostly a plain banana; sometimes a golden one (GOLD_VALUE credits, but it rots
   GOLD_TTL_S after landing), a bunch (BUNCH_SIZE at once, BUNCH_TTL_S to sweep them, BUNCH_BONUS for all of them), a
   banana with a rotten decoy beside it (picking the decoy freezes the bettor FREEZE_S and breaks the combo), or a
-  banana Greg is walking to (he takes it GREG_S after it lands unless it's picked or he's shooed first).
+  banana Greg is walking to (he takes it GREG_S after it lands unless it's picked or he's shooed first). From Onkey's
+  lore (docs/onkey-lore.md): the scientist's claw comes down for a banana (it takes it CLAW_S after it lands, and
+  can't be shooed), and Man Strudel, his friendly henchman, sometimes walks up to ask to pet Onkey and takes nothing.
 - Catching it in the air: a click on the banana while it flies (`air`, the page's progress along the arc, which
   `arc_at()` turns into a spot to judge the click against) pays double.
 - The combo: picks in a row without a miss (`_mult()`: x2 from COMBO_STEPS[0] in a row, x3 from COMBO_STEPS[1]); a
@@ -64,6 +66,8 @@ GOLD_VALUE, GOLD_TTL_S = 5, 2.5
 BUNCH_SIZE, BUNCH_TTL_S, BUNCH_BONUS, BUNCH_INTERVAL_S, BUNCH_GAP = 5, 2.0, 3, 0.1, 90
 FREEZE_S = 2.0  # how long a rotten banana stops a bettor picking
 DECOY_GAP = 110  # the rotten decoy lands at least this far from the real banana
+CLAW_CHANCE, STRUDEL_CHANCE = 0.06, 0.04
+CLAW_S = 1.8  # how long the scientist's claw takes to reach the banana once it has landed
 GREG_S = 1.5  # how long Greg takes to walk to the banana once it has landed
 COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
 COMBO_IDLE_S = 8.0
@@ -106,7 +110,7 @@ class HuntManager:
                 "field": {"w": FIELD_W, "h": FIELD_H, "r": TARGET_R}, "min_interval_s": MIN_INTERVAL_S,
                 "extras": self.extras, "theme": theme(wheel_day(now or time.time())) if self.extras else THEMES[0],
                 "air": {"s": AIR_S, "r": AIR_R, "from": AIR_FROM, "to": AIR_TO, "mult": AIR_MULT, "hand": list(HAND)},
-                "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S,
+                "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S, "claw_s": CLAW_S,
                 "bunch": {"size": BUNCH_SIZE, "ttl_s": BUNCH_TTL_S, "bonus": BUNCH_BONUS},
                 "combo": {"steps": list(COMBO_STEPS), "idle_s": COMBO_IDLE_S}, "streak_max": STREAK_MAX}
 
@@ -154,6 +158,10 @@ class HuntManager:
             gx = 0 if spot["x"] > FIELD_W / 2 else FIELD_W
             gy = min(FIELD_H - MARGIN, max(MARGIN, spot["y"] + self.rng.randint(-120, 120)))
             t["greg"] = {"x": gx, "y": gy, "arrives": now + AIR_S + GREG_S + SLACK_S}
+        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + CLAW_CHANCE:
+            t["claw"] = {"arrives": now + AIR_S + CLAW_S + SLACK_S}
+        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + CLAW_CHANCE + STRUDEL_CHANCE:
+            t["strudel"] = {"x": 0 if spot["x"] > FIELD_W / 2 else FIELD_W, "y": spot["y"]}  # a visit: he takes nothing
         return t
 
     def _combo(self, key, now):
@@ -168,12 +176,15 @@ class HuntManager:
 
     def _lapse(self, key, t, now):
         """What became of a target left too long: 'rotted' (a golden banana), 'bunch_over', 'stolen' (Greg got there),
-        or None while it's still good. A lapsed target is replaced."""
+        'clawed' (the scientist's claw did), or None while it's still good. A lapsed target is replaced."""
         why = None
         if t.get("expires") and now > t["expires"]:
             why = "rotted" if t["kind"] == "golden" else "bunch_over"
         elif t.get("greg") and now > t["greg"]["arrives"]:
             why = "stolen"
+            self._combo(key, now)["n"] = 0
+        elif t.get("claw") and now > t["claw"]["arrives"]:
+            why = "clawed"
             self._combo(key, now)["n"] = 0
         if why:
             self.targets[key] = self._new_target(t, now, t["paid_ts"])
@@ -204,6 +215,10 @@ class HuntManager:
             out["decoy"] = dict(t["decoy"])
         if t.get("greg"):
             out["greg"] = {"x": t["greg"]["x"], "y": t["greg"]["y"]}
+        if t.get("claw"):
+            out["claw"] = True
+        if t.get("strudel"):
+            out["strudel"] = dict(t["strudel"])
         return out
 
     # ---- the day ---------------------------------------------------------------------
@@ -303,6 +318,8 @@ class HuntManager:
                     t["expires"] += shift
                 if t.get("greg"):
                     t["greg"]["arrives"] += shift
+                if t.get("claw"):
+                    t["claw"]["arrives"] += shift
         return self.status(name, now)
 
     def summary(self, me=None, now=None):

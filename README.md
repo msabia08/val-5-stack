@@ -749,7 +749,7 @@ style, wall notes and the pranks they've sent and received.
 
 ## Onkey's Arcade
 
-Three small games on the **Onkey's Arcade** tab. Each play costs **5 bananas**,
+Four small games on the **Onkey's Arcade** tab. Each play costs **5 bananas**,
 like a quarter in a machine, and the only prize is a place on that game's
 high-score board (each player's best, all time; kept through season resets).
 Bananas are never paid back and credits are never touched.
@@ -759,6 +759,7 @@ Bananas are never paid back and credits are never touched.
 | Banana Catch | Move Onkey (← → / A D, or drag) to catch falling bananas; golden ones are worth 100. Dodge the falling Gregs. 60 seconds, 3 lives, combos up to x3. |
 | Onkey Says | A rhythm game on Onkey's song: each of its 11 sung syllables is a note. Hit ← ↓ → (or A S D, or tap the lanes) as it reaches the ring, and hold the long last note. Three verses, each faster and squeakier (1x, 1.15x, 1.3x), with combo multipliers up to x4. |
 | Spike Dash | An endless runner: jump (Space / ↑ / tap) and double jump over planted spikes, grab bananas, and see how far you get. It keeps speeding up. |
+| Lab Escape | The scientist chases Onkey round his lab, a little faster all the time. Run with the arrows or W A S D (or hold a spot on the screen), grab bananas for 50 each, and dodge the evil candies (the ones with an E), which slow Onkey down. One life: when he catches Onkey, it's over. |
 
 **Sound:** Onkey's song (`web/assets/onkey-song.wav`, the two recordings back to
 back) is always played whole: it's the Onkey Says track, the reward when you
@@ -999,13 +1000,31 @@ Onkey has a backstory, told in full in [`docs/onkey-lore.md`](docs/onkey-lore.md
 - A **cowboy and a fortune-telling mirror** tried to steal him too, and backed off when the mirror found it
   couldn't read his mind.
 - Two **visitors from under the floorboards** have invited him to a party. The invitation is still open.
-- The scientist built a **plush copy** of Onkey, and now seems to take orders from it.
 - At Halloween the scientist sent **evil M&M's** (their M's turned into E's) to wreck the house. Onkey beat them
   and rescued Man Strudel.
 
 Nobody knows where Onkey came from or what he's thinking, and the site keeps it that way. The story is where his
-lines, his love of bananas and his darker moments come from. The scientist's portrait is
-`web/assets/scientist.png`.
+lines, his love of bananas and his darker moments come from.
+
+### The scientist on the site
+
+He's kept rare, but he's around:
+
+- **In Onkey's corner.** Now and then his face takes over the logo for one line, and Onkey shoves back in. Some
+  of Onkey's darker lines are about him too.
+- **On the login page.** One visit in twenty, he's watching from the corner.
+- **At Onkey's Bank.** Take a loan and he calls; while you owe, he's waiting on the bank card. Debt is his plan.
+- **His offer.** With fewer than 100 credits you get a call on Standings: $25,000 for Onkey. The only answer is
+  "Onkey is not for sale", which earns the **Not For Sale** title for free.
+- **On the house card.** Sometimes he has a word about what the house takes.
+- **In the Banana Hunt.** His claw sometimes comes down for a banana and can't be sent off, so pick it before the
+  claw gets there. Man Strudel sometimes walks up to ask to pet Onkey, and takes nothing.
+- **At the daily wheel.** On some slow finishes his hand reaches over the rim, and the leaf slaps it away.
+- **At the casino tables.** Rarely he's sitting in the dealer's chair when you arrive, until Onkey throws him out.
+- **In the arcade.** **Lab Escape**: he chases Onkey round his lab, faster all the time. Grab bananas, dodge the
+  evil candies, don't get caught.
+- **In the shop.** The **Send the Scientist** prank (he watches a friend's badge and bet tickets for three games),
+  the **Lab Coat** badge and **The Lab** theme.
 
 ## Going online (share it with the squad)
 
@@ -1134,7 +1153,9 @@ web/                   index.html, app.js, viz.js (charts), bets.js (betting UI)
                        recap.js (match recap), style.css,
                        assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
                        onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song;
-                       scientist.png, the scientist from Onkey's story) (no build step)
+                       scientist.png, the scientist from Onkey's story, with scientist-face.png and
+                       scientist-logo.png cut from it; man_strudel.png, his henchman, and
+                       man-strudel-small.png, its small copy) (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```

@@ -26,6 +26,7 @@ window.FiveOnkey = (() => {
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
   const OMINOUS_CHANCE = 0.12, OMINOUS_NIGHT = 0.35; // share of idle lines that are OMINOUS (more after midnight)
   const QUIET_VIEWS = new Set(['blackjack', 'poker']); // the dealer talks there
+  const SCI_CHANCE = 0.03; // share of idle lines the scientist takes over (docs/onkey-lore.md); kept rare
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   const fill = (line, vars) => line.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
 
@@ -117,8 +118,26 @@ window.FiveOnkey = (() => {
     'Onkey keeps the shop tidy. Mostly by eating the clutter.',
   ];
   // Now and then, instead of an idle line: something Onkey maybe shouldn't have said. Shown in a dark bubble.
+  // The scientist cuts in on Onkey's corner: his face takes the logo for one line, then Onkey shoves back in. His
+  // lines, and only his, are in his accent ("th" becomes "z"). By occasion: idle, a loan, being broke, a bad run.
+  const SCIENTIST = {
+    idle: ['Twenty-five zousand. Ze offer stands.', 'I have plans for ze monkey. Zat is all you need to know.', 'You cannot afford him forever. Zink about it.',
+      'Zis is not over.', 'Man Strudel will be upgraded. Zen we shall see.'],
+    bank: ['A loan? Zere is an easier way to pay zis back. Sell me ze monkey.', 'Debt is a terrible zing. I can make it disappear.', 'Every loan brings you closer to my offer.'],
+    broke: ['Nozing left? Twenty-five zousand would fix zat.', 'You look hungry. Ze monkey looks expensive.', 'I am a patient man. Your wallet is not.'],
+    losing: ['Anozer loss. Zis cannot go on. My offer can.', 'Bad luck? Or is it ze monkey? Zink.'],
+    refused: ['You will regret zis. Zey always do.', 'Sentiment. How... expensive.'],
+  };
   const OMINOUS = [
     'Onkey has seen how this season ends. Onkey won\'t say.',
+    // from the lore (docs/onkey-lore.md): Onkey's own voice, so no accent
+    'The man with the glasses called again. Onkey didn\'t answer.',
+    'Twenty-five thousand. That\'s what he offered. Onkey heard.',
+    'Somebody is in the bushes. They can\'t read Onkey. Onkey checked.',
+    'The floorboards are having a party tonight. You would not fit.',
+    'Man Strudel waved from across the street. Onkey waved back.',
+    'If the candy has an E on it, don\'t eat it.',
+    'He says he has plans for Onkey. He won\'t say what they are.',
     'The wheel remembers every spin. Every single one.',
     'Something is moving behind the slot machine. Don\'t look.',
     'Onkey counted the bananas. One is missing. Again.',
@@ -265,6 +284,9 @@ window.FiveOnkey = (() => {
     view_hunt: ['Onkey dropped the bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each.'],
     hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
     hunt_found: ['You found {label}! Onkey hid that one himself.', 'Ook! {label}. Onkey forgot he buried it there.'],
+    sci_back: ['Onkey is back. Ignore the man with the glasses.', 'Don\'t listen to him. Onkey is staying.', 'Ook. He does that. Hang up next time.', 'Onkey is not for sale.'],
+    sci_refused: ['Onkey heard that. Thank you.', 'Not for sale. Onkey knew you\'d say it.'],
+    hunt_claw: ['That was his claw. Onkey knows that claw.', 'He took a banana. He wants more than bananas.'],
     hunt_done: ['{today} bananas! Onkey is full. Come back tomorrow.', 'That\'s the lot for today. Onkey needs a nap.'],
     view_bettors: ['The standings. Find yourself. Onkey will wait.', 'Who\'s on top? Onkey already knows.',
       'Leaderboard time. Onkey loves a rivalry.'],
@@ -377,7 +399,7 @@ window.FiveOnkey = (() => {
     el.classList.toggle('tone-gold', tone === 'gold');
     el.classList.toggle('tone-red', tone === 'red');
     const brand = el.closest('.brand');
-    brand.classList.remove('onkey-talking', 'onkey-excited', 'onkey-ominous');
+    brand.classList.remove('onkey-talking', 'onkey-excited', 'onkey-ominous', 'onkey-scientist');
     void brand.offsetWidth; // restart the hop
     brand.classList.add('onkey-talking');
     if (excited) brand.classList.add('onkey-excited');
@@ -386,6 +408,27 @@ window.FiveOnkey = (() => {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => brand.classList.remove('onkey-talking', 'onkey-excited', 'onkey-ominous'), (BUBBLE_MS + words * BUBBLE_PER_WORD) * (onPhone() ? PHONE_BUBBLE : 1));
   }
+  // The scientist takes Onkey's corner for one line (`kind`: a SCIENTIST list), then Onkey is back with a word of his own.
+  function scientist(kind = 'idle') {
+    const text = pick(SCIENTIST[kind] || SCIENTIST.idle);
+    if (!el || hushed() || QUIET_VIEWS.has(state?.view) || text === lastSaid) return false;
+    lastSaid = text; lastAt = Date.now();
+    el.querySelector('.ook').textContent = '*the line crackles*';
+    el.querySelector('.say').textContent = text;
+    el.classList.remove('tone-gold', 'tone-red');
+    const brand = el.closest('.brand');
+    brand.classList.remove('onkey-talking', 'onkey-excited', 'onkey-ominous', 'onkey-scientist');
+    void brand.offsetWidth;
+    brand.classList.add('onkey-talking', 'onkey-scientist');
+    clearTimeout(hideTimer);
+    const ms = (BUBBLE_MS + text.split(/\s+/).length * BUBBLE_PER_WORD) * (onPhone() ? PHONE_BUBBLE : 1);
+    hideTimer = setTimeout(() => {
+      brand.classList.remove('onkey-talking', 'onkey-scientist');
+      setTimeout(() => react('sci_back', {}, { loud: false }), 500);
+    }, ms);
+    return true;
+  }
+
   const react = (kind, vars = {}, opts = {}) => {
     const list = SAY[kind];
     if (list) speak(fill(pick(list), { name: me()?.name || 'friend', ...vars }), { loud: true, ...opts });
@@ -404,6 +447,7 @@ window.FiveOnkey = (() => {
     if (document.hidden || Date.now() - lastAt < 30000) return;
     const dynamic = DYNAMIC.map((f) => { try { return f(); } catch (e) { return null; } }).filter(Boolean);
     const h = new Date().getHours();
+    if (Math.random() < SCI_CHANCE && scientist(me() && me().balance < 100 ? 'broke' : 'idle')) return;
     if (Math.random() < (h < 5 ? OMINOUS_NIGHT : OMINOUS_CHANCE)) { speak(pick(OMINOUS), { ominous: true }); return; }
     // About half the time a line about you, when there is one; otherwise one of the fixed ones.
     speak(dynamic.length && Math.random() < 0.5 ? pick(dynamic) : pick(IDLE));
@@ -458,6 +502,12 @@ window.FiveOnkey = (() => {
         else if (d.kind === 'again') react('wheel_again');
       } else if (kind === 'hunt') {
         react('hunt', { n: d.n, today: d.today });
+      } else if (kind === 'scientist') {
+        scientist(d.kind);
+      } else if (kind === 'sci_refused') {
+        react('sci_refused', {}, { excited: true });
+      } else if (kind === 'hunt_claw') {
+        chime('hunt_claw', {}, 0.6);
       } else if (kind === 'hunt_found') {
         react('hunt_found', { label: d.label }, { excited: true });
       } else if (kind === 'hunt_done') {
@@ -509,6 +559,7 @@ window.FiveOnkey = (() => {
     if (best) {
       const vars = { desc: desc(best.description), net: credits(best.payout - best.stake), odds: best.odds_decimal.toFixed(2) };
       react(best.odds_decimal >= 6 ? 'won_long' : 'won', vars, { excited: true });
+    } else if (run >= 5 && Math.random() < 0.4 && scientist('losing')) { /* he has a suggestion */
     } else if (run >= 5) react('lose_run_big', { n: run });
     else if (run >= 3) react('lose_run', { n: run });
     else react('lost', { desc: desc(fresh[0].description) });
@@ -654,5 +705,5 @@ window.FiveOnkey = (() => {
     if (state && QUIET_VIEWS.has(state.view)) walk(state.view); // opened straight onto a table
   }
 
-  return { init, start, note, settled, status, speak, IDLE, SAY, DYNAMIC, OMINOUS };
+  return { init, start, note, settled, status, speak, scientist, IDLE, SAY, DYNAMIC, OMINOUS, SCIENTIST };
 })();
