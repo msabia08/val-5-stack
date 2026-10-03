@@ -800,13 +800,48 @@ def arcade(shared):
     else:
         raise AssertionError("an old play can't be finished")
     summary = am.summary(db.get_bettor("Tester"))
-    assert [g["key"] for g in summary["games"]] == ["catch", "says", "dash"] and summary["me"]["plays"] == 3
+    assert [g["key"] for g in summary["games"]] == ["catch", "says", "dash", "lab"] and summary["me"]["plays"] == 3
     assert next(g for g in summary["games"] if g["key"] == "catch")["my_best"] == 300
     t = db.banana_totals()["tester"]
     assert abs(db.banana_wallet("Tester") - (wallet - 3 * ARCADE_PRICE)) < 1e-9 and t["spent"] >= 3 * ARCADE_PRICE
     # The only prize is the board: no bananas back, and credits never move.
     assert [r for r in bets.leaderboard() if r["name"] != "Broke"] == board  # "Broke" is new, with no bets
     assert {b["name"]: b["balance"] for b in db.bettors() if b["name"] != "Broke"} == balances
+
+
+@section("scientist")
+def scientist(shared):
+    # From Onkey's lore: the scientist offers to buy Onkey from a bettor who's nearly broke. It can only be refused,
+    # which earns the "Not For Sale" title for nothing, once; after that he stops asking.
+    from fivestack.arcade import GAMES
+    from fivestack.bananas import ITEMS, OFFER_BELOW, OFFER_ITEM, SOCIAL_ITEMS
+
+    db, bets, bm = shared.db, shared.bets, shared.bananas
+    bets.register("Broke", "secret1")
+    assert not bm.offer_open("Broke", OFFER_BELOW) and bm.offer_open("Broke", OFFER_BELOW - 1)  # only under the line
+    board, wallet = bets.leaderboard(), db.banana_wallet("Broke")
+    item = bm.refuse_offer("Broke")
+    assert item == {"id": OFFER_ITEM, "name": "Not For Sale"} and ITEMS[OFFER_ITEM]["slot"] == "title"
+    owned = db.query("SELECT price FROM banana_items WHERE bettor=? AND item_id=?", ("Broke", OFFER_ITEM))
+    assert [r["price"] for r in owned] == [0] and not bm.offer_open("Broke", 0)  # free, and he stops asking
+    bm.refuse_offer("Broke")  # refusing again changes nothing
+    assert len(db.query("SELECT 1 FROM banana_items WHERE bettor=? AND item_id=?", ("Broke", OFFER_ITEM))) == 1
+    assert db.banana_wallet("Broke") == wallet and bets.leaderboard() == board  # no bananas or credits move
+    # The rest of him in the shop and the arcade: the prank, the theme, the badges and the cabinet.
+    assert SOCIAL_ITEMS["sc-scientist"]["look"]["ticket_cls"] == "watched" and ITEMS["th-lab"]["look"]["theme"] == "lab"
+    assert "bd-labcoat" in ITEMS and GAMES["lab"]["name"] == "Lab Escape"
+    # A plush Onkey is a real product: neither the site nor the lore may reference it (CLAUDE.md, "Onkey's lore").
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for folder in ("web", "fivestack", "docs"):
+        for fname in sorted(os.listdir(os.path.join(root, folder))):
+            if not fname.endswith((".js", ".css", ".html", ".py")) and fname != "onkey-lore.md":
+                continue
+            with open(os.path.join(root, folder, fname), encoding="utf-8") as f:
+                text = f.read().lower()
+            assert not any(word in text for word in ("the plush", "plush copy", "plush replica", "bd-plush") + (("plush",) if folder == "docs" else ())), fname
+    # The login page shows him watching one visit in LOGIN_WATCHER_ODDS, and always has the slot for him.
+    from fivestack import app as appmod
+    assert "{watcher}" in appmod.LOGIN_PAGE and "scientist.png" in appmod.LOGIN_WATCHER and appmod.LOGIN_WATCHER_ODDS == 20
 
 
 @section("slots")
@@ -1853,6 +1888,22 @@ def banana_hunt(shared):
     r = hx.nudge(who, now=gone)
     assert r["reason"] == "stolen" and r["combo"] == 0 and r["target"]["id"] != tgt["id"], r
     now = gone + 1
+    # From the lore: the scientist's claw takes a banana that's left (it can't be shooed), and Man Strudel only visits.
+    rig.rolls = [0.33]
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    tgt = r["target"]
+    assert r["hit"] and tgt["claw"] is True and "greg" not in tgt, r
+    assert hx.click(who, 0, 0, now=now + 0.5, shoo=True)["reason"] == "miss"  # nobody to shoo: the claw stays
+    taken = hx.nudge(who, now=now + H.AIR_S + H.CLAW_S + 0.1)
+    assert taken["reason"] == "clawed" and taken["combo"] == 0 and taken["target"]["id"] != tgt["id"], taken
+    now += H.AIR_S + H.CLAW_S + 1
+    rig.rolls = [0.39]
+    r = hx.click(who, taken["target"]["x"], taken["target"]["y"], now=now)
+    tgt = r["target"]
+    assert r["hit"] and tgt["strudel"] and "claw" not in tgt, r
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
+    assert r["hit"] and r["paid"] == 1 and hx.nudge(who, now=now + 1.5)["reason"] is None, r  # he takes nothing
+    now += 2
     # A bunch: five at once, a credit each, and a bonus for sweeping them all in time.
     rig.rolls = [BUNCH]
     r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)

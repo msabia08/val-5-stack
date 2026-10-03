@@ -25,6 +25,8 @@ GAMES = {
              "desc": "Hit every syllable of Onkey's song as it lands. Three verses, each one faster and squeakier."},
     "dash": {"name": "Spike Dash", "icon": "💣", "max_rate": 400, "max_score": 1000000,
              "desc": "Onkey sprints over planted spikes. Jump, double jump, grab bananas, and don't stop."},
+    "lab": {"name": "Lab Escape", "icon": "🧪", "max_rate": 150, "max_score": 200000,
+            "desc": "The scientist chases Onkey round his lab, faster all the time. Grab bananas, dodge the evil candies, don't get caught."},
 }
 
 

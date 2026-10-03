@@ -15,6 +15,8 @@
  *   for sweeping them; a rotten decoy next to the real one freezes you; Greg walks in to take a banana unless you pick
  *   it first or click him away. When one of those timers runs out the page asks /api/hunt/next what happened;
  * - picks in a row build a combo (x2, x3) shown in the corner of the field; a miss breaks it;
+ * - from Onkey's lore: the scientist's claw comes down for a banana (`dropClaw()`), and Man Strudel visits
+ *   (`visitStrudel()`), who takes nothing;
  * - the day's first banana pays your streak's day, one pick a day hides an item, and the field's scenery changes by
  *   the day (`hunt.theme`).
  *
@@ -157,6 +159,7 @@ window.FiveHunt = (() => {
       ${how(`Onkey throws bananas into the field. Pick one for ${plural(h.per_banana, 'credit')}, or catch it in the air for double, up to ${h.daily_max} credits a day.`,
         `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
         `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
+        `The scientist's <b>claw</b> sometimes comes down for one: it can't be sent off, so pick the banana before it gets there. Man Strudel only wants to say hello. ` +
         `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg or stop for ${h.combo.idle_s} seconds. ` +
         `Hunt on days in a row and the day's first banana pays the <b>streak</b>'s day (up to ${h.streak_max}), on top of the day's cap. One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
         `The server places every banana and judges every click, and picks less than ${Math.round(h.min_interval_s * 1000)} ms apart on the ground aren't paid. The day's ${h.daily_max} credits turn over at midnight Pacific, like the daily wheel; ` +
@@ -179,7 +182,7 @@ window.FiveHunt = (() => {
     timers.forEach((t) => { if (typeof t === 'number') clearTimeout(t); else { t.oncancel = null; t.onfinish = null; t.cancel(); } });
     timers = [];
     flight = null;
-    $$('.hunt-banana, .hunt-fly, .hunt-greg, .hunt-clock, .hunt-msg', fieldEl).forEach((el) => el.remove());
+    $$('.hunt-banana, .hunt-fly, .hunt-greg, .hunt-clock, .hunt-msg, .hunt-claw, .hunt-strudel', fieldEl).forEach((el) => el.remove());
   }
 
   // Everything has landed: the things to pick, then whatever clock belongs to this target.
@@ -196,6 +199,44 @@ window.FiveHunt = (() => {
       timers.push(setTimeout(() => nudge(fieldEl, t), ttl * 1000));
     }
     if (t.greg) walkGreg(fieldEl, t);
+    if (t.claw) dropClaw(fieldEl, t);
+    if (t.strudel) visitStrudel(fieldEl, t);
+  }
+
+  // The scientist's claw comes down on a cable from the top of the field, his face at the top of it; when it
+  // reaches the banana, it has it. It can't be shooed: pick the banana first.
+  function dropClaw(fieldEl, t) {
+    const to = layout().at(t);
+    const claw = document.createElement('div');
+    claw.className = 'hunt-claw';
+    claw.setAttribute('aria-hidden', 'true');
+    claw.style.left = `${to.x}px`;
+    claw.innerHTML = '<img src="/assets/scientist-face.png" alt=""><i></i><b>🪝</b>';
+    fieldEl.appendChild(claw);
+    if (!claw.animate) return;
+    const drop = claw.animate([{ height: '34px' }, { height: `${Math.max(40, to.y + 6)}px` }], { duration: data.hunt.claw_s * 1000, easing: 'ease-in', fill: 'both' });
+    drop.onfinish = () => nudge(fieldEl, t);
+    timers.push(drop);
+  }
+
+  // Man Strudel, the scientist's henchman (enormous, his head in the brainbot's dome, and friendly): he walks up, asks
+  // to pet Onkey, and leaves without taking anything. He doesn't have the scientist's accent.
+  function visitStrudel(fieldEl, t) {
+    const lay = layout(), from = lay.at(t.strudel), to = lay.at(t);
+    const side = to.x < from.x ? 1 : -1, stop = { x: to.x + side * 96, y: to.y };
+    const el = document.createElement('div');
+    el.className = 'hunt-strudel';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<span class="hunt-strudel-say">May I pet Onkey?</span><img src="/assets/man-strudel-small.png" alt=""><small>Man Strudel</small>';
+    fieldEl.appendChild(el);
+    if (!el.animate) { el.remove(); return; }
+    const at = (p) => `translate(${p.x}px, ${p.y}px) translate(-50%, -72%)`;
+    const visit = el.animate([{ transform: at(from), offset: 0 }, { transform: at(stop), offset: 0.3 }, { transform: at(stop), offset: 0.72 }, { transform: at(from), offset: 1 }],
+      { duration: 4200, easing: 'linear', fill: 'both' });
+    timers.push(setTimeout(() => el.classList.add('asking'), 1260));
+    timers.push(setTimeout(() => el.classList.remove('asking'), 3000));
+    visit.onfinish = () => el.remove();
+    timers.push(visit);
   }
 
   // Greg comes in from the edge and walks to the banana; if he gets there, he has it.
@@ -322,6 +363,7 @@ window.FiveHunt = (() => {
     } else if (r.reason === 'rotten') { pop(fieldEl, here.x, here.y, 'Rotten!', 'bad'); freeze(fieldEl, r.frozen_s || data.hunt.freeze_s); }
     else if (r.reason === 'rotted') pop(fieldEl, here.x, here.y, 'It rotted', 'bad');
     else if (r.reason === 'stolen') pop(fieldEl, here.x, here.y, 'Greg took it!', 'bad');
+    else if (r.reason === 'clawed') { pop(fieldEl, here.x, here.y, 'Ze claw has it!', 'bad'); window.FiveOnkey?.note('hunt_claw'); }
     else if (r.reason === 'shooed') { shooGreg(fieldEl); pop(fieldEl, here.x, here.y, 'Shoo!', 'air'); }
     if (lost) { const c = $('#hunt-combo', fieldEl); if (c) { c.classList.remove('broke'); void c.offsetWidth; c.classList.add('broke'); } }
     target = r.target;

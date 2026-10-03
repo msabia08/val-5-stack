@@ -117,6 +117,22 @@ html.onkey-walking .onkey-dealer .onkey-face { visibility: hidden; }
 .logo-link { display: block; flex: none; border-radius: 8px; }  /* the logo opens Onkey's Shop */
 .logo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .logo-greg { display: none; }  /* Greg Mode's logo: a 124 x 72 head-and-shoulders crop of greg.png (transparent) */
+/* The scientist cuts in (onkey.js scientist()): his face takes the logo and the bubble goes lab green for one line. */
+.logo-sci { display: none; }
+.brand.onkey-scientist .logo-main, .brand.onkey-scientist .logo-greg { display: none !important; }
+.brand.onkey-scientist .logo-sci { display: block; }
+.brand.onkey-scientist .logo-link { animation: none; }
+.brand.onkey-scientist .logo { animation: none; }
+.brand.onkey-scientist .onkey-says { background: #16241a; color: #dff3d3; box-shadow: 0 0 0 1px #6f9f58, 0 0 18px rgba(120, 190, 90, 0.4); }
+.brand.onkey-scientist .onkey-says::before { border-bottom-color: #16241a; }
+.brand.onkey-scientist .onkey-says .ook { color: #8fb57c; }
+/* Wherever else he turns up (common.js sciNote()): his face and one line, in the same lab green. */
+.sci-note { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: #16241a; color: #dff3d3;
+  border: 1px solid #6f9f58; }
+.sci-note img { flex: none; width: 44px; height: 44px; border-radius: 50%; background: #0c150e; object-fit: cover; }
+.sci-note p { margin: 0; font-size: 14px; font-weight: 600; }
+.sci-note .btn { margin-top: 8px; }
+.login-watcher { position: fixed; right: -30px; bottom: -40px; width: 260px; opacity: .5; pointer-events: none; }
 /* Hovering the logo: a quick wiggle, then it stays a little bigger until the pointer leaves. */
 .logo { transform-origin: 50% 85%; transition: transform 0.2s ease, filter 0.9s ease; }
 .logo:hover { animation: logo-wiggle 0.6s ease-in-out forwards; }
@@ -1044,7 +1060,7 @@ a.ov-onkey-top:hover { border-color: var(--accent); }
 .ov-pranks li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 4px 0;
   border-bottom: 1px solid var(--border); font-size: 13px; }
 .ov-prank-what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ov-arcades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ov-arcades { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .ov-arcade { min-width: 0; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); color: inherit; text-decoration: none; }
 .ov-arcade:hover { border-color: var(--accent); }
 .ov-arcade .ov-tile-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1095,6 +1111,19 @@ a.ov-onkey-top:hover { border-color: var(--accent); }
   --spark: #3f5a43; --bar-track: #243a28; --bar-fill: #f5c518; --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   --axis: #34503a; --div-pos: #f5c518; --div-neg: #ef7070; --div-mid: #2a3f2e; --aim-1: #fbe38a; --aim-2: #f5c518; --aim-3: #a07f00; --pair-lo: #a07f00; --pair-hi: #fbe38a;
 }
+/* The Lab (bananas.py th-lab): the scientist's lab from Onkey's lore. Sickly green on steel grey, and he watches from
+   the bottom-right corner, fixed while the page scrolls (like Onkey in Onkey Mode). */
+:root[data-theme="lab"], [data-theme-preview="lab"] {
+  color-scheme: dark;
+  --bg: #0d1210; --surface: #151c18; --surface-2: #1e2823; --border: rgba(190, 230, 180, 0.12);
+  --text: #e9f2e4; --text-2: #b4c6ae; --muted: #7f9479; --grid: #263229;
+  --accent: #7fd45a; --accent-ink: #0d1210; --accent-soft: rgba(127, 212, 90, 0.18); --good: #7fd45a; --warn: #e8d24a; --bad: #e06a5a; --up: #7fd45a; --down: #ef7f70;
+  --s1: #5aa7f0; --s2: #e8743f; --s3: #3cc48f; --s4: #f5c518; --s5: #e571a0; --s6: #9fe07a; --s7: #a598f0; --s8: #ef7070;
+  --spark: #40523f; --bar-track: #26332a; --bar-fill: #7fd45a; --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --axis: #36483a; --div-pos: #7fd45a; --div-neg: #ef7f70; --div-mid: #2a382e; --aim-1: #d6f5c4; --aim-2: #7fd45a; --aim-3: #3f7a2c; --pair-lo: #3f7a2c; --pair-hi: #d6f5c4;
+}
+:root[data-theme="lab"] body::before { content: ""; position: fixed; right: -50px; bottom: -70px; width: min(420px, 60vw); aspect-ratio: 1; z-index: -1;
+  pointer-events: none; background: url("/assets/scientist.png") center / contain no-repeat; opacity: 0.14; }
 /* The ◐ theme picker (more than two themes owned): a menu under the button, each theme with its swatch. Dark and light
    get preview tokens here so their swatches draw like the shop themes'. */
 .topbar-right { position: relative; }
@@ -1173,6 +1202,11 @@ a.ov-onkey-top:hover { border-color: var(--accent); }
 .bet-slip-card.jinxed { position: relative; border-color: #8fd3ff; box-shadow: 0 0 0 1px rgba(143, 211, 255, 0.45), inset 0 0 26px rgba(143, 211, 255, 0.22); }
 .bet-slip-card.jinxed::after { content: "🥶"; position: absolute; top: -9px; right: -7px; font-size: 18px; }
 .bet-slip-card.jinxed .bet-slip-head { padding-right: 12px; } /* room for the sticker in the corner */
+/* Send the Scientist (bananas.py sc-scientist): he's watching their tickets, in lab green. */
+.bet-slip-card.watched { position: relative; border-color: #7fae5e; box-shadow: 0 0 0 1px rgba(127, 174, 94, 0.45), inset 0 0 26px rgba(127, 212, 90, 0.16); }
+.bet-slip-card.watched::after { content: ""; position: absolute; top: -12px; right: -9px; width: 30px; height: 30px; border-radius: 50%;
+  background: #16241a url("/assets/scientist-face.png") center / cover; border: 1px solid #6f9f58; }
+.bet-slip-card.watched .bet-slip-head { padding-right: 18px; }
 
 /* ---- the Shop tab ------------------------------------------------------- */
 .shop-hero { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 18px; align-items: center; }
@@ -1433,10 +1467,10 @@ body.modal-open { overflow: hidden; }
 .arcade-tools .btn.ghost { color: #f3e8ff; border-color: rgba(255, 255, 255, 0.2); }
 .arcade-tools .btn.ghost:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .arcade-wallet { align-self: center; font: 700 13px ui-monospace, Consolas, monospace; color: #f5c518; margin-right: 6px; }
-.arcade-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.arcade-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 16px; }
 .cabinet { display: flex; flex-direction: column; border-radius: 16px 16px 10px 10px; overflow: hidden; color: #eee; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
   background: linear-gradient(180deg, #221433, #120a1c); border: 2px solid #3a2458; }
-.cab-catch { --cab: #f5c518; } .cab-says { --cab: #ff3fa4; } .cab-dash { --cab: #36d6ff; }
+.cab-catch { --cab: #f5c518; } .cab-says { --cab: #ff3fa4; } .cab-dash { --cab: #36d6ff; } .cab-lab { --cab: #7fd45a; }
 .cab-marquee { padding: 12px; text-align: center; font: 900 18px ui-monospace, Consolas, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #fff;
   background: linear-gradient(180deg, color-mix(in srgb, var(--cab, #ff3fa4) 55%, #000), #1a0f27); text-shadow: 0 0 10px var(--cab, #ff3fa4); border-bottom: 2px solid #000; }
 .cab-marquee span { margin-right: 8px; }
@@ -2345,6 +2379,18 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 /* Greg in the dealer's chair (casino.js): his face shows even while Onkey is still walking over, and when Onkey kicks
    him out he spins off the table (.greg-flying). */
 html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
+/* The scientist in the dealer's chair (casino.js INTRUDERS): his face is round, and his bubble lab green. */
+.onkey-dealer.intruder-sci .onkey-face { border-radius: 50%; background: #16241a; }
+.onkey-bubble.tone-sci { background: #16241a; color: #dff3d3; box-shadow: 0 0 0 2px #6f9f58, 0 4px 14px rgba(0, 0, 0, 0.4); }
+.onkey-bubble.tone-sci .ook { color: #8fb57c; }
+/* His hand over the wheel's rim during a tease (wheel.js reach()); the leaf slaps it away at the deciding moment. */
+.wheel-hand { position: absolute; right: 2%; top: 3%; z-index: 3; display: flex; align-items: center; gap: 2px; pointer-events: none;
+  animation: wheel-hand-in .7s ease-out both; transform-origin: 100% 0; }
+.wheel-hand img { width: 13%; min-width: 46px; max-width: 84px; aspect-ratio: 1; border-radius: 50%; background: #16241a; border: 2px solid #6f9f58; order: 2; }
+.wheel-hand span { font-size: clamp(34px, 7cqw, 64px); line-height: 1; filter: hue-rotate(60deg) saturate(.7); transform: rotate(-35deg); }
+.wheel-hand.slapped { animation: wheel-hand-out .6s ease-in both; }
+@keyframes wheel-hand-in { from { transform: translate(60%, -60%); opacity: 0; } to { transform: translate(-150%, 30%); opacity: 1; } }
+@keyframes wheel-hand-out { from { transform: translate(-150%, 30%) rotate(0); opacity: 1; } to { transform: translate(120%, -160%) rotate(60deg); opacity: 0; } }
 .greg-flying { position: fixed; z-index: 100; pointer-events: none; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 
 /* The daily wheel's tokens in the bet slip (tokenRow() in bets.js): a Boost and an Insure toggle on each single, and
@@ -2404,6 +2450,17 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .hunt-clock.golden i { background: #ffd54a; }
 @keyframes hunt-clock { to { transform: scaleX(0); } }
 /* Greg walks in to take the banana; a click sends him off. */
+/* From Onkey's lore: the scientist's claw comes down a cable from the top of the field (his face at the top, a hook at
+   the bottom), and Man Strudel, his enormous, friendly henchman (man-strudel-small.png), walks up to ask to pet Onkey. */
+.hunt-claw { position: absolute; top: 0; width: 44px; margin-left: -22px; height: 34px; pointer-events: none; z-index: 2; display: flex; flex-direction: column; align-items: center; }
+.hunt-claw img { width: 40px; height: 40px; border-radius: 50%; background: #16241a; border: 2px solid #6f9f58; flex: none; margin-top: -8px; }
+.hunt-claw i { flex: 1; width: 3px; background: #9aa39a; }
+.hunt-claw b { font-size: 34px; line-height: .7; font-weight: 400; transform: rotate(180deg); filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .5)); }
+.hunt-strudel { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; pointer-events: none; z-index: 2; will-change: transform; }
+.hunt-strudel img { height: 132px; width: auto; filter: drop-shadow(0 6px 9px rgba(0, 0, 0, .55)); }
+.hunt-strudel small { font-size: 11px; font-weight: 700; color: #fff; background: rgba(0, 0, 0, .5); border-radius: 6px; padding: 1px 6px; }
+.hunt-strudel-say { opacity: 0; transition: opacity .2s; margin-bottom: 4px; padding: 4px 10px; border-radius: 10px; background: #fff; color: #222; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.hunt-strudel.asking .hunt-strudel-say { opacity: 1; }
 .hunt-greg { position: absolute; left: 0; top: 0; width: 74px; cursor: pointer; filter: drop-shadow(0 5px 8px rgba(0, 0, 0, .5)); will-change: transform; }
 .hunt-greg.shooed { pointer-events: none; }
 /* The combo, in the field's top-left corner: the multiplier, the run, and a bar to the next step. */
@@ -2661,6 +2718,8 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .hunt-banana, .hunt-fly { font-size: 46px; }
   .hunt-banana.bunch, .hunt-fly.bunch { font-size: 40px; }
   .hunt-greg { width: 58px; }
+  .hunt-strudel img { height: 96px; }
+  .hunt-claw b { font-size: 28px; }
   .hunt-combo { top: 22px; padding: 4px 10px 6px; }
   .hunt-combo b { font-size: 20px; }
   .hunt-deco { font-size: 30px; }

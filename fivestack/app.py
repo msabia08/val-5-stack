@@ -6,6 +6,7 @@
     python server.py --no-browser --port=8090 --no-tunnel
 """
 import html
+import secrets
 import json
 import os
 import sys
@@ -67,7 +68,10 @@ LOGIN_PAGE = """<!doctype html>
 {error}
 <label>Password<input type="password" name="password" autofocus autocomplete="current-password" required></label>
 <button class="btn primary" type="submit">Log in</button>
-</form></main></body></html>"""
+</form></main>{watcher}</body></html>"""
+# One visit to the login page in LOGIN_WATCHER_ODDS, the scientist (docs/onkey-lore.md) is watching from the corner.
+LOGIN_WATCHER_ODDS = 20
+LOGIN_WATCHER = '<img class="login-watcher" src="/assets/scientist.png" alt="" aria-hidden="true">'
 
 
 class App:
@@ -364,7 +368,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _login_page(self, error=None, status=200):
         err = f'<p class="error">{html.escape(error)}</p>' if error else ""
-        self._html(LOGIN_PAGE.replace("{error}", err), status)
+        watcher = LOGIN_WATCHER if secrets.randbelow(LOGIN_WATCHER_ODDS) == 0 else ""
+        self._html(LOGIN_PAGE.replace("{error}", err).replace("{watcher}", watcher), status)
 
     def _static(self, path):
         if path in ("", "/"):
@@ -536,6 +541,8 @@ class Handler(BaseHTTPRequestHandler):
                                           # The daily wheel: whether a spin is waiting (the page's nav dot and chip).
                                           "wheel_ready": app.wheel.spins_left(me["name"]) > 0,
                                           "tokens": app.wheel.token_counts(me["name"]),  # the bet slip's Boost / Insure toggles
+                                          # The scientist's offer for Onkey: made to a bettor who's nearly broke, until they refuse it.
+                                          "scientist_offer": app.bananas.offer_open(me["name"], me["balance"]),
                                           # Their last settled bets, newest first: Onkey reacts to new ones and losing runs.
                                           "recent_settled": [{k: b.get(k) for k in ("id", "status", "description", "stake", "payout",
                                                                                     "odds_decimal", "settled_ts")}
@@ -727,6 +734,11 @@ class Handler(BaseHTTPRequestHandler):
                 legs, _, quote = app.bets.quote_parlay(body.get("legs"), body.get("context") or {})
                 return self._json({**quote, "legs": [{**{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal", "boost")},
                                                       "boost_token": bool(leg.get("boost_token"))} for leg in legs]})
+            if path == "/api/scientist/refuse":  # "Onkey is not for sale": the answer to his offer, and a title for it
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in first."}, 403)
+                return self._json({"item": app.bananas.refuse_offer(me["name"])})
             if path in ("/api/hunt/start", "/api/hunt/click", "/api/hunt/next"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

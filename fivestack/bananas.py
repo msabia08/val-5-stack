@@ -68,6 +68,7 @@ CATALOG = [
     _item("bd-palm", "badge", "Palm Tree", 80, "Island time.", emoji="🌴"),
     _item("bd-gorilla", "badge", "Silverback", 150, "Big and in charge.", emoji="🦍"),
     _item("bd-crown", "badge", "Crown", 400, "Say less.", emoji="👑"),
+    _item("bd-labcoat", "badge", "Lab Coat", 120, "You have plans. You will not say what they are.", emoji="🥼"),
     _item("bd-fire", "badge", "On Fire", 80, "Can't miss right now.", emoji="🔥"),
     _item("bd-skull", "badge", "Skull", 80, "Dead inside, or making others so.", emoji="💀"),
     _item("bd-target", "badge", "Bullseye", 100, "Heads only.", emoji="🎯"),
@@ -88,6 +89,7 @@ CATALOG = [
     _item("tt-king", "title", "King of the Jungle", 800, "Technically a lion's title. Took it anyway.", text="King of the Jungle"),
     _item("tt-baiter", "title", "Certified Baiter", 100, "Someone has to go second.", text="Certified Baiter"),
     _item("tt-spike", "title", "Spike Planter", 100, "Carries the bomb, carries the team.", text="Spike Planter"),
+    _item("tt-notforsale", "title", "Not For Sale", 500, "Free if you turn the scientist down when he makes his offer.", text="Not For Sale"),
     _item("tt-hoarder", "title", "Ult Hoarder", 120, "Saving it for the right moment. Any day now.", text="Ult Hoarder"),
     _item("tt-ecofrag", "title", "Eco Frag Enjoyer", 150, "Sheriff diffs only.", text="Eco Frag Enjoyer"),
     _item("tt-entry", "title", "Entry Fragger", 150, "First through the door.", text="Entry Fragger"),
@@ -121,6 +123,7 @@ CATALOG = [
     _item("th-onkey", "theme", "Onkey Mode", 1000, "Warm browns and tan, with Onkey watching.", theme="onkey"),
     _item("th-jungle", "theme", "Jungle Mode", 1000, "A dark canopy with banana-yellow bars.", theme="jungle"),
     _item("th-sakura", "theme", "Sakura", 800, "Soft pinks, cherry-blossom light.", theme="sakura"),
+    _item("th-lab", "theme", "The Lab", 900, "The scientist's lab: sickly green on steel grey, and he watches from the corner.", theme="lab"),
     _item("th-midnight", "theme", "Midnight", 900, "Deep navy with ice-blue accents.", theme="midnight"),
     _item("th-terminal", "theme", "Terminal", 1000, "Green on black. You're in.", theme="terminal"),
     _item("th-synthwave", "theme", "Synthwave", 1200, "Purple night, hot-pink neon.", theme="synthwave"),
@@ -173,6 +176,7 @@ CATALOG = [
 # look: what the page draws: `cls` on their name, `ticket_cls` on their bet tickets,
 # `avatar` in place of their badge, `mark` = show the emoji next to their name; `kind` names the ones drawn specially.
 PRANK_GAMES = 3
+OFFER_BELOW, OFFER_ITEM = 100, "tt-notforsale"  # the scientist's offer: who gets it, and the title for refusing
 SOCIAL = [
     {"id": "sc-peel", "name": "Banana Peel", "price": 40, "hours": 168, "games": PRANK_GAMES,
      "desc": f"Their name slips and wobbles for the next {PRANK_GAMES} games.", "look": {"cls": "slipped", "emoji": "🍌", "mark": True}},
@@ -185,6 +189,9 @@ SOCIAL = [
      "desc": f"Their name goes tiny for the next {PRANK_GAMES} games.", "look": {"cls": "shrunk", "emoji": "🔬", "mark": True}},
     {"id": "sc-fog", "name": "Smoke Screen", "price": 55, "hours": 168, "games": PRANK_GAMES,
      "desc": f"Their name hides in smoke until you hover it, for {PRANK_GAMES} games.", "look": {"cls": "fogged", "emoji": "💨", "mark": True}},
+    {"id": "sc-scientist", "name": "Send the Scientist", "price": 65, "hours": 168, "games": PRANK_GAMES,
+     "desc": f"He watches them: his face takes over their badge and avatar, and a green chill sits on their bet tickets, for the next {PRANK_GAMES} games.",
+     "look": {"avatar": "🥽", "ticket_cls": "watched", "emoji": "🥽", "mark": True}},
     {"id": "sc-clown", "name": "Clown Makeup", "price": 50, "hours": 168, "games": PRANK_GAMES,
      "desc": f"Their badge and avatar become a clown for the next {PRANK_GAMES} games.", "look": {"avatar": "🤡", "emoji": "🤡"}},
     {"id": "sc-glitter", "name": "Glitter Bomb", "price": 70, "hours": 168, "games": PRANK_GAMES,
@@ -318,6 +325,22 @@ class BananaManager:
                 "looks": self.looks().get(name.lower(), {"worn": {}})}
 
     # ---- spending ---------------------------------------------------------------
+    # The scientist's offer (docs/onkey-lore.md: $25,000 for Onkey, which his owner turned down). He makes it to a
+    # bettor with fewer than OFFER_BELOW credits, until they refuse it; refusing is the only answer, and earns the
+    # "Not For Sale" title for nothing.
+    def offer_open(self, name, balance):
+        return balance < OFFER_BELOW and not self.db.query_one(
+            "SELECT 1 FROM banana_items WHERE lower(bettor)=lower(?) AND item_id=?", (name, OFFER_ITEM))
+
+    def refuse_offer(self, name):
+        """Turn the scientist down: the bettor gets the OFFER_ITEM title (once; nothing is charged). Returns the item."""
+        with self.db.lock:
+            if not self.db.query_one("SELECT 1 FROM banana_items WHERE lower(bettor)=lower(?) AND item_id=?", (name, OFFER_ITEM)):
+                self.db.conn.execute("INSERT INTO banana_items(bettor, item_id, price, bought_ts) VALUES(?,?,?,?)",
+                                     (name, OFFER_ITEM, 0, time.time()))
+                self.db.conn.commit()
+        return {"id": OFFER_ITEM, "name": ITEMS[OFFER_ITEM]["name"]}
+
     def buy(self, name, item_id, target=None, text=None):
         """Buy a shop item (worn straight away) or use a social item on `target`. Only bananas change hands."""
         if item_id in SOCIAL_ITEMS:

@@ -1685,7 +1685,7 @@
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours
     // over web/assets/greg.png; Onkey Mode; Jungle Mode) -> dark. A shop theme is only applied once the shop confirms
     // it's owned (checkTheme, after every shop load), so a saved or ?theme= one waits, and one you don't own is dropped.
-    const THEMES = { dark: 'Dark', light: 'Light', greg: 'Greg Mode', onkey: 'Onkey Mode', jungle: 'Jungle Mode', sakura: 'Sakura', midnight: 'Midnight', terminal: 'Terminal', synthwave: 'Synthwave' };
+    const THEMES = { dark: 'Dark', light: 'Light', greg: 'Greg Mode', onkey: 'Onkey Mode', jungle: 'Jungle Mode', sakura: 'Sakura', lab: 'The Lab', midnight: 'Midnight', terminal: 'Terminal', synthwave: 'Synthwave' };
     const FREE_THEMES = ['dark', 'light'];
     const themeBtn = $('#theme-btn');
     const cycle = () => [...FREE_THEMES, ...shop.ownedThemes().map((t) => t.key)];

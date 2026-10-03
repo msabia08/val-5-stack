@@ -219,15 +219,16 @@ window.FiveCasino = (() => {
     const n = Math.max(2, Math.min(6, Math.round(words / 2)));
     const excited = EXCITED.has(kind);
     const noises = Array.from({ length: n }, (_, i) => (excited ? (i % 3 === 2 ? 'ook' : 'eek') : (i % 3 === 1 ? 'eek' : 'ook')));
-    bubble.querySelector('.ook').textContent = kind === 'greg' ? '*Greg clears his throat*'
+    bubble.querySelector('.ook').textContent = kind === 'greg' ? '*Greg clears his throat*' : kind === 'sci' ? '*he adjusts his glasses*'
       : noises.map((x) => x[0].toUpperCase() + x.slice(1) + (excited ? '!' : '')).join(' ');
     bubble.querySelector('.say').textContent = text;
     bubble.classList.toggle('tone-gold', tone === 'gold');
     bubble.classList.toggle('tone-red', tone === 'red');
+    bubble.classList.toggle('tone-sci', kind === 'sci');
     el.classList.remove('talking');
     void el.offsetWidth; // restart the animation
     el.classList.add('talking');
-    if (kind !== 'greg') chatter(noises);
+    if (kind !== 'greg' && kind !== 'sci') chatter(noises);
     clearTimeout(timers.get(el));
     timers.set(el, setTimeout(() => el.classList.remove('talking'), 4500 + words * 240)); // a 10-word line about 7 seconds
   }
@@ -249,38 +250,49 @@ window.FiveCasino = (() => {
     else say(el, kindOf(best), varsOf(best));
   }
 
-  // ---- Greg ------------------------------------------------------------------------------------
-  // Now and then (GREG_CHANCE of the times Onkey walks to a table, onkey.js's 'onkey:walking') Greg is sitting in the
-  // dealer's chair when you get there. He says his piece while Onkey waits in the logo (GREG_TALK_MS), then Onkey walks
-  // over; when he arrives ('onkey:seated', or straight away if he's already there), and Greg has had GREG_MIN_MS to talk,
-  // Onkey kicks him out of the chair with a line of his own.
-  const GREG_CHANCE = 0.05, GREG_MIN_MS = 3200, GREG_TALK_MS = 2800; // Onkey stays in the logo GREG_TALK_MS while Greg talks
-  const GREG_IN = ['Hi! I\'m Greg. I\'ll be your dealer today.', 'Onkey\'s on a banana break. Greg\'s dealing. How hard can it be?',
-    'Greg here. Do aces count as one or eleven? Asking for a friend.', 'Welcome to Greg\'s table. Greg has never done this before.'];
-  const GREG_OUT = ['GREG. Out of Onkey\'s chair. Now.', 'Who let Greg in? Sorry, folks. Onkey is back.', 'Greg, we talked about this. OUT!',
-    'Onkey leaves for one banana, and this happens. Shoo, Greg.'];
+  // ---- Greg, and the scientist ------------------------------------------------------------------
+  // Now and then (an intruder's `chance` of the times Onkey walks to a table, onkey.js's 'onkey:walking') somebody else
+  // is sitting in the dealer's chair when you get there: Greg, who has never dealt before, or more rarely the scientist
+  // from Onkey's lore (docs/onkey-lore.md), who talks in his accent. He says his piece while Onkey waits in the logo
+  // (GREG_TALK_MS), then Onkey walks over; when he arrives ('onkey:seated', or straight away if he's already there), and
+  // the intruder has had GREG_MIN_MS to talk, Onkey kicks him out of the chair with a line of his own.
+  const GREG_MIN_MS = 3200, GREG_TALK_MS = 2800; // Onkey stays in the logo GREG_TALK_MS while the intruder talks
+  const INTRUDERS = [
+    { key: 'greg', chance: 0.05, img: '/assets/greg-logo.png', alt: 'Greg, in the dealer\'s chair',
+      in: ['Hi! I\'m Greg. I\'ll be your dealer today.', 'Onkey\'s on a banana break. Greg\'s dealing. How hard can it be?',
+        'Greg here. Do aces count as one or eleven? Asking for a friend.', 'Welcome to Greg\'s table. Greg has never done this before.'],
+      out: ['GREG. Out of Onkey\'s chair. Now.', 'Who let Greg in? Sorry, folks. Onkey is back.', 'Greg, we talked about this. OUT!',
+        'Onkey leaves for one banana, and this happens. Shoo, Greg.'] },
+    { key: 'sci', chance: 0.02, img: '/assets/scientist-face.png', alt: 'The scientist, in the dealer\'s chair',
+      in: ['Sit. I will deal zis hand. Ze monkey is... busy.', 'Good evening. Ze dealer has been replaced. Permanently, I hope.',
+        'Do not look for ze monkey. Look at ze cards.', 'I am told zis game is about numbers. I am very good wiz numbers.'],
+      out: ['No. Not him. Not at Onkey\'s table. OUT.', 'Onkey knows that lab coat. Out of the chair.', 'Onkey is not for sale. Neither is this seat.',
+        'He followed Onkey here. He follows Onkey everywhere. Go.'] },
+  ];
   let greg = null;
   const gregHere = () => !!(greg && greg.el.isConnected);
   document.addEventListener('onkey:walking', (e) => {
-    if (Math.random() >= GREG_CHANCE) return;
-    if (e.detail) e.detail.hold = GREG_TALK_MS; // Onkey waits for Greg's line before he sets off
+    let roll = Math.random();
+    const who = INTRUDERS.find((x) => { if (roll < x.chance) return true; roll -= x.chance; return false; });
+    if (!who) return;
+    if (e.detail) e.detail.hold = GREG_TALK_MS; // Onkey waits for the intruder's line before he sets off
     const t0 = Date.now();
     const look = () => {
       const el = document.querySelector('.onkey-dealer');
-      if (el) seatGreg(el, true);
+      if (el) seatGreg(el, true, who);
       else if (Date.now() - t0 < 5000) setTimeout(look, 60);
     };
     look();
   });
   document.addEventListener('onkey:seated', () => { if (greg) kickLater(greg); });
-  function seatGreg(el, walking) {
+  function seatGreg(el, walking, who = INTRUDERS[0]) {
     const face = el.querySelector('.onkey-face');
     if (!face) return;
-    el.classList.add('greg');
-    face.src = '/assets/greg-logo.png';
-    face.alt = 'Greg, in the dealer\'s chair';
-    greg = { el, since: Date.now() };
-    say(el, 'greg', {}, pick(GREG_IN));
+    el.classList.add('greg', `intruder-${who.key}`);
+    face.src = who.img;
+    face.alt = who.alt;
+    greg = { el, who, since: Date.now() };
+    say(el, who.key === 'sci' ? 'sci' : 'greg', {}, pick(who.in));
     if (!walking || !document.documentElement.classList.contains('onkey-walking')) kickLater(greg);
   }
   function kickLater(g) {
@@ -293,21 +305,21 @@ window.FiveCasino = (() => {
     if (!el.isConnected || !face) return;
     const r = face.getBoundingClientRect();
     const fly = document.createElement('img');
-    fly.src = '/assets/greg-logo.png';
+    fly.src = g.who.img;
     fly.alt = '';
     fly.className = 'greg-flying';
     Object.assign(fly.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
     document.body.appendChild(fly);
     face.src = '/assets/onkey-logo.png';
     face.alt = 'Onkey, the dealer';
-    el.classList.remove('greg', 'bonked');
+    el.classList.remove('greg', 'bonked', `intruder-${g.who.key}`);
     void el.offsetWidth;
     el.classList.add('bonked');
     fly.animate([{ transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
       { transform: 'translate(160px, -70px) rotate(220deg)', opacity: 1, offset: 0.45 },
       { transform: 'translate(520px, 260px) rotate(620deg) scale(0.5)', opacity: 0 }], { duration: 1100, easing: 'cubic-bezier(0.25, 0.1, 0.6, 1)', fill: 'forwards' })
       .onfinish = () => fly.remove();
-    say(el, 'greg_out', {}, pick(GREG_OUT));
+    say(el, 'greg_out', {}, pick(g.who.out));
   }
 
   // ---- monkey noises (Web Audio, nothing to download) ---------------------------------------------

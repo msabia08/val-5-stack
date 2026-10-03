@@ -152,7 +152,7 @@ window.FiveArcade = (() => {
 
   // ---- art -------------------------------------------------------------------------
   const img = (src) => { const i = new Image(); i.src = src; return i; };
-  const ART = { onkey: img('/assets/onkey-logo.png'), greg: img('/assets/greg-drop.png') };
+  const ART = { onkey: img('/assets/onkey-logo.png'), greg: img('/assets/greg-drop.png'), sci: img('/assets/scientist-face.png') };
   const PIXEL = 'bold 14px ui-monospace, "Cascadia Code", Consolas, monospace';
   function text(g, s, x, y, { size = 14, color = '#fff', align = 'left', glow = null } = {}) {
     g.font = PIXEL.replace('14px', `${size}px`);
@@ -432,6 +432,86 @@ window.FiveArcade = (() => {
     };
   };
 
+  // Lab Escape (from Onkey's lore, docs/onkey-lore.md): the scientist chases Onkey round his lab, a little faster all
+  // the time. Move with the arrows / WASD (or hold a spot on the screen); bananas are worth 50; an evil candy (the ones
+  // with an E) slows Onkey for a moment. One life: when he catches Onkey, it's over.
+  GAMES.lab = (env) => {
+    const s = { x: W * 0.25, y: H / 2, sx: W * 0.85, sy: H / 2, t: 0, score: 0, bonus: 0, bananas: [], candies: [], pops: [], spawn: 1.2, candy: 9,
+      slow: 0, keys: {}, target: null, over: false, flash: 0 };
+    const music = env.sound.music(150);
+    const end = () => { s.over = true; music.stop(); env.sound.fx.gameOver(); env.onEnd(); };
+    return {
+      get score() { return s.score; }, get over() { return s.over; },
+      hud: () => [`TIME ${Math.floor(s.t)}`, s.slow > 0 ? 'SLOWED' : ''],
+      update(dt) {
+        if (s.over) return;
+        s.t += dt;
+        s.slow = Math.max(0, s.slow - dt);
+        const speed = (s.slow > 0 ? 95 : 190) * dt;
+        let dx = (s.keys.right ? 1 : 0) - (s.keys.left ? 1 : 0), dy = (s.keys.down ? 1 : 0) - (s.keys.up ? 1 : 0);
+        if (s.target) { dx = s.target.x - s.x; dy = s.target.y - s.y; if (Math.hypot(dx, dy) < 4) dx = dy = 0; }
+        const len = Math.hypot(dx, dy);
+        if (len) { s.x += (dx / len) * speed; s.y += (dy / len) * speed; }
+        s.x = Math.max(26, Math.min(W - 26, s.x)); s.y = Math.max(40, Math.min(H - 22, s.y));
+        // He walks straight at Onkey, faster the longer it goes on.
+        const chase = Math.min(178, 62 + s.t * 2.6) * dt, cx = s.x - s.sx, cy = s.y - s.sy, cd = Math.hypot(cx, cy) || 1;
+        s.sx += (cx / cd) * chase; s.sy += (cy / cd) * chase;
+        if (cd < 26) { s.flash = 0.5; end(); return; }
+        s.spawn -= dt;
+        if (s.spawn <= 0 && s.bananas.length < 3) { s.bananas.push({ x: 30 + Math.random() * (W - 60), y: 50 + Math.random() * (H - 80) }); s.spawn = 1.6 + Math.random() * 1.6; }
+        s.bananas = s.bananas.filter((b) => {
+          if (Math.hypot(b.x - s.x, b.y - s.y) > 24) return true;
+          s.bonus += 50; env.sound.fx.catch(2);
+          s.pops.push({ x: b.x, y: b.y - 10, txt: '+50', c: '#ffd700', t: 0.7 });
+          return false;
+        });
+        s.candy -= dt;
+        if (s.candy <= 0) { // an evil candy rolls across the lab
+          const fromLeft = Math.random() < 0.5;
+          s.candies.push({ x: fromLeft ? -12 : W + 12, y: 50 + Math.random() * (H - 80), vx: (fromLeft ? 1 : -1) * (110 + Math.min(90, s.t * 1.5)) });
+          s.candy = Math.max(1.4, 5 - s.t * 0.05);
+        }
+        s.candies = s.candies.filter((c) => {
+          c.x += c.vx * dt;
+          if (Math.hypot(c.x - s.x, c.y - s.y) < 20) { s.slow = 1.3; s.flash = 0.25; env.sound.fx.hurt(); s.pops.push({ x: c.x, y: c.y - 10, txt: 'EVIL!', c: '#ff5470', t: 0.8 }); return false; }
+          return c.x > -20 && c.x < W + 20;
+        });
+        s.score = Math.floor(s.t * 10) + s.bonus;
+        s.pops.forEach((p) => { p.t -= dt; p.y -= 30 * dt; });
+        s.pops = s.pops.filter((p) => p.t > 0);
+        s.flash = Math.max(0, s.flash - dt);
+      },
+      render(g) {
+        g.fillStyle = '#14201a'; g.fillRect(0, 0, W, H);
+        g.strokeStyle = '#1f3327'; g.lineWidth = 1;
+        for (let x = 0; x <= W; x += 40) { g.beginPath(); g.moveTo(x, 28); g.lineTo(x, H); g.stroke(); }
+        for (let y = 28; y <= H; y += 40) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+        g.fillStyle = '#0c150e'; g.fillRect(0, 0, W, 28);
+        s.bananas.forEach((b) => emoji(g, BANANA, b.x, b.y, 22));
+        s.candies.forEach((c) => {
+          g.fillStyle = '#c0392b'; g.beginPath(); g.arc(c.x, c.y, 11, 0, 7); g.fill();
+          text(g, 'E', c.x, c.y + 1, { size: 12, align: 'center' });
+        });
+        if (ART.sci.complete) g.drawImage(ART.sci, s.sx - 24, s.sy - 24, 48, 48);
+        g.globalAlpha = s.slow > 0 ? 0.6 : 1;
+        drawOnkey(g, s.x, s.y, 66);
+        g.globalAlpha = 1;
+        s.pops.forEach((p) => text(g, p.txt, p.x, p.y, { size: 13, color: p.c, align: 'center' }));
+        if (s.over) text(g, 'ZE MONKEY IS MINE', W / 2, H / 2 - 30, { size: 18, color: '#9fe07a', align: 'center', glow: '#3f8f2f' });
+        if (s.flash) { g.fillStyle = `rgba(120,220,90,${s.flash})`; g.fillRect(0, 0, W, H); }
+      },
+      key(code, down) {
+        if (['ArrowLeft', 'KeyA'].includes(code)) s.keys.left = down;
+        if (['ArrowRight', 'KeyD'].includes(code)) s.keys.right = down;
+        if (['ArrowUp', 'KeyW'].includes(code)) s.keys.up = down;
+        if (['ArrowDown', 'KeyS'].includes(code)) s.keys.down = down;
+        if (down) s.target = null;
+      },
+      tap(x, y, down) { s.target = down ? { x, y } : null; },
+      stop() { music.stop(); },
+    };
+  };
+
   // ---- the machine window: pay, count down, play, send the score -------------------------------
   let run = null; // the game being played: { key, token, game, raf, ... }
   async function insertCoin(key, btn) {
@@ -522,6 +602,7 @@ window.FiveArcade = (() => {
     catch: '← → or A D to move (or drag on the screen). Esc quits.',
     says: '← ↓ → or A S D (or tap the lanes) as each banana hits the ring; hold the long one. Esc quits.',
     dash: 'Space or ↑ (or tap) to jump; press again in the air to double jump. Esc quits.',
+    lab: 'Arrows or W A S D to run (or hold a spot on the screen). Esc quits.',
   };
 
   function paint() {
