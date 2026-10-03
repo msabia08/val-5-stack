@@ -142,6 +142,10 @@ window.FiveBets = (() => {
     // Only the picks: signing in lives in the account menu (the profile chip, top right) and the balance in the
     // credits chip beside it.
     const me = state.me;
+    // On a phone the slip is a bar pinned to the bottom of the screen that opens into a sheet (style.css's phone block,
+    // html.slip-open; the heading is its handle and shows how many picks it holds). An empty slip isn't shown there,
+    // so it closes.
+    if (!state.slip.length) document.documentElement.classList.remove('slip-open');
     if (!state.slip.length) {
       return `<h2>Bet slip</h2><p class="muted">Tap any odds to add a pick.</p><p class="muted small">Picks placed up to ${fmt.n0(state.status.bet_grace_minutes ?? 2)} min after a game starts still count for it. You can cancel a pick for ${fmt.n0(state.status.bet_cancel_minutes ?? 1)} min after placing it.</p>`;
     }
@@ -173,7 +177,7 @@ window.FiveBets = (() => {
       body = `${items}<div class="slip-total">Total stake ${fmt.credits(total)}</div><div class="small slip-after">${afterStake(total)}</div>`;
       placeLabel = `Place ${state.slip.length} bet${state.slip.length > 1 ? 's' : ''}`;
     }
-    return `<h2>Bet slip</h2>
+    return `<h2>Bet slip <span class="slip-count">${state.slip.length}</span></h2>
       ${modeToggle}
       ${body}
       ${me ? `<button class="btn primary" id="place-bets" ${mode === 'parlay' && parlayBlocked() ? 'disabled' : ''}>${placeLabel}</button>`
@@ -474,6 +478,7 @@ window.FiveBets = (() => {
   function bindSlip() {
     const slip = $('#slip');
     if (!slip) return;
+    $('h2', slip)?.addEventListener('click', () => document.documentElement.classList.toggle('slip-open')); // the phone sheet's handle
     $$('.stake', slip).forEach((inp) => inp.addEventListener('input', (e) => {
       const it = state.slip[Number(e.target.dataset.i)];
       if (!it) return;
