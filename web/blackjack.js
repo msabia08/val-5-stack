@@ -258,7 +258,7 @@ window.FiveBlackjack = (() => {
       return '<section class="card" id="bj-loading">Shuffling the shoe…</section>';
     }
     const seats = d.shared_seats;
-    const felt = C.deal(() => ({ dealer: dealerHtml(d), spots: spotsHtml(d), status: statusHtml(d) }));
+    const felt = dealFelt(d);
     return `<div id="bj-root" class="casino-page">
       <div class="casino-bar">
         <div class="seg" role="tablist" aria-label="Table">
@@ -281,9 +281,19 @@ window.FiveBlackjack = (() => {
       </div>
     </div>`;
   }
+  // A seat's border says whose turn it is and whether they're on a hot or cold run. Both change the moment a result
+  // arrives (a bust ends your turn, a loss can start a cold run), which is before the card that decides it has landed,
+  // so while cards are still being dealt a seat keeps the border it had when they were last all down (seatLook).
+  const seatLook = new Map();
+  const lookKey = (d, s) => `${d.table}:${s.bettor}`;
+  function dealFelt(d) {
+    const felt = C.deal(() => ({ dealer: dealerHtml(d), spots: spotsHtml(d), status: statusHtml(d) }));
+    if (C.landing() === 0) d.seats.forEach((s) => seatLook.set(lookKey(d, s), { turn: !!(d.turn && d.turn.bettor === s.bettor), streak: s.streak }));
+    return felt;
+  }
   function refresh() {
     const d = data[which];
-    const felt = C.deal(() => ({ dealer: dealerHtml(d), spots: spotsHtml(d), status: statusHtml(d) }));
+    const felt = dealFelt(d);
     C.patch($('#bj-dealer'), felt.dealer);
     C.patch($('#bj-spots'), felt.spots);
     C.patch($('#bj-status'), felt.status);
@@ -340,7 +350,10 @@ window.FiveBlackjack = (() => {
         return C.chip(profit, { cls: `${chips}${p.cls}`, style: p.style }); })() : '';
       chipsHtml = C.chip(h.stake, { cls: `${chips}${m.cls}`, style: m.style }) + pay;
     }
-    return `<div class="bj-hand ${h.turn ? 'active' : ''} ${h.result || ''}">
+    // A lost hand's cards dim, but only once the last card is down (Onkey's hand is still being dealt out when the
+    // result arrives): until then the hand waits at full strength, like the totals and the status line.
+    const dim = lost && land > 0 ? ` dim-wait" style="--dim:${land}ms` : '';
+    return `<div class="bj-hand ${h.turn ? 'active' : ''} ${h.result || ''}${dim}">
       <div class="bj-cards">${C.cards(h.cards, { size, key, saved: h.saved, seq: (i) => (hi === 0 && i < 2 ? i * 100 + seat : 5000 + hi * 10 + i) })}</div>
       <div${C.after('bj-hand-meta')}><span></span>${badge}<span class="bj-hand-chips">${chipsHtml}</span></div></div>`;
   }
@@ -360,7 +373,9 @@ window.FiveBlackjack = (() => {
   function spotsHtml(d) {
     const meName = d.me?.name;
     const spots = d.seats.map((s) => {
-      const turn = d.turn && d.turn.bettor === s.bettor;
+      const held = C.landing() > 0 ? seatLook.get(lookKey(d, s)) : null; // cards in the air: the border waits (dealFelt())
+      const turn = held ? held.turn : d.turn && d.turn.bettor === s.bettor;
+      const streak = held ? held.streak : s.streak;
       const chips = C.style(s.bettor, 'chips');
       const seat = d.seats.indexOf(s), key = `bj:${d.table}:${d.round}:${s.bettor}`;
       // A split puts the new hand next to its pair, moving the ones after it along, so a hand's cards are keyed by
@@ -373,8 +388,8 @@ window.FiveBlackjack = (() => {
         : s.stake ? `<div class="bj-hand waiting">${C.chip(s.stake, { cls: `big ${chips}${bet.cls}`, style: bet.style })}<span class="muted small">Bet placed</span></div>`
           : `<div class="bj-hand waiting"><span class="muted small">${d.phase === 'betting' ? 'No bet yet' : 'Sitting this one out'}</span></div>`;
       // A run of wins glows hot, a run of losses goes cold (blackjack.py's streaks).
-      const run = s.streak >= 3 ? 'hot' : s.streak <= -3 ? 'cold' : '';
-      const runTag = run ? `<span class="streak-tag ${run}" title="${run === 'hot' ? 'Wins' : 'Losses'} in a row">${run === 'hot' ? '🔥' : '🧊'} ${Math.abs(s.streak)}</span>` : '';
+      const run = streak >= 3 ? 'hot' : streak <= -3 ? 'cold' : '';
+      const runTag = run ? `<span class="streak-tag ${run}" title="${run === 'hot' ? 'Wins' : 'Losses'} in a row">${run === 'hot' ? '🔥' : '🧊'} ${Math.abs(streak)}</span>` : '';
       return `<div class="bj-spot ${turn ? 'turn' : ''} ${run} ${s.bettor === meName ? 'me' : ''} ${C.style(s.bettor, 'seat')}" data-bettor="${esc(s.bettor)}">
         <div class="bj-hands">${hands}</div>
         ${sidesHtml(s, chips, key)}
