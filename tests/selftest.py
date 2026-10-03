@@ -2776,7 +2776,8 @@ def daily_wheel(shared):
     assert not summary["unlimited"] and len(summary["me"]["history"]) == 8 and summary["recent"][0]["bettor"] == "Dee" and summary["segments"] == SEGMENTS
 
     # A boost token also works on a leg of a parlay: that leg prices at its boosted price and the parlay's price follows.
-    demo.spin("Dee", now=day, force="boost")
+    hbets.register("Pat", "secret1")  # their own account: Dee's last spin above was random and may have won a token
+    demo.spin("Pat", now=day, force="boost")
     board = hbets.apply_boost(env.engine.build(hdb))
     game = (board["boost"]["market_id"], board["boost"]["selection"])  # the game's boosted pick can't take a token too
     legs = [{"market_id": "team:win", "selection": "loss" if game == ("team:win", "win") else "win"},
@@ -2790,17 +2791,17 @@ def daily_wheel(shared):
     for bad, stake, why in ((boosted_legs, TOKEN_MAX_STAKE + 1, "covers a parlay of up to"),
                             ([{**leg, "boost": True} for leg in legs], 10, "only have 1 boost token")):
         try:
-            hbets.place_parlay("Dee", bad, stake, {})
+            hbets.place_parlay("Pat", bad, stake, {})
             raise AssertionError(why)
         except BetError as e:
             assert why in str(e), e
-    assert len(wheel.perks("Dee")) == 1  # a refused parlay uses nothing
-    parlay = hbets.place_parlay("Dee", boosted_legs, 10, {})
+    assert len(wheel.perks("Pat")) == 1  # a refused parlay uses nothing
+    parlay = hbets.place_parlay("Pat", boosted_legs, 10, {})
     leg = json.loads(parlay["context"])["legs"][0]
-    assert parlay["odds_decimal"] == quote["odds_decimal"] and isinstance(leg["boost_token"], int) and wheel.perks("Dee") == []
+    assert parlay["odds_decimal"] == quote["odds_decimal"] and isinstance(leg["boost_token"], int) and wheel.perks("Pat") == []
     assert hdb.query_one("SELECT status, bet_id FROM wheel_perks WHERE id=?", (leg["boost_token"],)) == {"status": "used", "bet_id": parlay["id"]}
     try:
-        hbets.place_parlay("Dee", boosted_legs, 10, {})
+        hbets.place_parlay("Pat", boosted_legs, 10, {})
         raise AssertionError("no token left")
     except BetError as e:
         assert "don't have a boost token" in str(e), e
