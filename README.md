@@ -9,7 +9,7 @@ your next game** that the squad can bet on with virtual credits.
 No Node, no build step, no third-party packages: Python 3.10+ and a browser.
 
 **Screens and theme.** The site is built around a 1920×1080 desktop screen.
-A phone layout is being added page by page (the Overview, Slots and Blackjack so far); tablets and
+A phone layout is being added page by page (the Overview, Slots, Blackjack and the Daily wheel so far); tablets and
 small laptops aren't supported. It opens in dark
 mode whatever your computer's own light/dark setting is. Light mode (and any
 theme bought in Onkey's Shop) is one click on ◐ in the top bar, and the site

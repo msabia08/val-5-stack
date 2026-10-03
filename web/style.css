@@ -1870,6 +1870,8 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 /* ---- Casino tables: blackjack (blackjack.js) and poker (poker.js), with casino.js's cards and Onkey ---- */
 .casino-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
 .casino-bar .casino-mute { margin-left: auto; }
+.speaker-icon { display: block; flex: none; }  /* the one sound icon (common.js speakerIcon()) */
+.btn .speaker-icon { display: inline-block; vertical-align: -0.2em; }
 .seg-count { margin-left: 6px; font-weight: 500; opacity: 0.8; font-variant-numeric: tabular-nums; }
 .casino-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
 .casino-side .card h2 { margin-top: 0; }
@@ -2539,4 +2541,18 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .bj-act { flex: 1 1 0; width: auto; min-width: 0; height: 64px; padding: 0 2px; }
   .bj-act b { font-size: 15px; }
   .bj-emotes { left: 8px; top: 8px; }
+  /* Daily wheel: the wheel across the whole screen with the result and the Spin button under it, all on one screen,
+     and the sound button in the top right corner; then the prizes, your tokens and the spin lists, one per row. */
+  .wheel-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .wheel-stage { position: relative; padding: 0 0 4px; border: 0; background: none; box-shadow: none; }  /* no card: the wheel runs edge to edge */
+  .wheel-head > div { display: none; }  /* no title or description: the page is the wheel */
+  .wheel-sound { position: absolute; z-index: 3; top: 2px; right: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; }
+  .wheel-row { flex-direction: column; gap: 4px; }
+  .wheel-box { width: calc(100% + 24px); margin: -8px -12px -6px; }
+  .wheel-controls { flex: none; min-width: 0; align-self: stretch; }
+  .wheel-spin { min-width: 0; width: 100%; }
+  .wheel-side .card { margin-bottom: 12px; }
+  .wheel-banner { font-size: 44px; }
+  .wheel-spins.who li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .wheel-spins li > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* a long name is cut, not wrapped under its swatch */
 }

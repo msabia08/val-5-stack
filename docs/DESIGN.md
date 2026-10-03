@@ -43,7 +43,7 @@ retire an old one, update this file in the same pull request.
 
 Everything for phones is in one block at the end of `style.css`, `@media (max-width: 640px)`, checked at 393 × 659
 (an iPhone 15 with Safari's bars showing). It rearranges what the desktop page already draws: no separate markup, and the only
-JS is the menu button's. So far it covers the top bar, the Overview, Slots and Blackjack; other pages still show their desktop layout.
+JS is the menu button's. So far it covers the top bar, the Overview, Slots, Blackjack and the Daily wheel; other pages still show their desktop layout.
 
 - **No sideways scrolling.** `document.documentElement.scrollWidth` equals the screen width. A phone zooms the
   whole page out when anything is wider, which shrinks all the text. Grid columns are `minmax(0, 1fr)` so content
@@ -77,6 +77,9 @@ JS is the menu button's. So far it covers the top bar, the Overview, Slots and B
   the felt's top right corner, like the slot machine's. The felt has no dealer, no table print and no tip row. Cards are 100px wide (88 and 56 as hands split; a hand of five or more closes its fan up to fit the width),
   the seven stake chips are 42px in one row with a plain Deal card under them (no fan of card backs, no shine, no
   hover), and the four moves share one row beside your bet's chip. Only the solo table has been checked.
+- **Daily wheel:** the wheel across the whole screen (no card, title or description round it), the sound button
+  in the top right corner, and the result line and a full-width Spin button under it, all on one screen. Prizes, your tokens and the two
+  spin lists follow, one per row. The wheel is an SVG sized in percentages, so `wheel.js` needs no phone case.
 - **Tap targets:** things you tap are at least about 30px tall (Form chips, odds buttons, nav entries).
 - **Checking:** open the page in a phone-sized browser with touch (the Playwright `--device "iPhone 15"` profile),
   signed in so the chips show, and check dark first. The desktop page must be unchanged at 1920×1080.
@@ -486,6 +489,12 @@ His hints and his peeks at a card come in a gold-tinted bubble (`tone-gold`), so
 the follow-up once the card shows is gold if he told the truth and red (`tone-red`) if he lied. The peek itself is
 always gold: the page isn't told it's a lie until the card is out. `say()` in `casino.js` takes the tone, and passes
 it to the logo's bubble on a phone.
+
+## Sound buttons
+
+Every sound toggle shows the same icon, `speakerIcon(off, size)` from `common.js`: a speaker with sound waves, or
+crossed out when muted, in the button's text colour. Slots, the casino tables and the daily wheel use it alone
+(with an `aria-label`); the arcade puts "Sound on" / "Sound off" beside it. Each page keeps its own mute setting.
 
 ## Accessibility
 

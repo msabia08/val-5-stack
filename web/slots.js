@@ -118,10 +118,7 @@ window.FiveSlots = (() => {
   };
   const LEDS = { wide: ledFrame(false), phone: ledFrame(true) };
   const leds = () => (matchMedia('(max-width: 640px)').matches ? LEDS.phone : LEDS.wide);
-  // The sound toggle's speaker, crossed out when muted.
-  const speaker = (off) => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${off
-    ? '<path d="M16 9.5l5 5M21 9.5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    : '<path d="M16 8.8a4.5 4.5 0 0 1 0 6.4M18.6 6.2a8.2 8.2 0 0 1 0 11.6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>'}</svg>`;
+  const speaker = (off) => window.speakerIcon(off, 20); // the shared icon (common.js)
   const soundLabel = () => (muted ? 'Turn sound on' : 'Mute sound');
   // Each reel's strip matches the machine's display weights ("show", which losing spins are drawn from), reduced to
   // whole cells (10 cherries, 4 Onkeys in 42), spread evenly, with each reel's spread shifted so the three strips

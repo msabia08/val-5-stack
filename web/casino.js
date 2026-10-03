@@ -351,11 +351,19 @@ window.FiveCasino = (() => {
     if (!a) return;
     const t = a.currentTime + 0.01;
     if (kind === 'card') {
-      const len = 0.05, buf = a.createBuffer(1, a.sampleRate * len, a.sampleRate), d = buf.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 3;
-      const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
-      src.buffer = buf; f.type = 'highpass'; f.frequency.value = 1800; g.gain.value = 0.35;
-      src.connect(f); f.connect(g); g.connect(a.destination); src.start(t);
+      // A card sliding onto felt: a short puff of noise that swells in rather than clicking, kept to the mids (a
+      // band round 1.1 kHz, nothing above 3 kHz) so it's a soft "fwip" and not a hiss.
+      const len = 0.07, buf = a.createBuffer(1, a.sampleRate * len, a.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) {
+        const p = i / d.length;
+        d[i] = (Math.random() * 2 - 1) * Math.min(1, p / 0.12) * (1 - p) ** 2;
+      }
+      const src = a.createBufferSource(), band = a.createBiquadFilter(), top = a.createBiquadFilter(), g = a.createGain();
+      src.buffer = buf;
+      band.type = 'bandpass'; band.frequency.value = 1100; band.Q.value = 0.7;
+      top.type = 'lowpass'; top.frequency.value = 3000;
+      g.gain.value = 0.22;
+      src.connect(band); band.connect(top); top.connect(g); g.connect(a.destination); src.start(t);
     } else if (kind === 'chips') {
       for (let i = 0; i < 3; i++) {
         const o = a.createOscillator(), g = a.createGain();
@@ -373,7 +381,7 @@ window.FiveCasino = (() => {
       });
     }
   }
-  const speaker = () => `<button type="button" class="btn ghost icon casino-mute" aria-pressed="${!muted}" aria-label="${muted ? 'Turn sound on' : 'Turn sound off'}" title="${muted ? 'Sound off' : 'Sound on'}">${muted ? '🔇' : '🔊'}</button>`;
+  const speaker = () => `<button type="button" class="btn ghost icon casino-mute" aria-pressed="${!muted}" aria-label="${muted ? 'Turn sound on' : 'Turn sound off'}" title="${muted ? 'Sound off' : 'Sound on'}">${window.speakerIcon(muted, 18)}</button>`;
   function bindSpeaker(root) {
     root.querySelectorAll('.casino-mute').forEach((b) => b.addEventListener('click', () => {
       muted = !muted;
