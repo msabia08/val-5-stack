@@ -264,6 +264,7 @@ window.FiveOnkey = (() => {
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.', 'Onkey greased the wheel. For luck.'],
     view_hunt: ['Onkey dropped the bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each.'],
     hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
+    hunt_found: ['You found {label}! Onkey hid that one himself.', 'Ook! {label}. Onkey forgot he buried it there.'],
     hunt_done: ['{today} bananas! Onkey is full. Come back tomorrow.', 'That\'s the lot for today. Onkey needs a nap.'],
     view_bettors: ['The standings. Find yourself. Onkey will wait.', 'Who\'s on top? Onkey already knows.',
       'Leaderboard time. Onkey loves a rivalry.'],
@@ -457,6 +458,8 @@ window.FiveOnkey = (() => {
         else if (d.kind === 'again') react('wheel_again');
       } else if (kind === 'hunt') {
         react('hunt', { n: d.n, today: d.today });
+      } else if (kind === 'hunt_found') {
+        react('hunt_found', { label: d.label }, { excited: true });
       } else if (kind === 'hunt_done') {
         react('hunt_done', { today: d.today }, { excited: true });
       } else if (kind === 'transfer') {

@@ -792,15 +792,35 @@ where any signed-in bettor can borrow credits:
 ## Banana Hunt
 
 Broke and don't fancy a loan? Under Casino, the **Banana Hunt** pays credits
-for a menial task: Onkey dropped his bananas all over a field, and every one
-you click is **1 credit**. After every pick Onkey, in his corner, throws the
-next banana in along an arc; it can't be picked until it lands.
+for a small game: Onkey, in his corner, throws bananas into a field, and every
+one you click is **1 credit**.
+
+- **Catch it in the air** and it pays double.
+- **Golden bananas** pay 5, but rot 2.5 seconds after they land.
+- A **bunch** is five at once: sweep them all inside 4 seconds for 3 more.
+- A brown **rotten banana** sometimes lands beside the real one. Pick it and
+  you can't pick anything for 2 seconds.
+- **Greg** sometimes walks in to take a banana. Pick it first, or click Greg to
+  send him off.
+- Picks in a row build a **combo**: every banana pays double from 10 in a row
+  and triple from 25, until you miss, pick a rotten one, lose one to Greg or
+  stop for 8 seconds.
+- Hunt on days in a row and the day's first banana pays your **streak**'s day
+  (2 on day 2, up to 7), on top of the day's cap.
+- One of your picks each day turns up a **hidden item**: 25 shop bananas, a
+  boost token or an insurance token.
+- The **field of the day** changes its scenery: jungle, night, rain, beach or
+  ruins.
+
+The rules underneath:
 
 - The server places each banana and judges each click, so only real picks
-  count: a miss pays nothing and leaves the banana where it is, and picks less
-  than about half a second apart aren't paid.
-- Each bettor can pick **`hunt_daily_max`** (default 250) bananas a day. The day
-  turns over at midnight Pacific, like the daily wheel.
+  count: a miss pays nothing and leaves the banana where it is, and picks off
+  the ground less than about half a second apart aren't paid.
+- Each bettor can pick **`hunt_daily_max`** (default 250) credits a day. The
+  extras only get you there sooner; they never raise the cap (the streak's
+  bonus is the one thing on top). The day turns over at midnight Pacific, like
+  the daily wheel.
 - The cap has a floor: with fewer than **`hunt_floor`** (default 250) credits,
   you keep picking past the cap until you have that many, so nobody is ever
   stuck broke.
@@ -1036,7 +1056,7 @@ time you log in.
 | `banana_per_game` | 5 | Bananas each squad member earns for every Competitive game they play, squad game or not, for Onkey's Shop. Whole numbers. `0` stops paying bananas. |
 | `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
 | `loan_interest` | 0.1 | Interest on a loan, as a share of the amount borrowed (0.1 = borrow 500, owe 550). |
-| `hunt_daily_max` | 250 | Bananas (a credit each) a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
+| `hunt_daily_max` | 250 | Credits a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
 | `hunt_floor` | 250 | Below this many credits the daily cap doesn't apply: a bettor keeps picking until they have this much. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
@@ -1076,7 +1096,7 @@ fivestack/             the backend package
   wheel.py             the daily wheel: one spin a day (midnight Pacific), prizes, tokens
   bananas.py           Onkey's Shop: bananas earned per game played, the catalogue, buying and wearing items
   bank.py              Onkey's Bank: loans with interest, within a limit on what's out
-  hunt.py              the Banana Hunt: a credit per banana clicked, placed and judged by the server, capped per day
+  hunt.py              the Banana Hunt: bananas placed and judged by the server (golden, rotten, bunches, Greg, combos, streaks), capped per day
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table

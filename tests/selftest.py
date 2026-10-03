@@ -1686,7 +1686,7 @@ def banana_hunt(shared):
     from fivestack.wheel import next_reset, wheel_day
 
     db, bets = shared.db, shared.bets
-    hunt = HuntManager(db, {"hunt_daily_max": 5, "hunt_floor": 250})
+    hunt = HuntManager(db, {"hunt_daily_max": 5, "hunt_floor": 250}, extras=False)  # the plain hunt: one banana, a credit each
     assert hunt.terms()["daily_max"] == 5 and hunt.terms()["floor"] == 250 and hunt.terms()["per_banana"] == 1 and hunt.enabled
     name = "Tester"
     db.execute("UPDATE bettors SET balance = 1000 WHERE name=?", (name,))  # well above the floor, so the cap applies
@@ -1765,6 +1765,138 @@ def banana_hunt(shared):
     assert db.hunt_totals()[name.lower()]["season"] == 9 and len(db.query("SELECT 1 FROM hunt_days")) == 2  # two days
     assert hunt.summary(db.get_bettor(name), now=nxt + 2)["me"]["today"] == 1 and hunt.summary()["me"] is None
     shared.hunt_rows = 2
+
+    # ---- the extras: what Onkey throws, catches in the air, the combo, Greg, the streak, the hidden item ----
+    import random as _random
+    from fivestack import hunt as H
+
+    class Rig:  # the manager's dice: `rolls` decide what's thrown next (0.99, a plain banana, once they run out)
+        def __init__(self):
+            self.rolls = []
+
+        def random(self):
+            return self.rolls.pop(0) if self.rolls else 0.99
+
+        def randint(self, a, b):
+            return _random.randint(a, b)
+
+    GOLD, BUNCH, ROTTEN, GREG = 0.01, 0.06, 0.15, 0.25
+    hx = HuntManager(db, {"hunt_daily_max": 500, "hunt_floor": 250})
+    rig = hx.rng = Rig()
+    who = "Hunter"
+    bets.register(who, "secret1")
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name=?", (who,))
+    start_balance = db.get_bettor(who)["balance"]
+    now = 1_900_000_000.0
+    day = wheel_day(now)
+    assert hx.terms(now)["theme"] == H.theme(day) and H.theme(day) in H.THEMES and hx.terms(now)["extras"]
+    assert len({H.theme(wheel_day(now + d * 86400)) for d in range(40)}) > 1  # the field changes by the day
+    # The streak: picks on the two days before make this day 3, so the first banana pays 3 and the cap is 2 higher.
+    for back in (1, 2):
+        db.execute("INSERT INTO hunt_days(bettor, day, bananas, credits, updated_ts) VALUES(?,?,?,?,?)",
+                   (who, wheel_day(now - back * 86400), 4, 4.0, now - back * 86400))
+    st = hx.start(who, now=now)
+    assert st["streak"] == {"days": 3, "bonus": 2, "paid": False} and st["cap"] == 502 and st["left"] == 502 and st["target"]["kind"] == "banana", st
+    r = hx.click(who, st["target"]["x"], st["target"]["y"], now=now + 1)
+    assert r["hit"] and r["paid"] == 3 and r["streak_bonus"] == 2 and r["combo"] == 1 and r["mult"] == 1 and r["today"] == 3, r
+    assert hx.status(who, now=now + 1)["streak"]["paid"]
+    # The same banana isn't swapped by starting again (no fishing for a golden one).
+    tgt = r["target"]
+    assert hx.start(who, now=now + 1.2)["target"] == tgt
+    # Caught in the air: a click on the arc pays double; a click off the arc is a miss and breaks the combo.
+    ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
+    r = hx.click(who, ax + 5, ay - 5, now=now + 1.6, air=0.5)
+    assert r["hit"] and r["air"] and r["paid"] == 2 and r["combo"] == 2 and r["streak_bonus"] == 0, r
+    tgt = r["target"]
+    ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
+    r = hx.click(who, ax + H.AIR_R + 30, ay, now=now + 2.0, air=0.5)
+    assert not r["hit"] and r["reason"] == "miss" and r["combo"] == 0 and r["target"] == tgt, r
+    now += 3
+    # A golden banana: five credits on the ground, and it rots if it's left.
+    rig.rolls = [GOLD]
+    r = hx.click(who, tgt["x"], tgt["y"], now=now)
+    assert r["hit"] and r["paid"] == 1 and r["target"]["kind"] == "golden", r
+    gold = r["target"]
+    r = hx.click(who, gold["x"], gold["y"], now=now + 1)
+    assert r["hit"] and r["kind"] == "golden" and r["paid"] == H.GOLD_VALUE, r
+    rig.rolls = [GOLD]
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now + 2)
+    gold = r["target"]
+    assert gold["kind"] == "golden" and hx.nudge(who, now=now + 2.5)["reason"] is None  # still good: nothing to swap
+    late = now + 2 + H.AIR_S + H.GOLD_TTL_S + H.SLACK_S + 0.1
+    r = hx.click(who, gold["x"], gold["y"], now=late)
+    assert not r["hit"] and r["reason"] == "rotted" and r["target"]["id"] != gold["id"] and r["combo"] == 3, r
+    now = late + 1
+    # A rotten decoy beside the banana: picking it freezes the bettor and breaks the combo.
+    rig.rolls = [ROTTEN]
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    both = r["target"]
+    assert r["hit"] and both["decoy"] and math.hypot(both["decoy"]["x"] - both["x"], both["decoy"]["y"] - both["y"]) >= H.DECOY_GAP, r
+    r = hx.click(who, both["decoy"]["x"], both["decoy"]["y"], now=now + 1)
+    assert not r["hit"] and r["reason"] == "rotten" and r["combo"] == 0 and r["frozen_s"] == H.FREEZE_S and r["target"]["id"] != both["id"], r
+    tgt = r["target"]
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 2)
+    assert not r["hit"] and r["reason"] == "frozen", r
+    now += 1 + H.FREEZE_S + 0.1
+    # Greg walks to the banana: shoo him, or he takes it and the combo with it.
+    rig.rolls = [GREG]
+    r = hx.click(who, tgt["x"], tgt["y"], now=now)
+    assert r["hit"] and r["target"]["greg"], r
+    tgt = r["target"]
+    r = hx.click(who, 0, 0, now=now + 0.5, shoo=True)
+    assert not r["hit"] and r["reason"] == "shooed" and "greg" not in r["target"] and r["target"]["id"] == tgt["id"] and r["combo"] == 1, r
+    rig.rolls = [GREG]
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
+    tgt = r["target"]
+    assert r["hit"] and tgt["greg"] and r["combo"] == 2
+    gone = now + 1 + H.AIR_S + H.GREG_S + 0.1  # the page's own timer: the server's has SLACK_S more
+    r = hx.nudge(who, now=gone)
+    assert r["reason"] == "stolen" and r["combo"] == 0 and r["target"]["id"] != tgt["id"], r
+    now = gone + 1
+    # A bunch: five at once, a credit each, and a bonus for sweeping them all in time.
+    rig.rolls = [BUNCH]
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    bunch = r["target"]
+    assert r["hit"] and bunch["kind"] == "bunch" and len(bunch["items"]) == H.BUNCH_SIZE, r
+    paid = []
+    for n, item in enumerate(bunch["items"]):
+        r = hx.click(who, item["x"], item["y"], now=now + 1 + n * 0.2)
+        assert r["hit"] and r["kind"] == "bunch", r
+        paid.append(r["paid"])
+    assert paid == [1, 1, 1, 1, 1 + H.BUNCH_BONUS] and r["swept"] and r["bunch_bonus"] == H.BUNCH_BONUS and r["target"]["kind"] == "banana", (paid, r)
+    now += 3
+    # The combo: the tenth pick in a row pays double.
+    while r["combo"] < H.COMBO_STEPS[0] - 1:
+        r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+        assert r["hit"] and r["paid"] == 1, r
+        now += 0.7
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    assert r["hit"] and r["combo"] == H.COMBO_STEPS[0] and r["mult"] == 2 and r["paid"] == 2, r
+    assert hx.status(who, now=now + H.COMBO_IDLE_S + 1)["combo"] == 0  # and it lapses if they stop
+    # The hidden item: one of the day's picks, the same one however often it's asked, handed over once.
+    nth, prize = hx._hidden(who, day)
+    assert (nth, prize) == hx._hidden(who, day) and H.HIDDEN_FROM <= nth <= H.HIDDEN_TO and prize in ("bananas", "boost", "insurance")
+    now += H.COMBO_IDLE_S + 2
+    while hx.status(who, now=now)["picks"] < H.HIDDEN_TO + 1:
+        r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+        assert r["hit"], r
+        now += 0.7
+    ledger = db.query("SELECT delta FROM banana_ledger WHERE reason='hunt' AND bettor=?", (who,))
+    assert len(ledger) == 1 and ledger[0]["delta"] == (H.HIDDEN_BANANAS if prize == "bananas" else 0), (ledger, prize)
+    assert len(db.query("SELECT 1 FROM wheel_perks WHERE bettor=? AND kind=?", (who, prize))) == (prize != "bananas")
+    assert hx._found(who, day, nth, now) is None  # never twice
+    # Everything paid is in the day's row and the balance.
+    st = hx.status(who, now=now)
+    assert st["today"] == round(db.get_bettor(who)["balance"] - start_balance) and st["left"] == st["cap"] - st["today"], st
+    # The cap counts credits: a golden banana can't pay past what's left.
+    tight = HuntManager(db, {"hunt_daily_max": st["today"] + 2, "hunt_floor": 0})
+    tight.rng = Rig()
+    tight.rng.rolls = [GOLD]
+    st = tight.start(who, now=now + 1)
+    assert st["left"] == 4 and st["target"]["kind"] == "golden", st  # two under the cap, plus the streak's two
+    r = tight.click(who, st["target"]["x"], st["target"]["y"], now=now + 2)
+    assert r["hit"] and r["paid"] == 4 and r["done"] and r["target"] is None, r
+    shared.hunt_rows = db.query_one("SELECT COUNT(*) AS n FROM hunt_days")["n"]
 
 
 @section("seasons")

@@ -2,13 +2,21 @@
  * fivestack/hunt.py).
  *
  * Onkey dropped his bananas all over the field. The server puts one down, the page draws it, and every click that
- * lands on it pays a credit and moves it somewhere else (the server judges each click and picks each spot, so the page
- * only reports where you clicked). Misses leave it where it is; picks faster than the server pays aren't paid; there's
- * a daily cap that turns over at midnight Pacific, like the daily wheel, which doesn't apply while you're under the
- * floor (250 credits). A pick vanishes the banana at once, floats a "+1" where you clicked and counts the credits chip
- * up; then Onkey, in his corner, winds up and throws the next banana in along an arc (`throwTo()`, the Web Animations
- * API, THROW_MS), and it can't be picked until it lands. The whole page is only
- * redrawn when the hunt closes for the day; everything else is updated in place so the hunt stays snappy.
+ * lands on it pays and moves it somewhere else (the server judges each click and picks each spot, so the page only
+ * reports where you clicked). Misses leave it where it is; picks faster than the server pays aren't paid; there's a
+ * daily cap in credits that turns over at midnight Pacific, like the daily wheel, which doesn't apply while you're
+ * under the floor (250 credits). Onkey, in his corner, winds up and throws every banana in along an arc (`throwTo()`,
+ * the Web Animations API, THROW_MS). The whole page is only redrawn when the hunt closes for the day; everything else
+ * is updated in place so the hunt stays snappy.
+ *
+ * What makes it a game (hunt.py decides all of it; the page draws it and runs the timers):
+ * - a banana can be caught in the air for double (a click on it mid-flight is sent with `air`, how far along it was);
+ * - a golden banana pays more but rots a few seconds after it lands; a bunch is five at once with a timer and a bonus
+ *   for sweeping them; a rotten decoy next to the real one freezes you; Greg walks in to take a banana unless you pick
+ *   it first or click him away. When one of those timers runs out the page asks /api/hunt/next what happened;
+ * - picks in a row build a combo (x2, x3) shown in the corner of the field; a miss breaks it;
+ * - the day's first banana pays your streak's day, one pick a day hides an item, and the field's scenery changes by
+ *   the day (`hunt.theme`).
  *
  * FiveHunt.init(ctx) gets app.js's helpers; load(), view() and bind() are called like the other pages'.
  * Plain JS, no dependencies; loaded before app.js.
@@ -16,23 +24,33 @@
 window.FiveHunt = (() => {
   'use strict';
 
-  let state, $, api, draw, esc, fmt, kpi, renderMe, toast, plainName;
+  let state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName;
   let data = null, owner = undefined;
-  let target = null; // the banana to draw: {x, y} in field pixels, or null
+  let target = null; // what's on the field: the server's target ({id, kind, x, y, items, decoy, greg}), or null
   let busy = false; // a click is on its way to the server
-  let flying = false; // Onkey's throw is in the air: nothing to pick yet
+  let flight = null; // Onkey's throw in the air: {t, anim, catchable}
+  let frozenUntil = 0; // a rotten banana: no picking until then (performance.now())
+  let timers = []; // the timeouts and animations that belong to the target on the field
   let session = 0; // bananas picked since the page was opened
-  const THROW_MS = 750; // how long a banana is in the air (the server won't pay a pick sooner than most of this)
+  let comboTimer = 0; // the combo lapses on the server after a while without a pick: the page drops it then too
+  const THROW_MS = 750, THROW_DELAY = 120; // how long a banana is in the air, after Onkey's wind-up
   const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
-  // The jungle: fixed scenery so the field looks the same every visit.
-  const SCENERY = [['🌴', 6, 14], ['🌿', 22, 88], ['🌴', 58, 10], ['🪨', 40, 92], ['🌿', 82, 20], ['🌴', 93, 84], ['🌱', 50, 50], ['🍃', 70, 62]];
+  // The field of the day: fixed scenery per theme, so the field looks the same all day.
+  const SCENERY = {
+    jungle: [['🌴', 6, 14], ['🌿', 22, 88], ['🌴', 58, 10], ['🪨', 40, 92], ['🌿', 82, 20], ['🌴', 93, 84], ['🌱', 50, 50], ['🍃', 70, 62]],
+    night: [['🌙', 88, 12], ['🌴', 6, 16], ['🌴', 60, 12], ['🪨', 40, 92], ['✨', 24, 30], ['✨', 72, 58], ['✨', 46, 72], ['✨', 14, 66], ['🦉', 92, 80]],
+    rain: [['🌧️', 14, 10], ['🌧️', 52, 8], ['🌧️', 84, 12], ['🌴', 6, 60], ['🌿', 30, 90], ['🍄', 66, 84], ['🐸', 46, 52], ['🌿', 90, 40]],
+    beach: [['🌴', 6, 14], ['🌴', 92, 16], ['🐚', 26, 84], ['🦀', 60, 70], ['⛱️', 44, 20], ['🌊', 76, 92], ['🌊', 16, 94], ['⭐', 82, 56]],
+    ruins: [['🗿', 8, 18], ['🏛️', 56, 12], ['🪨', 30, 88], ['🪨', 78, 30], ['🌿', 90, 82], ['🏺', 44, 54], ['🌴', 94, 12], ['🕸️', 18, 56]],
+  };
+  const THEME_NAME = { jungle: 'the jungle', night: 'the jungle at night', rain: 'the rains', beach: 'the beach', ruins: 'the old ruins' };
 
-  function init(ctx) { ({ state, $, api, draw, esc, fmt, kpi, renderMe, toast, plainName } = ctx); }
+  function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName } = ctx); }
 
   // On a phone the server's field (1200 wide, 600 tall) doesn't fit, so the page draws it upright: the server's x
   // runs down the screen and its y across, each scaled to a field as wide as the screen and about a screen tall.
-  // `at()` is where a field point is drawn. A tap is judged in screen pixels (within TAP_R of the banana as drawn,
-  // about a fingertip) and reported to the server as the banana's own spot, as picking it with the keyboard is; a
+  // `at()` is where a field point is drawn. A tap is judged in screen pixels (within TAP_R of the thing as drawn,
+  // about a fingertip) and reported to the server as that thing's own spot, as picking it with the keyboard is; a
   // tap anywhere else is reported where it fell, which the server calls a miss. The desktop draws the field as it is.
   const TAP_R = 30;
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
@@ -51,7 +69,7 @@ window.FiveHunt = (() => {
     if (name !== owner) { session = 0; target = null; }
     owner = name;
     data = next;
-    if (next.me && !next.me.done && !next.me.target) { // nothing down yet (first visit, or the server restarted)
+    if (next.me && !next.me.done) { // have the server put one down (or start the timers of the one that's there again)
       const r = await api('/api/hunt/start', { method: 'POST', body: '{}' });
       data.me = r.me;
     }
@@ -61,31 +79,54 @@ window.FiveHunt = (() => {
   // ---- drawing ----------------------------------------------------------------------------------------------------
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const resetAt = (me) => fmt.date(me.resets_ts * 1000);
+  const themeOf = () => (SCENERY[data.hunt.theme] ? data.hunt.theme : 'jungle');
 
   function scenery() {
-    return SCENERY.map(([e, x, y]) => `<span class="hunt-deco" style="left:${x}%;top:${y}%" aria-hidden="true">${e}</span>`).join('');
+    return SCENERY[themeOf()].map(([e, x, y]) => `<span class="hunt-deco${e === '✨' ? ' firefly' : ''}" style="left:${x}%;top:${y}%" aria-hidden="true">${e}</span>`).join('') +
+      (themeOf() === 'rain' ? '<div class="hunt-rain" aria-hidden="true"></div>' : '');
   }
-  const bananaHtml = (t) => { const p = layout().at(t); return `<button type="button" class="hunt-banana land" id="hunt-banana" style="left:${p.x}px;top:${p.y}px" aria-label="Pick the banana">🍌</button>`; };
+  // One thing on the field. `kind`: banana / golden / bunch (a real one, a button), or rotten (the decoy, not one).
+  function itemHtml(p, kind, i) {
+    const at = layout().at(p), style = `left:${at.x}px;top:${at.y}px`;
+    if (kind === 'rotten') return `<span class="hunt-banana rotten land" style="${style}" aria-hidden="true">🍌</span>`;
+    const label = kind === 'golden' ? 'Pick the golden banana' : 'Pick the banana';
+    return `<button type="button" class="hunt-banana ${kind} land"${i === undefined ? ' id="hunt-banana"' : ` data-i="${i}"`} style="${style}" aria-label="${label}">🍌</button>`;
+  }
 
   function liveLine() {
     const me = data && data.me, h = data && data.hunt;
     if (!me) return '';
-    if (me.done) return `Onkey has all ${h.daily_max} bananas he wanted today. The hunt reopens at ${resetAt(me)}.`;
-    if (me.under_floor) return `Past today's ${h.daily_max}, but Onkey won't let you starve: ${plural(me.left, 'more banana')} until you have ${fmt.credits(h.floor)} credits.`;
-    return `${plural(me.left, 'banana')} left today. Each one is ${plural(h.per_banana, 'credit')}.`;
+    if (me.done) return `Onkey has all the bananas he wanted today. The hunt reopens at ${resetAt(me)}.`;
+    if (me.under_floor) return `Past today's cap, but Onkey won't let you starve: ${plural(me.left, 'more credit')} until you have ${fmt.credits(h.floor)} credits.`;
+    return `${plural(me.left, 'credit')} left to pick today.`;
   }
-  const todaySub = (me, h) => (me.done ? 'done for today' : me.under_floor ? `over the cap, but under ${fmt.credits(h.floor)} credits` : `${h.per_banana} credit each`);
+  const todaySub = (me, h) => (me.done ? 'done for today' : me.under_floor ? `over the cap, but under ${fmt.credits(h.floor)} credits` : 'credits picked');
+  const comboSub = (me, h) => {
+    const next = h.combo.steps.find((s) => me.combo < s);
+    return me.mult > 1 ? (next ? `x${me.mult} now · x${me.mult + 1} at ${next} in a row` : `x${me.mult}: as high as it goes`) : `x2 at ${h.combo.steps[0]} in a row`;
+  };
+  const streakSub = (me) => (me.streak.paid ? `tomorrow's first banana pays ${Math.min(me.streak.days + 1, data.hunt.streak_max)}`
+    : me.streak.bonus ? `today's first banana pays ${me.streak.bonus + data.hunt.per_banana}` : 'pick tomorrow too and the first one pays 2');
+
+  function comboHtml() {
+    const me = data.me, steps = data.hunt.combo.steps;
+    if (!me || me.combo < 2) return '';
+    const next = steps.find((s) => me.combo < s), prev = [0, ...steps].filter((s) => s <= me.combo).pop();
+    const fill = next ? Math.round(((me.combo - prev) / (next - prev)) * 100) : 100;
+    return `<b>x${me.mult}</b><span>${me.combo} in a row</span><i style="width:${fill}%"></i>`;
+  }
 
   function field() {
     const h = data.hunt, me = data.me, lay = layout();
-    const size = `width:${lay.w}px;height:${lay.h}px`;
-    if (!me) return `<div class="hunt-field hunt-locked" style="${size}"><div class="hunt-msg"><a href="#" data-signin>Sign in</a> to hunt bananas for Onkey. Every one you pick is a credit.</div></div>`;
+    const size = `width:${lay.w}px;height:${lay.h}px`, cls = `hunt-field hunt-theme-${themeOf()}`;
+    if (!me) return `<div class="${cls} hunt-locked" style="${size}"><div class="hunt-msg"><a href="#" data-signin>Sign in</a> to hunt bananas for Onkey. Every one you pick is a credit.</div></div>`;
     if (me.done) {
-      return `<div class="hunt-field hunt-locked" style="${size}">${scenery()}<img class="hunt-onkey full" src="/assets/onkey.png" alt="" aria-hidden="true">` +
-        `<div class="hunt-msg"><b>Onkey is full.</b> ${h.daily_max} bananas today, ${fmt.credits(h.daily_max * h.per_banana)} credits. The hunt reopens at ${resetAt(me)} (midnight Pacific).</div></div>`;
+      return `<div class="${cls} hunt-locked" style="${size}">${scenery()}<img class="hunt-onkey full" src="/assets/onkey.png" alt="" aria-hidden="true">` +
+        `<div class="hunt-msg"><b>Onkey is full.</b> ${fmt.credits(me.today)} credits picked today. The hunt reopens at ${resetAt(me)} (midnight Pacific).</div></div>`;
     }
     // The banana isn't in the markup: bind() has Onkey throw it in.
-    return `<div class="hunt-field" id="hunt-field" style="${size}">${scenery()}<img class="hunt-onkey" id="hunt-onkey" src="/assets/onkey.png" alt="" aria-hidden="true"></div>`;
+    return `<div class="${cls}" id="hunt-field" style="${size}">${scenery()}<div class="hunt-combo" id="hunt-combo" aria-hidden="true">${comboHtml()}</div>` +
+      `<img class="hunt-onkey" id="hunt-onkey" src="/assets/onkey.png" alt="" aria-hidden="true"></div>`;
   }
 
   function boardCard() {
@@ -107,16 +148,19 @@ window.FiveHunt = (() => {
     }
     const h = data.hunt, me = data.me;
     const tiles = me ? `<section class="kpis">
-        ${kpi('Today', `<span id="hunt-today">${me.today}</span> <span class="ov-unit">/ ${h.daily_max}</span>`, `<span id="hunt-today-sub">${todaySub(me, h)}</span>`)}
-        ${kpi('This sitting', `<span id="hunt-session">${session}</span>`, 'bananas since you opened the page')}
-        ${kpi('This season', `<span id="hunt-season">${fmt.credits(me.season)}</span>`, `${fmt.credits(me.all_time)} credits all time`)}
-        ${kpi('Hunt reopens', resetAt(me), 'your time; the day turns at midnight Pacific, like the wheel')}
+        ${kpi('Today', `<span id="hunt-today">${me.today}</span> <span class="ov-unit">/ ${me.cap}</span>`, `<span id="hunt-today-sub">${todaySub(me, h)}</span>`)}
+        ${kpi('Combo', `<span id="hunt-combo-n">${me.combo}</span> <span class="ov-unit">in a row</span>`, `<span id="hunt-combo-sub">${comboSub(me, h)}</span>`)}
+        ${kpi('Streak', `Day ${me.streak.days}`, `<span id="hunt-streak-sub">${streakSub(me)}</span>`)}
+        ${kpi('Hunt reopens', resetAt(me), `today's field: ${THEME_NAME[themeOf()]}`)}
       </section>` : '';
     return `${tiles}<section class="card hunt-card"><h2>Banana Hunt</h2>
-      ${how(`Onkey dropped his bananas all over the field. Click one to pick it up: ${plural(h.per_banana, 'credit')} each, up to ${h.daily_max} a day, and Onkey throws the next one in.`,
-        `The server places every banana and judges every click, so only real picks count: a click that lands on the banana pays ${plural(h.per_banana, 'credit')}, and Onkey throws the next one at least a hop away ` +
-        `(it can't be picked until it lands); a miss leaves it where it is, and picks less than ${Math.round(h.min_interval_s * 1000)} ms apart aren't paid. The day's ${h.daily_max} turn over at midnight Pacific, like the daily wheel, ` +
-        `except that with fewer than ${fmt.credits(h.floor)} credits the cap doesn't apply: you keep picking until you have ${fmt.credits(h.floor)}, so nobody is stuck broke. ` +
+      ${how(`Onkey throws bananas into the field. Pick one for ${plural(h.per_banana, 'credit')}, or catch it in the air for double, up to ${h.daily_max} credits a day.`,
+        `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
+        `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
+        `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg or stop for ${h.combo.idle_s} seconds. ` +
+        `Hunt on days in a row and the day's first banana pays the <b>streak</b>'s day (up to ${h.streak_max}), on top of the day's cap. One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
+        `The server places every banana and judges every click, and picks less than ${Math.round(h.min_interval_s * 1000)} ms apart on the ground aren't paid. The day's ${h.daily_max} credits turn over at midnight Pacific, like the daily wheel; ` +
+        `the extras only get you there sooner. With fewer than ${fmt.credits(h.floor)} credits the cap doesn't apply: you keep picking until you have ${fmt.credits(h.floor)}, so nobody is stuck broke. ` +
         'Credits from the hunt show in their own column on Standings and stay out of betting profit, like game rewards.')}
       <div class="hunt-stage">${field()}</div>
       <p class="muted small" id="hunt-live" aria-live="polite">${liveLine()}</p></section>
@@ -124,121 +168,240 @@ window.FiveHunt = (() => {
   }
 
   // ---- the throw --------------------------------------------------------------------------------------------------
-  // Onkey winds up in his corner and the banana flies along an arc to where the server put it, spinning, and lands
-  // with a squash. Only then is there a banana to pick.
-  function land(fieldEl, t) {
-    flying = false;
-    $('#hunt-banana', fieldEl)?.remove();
-    if (t) fieldEl.insertAdjacentHTML('beforeend', bananaHtml(t));
+  // Where a banana thrown to `p` is at progress k, in field pixels: the same arc hunt.py's arc_at() judges a catch on.
+  function arcAt(p, k) {
+    const [x0, y0] = data.hunt.air.hand;
+    const rise = Math.max(110, Math.min(240, Math.hypot(p.x - x0, p.y - y0) * 0.4));
+    return { x: x0 + (p.x - x0) * k, y: y0 + (p.y - y0) * k - rise * 4 * k * (1 - k) };
   }
 
+  function clearField(fieldEl) {
+    timers.forEach((t) => { if (typeof t === 'number') clearTimeout(t); else { t.oncancel = null; t.onfinish = null; t.cancel(); } });
+    timers = [];
+    flight = null;
+    $$('.hunt-banana, .hunt-fly, .hunt-greg, .hunt-clock, .hunt-msg', fieldEl).forEach((el) => el.remove());
+  }
+
+  // Everything has landed: the things to pick, then whatever clock belongs to this target.
+  function land(fieldEl, t) {
+    flight = null;
+    const h = data.hunt;
+    if (t.kind === 'bunch') t.items.forEach((it, i) => { if (!it.picked) fieldEl.insertAdjacentHTML('beforeend', itemHtml(it, 'bunch', i)); });
+    else fieldEl.insertAdjacentHTML('beforeend', itemHtml(t, t.kind));
+    if (t.decoy) fieldEl.insertAdjacentHTML('beforeend', itemHtml(t.decoy, 'rotten'));
+    const ttl = t.kind === 'golden' ? h.gold.ttl_s : t.kind === 'bunch' ? h.bunch.ttl_s : 0;
+    if (ttl) { // a bar across the top of the field runs down, then the server says what became of it
+      fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-clock ${t.kind}" aria-hidden="true"><i style="animation-duration:${ttl}s"></i></div>`);
+      if (t.kind === 'golden') timers.push(setTimeout(() => $('#hunt-banana', fieldEl)?.classList.add('rotting'), ttl * 1000 - 600));
+      timers.push(setTimeout(() => nudge(fieldEl, t), ttl * 1000));
+    }
+    if (t.greg) walkGreg(fieldEl, t);
+  }
+
+  // Greg comes in from the edge and walks to the banana; if he gets there, he has it.
+  function walkGreg(fieldEl, t) {
+    const lay = layout(), from = lay.at(t.greg), to = lay.at(t);
+    const greg = document.createElement('img');
+    greg.className = 'hunt-greg';
+    greg.src = '/assets/greg-logo.png';
+    greg.alt = '';
+    greg.setAttribute('aria-hidden', 'true');
+    fieldEl.appendChild(greg);
+    if (!greg.animate) return;
+    const flip = to.x < from.x ? ' scaleX(-1)' : '';
+    const walk = greg.animate([{ transform: `translate(${from.x}px, ${from.y}px) translate(-50%, -60%)${flip}` },
+      { transform: `translate(${to.x}px, ${to.y}px) translate(-50%, -60%)${flip}` }], { duration: data.hunt.greg_s * 1000, easing: 'linear', fill: 'both' });
+    walk.onfinish = () => nudge(fieldEl, t);
+    timers.push(walk);
+  }
+  function shooGreg(fieldEl) {
+    const greg = $('.hunt-greg', fieldEl);
+    if (!greg) return;
+    const box = greg.getBoundingClientRect(), f = fieldEl.getBoundingClientRect();
+    const x = box.left + box.width / 2 - f.left, y = box.top + box.height / 2 - f.top, away = x < f.width / 2 ? -140 : f.width + 140;
+    timers = timers.filter((t) => { if (typeof t === 'number') return true; t.onfinish = null; t.cancel(); return false; });
+    greg.classList.add('shooed');
+    if (greg.animate) greg.animate([{ transform: `translate(${x}px, ${y}px) translate(-50%, -50%)` }, { transform: `translate(${away}px, ${y - 30}px) translate(-50%, -50%) rotate(${x < f.width / 2 ? -40 : 40}deg)` }],
+      { duration: 450, easing: 'ease-in', fill: 'both' }).onfinish = () => greg.remove();
+    else greg.remove();
+  }
+
+  // Onkey winds up in his corner and each banana flies along an arc to where the server put it, spinning, and lands
+  // with a squash. A plain or golden one can be caught on the way.
   function throwTo(fieldEl, t) {
-    $('#hunt-banana', fieldEl)?.remove();
-    $('.hunt-msg', fieldEl)?.remove();
-    if (!t) { flying = false; return; }
+    clearField(fieldEl);
+    if (!t) return;
     if (!('animate' in Element.prototype)) { land(fieldEl, t); return; }
-    flying = true;
     const onkey = $('#hunt-onkey', fieldEl);
     if (onkey) { onkey.classList.remove('throw'); void onkey.offsetWidth; onkey.classList.add('throw'); }
-    const lay = layout(), to = lay.at(t);
-    const x0 = fieldEl.clientWidth - (lay.phone ? 66 : 96), y0 = fieldEl.clientHeight - (lay.phone ? 72 : 104); // Onkey's hand, in the bottom-right corner
-    const fly = document.createElement('span');
-    fly.className = 'hunt-fly';
-    fly.textContent = '🍌';
-    fly.setAttribute('aria-hidden', 'true');
-    fieldEl.appendChild(fly);
-    const dist = Math.hypot(to.x - x0, to.y - y0), arc = Math.max(lay.phone ? 60 : 110, Math.min(240, dist * 0.4));
-    const frames = [], N = 30;
-    for (let i = 0; i <= N; i++) {
-      const k = i / N, x = x0 + (to.x - x0) * k, y = y0 + (to.y - y0) * k - arc * 4 * k * (1 - k);
-      frames.push({ offset: k, transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) rotate(${Math.round(k * 540)}deg) scale(${(1 + 0.35 * Math.sin(Math.PI * k)).toFixed(3)})` });
-    }
-    fly.style.transform = frames[0].transform; // in Onkey's hand during the wind-up, not at the field's corner
-    const anim = fly.animate(frames, { duration: THROW_MS, delay: 120, easing: 'linear', fill: 'both' });
+    const lay = layout();
+    const spots = t.kind === 'bunch' ? t.items.filter((it) => !it.picked).map((it) => ({ p: it, cls: 'bunch' })) : [{ p: t, cls: t.kind }];
+    if (t.decoy) spots.push({ p: t.decoy, cls: 'rotten' });
+    let anim = null;
+    spots.forEach(({ p, cls }) => {
+      const fly = document.createElement('span');
+      fly.className = `hunt-fly ${cls}`;
+      fly.textContent = '🍌';
+      fly.setAttribute('aria-hidden', 'true');
+      fieldEl.appendChild(fly);
+      const frames = [], N = 30;
+      for (let i = 0; i <= N; i++) {
+        const k = i / N, at = lay.at(arcAt(p, k));
+        frames.push({ offset: k, transform: `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px) translate(-50%, -50%) rotate(${Math.round(k * 540)}deg) scale(${(1 + 0.35 * Math.sin(Math.PI * k)).toFixed(3)})` });
+      }
+      fly.style.transform = frames[0].transform; // in Onkey's hand during the wind-up, not at the field's corner
+      const a = fly.animate(frames, { duration: THROW_MS, delay: THROW_DELAY, easing: 'linear', fill: 'both' });
+      timers.push(a);
+      if (!anim) anim = a;
+    });
+    flight = { t, anim, catchable: t.kind !== 'bunch' };
     let landed = false;
-    const finish = () => { // once, whether the animation finishes, is cancelled, or never reports back (a hidden tab)
+    const finish = () => { // once, whether the animation finishes or never reports back (a hidden tab)
       if (landed) return;
       landed = true;
-      clearTimeout(guard);
-      fly.remove();
-      if (target === t) land(fieldEl, t); else flying = false;
+      $$('.hunt-fly', fieldEl).forEach((el) => el.remove());
+      if (target === t) land(fieldEl, t); else flight = null;
     };
-    const guard = setTimeout(finish, THROW_MS + 600);
+    timers.push(setTimeout(finish, THROW_DELAY + THROW_MS + 600));
     anim.onfinish = finish;
-    anim.oncancel = finish;
+  }
+  // How far along its arc the banana in the air is (0-1), or null when nothing can be caught.
+  function airK() {
+    if (!flight || !flight.catchable) return null;
+    const ms = Number(flight.anim.currentTime) - THROW_DELAY;
+    return ms > 0 ? Math.min(1, ms / THROW_MS) : null;
   }
 
-  function pop(fieldEl, x, y, text) {
+  function pop(fieldEl, x, y, text, cls = '') {
     const el = document.createElement('span');
-    el.className = 'hunt-pop';
+    el.className = `hunt-pop ${cls}`;
     el.textContent = text;
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
     fieldEl.appendChild(el);
-    setTimeout(() => el.remove(), 750);
+    setTimeout(() => el.remove(), cls ? 1100 : 750);
   }
+  const popAt = (fieldEl, p, text, cls) => { const at = layout().at(p); pop(fieldEl, at.x, at.y, text, cls); };
 
   function refreshNumbers() {
-    const me = data.me;
+    const me = data.me, h = data.hunt;
     const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
     set('#hunt-today', me.today);
-    set('#hunt-today-sub', todaySub(me, data.hunt));
-    set('#hunt-session', session);
-    set('#hunt-season', fmt.credits(me.season));
+    set('#hunt-today-sub', todaySub(me, h));
+    set('#hunt-combo-n', me.combo);
+    set('#hunt-combo-sub', comboSub(me, h));
+    set('#hunt-streak-sub', streakSub(me));
     set('#hunt-live', liveLine());
+    const combo = $('#hunt-combo');
+    if (combo) { combo.innerHTML = comboHtml(); combo.dataset.mult = me.mult; }
+    clearTimeout(comboTimer);
+    if (me.combo) comboTimer = setTimeout(() => { if (data && data.me === me) { me.combo = 0; me.mult = 1; refreshNumbers(); } }, h.combo.idle_s * 1000);
   }
 
-  // x, y: the click in field pixels (what the server judges); `shown`: where it was on the page, for the "+1".
-  async function pick(x, y, fieldEl, shown = layout().at({ x, y })) {
-    if (busy || flying || !target || !state.me || !data.me || data.me.done) return;
-    busy = true;
-    const b = $('#hunt-banana', fieldEl);
-    const h = data.hunt.field;
-    if (b && Math.hypot(x - target.x, y - target.y) <= h.r) b.classList.add('picked'); // it vanishes at once
+  function freeze(fieldEl, seconds) {
+    frozenUntil = performance.now() + seconds * 1000;
+    fieldEl.classList.add('hunt-frozen');
+    setTimeout(() => { if (performance.now() >= frozenUntil - 20) fieldEl.classList.remove('hunt-frozen'); }, seconds * 1000);
+  }
+
+  // Take the server's answer to a click or a timer: the numbers, what to say about it, and the field.
+  function apply(r, fieldEl, shown) {
+    const me = data.me, was = target, lost = me.combo >= 2 && r.combo === 0;
+    me.today = r.today; me.left = r.left; me.done = r.done; me.under_floor = r.under_floor;
+    me.combo = r.combo ?? 0; me.mult = r.mult ?? 1;
+    const here = shown || (was ? layout().at(was) : { x: fieldEl.clientWidth / 2, y: fieldEl.clientHeight / 2 });
+    if (r.hit) {
+      session += 1;
+      me.season += r.paid; me.all_time += r.paid; me.bananas += 1; me.picks += 1; me.streak.paid = true;
+      if (state.me && r.balance !== undefined) { state.me.balance = r.balance; renderMe(); }
+      pop(fieldEl, here.x, here.y, `${r.air ? 'Caught! ' : ''}+${r.paid}`, r.kind === 'golden' ? 'gold' : r.air ? 'air' : '');
+      if (r.swept) pop(fieldEl, here.x, here.y - 34, `Whole bunch! +${r.bunch_bonus}`, 'air');
+      if (r.streak_bonus) toast(`Day ${r.streak} in a row: the first banana paid ${r.paid}.`, 'good');
+      if (r.found) { toast(`You found the hidden item: ${r.found.label}!`, 'good'); pop(fieldEl, here.x, here.y - 34, 'Hidden item!', 'gold'); window.FiveOnkey?.note('hunt_found', { label: r.found.label }); }
+      if (session % 25 === 0) window.FiveOnkey?.note('hunt', { n: session, today: r.today });
+    } else if (r.reason === 'rotten') { pop(fieldEl, here.x, here.y, 'Rotten!', 'bad'); freeze(fieldEl, r.frozen_s || data.hunt.freeze_s); }
+    else if (r.reason === 'rotted') pop(fieldEl, here.x, here.y, 'It rotted', 'bad');
+    else if (r.reason === 'stolen') pop(fieldEl, here.x, here.y, 'Greg took it!', 'bad');
+    else if (r.reason === 'shooed') { shooGreg(fieldEl); pop(fieldEl, here.x, here.y, 'Shoo!', 'air'); }
+    if (lost) { const c = $('#hunt-combo', fieldEl); if (c) { c.classList.remove('broke'); void c.offsetWidth; c.classList.add('broke'); } }
+    target = r.target;
+    if (r.done) { window.FiveOnkey?.note('hunt_done', { today: r.today }); clearField(fieldEl); draw(); return; }
+    refreshNumbers();
+    if (!target) return;
+    if (!was || target.id !== was.id) throwTo(fieldEl, target); // Onkey throws the next one in
+    else if (r.hit && target.kind === 'bunch') target.items.forEach((it, i) => { if (it.picked) $(`.hunt-banana[data-i="${i}"]`, fieldEl)?.remove(); });
+  }
+
+  // A timer on the field ran out (a golden banana, a bunch, Greg arriving): ask the server what became of it.
+  async function nudge(fieldEl, t, tries = 0) {
+    if (target !== t || !document.body.contains(fieldEl)) return;
     try {
-      const r = await api('/api/hunt/click', { method: 'POST', body: JSON.stringify({ x: Math.round(x), y: Math.round(y) }) });
-      const me = data.me;
-      me.today = r.today; me.left = r.left; me.done = r.done; me.under_floor = r.under_floor;
-      if (r.hit) {
-        session += 1;
-        me.season += r.paid; me.all_time += r.paid; me.bananas += 1;
-        if (state.me) { state.me.balance = r.balance; renderMe(); }
-        pop(fieldEl, shown.x, shown.y, `+${r.paid}`);
-        if (session % 25 === 0) window.FiveOnkey?.note('hunt', { n: session, today: r.today });
-      }
-      target = r.target;
-      if (r.done) {
-        window.FiveOnkey?.note('hunt_done', { today: r.today });
-        busy = false;
-        draw();
-        return;
-      }
-      if (r.hit) throwTo(fieldEl, target); // Onkey throws the next one in; a miss leaves the banana where it is
-      refreshNumbers();
+      const r = await api('/api/hunt/next', { method: 'POST', body: '{}' });
+      if (target !== t) return;
+      if (r.target && r.target.id === t.id && tries < 4) { timers.push(setTimeout(() => nudge(fieldEl, t, tries + 1), 350)); return; } // not yet, says the server
+      apply(r, fieldEl);
+    } catch (err) { /* the next click sorts it out */ }
+  }
+
+  async function send(body, fieldEl, shown) {
+    if (busy) return;
+    busy = true;
+    try {
+      const r = await api('/api/hunt/click', { method: 'POST', body: JSON.stringify(body) });
+      apply(r, fieldEl, shown);
     } catch (err) {
       toast(err.message, 'bad');
-      if (b) b.classList.remove('picked');
+      $$('.hunt-banana.picked', fieldEl).forEach((el) => el.classList.remove('picked'));
     } finally {
       busy = false;
     }
   }
 
+  // A click on the field at `shown` (its own pixels): on Greg, on the banana in the air, or on the ground.
+  function clicked(shown, fieldEl) {
+    if (busy || !target || !state.me || !data.me || data.me.done || performance.now() < frozenUntil) return;
+    const lay = layout(), h = data.hunt, reach = lay.phone ? TAP_R : h.field.r;
+    const near = (p, r = reach) => Math.hypot(shown.x - p.x, shown.y - p.y) <= r;
+    const greg = $('.hunt-greg:not(.shooed)', fieldEl);
+    if (greg) {
+      const box = greg.getBoundingClientRect(), f = fieldEl.getBoundingClientRect();
+      if (near({ x: box.left + box.width / 2 - f.left, y: box.top + box.height / 2 - f.top }, 38)) { send({ x: 0, y: 0, shoo: true }, fieldEl, shown); return; }
+    }
+    if (flight) { // in the air: a click on it is a catch, anywhere else waits for it to land
+      const k = airK();
+      if (k === null || k < h.air.from || k > h.air.to) return;
+      const spot = arcAt(target, k);
+      if (!near(lay.at(spot), lay.phone ? TAP_R + 10 : h.air.r)) return;
+      const at = lay.phone ? spot : lay.toField(shown.x, shown.y);
+      $$('.hunt-fly', fieldEl).forEach((el) => { if (!el.classList.contains('rotten')) el.classList.add('picked'); });
+      send({ x: Math.round(at.x), y: Math.round(at.y), air: Number(k.toFixed(3)) }, fieldEl, shown);
+      return;
+    }
+    // On the ground: what the click is on, if anything (on a phone it's reported as that thing's own spot).
+    const things = (target.kind === 'bunch' ? target.items.map((it, i) => ({ p: it, el: $(`.hunt-banana[data-i="${i}"]`, fieldEl), live: !it.picked })) : [{ p: target, el: $('#hunt-banana', fieldEl), live: true }])
+      .concat(target.decoy ? [{ p: target.decoy, el: null, live: true }] : []);
+    const on = things.find((x) => x.live && near(lay.at(x.p)));
+    if (on && on.el) on.el.classList.add('picked'); // it vanishes at once
+    const at = on && lay.phone ? on.p : lay.toField(shown.x, shown.y);
+    send({ x: Math.round(at.x), y: Math.round(at.y) }, fieldEl, shown);
+  }
+
   function bind(viewEl) {
     const fieldEl = $('#hunt-field', viewEl);
     if (!fieldEl) return;
+    frozenUntil = 0;
     fieldEl.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      const r = fieldEl.getBoundingClientRect(), lay = layout();
-      const shown = { x: e.clientX - r.left, y: e.clientY - r.top };
-      if (!lay.phone) { pick(shown.x, shown.y, fieldEl, shown); return; }
-      const b = target && lay.at(target);
-      const at = b && Math.hypot(shown.x - b.x, shown.y - b.y) <= TAP_R ? target : lay.toField(shown.x, shown.y);
-      pick(at.x, at.y, fieldEl, shown);
+      const r = fieldEl.getBoundingClientRect();
+      clicked({ x: e.clientX - r.left, y: e.clientY - r.top }, fieldEl);
     });
-    fieldEl.addEventListener('keydown', (e) => { // the banana is a button: Enter or Space picks it
-      if ((e.key === 'Enter' || e.key === ' ') && e.target.id === 'hunt-banana' && target) {
+    fieldEl.addEventListener('keydown', (e) => { // each banana is a button: Enter or Space picks it
+      const b = e.target.closest ? e.target.closest('button.hunt-banana') : null;
+      if ((e.key === 'Enter' || e.key === ' ') && b && target && !flight && !busy && performance.now() >= frozenUntil) {
         e.preventDefault();
-        pick(target.x, target.y, fieldEl);
+        const p = b.dataset.i !== undefined ? target.items[Number(b.dataset.i)] : target;
+        b.classList.add('picked');
+        send({ x: p.x, y: p.y }, fieldEl, layout().at(p));
       }
     });
     if (target) throwTo(fieldEl, target); // the first banana of the visit comes in the same way

@@ -1679,7 +1679,7 @@
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance });
-    window.FiveHunt.init({ state, $, api, draw, esc, fmt, kpi, renderMe, toast, plainName });
+    window.FiveHunt.init({ state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName });
     window.FiveOnkey.init({ state, fmt, esc });
     window.FiveOnkey.start();
     // Themes cycle dark -> light -> the ones the signed-in bettor bought in Onkey's Shop (Greg Mode: the light colours

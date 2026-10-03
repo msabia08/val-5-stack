@@ -2386,6 +2386,51 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .hunt-pop { position: absolute; transform: translate(-50%, -100%); color: #f5c518; font-weight: 700; font-size: 20px; pointer-events: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .6); animation: hunt-pop .7s ease-out forwards; }
 @keyframes hunt-pop { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -40px; } }
+.hunt-pop.gold { color: #ffe27a; font-size: 26px; text-shadow: 0 0 10px #ffae00, 0 1px 2px rgba(0, 0, 0, .7); animation-duration: 1.05s; }
+.hunt-pop.air { color: #9ef0ff; font-size: 22px; animation-duration: 1.05s; }
+.hunt-pop.bad { color: #ff8f7a; animation-duration: 1.05s; }
+.hunt-fly.picked { visibility: hidden; }
+/* What Onkey throws besides a plain banana. Golden: a gold glow that pulses, greying as it's about to rot. Rotten (the
+   decoy): brown and dull, so you have to look. A bunch is plain bananas, a little smaller. */
+.hunt-banana.golden, .hunt-fly.golden { filter: drop-shadow(0 0 10px #ffd54a) drop-shadow(0 0 22px #ffae00) saturate(1.5) brightness(1.15); }
+.hunt-banana.golden { animation: hunt-land .22s ease-out, hunt-gold .7s ease-in-out .22s infinite alternate; }
+.hunt-banana.golden.rotting { animation: none; filter: sepia(1) saturate(.6) brightness(.6); transition: filter .5s; }
+@keyframes hunt-gold { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -50%) scale(1.12); } }
+.hunt-banana.rotten, .hunt-fly.rotten { filter: sepia(1) hue-rotate(-28deg) saturate(1.6) brightness(.5) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); cursor: crosshair; }
+.hunt-banana.bunch, .hunt-fly.bunch { font-size: 46px; }
+/* The clock on a golden banana or a bunch: a bar across the top of the field that runs down. */
+.hunt-clock { position: absolute; left: 12px; right: 12px; top: 10px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .35); overflow: hidden; pointer-events: none; }
+.hunt-clock i { display: block; height: 100%; width: 100%; transform-origin: left; background: #9ef0ff; animation: hunt-clock linear forwards; }
+.hunt-clock.golden i { background: #ffd54a; }
+@keyframes hunt-clock { to { transform: scaleX(0); } }
+/* Greg walks in to take the banana; a click sends him off. */
+.hunt-greg { position: absolute; left: 0; top: 0; width: 74px; cursor: pointer; filter: drop-shadow(0 5px 8px rgba(0, 0, 0, .5)); will-change: transform; }
+.hunt-greg.shooed { pointer-events: none; }
+/* The combo, in the field's top-left corner: the multiplier, the run, and a bar to the next step. */
+.hunt-combo { position: absolute; left: 12px; top: 24px; z-index: 2; display: grid; grid-template-columns: auto auto; align-items: baseline; gap: 2px 8px;
+  padding: 6px 12px 8px; border-radius: 12px; background: rgba(0, 0, 0, .5); color: #fff; pointer-events: none; }
+.hunt-combo:empty { display: none; }
+.hunt-combo b { font-size: 24px; font-weight: 900; color: #ffd54a; line-height: 1; }
+.hunt-combo[data-mult="3"] b { color: #ff8a3d; text-shadow: 0 0 10px #ff6d00; }
+.hunt-combo span { font-size: 12px; font-weight: 700; }
+.hunt-combo i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: #ffd54a; transition: width .2s; }
+.hunt-combo.broke { animation: hunt-broke .45s ease-out; }
+@keyframes hunt-broke { 20% { transform: translateX(-6px) rotate(-3deg); } 50% { transform: translateX(6px) rotate(3deg); } 100% { transform: none; } }
+/* A rotten banana: the field greys over until you can pick again. */
+.hunt-field.hunt-frozen { cursor: not-allowed; }
+.hunt-field.hunt-frozen::after { content: "Yuck!"; position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; font-size: 44px; font-weight: 900;
+  color: #d9c48a; background: rgba(40, 28, 8, .45); pointer-events: none; }
+/* The field of the day (hunt.py theme()): the same field, different ground and scenery. */
+.hunt-theme-night { background: radial-gradient(ellipse at 80% 10%, #24365e 0%, #131f3d 45%, #090f22 100%); }
+.hunt-theme-rain { background: radial-gradient(ellipse at 30% 20%, #2c5a52 0%, #1b3f3d 45%, #10282a 100%); }
+.hunt-theme-beach { background: linear-gradient(180deg, #caa25a 0%, #b58a44 62%, #2f7fa8 86%, #1f5f8a 100%); }
+.hunt-theme-ruins { background: radial-gradient(ellipse at 40% 25%, #6b6452 0%, #4a4538 45%, #2c2a22 100%); }
+.hunt-deco.firefly { opacity: .9; animation: hunt-firefly 2.4s ease-in-out infinite alternate; }
+@keyframes hunt-firefly { from { opacity: .25; transform: translate(-50%, -50%) scale(.8); } to { opacity: 1; transform: translate(-40%, -60%) scale(1.1); } }
+.hunt-rain { position: absolute; inset: -40px 0 0; pointer-events: none; opacity: .35;
+  background: repeating-linear-gradient(105deg, transparent 0 14px, rgba(200, 230, 255, .55) 14px 15px, transparent 15px 34px); background-size: 100% 80px;
+  animation: hunt-rain .5s linear infinite; }
+@keyframes hunt-rain { to { background-position: -22px 80px; } }
 
 /* ---- phone ------------------------------------------------------------
    Up to 640px wide; checked at 393 × 659 (an iPhone 15). See "Phone" in docs/DESIGN.md. */
@@ -2614,6 +2659,10 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .hunt-stage { margin-top: 0; }
   .hunt-card > #hunt-live { margin: 8px 4px 2px; }
   .hunt-banana, .hunt-fly { font-size: 46px; }
+  .hunt-banana.bunch, .hunt-fly.bunch { font-size: 40px; }
+  .hunt-greg { width: 58px; }
+  .hunt-combo { top: 22px; padding: 4px 10px 6px; }
+  .hunt-combo b { font-size: 20px; }
   .hunt-deco { font-size: 30px; }
   .hunt-onkey { right: 6px; bottom: 4px; width: 84px; }
   .hunt-onkey.full { width: 110px; }

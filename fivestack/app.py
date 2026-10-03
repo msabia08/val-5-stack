@@ -727,13 +727,15 @@ class Handler(BaseHTTPRequestHandler):
                 legs, _, quote = app.bets.quote_parlay(body.get("legs"), body.get("context") or {})
                 return self._json({**quote, "legs": [{**{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal", "boost")},
                                                       "boost_token": bool(leg.get("boost_token"))} for leg in legs]})
-            if path in ("/api/hunt/start", "/api/hunt/click"):
+            if path in ("/api/hunt/start", "/api/hunt/click", "/api/hunt/next"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to hunt bananas."}, 403)
                 if path.endswith("/start"):
                     return self._json({"me": app.hunt.start(me["name"])})
-                out = app.hunt.click(me["name"], body.get("x"), body.get("y"))
+                if path.endswith("/next"):  # the page's timer ran out on a golden banana, a bunch or Greg
+                    return self._json(app.hunt.nudge(me["name"]))
+                out = app.hunt.click(me["name"], body.get("x"), body.get("y"), air=body.get("air"), shoo=bool(body.get("shoo")))
                 return self._json({**out, "balance": round(app.db.get_bettor(me["name"])["balance"], 2)})
             if path in ("/api/bank/borrow", "/api/bank/repay"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
