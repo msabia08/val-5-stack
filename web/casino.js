@@ -9,7 +9,6 @@ window.FiveCasino = (() => {
   const RANK_NAME = { T: 'Ten', J: 'Jack', Q: 'Queen', K: 'King', A: 'Ace' };
   let muted = localStorage.getItem('fs.casinoMuted') === '1';
   let audio = null;
-  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   function init(ctx) { ({ esc, state, nameHtml, confetti } = ctx); }
 
   // ---- what players bought (Onkey's Shop) ---------------------------------------------------
@@ -52,7 +51,7 @@ window.FiveCasino = (() => {
     planning = null;
     let t = now() + 60;
     for (const p of fresh) {
-      if (quiet || reduced()) { seen.set(p.key, { start: -1e9 }); continue; } // first sight of a table: no replay
+      if (quiet) { seen.set(p.key, { start: -1e9 }); continue; } // first sight of a table: no replay
       seen.set(p.key, { start: t, flip: p.flip, hold: p.hold });
       setTimeout(() => sound('card'), Math.max(0, t - now()));
       landAt = Math.max(landAt, t + (p.flip ? FLIP_GAP : DEAL_MS) + (p.hold || 0));
@@ -304,8 +303,7 @@ window.FiveCasino = (() => {
     el.classList.remove('greg', 'bonked');
     void el.offsetWidth;
     el.classList.add('bonked');
-    if (reduced()) fly.remove();
-    else fly.animate([{ transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
+    fly.animate([{ transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
       { transform: 'translate(160px, -70px) rotate(220deg)', opacity: 1, offset: 0.45 },
       { transform: 'translate(520px, 260px) rotate(620deg) scale(0.5)', opacity: 0 }], { duration: 1100, easing: 'cubic-bezier(0.25, 0.1, 0.6, 1)', fill: 'forwards' })
       .onfinish = () => fly.remove();
@@ -444,6 +442,6 @@ window.FiveCasino = (() => {
   const countdown = (deadline) => (deadline ? `<b class="countdown" data-deadline="${deadline}">${Math.ceil(secondsLeft(deadline))}s</b>` : '');
   const ref = () => (crypto.randomUUID ? crypto.randomUUID() : `r${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9-]/g, '').padEnd(16, '0');
 
-  return { init, denom, chip, chipFace, gregHere, card, cards, dealer, say, react, quip, sound, chatter, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref, reduced,
+  return { init, denom, chip, chipFace, gregHere, card, cards, dealer, say, react, quip, sound, chatter, speaker, bindSpeaker, patch, live, syncClock, secondsLeft, timer, countdown, ref,
     absorb, wornBy, style, who, title, seatBurst, deal, dealReset, landing, after };
 })();

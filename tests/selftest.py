@@ -2710,10 +2710,14 @@ def daily_wheel(shared):
     except BetError:
         pass
     assert wheel.summary({"name": "Wes"}, now=day)["me"]["spins_left"] == 0
-    # "Spin again" gives another spin the same day; the next day brings a fresh one.
-    assert wheel.spin("Wes", now=day + 86400, segment=at["again"])["spins_left"] == 1
+    # "2x respin" gives two more spins the same day; the next day brings a fresh one.
+    assert wheel.spin("Wes", now=day + 86400, segment=at["again2"])["spins_left"] == 2
+    assert wheel.spin("Wes", now=day + 86400, segment=at["c1000"])["spins_left"] == 1
     bananas = hdb.banana_wallet("Wes")
-    assert wheel.spin("Wes", now=day + 86400, segment=at["b100"])["amount"] == 100 and hdb.banana_wallet("Wes") == bananas + 100
+    last = wheel.spin("Wes", now=day + 86400, segment=at["b100"])
+    assert last["amount"] == 100 and last["spins_left"] == 0 and hdb.banana_wallet("Wes") == bananas + 100
+    assert [s["amount"] for s in SEGMENTS if s["kind"] == "credits"] == [100, 250, 500, 1000]
+    assert not any(s["kind"] == "nothing" for s in SEGMENTS)
     # A free cosmetic they didn't own, and the jackpot: all of it.
     item = wheel.spin("Wes", now=day + 2 * 86400, segment=at["item"])
     assert hdb.query_one("SELECT price FROM banana_items WHERE bettor='Wes' AND item_id=?", (json.loads(item["detail"])["item_id"],))["price"] == 0
@@ -2760,16 +2764,46 @@ def daily_wheel(shared):
     assert hdb.get_bettor("Wes")["balance"] == balance + TOKEN_MAX_STAKE and "Insured" in hdb.bet(bet["id"])["note"]
     # A live server ignores a requested slice; demo mode honours it and has no daily limit.
     try:
-        wheel.spin("Wes", now=day + 5 * 86400, force="c400")
+        wheel.spin("Wes", now=day + 5 * 86400, force="c1000")
         raise AssertionError("still one spin a day")
     except BetError:
         pass
     demo = WheelManager(hdb, house, unlimited=True)
     hbets.register("Dee", "secret1")
-    spins = [demo.spin("Dee", now=day, force=key)["prize"] for key in ("ate", "ate", "c50", "nope")]
-    assert spins[:3] == ["ate", "ate", "c50"] and spins[3] in at and demo.summary({"name": "Dee"}, now=day)["unlimited"]
+    spins = [demo.spin("Dee", now=day, force=key)["prize"] for key in ("again2", "again2", "c100", "nope")]
+    assert spins[:3] == ["again2", "again2", "c100"] and spins[3] in at and demo.summary({"name": "Dee"}, now=day)["unlimited"]
     summary = wheel.summary({"name": "Wes"}, now=day + 5 * 86400)
-    assert not summary["unlimited"] and len(summary["me"]["history"]) == 7 and summary["recent"][0]["bettor"] == "Dee" and summary["segments"] == SEGMENTS
+    assert not summary["unlimited"] and len(summary["me"]["history"]) == 8 and summary["recent"][0]["bettor"] == "Dee" and summary["segments"] == SEGMENTS
+
+    # A boost token also works on a leg of a parlay: that leg prices at its boosted price and the parlay's price follows.
+    demo.spin("Dee", now=day, force="boost")
+    board = hbets.apply_boost(env.engine.build(hdb))
+    game = (board["boost"]["market_id"], board["boost"]["selection"])  # the game's boosted pick can't take a token too
+    legs = [{"market_id": "team:win", "selection": "loss" if game == ("team:win", "win") else "win"},
+            {"market_id": "team:ot", "selection": "no" if game == ("team:ot", "yes") else "yes"}]
+    plain, _, plain_quote = hbets.quote_parlay(legs, {})
+    boosted_legs = [{**legs[0], "boost": True}, legs[1]]
+    built, _, quote = hbets.quote_parlay(boosted_legs, {})
+    assert built[0]["boost_token"] and built[0]["boost"] == plain[0]["odds_decimal"], built[0]
+    assert built[0]["odds_decimal"] == hbets.boosted(plain[0]["odds_decimal"], TOKEN_BOOST) and built[1]["odds_decimal"] == plain[1]["odds_decimal"]
+    assert quote["odds_decimal"] > plain_quote["odds_decimal"], (quote, plain_quote)
+    for bad, stake, why in ((boosted_legs, TOKEN_MAX_STAKE + 1, "covers a parlay of up to"),
+                            ([{**leg, "boost": True} for leg in legs], 10, "only have 1 boost token")):
+        try:
+            hbets.place_parlay("Dee", bad, stake, {})
+            raise AssertionError(why)
+        except BetError as e:
+            assert why in str(e), e
+    assert len(wheel.perks("Dee")) == 1  # a refused parlay uses nothing
+    parlay = hbets.place_parlay("Dee", boosted_legs, 10, {})
+    leg = json.loads(parlay["context"])["legs"][0]
+    assert parlay["odds_decimal"] == quote["odds_decimal"] and isinstance(leg["boost_token"], int) and wheel.perks("Dee") == []
+    assert hdb.query_one("SELECT status, bet_id FROM wheel_perks WHERE id=?", (leg["boost_token"],)) == {"status": "used", "bet_id": parlay["id"]}
+    try:
+        hbets.place_parlay("Dee", boosted_legs, 10, {})
+        raise AssertionError("no token left")
+    except BetError as e:
+        assert "don't have a boost token" in str(e), e
 
 
 def main():

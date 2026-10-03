@@ -725,8 +725,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"bettor": app.bets.public(b), "bettors": app.bets.leaderboard()})
             if path == "/api/odds/parlay":  # the bet slip's parlay price, before placing it
                 legs, _, quote = app.bets.quote_parlay(body.get("legs"), body.get("context") or {})
-                return self._json({**quote, "legs": [{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal", "boost")}
-                                                     for leg in legs]})
+                return self._json({**quote, "legs": [{**{k: leg[k] for k in ("market_id", "selection", "description", "odds_decimal", "boost")},
+                                                      "boost_token": bool(leg.get("boost_token"))} for leg in legs]})
             if path in ("/api/hunt/start", "/api/hunt/click"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

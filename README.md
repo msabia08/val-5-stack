@@ -18,7 +18,7 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack** and **Poker**, played with betting credits) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack** and **Poker**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
@@ -72,8 +72,7 @@ more often and for longer the bigger the pair (never for cherries, bells or
 spikes); it happens on wins and losses alike, so it never gives the result away.
 Your credits (on the machine and in the top bar) show the stake taken until the
 reels stop, then count up to what you won, so they can't spoil it either. The speaker button in the marquee
-mutes the sounds and remembers your choice. Reduced motion shows the result immediately without rolling
-the reels or teasing, and keeps win celebrations to a glow and a banner.
+mutes the sounds and remembers your choice.
 
 All payouts include the stake; other results return zero. The lines in the table
 return 95% over many spins, a 5% house edge; everything the Golden Onkey pays is
@@ -792,7 +791,7 @@ where any signed-in bettor can borrow credits:
 
 ## Banana Hunt
 
-Broke and don't fancy a loan? Under Betting, the **Banana Hunt** pays credits
+Broke and don't fancy a loan? Under Casino, the **Banana Hunt** pays credits
 for a menial task: Onkey dropped his bananas all over a field, and every one
 you click is **1 credit**. After every pick Onkey, in his corner, throws the
 next banana in along an arc; it can't be picked until it lands.
@@ -895,30 +894,34 @@ The bet's ticket says so. Refunds stop when the pot runs dry.
 
 The Casino's **Daily wheel** page has a prize wheel every bettor can spin **once a
 day** for free. The day turns over at **midnight Pacific, which is 3 AM
-Eastern**, so a late night on the East Coast still counts as the same day. Each
+Eastern**, so a late night on the East Coast still counts as the same day. To
+spin, **grab the wheel and throw it**; the prize is picked the moment you let
+go, and a harder throw only spins longer. Each
 slice's size on the wheel is its chance:
 
 | Prize | Chance |
 |---|---|
-| 50 credits | 1 in 5 |
-| 100 credits | 1 in 7 |
+| 100 credits | 1 in 4 |
+| 250 credits | 1 in 7 |
 | 50 bananas | 1 in 8 |
-| Boost token: a single of up to 200 credits pays 50% more profit | 1 in 11 |
-| Insurance token: if a single loses, you get the stake back (up to 200) | 1 in 13 |
-| 200 credits | 1 in 13 |
+| Boost token: a single or one leg of a parlay, on a bet of up to 250 credits, pays 50% more profit | 1 in 11 |
+| Insurance token: if a single loses, you get the stake back (up to 250) | 1 in 13 |
+| 500 credits | 1 in 13 |
 | 100 bananas | 1 in 14 |
-| Onkey ate it (nothing) | 1 in 18 |
-| 400 credits | 1 in 20 |
-| Spin again | 1 in 20 |
-| A free cosmetic from Onkey's Shop you don't own yet (100 bananas if you own them all) | 1 in 33 |
+| 2x respin: two more spins today | 1 in 18 |
+| A free cosmetic from Onkey's Shop you don't own yet (100 bananas if you own them all) | 1 in 20 |
+| 1000 credits | 1 in 33 |
 | **The jackpot**: all of it | 1 in 200 |
 
 Credit prizes and insurance refunds are free: they don't come out of the
 house's pot, so they never eat into the secret objectives or bad-beat refunds.
 Only the jackpot slice is paid from the house's money: the whole progressive
 jackpot. Tokens keep until you use them: add a pick on Place bets and tap
-**Boost** or **Insure** on it in your bet slip (singles only, never a parlay; a
-boost token doesn't stack with the odds boost of the game). The ticket says
+**Boost** or **Insure** on it in your bet slip. A boost token also works on a
+leg of a **parlay**: tap Boost on the leg, that leg prices at its boosted odds
+and the parlay's price and payout are worked out from it (the parlay is capped
+at 250 credits; one token per boosted leg). Insurance is for singles only, and a
+boost token doesn't stack with the odds boost of the game. The ticket says
 which token it carries. The server picks the
 slice, and the page only animates the wheel to it: the pointer clicks over each
 peg, and sometimes the wheel crawls up to a peg next to a big prize, balances
@@ -938,7 +941,7 @@ pays all of it.
 Separate from the house's money: one pick on the board pays **50% more
 profit** than its usual price until the next game is recorded, when a new one
 is picked. It's shown under the odds format toggle on Place bets and with a gold ring on its
-button. It's for singles of up to 100 credits; put that pick in a **parlay**
+button. It's for singles of up to 250 credits; put that pick in a **parlay**
 and the leg prices at its boosted odds too (marked with ⚡ in the slip and on
 the ticket), but the whole parlay's stake is capped the same way.
 

@@ -1,4 +1,4 @@
-/* 5-Stack Tracker: the Banana Hunt (Betting › Banana Hunt; data from /api/hunt, picks from /api/hunt/click, both in
+/* 5-Stack Tracker: the Banana Hunt (Casino › Banana Hunt; data from /api/hunt, picks from /api/hunt/click, both in
  * fivestack/hunt.py).
  *
  * Onkey dropped his bananas all over the field. The server puts one down, the page draws it, and every click that
@@ -7,7 +7,7 @@
  * a daily cap that turns over at midnight Pacific, like the daily wheel, which doesn't apply while you're under the
  * floor (250 credits). A pick vanishes the banana at once, floats a "+1" where you clicked and counts the credits chip
  * up; then Onkey, in his corner, winds up and throws the next banana in along an arc (`throwTo()`, the Web Animations
- * API, THROW_MS), and it can't be picked until it lands. Reduced motion puts it straight down. The whole page is only
+ * API, THROW_MS), and it can't be picked until it lands. The whole page is only
  * redrawn when the hunt closes for the day; everything else is updated in place so the hunt stays snappy.
  *
  * FiveHunt.init(ctx) gets app.js's helpers; load(), view() and bind() are called like the other pages'.
@@ -24,7 +24,6 @@ window.FiveHunt = (() => {
   let session = 0; // bananas picked since the page was opened
   const THROW_MS = 750; // how long a banana is in the air (the server won't pay a pick sooner than most of this)
   const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
-  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // The jungle: fixed scenery so the field looks the same every visit.
   const SCENERY = [['🌴', 6, 14], ['🌿', 22, 88], ['🌴', 58, 10], ['🪨', 40, 92], ['🌿', 82, 20], ['🌴', 93, 84], ['🌱', 50, 50], ['🍃', 70, 62]];
 
@@ -137,7 +136,7 @@ window.FiveHunt = (() => {
     $('#hunt-banana', fieldEl)?.remove();
     $('.hunt-msg', fieldEl)?.remove();
     if (!t) { flying = false; return; }
-    if (reducedMotion() || !('animate' in Element.prototype)) { land(fieldEl, t); return; }
+    if (!('animate' in Element.prototype)) { land(fieldEl, t); return; }
     flying = true;
     const onkey = $('#hunt-onkey', fieldEl);
     if (onkey) { onkey.classList.remove('throw'); void onkey.offsetWidth; onkey.classList.add('throw'); }
@@ -170,7 +169,6 @@ window.FiveHunt = (() => {
   }
 
   function pop(fieldEl, x, y, text) {
-    if (reducedMotion()) return;
     const el = document.createElement('span');
     el.className = 'hunt-pop';
     el.textContent = text;

@@ -6,8 +6,7 @@
  * slice; the page turns the wheel to it with requestAnimationFrame so it always knows the angle: the pointer ticks as
  * each peg passes, and near the end the wheel may tease: it teeters on the boundary next to a big prize and then either
  * tips into it or falls back (TEASE). Sounds are synthesised with Web Audio (mute in the header, `fs.wheelMuted`), and
- * each prize has its own screen effect (`celebrate()`), biggest for the jackpot. Reduced motion skips the turn and the
- * flashes, shakes and confetti, keeping the sound and the result.
+ * each prize has its own screen effect (`celebrate()`), biggest for the jackpot.
  *
  * FiveWheel.init(ctx) gets app.js's helpers; load(), view() and bind() are called like the other pages'.
  * FiveWheel.spin('jackpot') asks for a slice by key, which the server honours in demo mode only (for trying it out).
@@ -20,11 +19,14 @@ window.FiveWheel = (() => {
   let data = null, owner = undefined;
   let angle = 0; // the wheel's rotation in degrees, kept across redraws so it never jumps back
   let spinning = false, result = null, error = '';
+  let grab = null; // the drag in progress
   let audio = null, muted = false;
   try { muted = localStorage.getItem('fs.wheelMuted') === '1'; } catch (e) { /* no storage: sound on */ }
   const ICONS = { credits: '🪙', bananas: '🍌', boost: '⚡', insurance: '🛡️', nothing: '🐒', again: '🔁', item: '🎁', jackpot: '🌟' };
-  const BIG = new Set(['jackpot', 'item', 'c400']); // slices worth teasing toward
+  const BIG = new Set(['jackpot', 'item', 'c1000']); // slices worth teasing toward
   const BULBS = 48;
+  const BIG_CREDITS = 1000, BIG_MS = 4200; // the top credits slice gets a screen effect of its own, this long
+  const JACKPOT_MS = 9000; // how long the jackpot's screen effect runs: the dim, banner, confetti and rain
   const R = 186; // the slices' radius in the SVG's 400 × 400 frame
 
   function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance } = ctx); }
@@ -36,7 +38,6 @@ window.FiveWheel = (() => {
     owner = name; data = next;
   }
 
-  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const mod = (a, n) => ((a % n) + n) % n;
   const chance = (w) => `1 in ${Math.round(data.total_weight / w)}`; // every chance the same way, rounded
 
@@ -102,14 +103,29 @@ window.FiveWheel = (() => {
       const [x, y] = point(R + 15, (k * 360) / BULBS); // on the rim's outer border
       return `<circle class="wheel-bulb" style="--k:${k % 6};--c:var(--bulb-${(k % 3) + 1})" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.6"/>`;
     }).join('');
+    // The rim is wood: a seam between planks every 15 degrees, between the bulbs.
+    const planks = Array.from({ length: 24 }, (_, k) => {
+      const [x0, y0] = point(R + 1, k * 15 + 3.75), [x1, y1] = point(R + 15, k * 15 + 3.75);
+      return `<line class="wheel-plank" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"/>`;
+    }).join('');
     return `<svg class="wheel-svg" viewBox="-36 -36 472 472" role="img" aria-label="The prize wheel">` +
       '<defs><radialGradient id="wheel-gold" cx="200" cy="200" r="190" gradientUnits="userSpaceOnUse">' +
       '<stop offset="0" stop-color="#fff6c2"/><stop offset=".55" stop-color="#ffd54a"/><stop offset="1" stop-color="#ff9f1c"/></radialGradient>' +
       '<filter id="wheel-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter></defs>' +
-      `<circle class="wheel-rim" cx="200" cy="200" r="${R + 15}"/>` +
+      `<circle class="wheel-rim" cx="200" cy="200" r="${R + 15}"/>${planks}` +
       `<g class="wheel-bulbs">${bulbs}</g>` +
       `<g id="wheel-rotor" style="transform: rotate(${angle}deg)">${parts.map((x) => x[0]).join('')}${jackpot}${pegs}${parts.map((x) => x[1]).join('')}</g>` +
-      '<circle class="wheel-hub" cx="200" cy="200" r="58"/></svg>';
+      '<circle class="wheel-hub" cx="200" cy="200" r="58"/>' + grabHint() + '</svg>';
+  }
+
+  // Where to grab and which way to throw: a ring on the rim and a dotted arrow round it, shown while a spin is waiting.
+  function grabHint() {
+    const r = R + 15, [gx, gy] = point(r, 52), [x0, y0] = point(r + 22, 60), [x1, y1] = point(r + 22, 98);
+    const [ax, ay] = point(r + 12, 93), [bx, by] = point(r + 33, 92);
+    const f = (n) => n.toFixed(1);
+    return `<g class="wheel-grab-hint" aria-hidden="true"><circle cx="${f(gx)}" cy="${f(gy)}" r="13"/>` +
+      `<path class="arc" d="M${f(x0)} ${f(y0)} A${r + 22} ${r + 22} 0 0 1 ${f(x1)} ${f(y1)}"/>` +
+      `<path class="tip" d="M${f(ax)} ${f(ay)} L${f(x1)} ${f(y1)} L${f(bx)} ${f(by)}"/></g>`;
   }
 
   function countdown() {
@@ -127,8 +143,7 @@ window.FiveWheel = (() => {
       bananas: `You won ${esc(result.label)}. They're in your banana wallet.`,
       boost: `Boost token! Put it on a single of up to ${fmt.credits(data.token.max_stake)} credits from your bet slip for ${fmt.pct(data.token.boost)} more profit.`,
       insurance: `Insurance token! Put it on a single from your bet slip: if it loses, you get the stake back (up to ${fmt.credits(data.token.max_stake)} credits).`,
-      nothing: 'Onkey ate it. Nothing this time.',
-      again: 'Spin again!',
+      again: '2x respin! You have two more spins.',
       item: `${esc(result.label)}. Wear it from <a href="#shop">Onkey's Shop</a>.`,
       jackpot: `JACKPOT! You won ${fmt.credits(result.amount || 0)} credits.`,
     }[data.segments[result.segment]?.kind] || esc(result.label);
@@ -138,9 +153,8 @@ window.FiveWheel = (() => {
   function spinArea() {
     const me = data.me;
     if (!me) return '<button class="btn wheel-spin" data-signin>Sign in to spin</button>';
-    if (spinning) return '<button class="btn wheel-spin" disabled>Spinning…</button>';
-    if (me.spins_left > 0) return `<button class="btn wheel-spin" id="wheel-spin">Spin</button>${data.unlimited ? '<p class="muted small">Demo mode: spin as often as you like.</p>' : ''}`;
-    return `<button class="btn wheel-spin" disabled>Spun today</button><p class="muted small">Next spin in ${countdown()}, at midnight Pacific (3 AM Eastern).</p>`;
+    if (spinning || me.spins_left > 0) return ''; // the wheel is the control: grab it and throw
+    return `<p class="wheel-next">Next spin in ${countdown()}</p>`;
   }
 
   function prizes() {
@@ -148,7 +162,7 @@ window.FiveWheel = (() => {
       `<tr><th scope="row">${ICONS[s.kind] || ''} ${esc(s.label)}</th><td class="num">${chance(s.weight)}</td></tr>`).join('');
     return `<section class="card"><h2>Prizes</h2><p class="muted small">Rarest first. A slice's size on the wheel is its chance.</p>` +
       `<table class="compact wheel-prizes"><tbody>${rows}</tbody></table>` +
-      `<details class="how"><summary>Where the prizes come from</summary><div class="how-body">Credits and insurance refunds are on the house, free; only the jackpot slice is paid from the house's money: it's the whole progressive jackpot, which grows with every bet and spin. Bananas go to your banana wallet for Onkey's Shop. A free cosmetic is one you don't own yet (100 bananas if you own them all). A boost token gives a single of up to ${fmt.credits(data.token.max_stake)} credits ${fmt.pct(data.token.boost)} more profit (not on top of the odds boost of the game); an insurance token refunds a single if it loses, up to ${fmt.credits(data.token.max_stake)} credits. You choose the single: tap Boost or Insure on it in your bet slip. Tokens work on singles, never a parlay, and keep until you use them. The wheel resets at midnight Pacific, which is 3 AM Eastern. Where the wheel stops is decided before it starts turning; the slow finish is only for show.</div></details></section>`;
+      `<details class="how"><summary>Where the prizes come from</summary><div class="how-body">Credits and insurance refunds are on the house, free; only the jackpot slice is paid from the house's money: it's the whole progressive jackpot, which grows with every bet and spin. Bananas go to your banana wallet for Onkey's Shop. A free cosmetic is one you don't own yet (100 bananas if you own them all). A boost token gives a single of up to ${fmt.credits(data.token.max_stake)} credits ${fmt.pct(data.token.boost)} more profit (not on top of the odds boost of the game); an insurance token refunds a single if it loses, up to ${fmt.credits(data.token.max_stake)} credits. You choose the single: tap Boost or Insure on it in your bet slip. A boost token also works on a leg of a parlay (the parlay's price follows); insurance is for singles only. Tokens keep until you use them. The wheel resets at midnight Pacific, which is 3 AM Eastern. Where the wheel stops is decided before it starts turning; the slow finish is only for show.</div></details></section>`;
   }
 
   function tokens() {
@@ -159,11 +173,19 @@ window.FiveWheel = (() => {
     return `<section class="card"><h2>Your tokens</h2>${list ? `<ul class="wheel-tokens">${list}</ul><p class="muted small">To use one, add a pick on <a href="#odds">Place bets</a> and tap Boost or Insure on it in your bet slip.</p>` : '<p class="muted small">None waiting. Win one on the wheel, then use it from your bet slip.</p>'}</section>`;
   }
 
+  // A stored spin's kind, from its slice key: the slices have changed over time, so its index may point elsewhere now.
+  function kindOf(key) {
+    const now = data.segments.find((s) => s.key === key);
+    return now ? now.kind : /^c\d/.test(key) ? 'credits' : /^b\d/.test(key) ? 'bananas' : { ate: 'nothing', again: 'again' }[key];
+  }
+
   function spinList(title, rows, empty, who) {
-    const items = rows.map((r) => `<li>${who ? `<span>${plainName(r.bettor)}</span>` : ''}<span>${ICONS[data.segments[r.segment]?.kind] || ''} ${esc(r.label || '')}</span>` +
+    const items = rows.map((r) => `<li>${who ? `<span>${plainName(r.bettor)}</span>` : ''}<span>${ICONS[kindOf(r.prize)] || ''} ${esc(r.label || '')}</span>` +
       `<span class="muted small">${fmt.date(r.created_ts * 1000)}</span></li>`).join('');
     return `<section class="card"><h2>${title}</h2>${items ? `<ul class="wheel-spins${who ? ' who' : ''}">${items}</ul>` : `<p class="muted small">${empty}</p>`}</section>`;
   }
+
+  const canGrab = () => !!data?.me && data.me.spins_left > 0 && !spinning;
 
   const speaker = () => `<button type="button" class="btn icon wheel-sound" id="wheel-sound" aria-pressed="${!muted}" aria-label="${muted ? 'Turn wheel sound on' : 'Turn wheel sound off'}" title="${muted ? 'Sound off' : 'Sound on'}">` +
     `${window.speakerIcon(muted, 18)}</button>`;
@@ -176,9 +198,9 @@ window.FiveWheel = (() => {
       return '<section class="card" id="wheel-loading">Loading the wheel…</section>';
     }
     return `<div class="wheel-layout"><section class="card wheel-stage">
-        <div class="wheel-head"><div><h2>Daily wheel</h2><p class="muted small">One free spin a day. The biggest prize is the whole jackpot.</p></div>${speaker()}</div>
-        <div class="wheel-row"><div class="wheel-box"><div class="wheel-pivot" aria-hidden="true"></div><div class="wheel-pointer" aria-hidden="true" style="${pointerStyle()}"></div>${wheelSvg()}
-          <div class="wheel-center"><span>Jackpot</span><b>${fmt.credits(data.jackpot)}</b></div></div>
+        <div class="wheel-head"><div><h2>Daily wheel</h2></div>${speaker()}</div>
+        <div class="wheel-row"><div class="wheel-box${canGrab() ? ' grabbable' : ''}"><div class="wheel-pivot" aria-hidden="true"></div><div class="wheel-pointer" aria-hidden="true" style="${pointerStyle()}"></div>${wheelSvg()}
+          <div class="wheel-center"><span>Jackpot</span><b>${fmt.credits(data.jackpot)}</b><i>credits</i></div></div>
         <div class="wheel-controls"><div aria-live="polite" id="wheel-live">${resultLine()}</div><div id="wheel-act">${spinArea()}</div></div></div>
       </section>
       <div class="wheel-side">${prizes()}${tokens()}</div></div>
@@ -252,17 +274,22 @@ window.FiveWheel = (() => {
     teaseLose: () => [392, 370, 349, 294].forEach((f, i) => tone(f, i * 0.28, i === 3 ? 0.9 : 0.3, { type: 'sawtooth', vol: 0.07 })),
     credits: (big) => { tone(988, 0, 0.12, { type: 'square', vol: 0.07 }); tone(1319, 0.09, big ? 0.5 : 0.35, { type: 'square', vol: 0.07 });
       if (big) [1568, 2093].forEach((f, i) => tone(f, 0.25 + i * 0.09, 0.4, { type: 'square', vol: 0.05 })); },
+    // the top credits slice: a rising fanfare, then coins dropping
+    bigCredits: () => {
+      [[523, 659], [659, 784], [784, 988, 1319]].forEach((c, i) => c.forEach((f) => tone(f, i * 0.2, i === 2 ? 1.1 : 0.22, { type: 'triangle', vol: 0.08 })));
+      for (let i = 0; i < 12; i++) tone(1800 + Math.random() * 1400, 0.7 + i * 0.22, 0.09, { type: 'square', vol: 0.035 });
+    },
     bananas: () => { tone(300, 0, 0.35, { vol: 0.25, to: 700 }); tone(500, 0.18, 0.3, { vol: 0.18, to: 1000 }); },
     boost: () => { tone(200, 0, 0.6, { type: 'sawtooth', vol: 0.08, to: 1400 }); noise(0, 0.6, { freq: 600, to: 5000, vol: 0.08 }); },
     insurance: () => [523, 784, 1047].forEach((f) => tone(f, 0, 0.9, { type: 'triangle', vol: 0.09 })),
     item: () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, i * 0.11, 0.3, { type: 'triangle', vol: 0.14 })),
     again: () => { tone(1400, 0, 0.35, { type: 'sawtooth', vol: 0.05, to: 300 }); tone(880, 0.38, 0.3, { type: 'triangle', vol: 0.15 }); },
-    nothing: () => { [392, 370, 349, 330].forEach((f, i) => tone(f, i * 0.3, i === 3 ? 1 : 0.32, { type: 'sawtooth', vol: 0.06 })); noise(0.05, 0.12, { freq: 900, vol: 0.15 }); },
     jackpot: () => {
       const chords = [[523, 659, 784], [587, 740, 880], [659, 831, 988], [784, 988, 1175, 1568]];
       chords.forEach((c, i) => c.forEach((f) => tone(f, i * 0.32, i === 3 ? 2 : 0.34, { type: i % 2 ? 'square' : 'triangle', vol: 0.06 })));
       noise(0.96, 1.6, { freq: 7000, type: 'highpass', vol: 0.18 });
-      [1568, 1760, 2093, 2349, 2637, 3136].forEach((f, i) => tone(f, 1.3 + i * 0.08, 0.25, { type: 'square', vol: 0.03 }));
+      // the sparkle run, again and again while the screen effect lasts
+      [1.3, 3.2, 5.1, 7].forEach((at) => [1568, 1760, 2093, 2349, 2637, 3136].forEach((f, i) => tone(f, at + i * 0.08, 0.25, { type: 'square', vol: 0.03 })));
     },
   };
 
@@ -285,6 +312,12 @@ window.FiveWheel = (() => {
   };
   const WIND = 5, WIND_MS = 300, THROW_MS = 110; // the hand pulls the wheel back 5°, then throws it
   const MIN_TRAVEL = 1500; // at least four turns
+  // A wheel thrown by hand: it coasts at the speed it was let go while the server answers, then eases over BLEND_MS
+  // into the solved spin. The throw's speed sets how far it turns (between THROWN_MIN and THROWN_MAX degrees), never
+  // where it stops.
+  const MIN_THROW = 0.25, MAX_THROW = 3.6; // deg/ms: the softest throw that spins, and the fastest it will coast
+  const HANDOFF_MS = 300, BLEND_MS = 220, THROWN_MIN = 900, THROWN_MAX = 3000;
+  const PULL_BACK = 40; // how far the wheel can be dragged backward against the flapper, degrees
   const TENSE_V = 0.012; // below this speed (12° a second) a tease starts to build
   function hermite(p0, p1, v0, v1, d) {
     return (u) => {
@@ -342,20 +375,22 @@ window.FiveWheel = (() => {
 
   // A spin that ends in slice s, from rotation `start`. kind 'tip': it creeps over the peg into the slice at the last
   // moment; 'back': it climbs the peg out of the slice, can't make it, and rolls back; null: it just comes to rest.
-  function solve(all, s, kind, start) {
-    const runAt = (v0, rec) => simulate(all, throwFrom(start, v0), v0, rec);
+  // `opt` (a thrown wheel): `from(v0)`, where the simulation takes over, and `travel`, the least it turns.
+  function solve(all, s, kind, start, opt) {
+    const from = opt ? opt.from : (v0) => throwFrom(start, v0), travel = opt ? opt.travel : MIN_TRAVEL;
+    const runAt = (v0, rec) => simulate(all, from(v0), v0, rec);
     let v0, check;
     if (kind === 'tip') {
-      const B = rotFor(s.a1, start + MIN_TRAVEL), depth = s.kind === 'jackpot' ? 0.35 : Math.min(s.span - PHYS.Z - 0.2, 0.25 + Math.random() * 0.25);
+      const B = rotFor(s.a1, start + travel), depth = s.kind === 'jackpot' ? 0.35 : Math.min(s.span - PHYS.Z - 0.2, 0.25 + Math.random() * 0.25);
       v0 = bisect((v) => runAt(v).rest >= B + depth);
       check = (r) => r.slice.i === s.i;
     } else if (kind === 'back') {
-      const A = rotFor(s.a0, start + MIN_TRAVEL);
+      const A = rotFor(s.a0, start + travel);
       v0 = bisect((v) => runAt(v).peak >= A - PHYS.Z * (1 - 0.86)); // up to 86% of the way over
       check = (r) => r.slice.i === s.i && r.peak < A;
     } else {
       for (const frac of [0.5, 0.35, 0.65, 0.25, 0.75]) {
-        const T = rotFor(s.a0 + s.span * frac, start + MIN_TRAVEL);
+        const T = rotFor(s.a0 + s.span * frac, start + travel);
         v0 = bisect((v) => runAt(v).rest >= T);
         if (v0 === null) continue;
         const r = runAt(v0, true);
@@ -370,7 +405,7 @@ window.FiveWheel = (() => {
   }
 
   // How the spin ends, decided from the result alone, so teases happen on wins and misses alike.
-  function plan(s, start) {
+  function plan(s, start, opt) {
     const all = slices(), n = all.length, behind = all[(s.i + 1) % n], ahead = all[(s.i + n - 1) % n];
     let kind = null;
     if (s.kind === 'jackpot') kind = 'tip';
@@ -380,7 +415,7 @@ window.FiveWheel = (() => {
     else if (BIG.has(ahead.key) && Math.random() < 0.25) kind = 'back';
     else if (BIG.has(behind.key) && Math.random() < 0.25) kind = 'tip';
     else if (Math.random() < 0.08) kind = Math.random() < 0.5 ? 'tip' : 'back';
-    return (kind && solve(all, s, kind, start)) || solve(all, s, null, start);
+    return (kind && solve(all, s, kind, start, opt)) || solve(all, s, null, start, opt);
   }
 
   // The flapper's bend for a wheel resting at `rot`: leaning on the peg ahead if it stopped against one.
@@ -391,25 +426,29 @@ window.FiveWheel = (() => {
   let pointerDeg = 0;
   const pointerStyle = () => `transform:translateX(-50%) rotate(${pointerDeg.toFixed(2)}deg)`;
 
-  // Play a solved spin: the hand's pull and throw, then the simulation. `landed` runs as the wheel comes to rest, `done`
-  // once the flapper has settled too.
-  function play(p, rotor, start, landed, done) {
+  // Play a solved spin: the lead-in (the hand's pull and throw, or for a wheel thrown at speed `thrown` the ease from
+  // that speed), then the simulation. `landed` runs as the wheel comes to rest, `done` once the flapper has settled too.
+  function play(p, rotor, start, landed, done, thrown) {
     const ptr = $('.wheel-pointer'), r = p.r, last = r.track.length - 1;
-    const wind = hermite(start, start - WIND, 0, 0, WIND_MS), toss = hermite(start - WIND, throwFrom(start, p.v0), 0, p.v0, THROW_MS);
+    const lead = thrown ? [{ ms: BLEND_MS, at: hermite(start, r.track[0], thrown, p.v0, BLEND_MS) }]
+      : [{ ms: WIND_MS, at: hermite(start, start - WIND, 0, 0, WIND_MS) }, { ms: THROW_MS, at: hermite(start - WIND, throwFrom(start, p.v0), 0, p.v0, THROW_MS) }];
+    const leadMs = lead.reduce((a, l) => a + l.ms, 0);
     const stage = $('.wheel-stage');
     const tense = (on) => { stage?.classList.toggle('wheel-tense', on); bulbs(on ? 'tease' : 'spin'); sfx.drone(on); };
     // A tease builds once the wheel is crawling (at most the last 2.5 s before the deciding moment) and ends there.
     const tenseFrom = p.kind ? Math.max(r.slowT ?? p.decisive, p.decisive - 2500) : Infinity;
     let t0 = performance.now(), tick = 0, tensed = false, beatAt = 0, hasLanded = false;
-    sfx.windup();
+    if (!thrown) sfx.windup();
     bulbs('spin');
     const frame = (now) => {
       const e = now - t0;
       let i = -1;
-      if (e < WIND_MS) angle = wind(e / WIND_MS);
-      else if (e < WIND_MS + THROW_MS) angle = toss((e - WIND_MS) / THROW_MS);
-      else {
-        i = Math.min(last, Math.floor(e - WIND_MS - THROW_MS));
+      if (e < leadMs) {
+        let u = e;
+        const part = lead.find((l) => { if (u < l.ms) return true; u -= l.ms; return false; });
+        angle = part.at(u / part.ms);
+      } else {
+        i = Math.min(last, Math.floor(e - leadMs));
         angle = r.track[i]; pointerDeg = r.ptr[i];
         while (tick < r.ticks.length && r.ticks[tick].t <= i) {
           const k = r.ticks[tick++];
@@ -429,22 +468,21 @@ window.FiveWheel = (() => {
   }
 
   // ---- screen effects -----------------------------------------------------------------------------------------------
-  function layer() {
+  function layer(ms = 6000) {
     const el = document.createElement('div');
     el.className = 'wheel-fx-layer';
     el.setAttribute('aria-hidden', 'true');
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 6000);
+    setTimeout(() => el.remove(), ms);
     return el;
   }
   function flash(kind, times = 1) {
-    if (reducedMotion()) return;
-    const el = layer();
+    const el = layer(Math.max(6000, times * 450 + 500));
     el.innerHTML = `<div class="wheel-flash fx-${kind}" style="--times:${times}"></div>`;
   }
   function shake(px) {
     const box = $('.wheel-box');
-    if (!box || reducedMotion()) return;
+    if (!box) return;
     box.style.setProperty('--shake', `${px}px`);
     box.classList.remove('shaking'); void box.offsetWidth; box.classList.add('shaking');
   }
@@ -452,45 +490,47 @@ window.FiveWheel = (() => {
     const g = $('.wheel-bulbs');
     if (g) g.setAttribute('class', `wheel-bulbs${mode ? ` ${mode}` : ''}`);
   }
-  function banner(text, cls) {
-    const el = layer();
-    el.innerHTML = `<div class="wheel-banner ${cls}">${esc(text)}</div>`;
+  function banner(text, cls, ms) {
+    const el = layer(ms + 500);
+    el.innerHTML = `<div class="wheel-banner ${cls}" style="animation-duration:${ms}ms">${esc(text)}</div>`;
   }
-  function rain(emoji, n) {
-    if (reducedMotion()) return;
-    const el = layer();
+  function rain(emoji, n, over = 1.6) { // `over`: the seconds the drops start across
+    const el = layer((over + 3.6) * 1000 + 500);
     el.innerHTML = Array.from({ length: n }, () => `<span class="wheel-rain" style="left:${(Math.random() * 100).toFixed(1)}vw;` +
-      `animation-delay:${(Math.random() * 1.6).toFixed(2)}s;animation-duration:${(2 + Math.random() * 1.6).toFixed(2)}s;font-size:${18 + Math.round(Math.random() * 22)}px">${emoji[Math.floor(Math.random() * emoji.length)]}</span>`).join('');
+      `animation-delay:${(Math.random() * over).toFixed(2)}s;animation-duration:${(2 + Math.random() * 1.6).toFixed(2)}s;font-size:${18 + Math.round(Math.random() * 22)}px">${emoji[Math.floor(Math.random() * emoji.length)]}</span>`).join('');
   }
 
   // Each prize's moment: its sound, flash, confetti; the jackpot gets everything.
   function celebrate(s, r) {
-    const box = $('.wheel-box'), still = reducedMotion();
     bulbs('win');
-    setTimeout(() => bulbs(''), s.kind === 'jackpot' ? 5200 : 2400);
-    const burst = (big, style) => { if (!still) confetti(box, big, style); };
+    const top = s.kind === 'credits' && r.amount >= BIG_CREDITS;
+    setTimeout(() => bulbs(''), s.kind === 'jackpot' ? JACKPOT_MS + 500 : top ? BIG_MS + 300 : 2400);
+    const burst = (big, style) => confetti($('.wheel-box'), big, style); // looked up each time: the page redraws mid-effect
     switch (s.kind) {
-      case 'credits': sfx.credits(r.amount >= 200); flash('credits', r.amount >= 400 ? 2 : 1); burst(r.amount >= 400); if (r.amount >= 200) shake(r.amount >= 400 ? 8 : 5); break;
+      case 'credits':
+        if (top) { // between an ordinary win and the jackpot: a banner, a few bursts and a shower of coins, no dim
+          sfx.bigCredits(); flash('credits', 3); shake(9);
+          banner(`+${fmt.credits(r.amount)} credits!`, 'big', BIG_MS);
+          [0, 600, 1200, 1900].forEach((t) => setTimeout(() => burst(true), t));
+          rain(['🪙'], 50, 1.4);
+          break;
+        }
+        sfx.credits(r.amount >= 500); flash('credits'); burst(false); if (r.amount >= 500) shake(5);
+        break;
       case 'bananas': sfx.bananas(); flash('bananas'); burst(false, { emoji: ['🍌'] }); break;
       case 'boost': sfx.boost(); flash('boost', 2); burst(false, { emoji: ['⚡'] }); break;
       case 'insurance': sfx.insurance(); flash('insurance'); burst(false, { emoji: ['🛡️'] }); break;
       case 'item': sfx.item(); flash('item', 2); shake(6); burst(false); setTimeout(() => burst(false, { emoji: ['🎁', '✨'] }), 400); break;
       case 'again': sfx.again(); flash('again'); break;
-      case 'nothing': {
-        sfx.nothing();
-        const stage = $('.wheel-stage');
-        if (stage && !still) { stage.classList.add('wheel-sad'); setTimeout(() => stage.classList.remove('wheel-sad'), 1800); }
-        if (!still) { const el = layer(); el.innerHTML = '<div class="wheel-nom">🐒<span>nom</span></div>'; }
-        break;
-      }
       case 'jackpot': {
         sfx.jackpot();
         document.documentElement.classList.add('wheel-dim');
-        setTimeout(() => document.documentElement.classList.remove('wheel-dim'), 4200);
-        flash('jackpot', 3); shake(12);
-        banner(`JACKPOT! +${fmt.credits(r.amount || 0)}`, 'jackpot');
-        [0, 450, 900, 1500, 2100].forEach((t) => setTimeout(() => burst(true), t));
-        rain(['🌟', '🪙', '⭐'], 60);
+        document.documentElement.style.setProperty('--wheel-dim-ms', `${JACKPOT_MS}ms`);
+        setTimeout(() => document.documentElement.classList.remove('wheel-dim'), JACKPOT_MS);
+        flash('jackpot', 5); shake(12);
+        banner(`JACKPOT! +${fmt.credits(r.amount || 0)}`, 'jackpot', JACKPOT_MS - 600);
+        for (let t = 0; t < JACKPOT_MS - 2000; t += 650) setTimeout(() => burst(true), t);
+        rain(['🌟', '🪙', '⭐'], 140, JACKPOT_MS / 1000 - 3.5);
         break;
       }
       default: break;
@@ -498,9 +538,25 @@ window.FiveWheel = (() => {
   }
 
   // ---- spinning -----------------------------------------------------------------------------------------------------
-  async function spin(force) {
+  // `thrown`: the speed (deg/ms) the wheel was let go at, when it was thrown by hand; else the page throws it.
+  async function spin(force, thrown) {
     if (spinning || !data.me) return;
     error = ''; result = null; spinning = true;
+    $('.wheel-box')?.classList.remove('grabbable');
+    // A thrown wheel keeps turning at the speed it left the hand until the spin is solved.
+    let coast = null;
+    if (thrown && $('#wheel-rotor')) {
+      coast = { t0: performance.now(), a0: angle, on: true, handoff: null };
+      bulbs('spin');
+      const roll = (now) => {
+        if (!coast.on) return;
+        const h = coast.handoff;
+        if (h && now >= h.at) { coast.on = false; angle = h.angle; h.go(); return; }
+        turnTo(coast.a0 + thrown * (now - coast.t0), true);
+        requestAnimationFrame(roll);
+      };
+      requestAnimationFrame(roll);
+    }
     const live = $('#wheel-live'), act = $('#wheel-act');
     if (live) live.innerHTML = resultLine();
     if (act) act.innerHTML = spinArea();
@@ -511,6 +567,7 @@ window.FiveWheel = (() => {
     try {
       r = await api('/api/wheel/spin', { method: 'POST', body: JSON.stringify(typeof force === 'string' ? { segment: force } : {}) });
     } catch (e) {
+      if (coast) coast.on = false;
       spinning = false; error = e.message; releaseBalance(); draw(); return;
     }
     const s = slices()[r.segment], rotor = $('#wheel-rotor');
@@ -524,20 +581,26 @@ window.FiveWheel = (() => {
       pointerDeg = restTilt(angle);
       draw();
     };
-    if (!rotor || reducedMotion()) {
+    if (!rotor) {
       angle = rotFor(s.a0 + s.span / 2, angle + 360);
-      if (rotor) rotor.style.transform = `rotate(${angle}deg)`;
       finish();
       return;
     }
     rotor.style.transition = 'none';
-    const start = angle, p = plan(s, start);
+    // A coasting wheel hands over a moment from now, at the angle it will have reached by then (solving takes a few
+    // frames, and the coast is by the clock, so it doesn't lose its place).
+    const at = coast ? performance.now() + HANDOFF_MS : 0;
+    const start = coast ? coast.a0 + thrown * (at - coast.t0) : angle;
+    const opt = coast ? { from: (v0) => start + ((thrown + v0) * BLEND_MS) / 2, travel: Math.min(THROWN_MAX, Math.max(THROWN_MIN, thrown * 900)) } : undefined;
+    const p = plan(s, start, opt);
     if (!p) { // can't happen with the wheel's slices, but never leave a spin hanging
+      if (coast) coast.on = false;
       angle = rotFor(s.a0 + s.span / 2, start + 360); rotor.style.transform = `rotate(${angle}deg)`; finish(); return;
     }
     let settled = null;
     const flapperDone = new Promise((res) => { settled = res; });
-    play(p, rotor, start, () => finish(flapperDone), settled);
+    const go = () => play(p, rotor, start, () => finish(flapperDone), settled, coast ? thrown : 0);
+    if (coast) coast.handoff = { at, angle: start, go }; else go();
   }
 
   function bindSound() {
@@ -550,8 +613,58 @@ window.FiveWheel = (() => {
     });
   }
 
+  // Turn the wheel to `rot` by hand (a drag, or coasting after a throw): the flapper leans on a peg it's against and
+  // ticks as each one passes.
+  function turnTo(rot, fast) {
+    if (sliceAt(rot).i !== sliceAt(angle).i) sfx.tick(fast);
+    angle = rot; pointerDeg = restTilt(rot);
+    const rotor = $('#wheel-rotor'), ptr = $('.wheel-pointer');
+    if (rotor) rotor.style.transform = `rotate(${angle}deg)`;
+    if (ptr) ptr.style.transform = `translateX(-50%) rotate(${pointerDeg.toFixed(2)}deg)`;
+  }
+
+  // Grab the wheel and throw it: a drag turns it with the pointer (backward only PULL_BACK degrees, against the
+  // flapper), and letting go while it's moving forward at MIN_THROW or more spins it at that speed.
+  function bindGrab(box) {
+    grab = null; // a redraw replaces the wheel: a drag on the old one is over
+    const where = (e) => {
+      const b = box.getBoundingClientRect(), x = e.clientX - (b.left + b.width / 2), y = e.clientY - (b.top + b.height / 2);
+      return { deg: (Math.atan2(y, x) * 180) / Math.PI, r: Math.hypot(x, y) / (b.width / 2) };
+    };
+    box.addEventListener('pointerdown', (e) => {
+      if (!canGrab() || grab || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const p = where(e);
+      if (p.r < 0.27 || p.r > 0.9) return; // not the hub, and not outside the rim
+      e.preventDefault();
+      try { box.setPointerCapture(e.pointerId); } catch (err) { /* the drag still works while the pointer stays over the wheel */ }
+      ctx(); // audio starts on the press, so the browser allows the ticks
+      const rotor = $('#wheel-rotor'); if (rotor) rotor.style.transition = 'none';
+      grab = { id: e.pointerId, deg: p.deg, floor: angle - PULL_BACK, trail: [{ t: performance.now(), a: angle }] };
+      box.classList.add('grabbing');
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (!grab || e.pointerId !== grab.id) return;
+      const p = where(e), d = mod(p.deg - grab.deg + 180, 360) - 180, now = performance.now();
+      grab.deg = p.deg;
+      turnTo(Math.max(grab.floor, angle + d), false);
+      grab.trail.push({ t: now, a: angle });
+      while (grab.trail.length > 2 && now - grab.trail[0].t > 120) grab.trail.shift();
+    });
+    const release = (e) => {
+      if (!grab || e.pointerId !== grab.id) return;
+      const now = performance.now(), trail = grab.trail, first = trail[0], last = trail[trail.length - 1];
+      grab = null;
+      box.classList.remove('grabbing');
+      // The speed over the last moments of the drag; a wheel held still before letting go wasn't thrown.
+      const v = now - last.t < 80 && last.t > first.t ? (last.a - first.a) / (last.t - first.t) : 0;
+      if (e.type === 'pointerup' && v >= MIN_THROW) spin(undefined, Math.min(v, MAX_THROW)); // too soft: it stays where it was left
+    };
+    box.addEventListener('pointerup', release);
+    box.addEventListener('pointercancel', release);
+  }
+
   function bind(viewEl) {
-    $('#wheel-spin', viewEl)?.addEventListener('click', () => spin());
+    const box = $('.wheel-box', viewEl); if (box) bindGrab(box);
     bindSound();
   }
 

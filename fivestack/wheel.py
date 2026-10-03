@@ -12,7 +12,7 @@ library). Each slice's size on the wheel is its chance (`SEGMENTS` weights out o
 - a boost token (a single of up to TOKEN_MAX_STAKE credits pays TOKEN_BOOST more profit) or an insurance token (a
   single that loses gets its stake back, up to TOKEN_MAX_STAKE credits, also free): `wheel_perks`, used from the bet
   slip on the single the bettor picks (BetManager.place()'s `tokens`) and paid by HouseManager.refunds();
-- another spin today, or nothing at all ("Onkey ate it").
+- two more spins today ("2x respin").
 
 The server picks the slice (`secrets`); the page only animates to it. In demo mode (`unlimited`) there's no daily
 limit and a spin can ask for a slice by key, so the page can be tried out (and tested) as often as you like.
@@ -27,19 +27,20 @@ from .bets import TOKEN_BOOST, TOKEN_MAX_STAKE, BetError
 
 # key, label (what the slice says), kind, amount, weight (out of 1000; the slice's share of the wheel)
 SEGMENTS = [
-    {"key": "c50", "label": "50 credits", "kind": "credits", "amount": 50, "weight": 210},
+    {"key": "c100", "label": "100 credits", "kind": "credits", "amount": 100, "weight": 260},
     {"key": "b50", "label": "50 bananas", "kind": "bananas", "amount": 50, "weight": 130},
     {"key": "boost", "label": "Boost token", "kind": "boost", "amount": None, "weight": 90},
-    {"key": "c100", "label": "100 credits", "kind": "credits", "amount": 100, "weight": 150},
-    {"key": "ate", "label": "Onkey ate it", "kind": "nothing", "amount": None, "weight": 55},
-    {"key": "c200", "label": "200 credits", "kind": "credits", "amount": 200, "weight": 80},
+    {"key": "c250", "label": "250 credits", "kind": "credits", "amount": 250, "weight": 150},
+    {"key": "again2", "label": "2x respin", "kind": "again", "amount": 2, "weight": 55},
+    {"key": "c500", "label": "500 credits", "kind": "credits", "amount": 500, "weight": 80},
     {"key": "insure", "label": "Insurance", "kind": "insurance", "amount": None, "weight": 80},
     {"key": "b100", "label": "100 bananas", "kind": "bananas", "amount": 100, "weight": 70},
     {"key": "jackpot", "label": "Jackpot", "kind": "jackpot", "amount": None, "weight": 5},
-    {"key": "again", "label": "Spin again", "kind": "again", "amount": None, "weight": 50},
-    {"key": "item", "label": "Free cosmetic", "kind": "item", "amount": None, "weight": 30},
-    {"key": "c400", "label": "400 credits", "kind": "credits", "amount": 400, "weight": 50},
+    {"key": "c1000", "label": "1000 credits", "kind": "credits", "amount": 1000, "weight": 30},
+    {"key": "item", "label": "Free cosmetic", "kind": "item", "amount": None, "weight": 50},
 ]
+# Spins a prize adds to its day, by the spin's stored key ("again" is the retired "Spin again" slice).
+EXTRA_SPINS = {"again": 1, "again2": 2}
 TOTAL_WEIGHT = sum(s["weight"] for s in SEGMENTS)
 ALL_ITEMS_OWNED_BANANAS = 100  # the cosmetic slice when they already own every item
 
@@ -95,13 +96,13 @@ class WheelManager:
         self.db, self.house, self.unlimited = db, house, unlimited
 
     def spins_left(self, name, now=None):
-        """1 if they haven't spun today (or won "Spin again" with their last spin today), else 0; always
-        UNLIMITED_SPINS in demo mode."""
+        """Spins they have left today: 1, plus 2 for each "2x respin" they've landed today, less the spins they've
+        had; always UNLIMITED_SPINS in demo mode."""
         if self.unlimited:
             return UNLIMITED_SPINS
         day = wheel_day(now or time.time())
         rows = self.db.query("SELECT prize FROM wheel_spins WHERE lower(bettor)=lower(?) AND day=?", (name, day))
-        return max(0, 1 + sum(r["prize"] == "again" for r in rows) - len(rows))
+        return max(0, 1 + sum(EXTRA_SPINS.get(r["prize"], 0) for r in rows) - len(rows))
 
     def token_counts(self, name):
         """How many of each token the bettor has ready: {"boost": n, "insurance": n}."""
@@ -191,7 +192,7 @@ class WheelManager:
                                  (name, item["id"], 0, time.time()))
             self.db.conn.commit()
             return None, f"Free cosmetic: {item['name']}", json.dumps({"item_id": item["id"], "slot": item["slot"]})
-        return None, seg["label"], None  # spin again / Onkey ate it
+        return None, seg["label"], None  # 2x respin
 
     def _bananas(self, name, amount, ref, note):
         self.db.conn.execute("INSERT OR IGNORE INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) "
