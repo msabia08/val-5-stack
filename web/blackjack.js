@@ -69,7 +69,7 @@ window.FiveBlackjack = (() => {
     const follow = pr && peeked.has(prKey) && !followed.has(prKey);
     if (follow) {
       followed.add(prKey);
-      setTimeout(() => { if (state.view === 'blackjack' && $('#bj-root')) C.say($('#bj-onkey'), 'peek', {}, followLine(pr)); }, wait + 150);
+      setTimeout(() => { if (state.view === 'blackjack' && $('#bj-root')) C.say($('#bj-onkey'), 'peek', {}, followLine(pr), pr.honest ? 'gold' : 'red'); }, wait + 150);
     }
     if (fresh.length) setTimeout(() => react(fresh, follow), wait);
     planHint(d, wait);
@@ -88,14 +88,14 @@ window.FiveBlackjack = (() => {
       const pk = now.me.peek;
       if (pk) { // a peek replaces the hint, and no button lights up
         peeked.add(peekKey(now, pk));
-        C.say($('#bj-onkey'), 'peek', {}, peekLine(now, pk));
+        C.say($('#bj-onkey'), 'peek', {}, peekLine(now, pk), 'gold');
         return;
       }
       const round = `${now.table}:${now.round}`;
       if (hintRounds.has(round) || hintRounds.has(`${now.table}:${now.round - 1}`) || Math.random() >= HINT_CHANCE) return;
       hintRounds.add(round);
       hintShown = key;
-      C.say($('#bj-onkey'), 'hint', {}, hintLine(now));
+      C.say($('#bj-onkey'), 'hint', {}, hintLine(now), 'gold');
       refresh();
     }, wait + HINT_MS);
   }

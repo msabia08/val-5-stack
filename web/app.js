@@ -143,6 +143,7 @@
     bananas.title = me ? `${nb} bananas. Open Onkey's Shop.` : 'Sign in to see your bananas';
     chip.innerHTML = `<span class="me-avatar" aria-hidden="true">${me ? shop.badgeOf(me.name) : '🐒'}</span>` +
       `<span class="me-name">${me ? shop.nameHtml(me.name) : 'Sign in'}</span>`;
+    chip.classList.toggle('me-anon', !me); // a phone shows the avatar alone once you're signed in
     chip.title = me ? `Signed in as ${me.name}: your profile, password and sign out` : 'Sign in to bet and shop';
     accountMenuRefresh();
     if (!me) return;
@@ -363,13 +364,6 @@
     const s = state.status;
     if (!s) return;
     const t = s.tracker || {};
-    const rec = s.record || {};
-    const el = $('#team-record');
-    if (rec.games) {
-      el.textContent = `${rec.wins}-${rec.losses}${rec.draws ? '-' + rec.draws : ''} as a ${stackWord()} · ${Math.round((rec.wins / rec.games) * 100)}% win rate`;
-    } else {
-      el.textContent = s.configured ? `No ${stackWord()} games tracked yet` : 'Setup needed';
-    }
     const pill = $('#status-pill');
     if (s.demo) {
       pill.innerHTML = '<span class="dot ok"></span>Demo data';
@@ -443,7 +437,7 @@
   }
 
   // ---- overview -------------------------------------------------------------
-  // The front page, sized to fit one 1920x1080 screen: three tiles (record, form, last night) and the next game's
+  // The front page, sized to fit one 1920x1080 screen: three tiles (record, form, last session) and the next game's
   // odds on top, then a 3 x 2 grid of cards: the last game, betting and what's riding on the next game, then who's
   // trending, the maps and Onkey's. Full detail lives on Matches
   // (recaps), Place bets / Standings and Players; most things here click through to them.
@@ -451,8 +445,9 @@
   function viewOverview() {
     const st = state.stats, team = st.team, idx = memberIndex();
     if (!team.games) return emptyState();
-    // The last night the squad played (the Matches tab's rule: a break of more than NIGHT_GAP_S starts a new night).
-    // The last game itself has its own card below, so this tile says how the whole night went.
+    // The last session the squad played: the newest run of games with no break longer than NIGHT_GAP_S between starts
+    // (the Matches tab's nights), so it isn't tied to the calendar day and a session past midnight stays whole.
+    // The last game itself has its own card below, so this tile says how the whole session went.
     const ts = (g) => Date.parse(g.started_at) / 1000 || 0;
     const night = [];
     for (const g of team.recent) {
@@ -466,10 +461,10 @@
       `<a href="#matches" class="chip ${esc(g.result || '')}" data-recap-match="${esc(g.match_id)}" ` +
       `title="${esc(`${g.rounds_won}–${g.rounds_lost} on ${g.map || '?'}, ${fmt.date(g.started_at)}: open the recap`)}">${fmt.res(g.result)}</a>`).join('');
     const tiles = [
-      kpi('Record', `${team.wins}–${team.losses}${team.draws ? `–${team.draws}` : ''}`, `${fmt.pct(team.win_rate)} win rate · since ${fmt.date(team.first_played)}`),
-      kpi('Form', `<span class="ov-form">${form}</span>`, `Last ${Math.min(OV_FORM, team.recent.length)} games · streak ${team.streak || '–'}`),
-      kpi('Last night', night.length ? `<span class="${nightW > nightL ? 'up' : nightW < nightL ? 'down' : ''}">${nightW}–${nightL}</span>` : '–',
-        night.length ? `${nightDay} · ${night.length}${night.length === team.recent.length ? '+' : ''} game${night.length === 1 ? '' : 's'}` : ''),
+      kpi('Record', `${team.wins}–${team.losses}${team.draws ? `–${team.draws}` : ''}`, `${fmt.pct(team.win_rate)} win rate`),
+      kpi('Form', `<span class="ov-form">${form}</span>`, `Last ${Math.min(OV_FORM, team.recent.length)} games`),
+      kpi('Last session', night.length ? `<span class="${nightW > nightL ? 'up' : nightW < nightL ? 'down' : ''}">${nightW}–${nightL}</span>` : '–',
+        nightDay),
     ];
     return `<section class="ov-top">${tiles.join('')}${overviewNext()}</section>
       <section class="ov-grid">${overviewLastGame(idx)}${overviewBetting()}${overviewRiding()}
@@ -1457,8 +1452,19 @@
     $('.nav-trigger', group).setAttribute('aria-expanded', String(open));
   }
   const closeNavMenus = (except) => navGroups().forEach((g) => { if (g !== except) navMenu(g, false); });
+  // On a phone the nav is one full-screen menu behind the ☰ button: style.css's phone block draws #tabs that way while
+  // <html> has .nav-open, every page under its group, with Sync, Setup and Theme pinned along the bottom. A pick, a
+  // page change, the account menu or Escape closes it.
+  function navSheet(open) {
+    document.documentElement.classList.toggle('nav-open', open);
+    $('#nav-toggle').setAttribute('aria-expanded', String(open));
+    if (open) accountMenu(false);
+  }
   function bindNavMenus() {
     document.documentElement.classList.toggle('no-nav-icons', !NAV_ICONS);
+    $('#nav-toggle').addEventListener('click', () => navSheet(!document.documentElement.classList.contains('nav-open')));
+    $('#tabs').addEventListener('click', (e) => { if (e.target.closest('a')) navSheet(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') navSheet(false); });
     navGroups().forEach((group) => {
       const menu = $('.nav-menu', group), trigger = $('.nav-trigger', group);
       const items = () => $$('a', menu);
@@ -1505,6 +1511,7 @@
     window.FiveViz?.hideTip();
     $$('#tabs a, #setup-btn').forEach((a) => a.classList.toggle('active', a.dataset.view === state.view)); // Setup lives on the ⚙ button
     syncNavGroups();
+    navSheet(false);
     render();
   }
 
@@ -1544,6 +1551,7 @@
     chip.setAttribute('aria-expanded', String(open));
     if (!open) return;
     closeNavMenus();
+    navSheet(false);
     // Right-aligned under the chip (the menu sits in .topbar-right, which is position: relative).
     menu.style.right = `${Math.max(0, menu.parentElement.getBoundingClientRect().right - chip.getBoundingClientRect().right)}px`;
     menu.innerHTML = accountMenuHtml();

@@ -92,22 +92,33 @@ window.FiveSlots = (() => {
   // left: the straight runs end where the corners curve (20px round at the top, 12px at the bottom, following the
   // cabinet's 28px and 20px corners), with a light on each top curve. Each carries its place in a repeating run of 9
   // (--k), which staggers the CSS chase so the light travels round; the lights never move.
-  const LEDS = (() => {
-    const out = [], TOP = 62, SIDE = 40, arc = (8 + 20 - 20 * Math.SQRT1_2).toFixed(2);
+  // The phone's cabinet (style.css's phone block) is a third as wide, so its frame has fewer lights along the top and
+  // bottom (about 12px apart, like its sides) and more in the corners (two on each top curve, one on each bottom
+  // curve), so the spacing stays even all the way round.
+  const ledFrame = (phone) => {
+    const out = [], TOP = phone ? 28 : 62, SIDE = 40;
     const span = (from, to, n, k) => `calc(${from}px + (100% - ${from + to}px) * ${(k / (n - 1)).toFixed(4)})`;
     const put = (x, y) => out.push(`<i style="left:${x};top:${y};--k:${8 - (out.length % 9)}"></i>`);
+    // A light on a corner's curve: `deg` round it clockwise, on a circle of radius r whose centre is c px in from both edges.
+    const corner = (right, bottom, c, r, deg) => {
+      const t = deg * Math.PI / 180, turn = right === bottom ? [Math.cos(t), Math.sin(t)] : [Math.sin(t), Math.cos(t)];
+      const px = (far, v) => (far ? `calc(100% - ${(c - r * v).toFixed(2)}px)` : `${(c - r * v).toFixed(2)}px`);
+      put(px(right, turn[0]), px(bottom, turn[1]));
+    };
+    const topCurve = phone ? [30, 60] : [45], bottomCurve = phone ? [45] : [];
     for (let k = 0; k < TOP; k++) put(span(28, 28, TOP, k), '8px');
-    put(`calc(100% - ${arc}px)`, `${arc}px`);
+    topCurve.forEach((deg) => corner(true, false, 28, 20, deg));
     for (let k = 0; k < SIDE; k++) put('calc(100% - 8px)', span(28, 20, SIDE, k));
+    bottomCurve.forEach((deg) => corner(true, true, 20, 12, deg));
     for (let k = 0; k < TOP; k++) put(span(20, 20, TOP, TOP - 1 - k), 'calc(100% - 8px)');
+    bottomCurve.forEach((deg) => corner(false, true, 20, 12, deg));
     for (let k = 0; k < SIDE; k++) put('8px', span(28, 20, SIDE, SIDE - 1 - k));
-    put(`${arc}px`, `${arc}px`);
+    topCurve.forEach((deg) => corner(false, false, 28, 20, deg));
     return out.join('');
-  })();
-  // The sound toggle's speaker, crossed out when muted.
-  const speaker = (off) => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${off
-    ? '<path d="M16 9.5l5 5M21 9.5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    : '<path d="M16 8.8a4.5 4.5 0 0 1 0 6.4M18.6 6.2a8.2 8.2 0 0 1 0 11.6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>'}</svg>`;
+  };
+  const LEDS = { wide: ledFrame(false), phone: ledFrame(true) };
+  const leds = () => (matchMedia('(max-width: 640px)').matches ? LEDS.phone : LEDS.wide);
+  const speaker = (off) => window.speakerIcon(off, 20); // the shared icon (common.js)
   const soundLabel = () => (muted ? 'Turn sound on' : 'Mute sound');
   // Each reel's strip matches the machine's display weights ("show", which losing spins are drawn from), reduced to
   // whole cells (10 cherries, 4 Onkeys in 42), spread evenly, with each reel's spread shifted so the three strips
@@ -641,7 +652,7 @@ window.FiveSlots = (() => {
     const message = result ? result.payout ? `${money(result.payout)} credits returned` : 'No winning line' : 'Ready when you are';
     const cashing = !busy && partsOf(result).length;
     const detail = result ? `${signed(result.net)} credits net` : 'Three matching symbols on the centre line pays. Space spins.';
-    return `<div class="slots-layout"><section class="slots-cabinet ${win ? 'slots-win' : ''} ${tier ? `slots-tier-${tier}` : ''} ${busy ? 'slots-busy' : ''}"><div class="slots-leds" aria-hidden="true">${LEDS}</div><div class="slots-body">
+    return `<div class="slots-layout"><section class="slots-cabinet ${win ? 'slots-win' : ''} ${tier ? `slots-tier-${tier}` : ''} ${busy ? 'slots-busy' : ''}"><div class="slots-leds" aria-hidden="true">${leds()}</div><div class="slots-body">
         <div class="slots-marquee"><h2>Slots</h2><button class="slots-sound" id="slot-sound" aria-pressed="${!muted}" aria-label="${soundLabel()}" title="${soundLabel()}">${speaker(muted)}</button></div>
         <div class="slots-stage"><div class="slots-window"><div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span></div>${lever(insufficient)}
 </div>
@@ -711,6 +722,11 @@ window.FiveSlots = (() => {
     }));
     $('#slot-spin', viewEl)?.addEventListener('click', spin);
     $('#slot-lever', viewEl)?.addEventListener('click', spin);
+    // On a phone (style.css's phone block) there's no Spin button or lever to see: tapping the reel window spins. It
+    // goes through the hidden Spin button, so a spin under way, too few credits and signing in behave the same.
+    $('.slots-glass', viewEl)?.addEventListener('click', () => {
+      if (matchMedia('(max-width: 640px)').matches) $('.slots-spin', viewEl)?.click();
+    });
     $('#slot-sound', viewEl)?.addEventListener('click', (e) => {
       muted = !muted; localStorage.setItem('fs.slotsMuted', muted ? '1' : '0');
       const b = e.currentTarget;

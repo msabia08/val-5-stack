@@ -23,6 +23,8 @@ window.FiveArcade = (() => {
   // after a click or key press, so the context is created on the first coin.
   const N = { C1: 34.65, B1: 61.74, Cs2: 69.3, E2: 82.41, Fs2: 92.5, Gs2: 103.83, B2: 123.47, Cs3: 138.59,
     Cs4: 277.18, E4: 329.63, Fs4: 369.99, Gs4: 415.3, B4: 493.88, Cs5: 554.37, E5: 659.25, F5: 698.46, Fs5: 739.99, Gs5: 830.61, B5: 987.77, Cs6: 1108.73, E6: 1318.51 };
+  // The sound buttons' label: the site's speaker icon (common.js) and what it's set to.
+  const soundText = () => `${window.speakerIcon(Sound.muted, 16)} ${Sound.muted ? 'Sound off' : 'Sound on'}`;
   const Sound = (() => {
     let ac = null, master, sfx, musicBus, songBuf = null, songLoading = null, noiseBuf = null;
     let muted = false;
@@ -458,7 +460,7 @@ window.FiveArcade = (() => {
       <div class="cab-marquee big"><span>${esc(info.icon || '')}</span>${esc(info.name)}</div>
       <div class="cab-screen"><canvas width="${W}" height="${H}" id="arcade-canvas" tabindex="0" aria-label="${esc(info.name)} game screen"></canvas><div class="crt"></div></div>
       <div class="cab-controls"><span class="muted small">${esc(CONTROLS[key])}</span>
-        <span class="btn-row"><button class="btn ghost small" id="arcade-mute">${Sound.muted ? '🔇 Sound off' : '🔊 Sound on'}</button>
+        <span class="btn-row"><button class="btn ghost small" id="arcade-mute">${soundText()}</button>
         <button class="btn ghost small" id="arcade-quit">Quit</button></span></div></div>`;
     document.body.append(box);
     document.body.classList.add('modal-open');
@@ -493,7 +495,7 @@ window.FiveArcade = (() => {
       window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey);
       document.removeEventListener('visibilitychange', onHide);
     };
-    $('#arcade-mute', box).addEventListener('click', (e) => { e.currentTarget.textContent = Sound.toggleMute() ? '🔇 Sound off' : '🔊 Sound on'; canvas.focus(); });
+    $('#arcade-mute', box).addEventListener('click', (e) => { Sound.toggleMute(); e.currentTarget.innerHTML = soundText(); canvas.focus(); });
     $('#arcade-quit', box).addEventListener('click', quit);
     const resume = () => { run.paused = false; run.last = performance.now(); Sound.resume(); };
     let lastBeep = 4;
@@ -636,7 +638,7 @@ window.FiveArcade = (() => {
         <div class="arcade-sub">${a.price} ${BANANA} a play · the only prize is glory</div>
         <div class="btn-row arcade-tools">${me ? `<span class="arcade-wallet">${fmt.n1(me.wallet)} ${BANANA} to spend</span>` : ''}
           <button class="btn ghost small" id="jukebox">🎵 Play Onkey's song</button>
-          <button class="btn ghost small" id="arcade-sound">${Sound.muted ? '🔇 Sound off' : '🔊 Sound on'}</button></div></section>
+          <button class="btn ghost small" id="arcade-sound">${soundText()}</button></div></section>
       <div class="arcade-row">${cabinets}</div>
       <section class="card"><div class="section-head"><h2>High scores</h2><span class="muted small">Each player's best, all time</span></div>
         <div class="hs-grid">${boards}</div></section>`;
@@ -654,7 +656,7 @@ window.FiveArcade = (() => {
       btn.textContent = '⏹ Stop';
       jukebox.source.onended = () => { jukebox = null; if (btn.isConnected) btn.textContent = "🎵 Play Onkey's song"; };
     });
-    $('#arcade-sound', view)?.addEventListener('click', (e) => { e.currentTarget.textContent = Sound.toggleMute() ? '🔇 Sound off' : '🔊 Sound on'; });
+    $('#arcade-sound', view)?.addEventListener('click', (e) => { Sound.toggleMute(); e.currentTarget.innerHTML = soundText(); });
   }
 
   return { init, load, viewArcade, bind };
