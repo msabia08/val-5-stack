@@ -61,10 +61,10 @@ SLACK_S = 0.8  # the page starts each throw a moment after the server made it: t
 # What Onkey throws: chances per throw (the rest are plain bananas).
 GOLD_CHANCE, BUNCH_CHANCE, ROTTEN_CHANCE, GREG_CHANCE = 0.05, 0.04, 0.12, 0.10
 GOLD_VALUE, GOLD_TTL_S = 5, 2.5
-BUNCH_SIZE, BUNCH_TTL_S, BUNCH_BONUS, BUNCH_INTERVAL_S, BUNCH_GAP = 5, 4.0, 3, 0.1, 90
+BUNCH_SIZE, BUNCH_TTL_S, BUNCH_BONUS, BUNCH_INTERVAL_S, BUNCH_GAP = 5, 2.0, 3, 0.1, 90
 FREEZE_S = 2.0  # how long a rotten banana stops a bettor picking
 DECOY_GAP = 110  # the rotten decoy lands at least this far from the real banana
-GREG_S = 2.6  # how long Greg takes to walk to the banana once it has landed
+GREG_S = 1.5  # how long Greg takes to walk to the banana once it has landed
 COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
 COMBO_IDLE_S = 8.0
 STREAK_MAX = 7

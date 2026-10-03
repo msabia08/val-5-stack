@@ -797,7 +797,7 @@ one you click is **1 credit**.
 
 - **Catch it in the air** and it pays double.
 - **Golden bananas** pay 5, but rot 2.5 seconds after they land.
-- A **bunch** is five at once: sweep them all inside 4 seconds for 3 more.
+- A **bunch** is five at once: sweep them all inside 2 seconds for 3 more.
 - A brown **rotten banana** sometimes lands beside the real one. Pick it and
   you can't pick anything for 2 seconds.
 - **Greg** sometimes walks in to take a banana. Pick it first, or click Greg to
