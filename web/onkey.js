@@ -21,6 +21,9 @@ window.FiveOnkey = (() => {
   const HUSH_MIN = 15;
   const AWAY_MS = 3 * 60 * 1000, POKE_GAP = 45000; // welcome back after 3 minutes away; a poke at most every 45 s
   const BUBBLE_MS = 5500, BUBBLE_PER_WORD = 280; // how long a line stays up: a 10-word line about 8 seconds
+  // On a phone (style.css's phone block) the bubble covers the chips and the nav, so a line stays half as long.
+  const PHONE_BUBBLE = 0.5;
+  const onPhone = () => matchMedia('(max-width: 640px)').matches;
   const OMINOUS_CHANCE = 0.12, OMINOUS_NIGHT = 0.35; // share of idle lines that are OMINOUS (more after midnight)
   const QUIET_VIEWS = new Set(['blackjack', 'poker']); // the dealer talks there
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -378,7 +381,7 @@ window.FiveOnkey = (() => {
     if (ominous) brand.classList.add('onkey-ominous');
     if (loud && window.FiveCasino && window.FiveCasino.chatter) window.FiveCasino.chatter(noises);
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => brand.classList.remove('onkey-talking', 'onkey-excited', 'onkey-ominous'), BUBBLE_MS + words * BUBBLE_PER_WORD);
+    hideTimer = setTimeout(() => brand.classList.remove('onkey-talking', 'onkey-excited', 'onkey-ominous'), (BUBBLE_MS + words * BUBBLE_PER_WORD) * (onPhone() ? PHONE_BUBBLE : 1));
   }
   const react = (kind, vars = {}, opts = {}) => {
     const list = SAY[kind];

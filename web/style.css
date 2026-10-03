@@ -2378,3 +2378,49 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   text-shadow: 0 1px 2px rgba(0, 0, 0, .6); animation: hunt-pop .7s ease-out forwards; }
 @keyframes hunt-pop { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -40px; } }
 @media (prefers-reduced-motion: reduce) { .hunt-banana.land, .hunt-pop, .hunt-onkey.throw { animation: none; } }
+
+/* ---- phone ------------------------------------------------------------
+   Up to 640px wide; checked at 393 × 659 (an iPhone 15). See "Phone" in docs/DESIGN.md. */
+@media (max-width: 640px) {
+  /* Top bar, three rows: the brand with the icon buttons, your chips, the nav. It scrolls away with the page. */
+  .topbar { position: relative; gap: 8px 6px; padding: 8px 12px; }
+  .topbar-right { display: contents; }  /* its chips and buttons become rows of the top bar itself */
+  .brand { order: 1; flex: 1 1 0; }
+  .brand .sub { display: none; }  /* the record is the Overview's first tile */
+  .brand > div { min-width: 0; }
+  .brand h1 { margin: 0; }
+  .topbar .topbar-right > .btn { order: 2; }
+  .topbar .topbar-right > .status-pill { display: none; }
+  #sync-btn { width: 34px; padding: 0; justify-content: center; font-size: 0; }  /* the ⟳ alone */
+  #sync-btn span { font-size: 15px; }
+  .topbar::before { content: ""; order: 3; flex-basis: 100%; margin-top: -8px; }  /* a row break before the chips */
+  .topbar .topbar-right > .me-chip { order: 4; }
+  .topbar .topbar-right > .me-wheel b { display: none; }  /* the 🎡 alone; the Casino menu's dot says the same */
+  .topbar .topbar-right > .me-profile { max-width: none; flex: 0 1 auto; min-width: 0; margin-left: auto; }
+  .tabs { order: 5; position: relative; width: 100%; gap: 0; justify-content: space-between; }
+  .tabs > * + *::before { display: none; }
+  .tabs > a, .nav-trigger { padding: 9px 8px; font-size: 13px; white-space: nowrap; }
+  .tabs > .nav-group { position: static; min-width: 0; }
+  .nav-trigger { min-width: 0; }
+  .nav-trigger .nav-label { overflow: hidden; text-overflow: ellipsis; }
+  /* Menus span the bar instead of hanging off their button, so none runs off the screen. */
+  .tabs .nav-menu, .nav-menu.account-menu, .nav-menu.theme-menu { left: 0; right: 0; width: auto; }
+  .topbar .nav-menu.account-menu, .topbar .nav-menu.theme-menu { left: 12px; right: 12px; }
+  .topbar .nav-menu.account-menu { right: 12px !important; }  /* over the inline right that app.js sets to line it up under the chip */
+
+  /* Overview: Record and Last night side by side, then Form and Next game full width, then the cards one by one. */
+  .ov-top { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .ov-top > .tile:nth-child(2) { order: 1; grid-column: 1 / -1; }
+  .ov-top > .ov-next { order: 2; grid-column: 1 / -1; }
+  .ov-form { gap: 5px; }
+  .ov-form .chip { flex: 1; padding: 7px 0; text-align: center; }  /* ten across the tile, tall enough to tap */
+  .ov-next-picks { grid-template-columns: minmax(0, 1fr); }
+  .ov-next .odd { padding: 9px 8px; }
+  .ov-grid { grid-template-columns: minmax(0, 1fr); }
+  .ov-grid > .card { margin-bottom: 12px; }
+  .ov-hl .hl-card { flex-wrap: wrap; gap: 2px 12px; }
+  .ov-hl .hl-title { max-width: 100%; white-space: normal; }
+  .ov-trending .ov-spark { display: none; }  /* the sparklines don't fit beside the numbers */
+  .ov-trending .trend-delta { min-width: 36px; margin-left: 3px; }
+  .ov-trending th, .ov-trending td { padding-left: 4px; padding-right: 4px; }
+}

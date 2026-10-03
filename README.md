@@ -8,8 +8,9 @@ your next game** that the squad can bet on with virtual credits.
 
 No Node, no build step, no third-party packages: Python 3.10+ and a browser.
 
-**Screens and theme.** The site is built around a 1920×1080 desktop screen;
-other sizes (phones, tablets, small laptops) aren't supported. It opens in dark
+**Screens and theme.** The site is built around a 1920×1080 desktop screen.
+A phone layout is being added page by page (the Overview so far); tablets and
+small laptops aren't supported. It opens in dark
 mode whatever your computer's own light/dark setting is. Light mode (and any
 theme bought in Onkey's Shop) is one click on ◐ in the top bar, and the site
 remembers your pick.
@@ -203,8 +204,8 @@ That uses a separate synthetic database (`data/demo.db`) and never touches the A
   The **Matches** tab opens with a recap of the latest game (see below); click
   any game in the list, or use *Older* / *Newer*, to recap another.
 - **Overview:** the front page, all on one screen. Across the top: the squad's
-  record, its form (the last 10 results; click one for its recap), last night's
-  record, and the **next game**: the match result odds plus up to two picks on a
+  record, its form (the last 10 results; click one for its recap), the last
+  session's record, and the **next game**: the match result odds plus up to two picks on a
   hot streak, which add to your bet slip like on Place bets. Then the last game
   with its top five highlights (linking to the full recap); betting (who leads,
   and your own place when you're signed in, and the standout bets this season:
@@ -1099,7 +1100,7 @@ check) for every pull request and every push to `main`
 [`docs/DATA.md`](docs/DATA.md) lists every piece of data available: what the HenrikDev API returns (with field
 structures from real responses), what the tracker stores, and what the website's `/api/*` endpoints serve.
 
-[`docs/DESIGN.md`](docs/DESIGN.md) is the design guide for the website: the 1920×1080 dark-first target, layout,
+[`docs/DESIGN.md`](docs/DESIGN.md) is the design guide for the website: the 1920×1080 dark-first target, the phone layout, layout,
 colour tokens, type, the shared components, wording, and how to check a UI change.
 
 ## Notes and limits

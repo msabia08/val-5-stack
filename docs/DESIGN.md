@@ -8,9 +8,10 @@ retire an old one, update this file in the same pull request.
 
 ## Ground rules
 
-- **One screen: 1920×1080 desktop.** The site is built and checked at that size only (the squad plays on PCs,
-  where it's the most common screen). Don't spend effort on phone, tablet or small-laptop layouts. Old
-  `@media (max-width: …)` rules still in `style.css` can stay but aren't maintained.
+- **Two screens: a 1920×1080 desktop and a phone.** The desktop is the main one (the squad plays on PCs, where
+  it's the most common screen); the phone layout (see Phone below) is being added page by page, the Overview and
+  the top bar first. Don't spend effort on tablet or small-laptop widths. Other old `@media (max-width: …)` rules
+  still in `style.css` can stay but aren't maintained.
 - **Dark by default.** The page opens in dark whatever the OS prefers; there is no `prefers-color-scheme` handling.
   Light and the shop themes apply only when picked with ◐ (`data-theme` on `<html>`, saved in `fs.theme`). Design
   and review in dark first, then check light.
@@ -37,6 +38,27 @@ retire an old one, update this file in the same pull request.
   (`.bettors-side`, scrolls with the page because it's taller than the window).
 - **Spacing:** 16px between cards and columns, 12px inside groups (tiles, market boxes), 8px between related
   controls. Keep new spacing on that 4px grid.
+
+## Phone
+
+Everything for phones is in one block at the end of `style.css`, `@media (max-width: 640px)`, checked at 393 × 659
+(an iPhone 15 with Safari's bars showing). It only rearranges what the desktop page already draws: no separate
+markup, no JS. So far it covers the top bar and the Overview; other pages still show their desktop layout.
+
+- **No sideways scrolling.** `document.documentElement.scrollWidth` equals the screen width. A phone zooms the
+  whole page out when anything is wider, which shrinks all the text. Grid columns are `minmax(0, 1fr)` so content
+  can't push them wider.
+- **Top bar:** three rows that scroll away with the page (it isn't pinned): the brand with the ⟳ ⚙ ◐ buttons
+  (no record line under the title, Sync now loses its label, the status pill is hidden), then your chips (the wheel chip is the 🎡 alone), then the
+  nav across the full width. `.topbar-right` is `display: contents`, so its children are ordered as items of the
+  top bar. Every menu (nav groups, account, themes) spans the bar's width.
+  Onkey's bubble covers the chips and the nav, so his lines stay up half as long (`PHONE_BUBBLE` in `onkey.js`).
+- **Overview:** Record and Last session side by side, Form and Next game full width under them, then the six cards
+  one per row in their desktop order. Who's trending drops its sparkline column. It scrolls; the
+  one-screen rule is for the desktop.
+- **Tap targets:** things you tap are at least about 30px tall (Form chips, odds buttons, nav entries).
+- **Checking:** open the page in a phone-sized browser with touch (the Playwright `--device "iPhone 15"` profile),
+  signed in so the chips show, and check dark first. The desktop page must be unchanged at 1920×1080.
 
 ## Navigation
 
