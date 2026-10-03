@@ -1958,8 +1958,9 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 
 /* Blackjack */
 /* The felt fills the screen under the bar: Onkey and his hand at the top, the spots in the middle, the controls at the
-   bottom. Splits add hands side by side, wrapping onto a new row when they run out of room. */
-.bj-felt { display: flex; flex-direction: column; min-height: max(720px, calc(100vh - 230px)); padding: 24px 28px 26px; }
+   bottom. It stops growing at 860px, so a taller window doesn't open a gap between the table print and the spots.
+   Splits add hands side by side, wrapping onto a new row when they run out of room. */
+.bj-felt { display: flex; flex-direction: column; min-height: clamp(720px, calc(100vh - 230px), 860px); padding: 24px 28px 26px; }
 .bj-dealer { display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 186px; }
 .bj-cards { display: flex; justify-content: center; }
 .bj-cards .pcard + .pcard { margin-left: calc(var(--w) * -0.36); }
