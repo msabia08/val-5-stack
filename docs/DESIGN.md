@@ -296,7 +296,8 @@ The table is the page's personality, like the slots cabinet; the side cards are 
   pot sit in the middle, each seat's bet as a chip part-way to the middle, and the status line and action bar sit
   under the oval.
 - **Size**: the tables are the page, so they're big. Blackjack's felt fills the screen under the bar (`.bj-felt`,
-  `min-height: max(720px, 100vh - 230px)`) with the spots centred between Onkey and the controls; poker's oval is
+  `min-height: clamp(720px, 100vh - 230px, 860px)`: the cap keeps a taller window from opening a gap between the
+  table print and the spots), with the spare space between the print and the spots; poker's oval is
   660px tall. Both fit 1920×1080 without scrolling, demo banner included, except the shared blackjack table when a
   seat wraps its split hands onto a second row. Onkey is 112px, his bubble 16px text.
 - **Cards** (`FiveCasino.card()`, `.pcard`): drawn in CSS, no images: rank and suit top left, a big pip bottom right,
