@@ -205,12 +205,16 @@ window.FiveCasino = (() => {
       `<div class="onkey-bubble" role="status" aria-live="polite"><span class="ook" aria-hidden="true"></span><span class="say"></span></div></div>`;
   }
   // Onkey speaks: the bubble shows the monkey noises, then what they mean, while the chatter plays. Greg (kind 'greg')
-  // just talks.
+  // just talks. `tone` tints the bubble: 'gold' for blackjack's hints and peeks, 'red' when a peek turns out a lie.
+  // On a phone (style.css's phone block) there's no dealer on the felt: Onkey stays in the top-left logo and says the
+  // dealer's lines from there (onkey.js speak()).
+  const onPhone = () => matchMedia('(max-width: 640px)').matches;
   const timers = new WeakMap();
-  function say(el, kind, vars, line) {
+  function say(el, kind, vars, line, tone) {
     if (!el) return;
     const text = line || (typeof kind === 'string' && QUIPS[kind] ? quip(kind, vars) : String(kind || ''));
     if (!text) return;
+    if (onPhone()) { window.FiveOnkey?.speak(text, { loud: true, excited: EXCITED.has(kind), table: true, tone }); return; }
     const bubble = el.querySelector('.onkey-bubble');
     const words = text.split(/\s+/).length;
     const n = Math.max(2, Math.min(6, Math.round(words / 2)));
@@ -219,6 +223,8 @@ window.FiveCasino = (() => {
     bubble.querySelector('.ook').textContent = kind === 'greg' ? '*Greg clears his throat*'
       : noises.map((x) => x[0].toUpperCase() + x.slice(1) + (excited ? '!' : '')).join(' ');
     bubble.querySelector('.say').textContent = text;
+    bubble.classList.toggle('tone-gold', tone === 'gold');
+    bubble.classList.toggle('tone-red', tone === 'red');
     el.classList.remove('talking');
     void el.offsetWidth; // restart the animation
     el.classList.add('talking');

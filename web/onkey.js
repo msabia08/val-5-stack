@@ -21,7 +21,7 @@ window.FiveOnkey = (() => {
   const HUSH_MIN = 15;
   const AWAY_MS = 3 * 60 * 1000, POKE_GAP = 45000; // welcome back after 3 minutes away; a poke at most every 45 s
   const BUBBLE_MS = 5500, BUBBLE_PER_WORD = 280; // how long a line stays up: a 10-word line about 8 seconds
-  // On a phone (style.css's phone block) the bubble hangs over the page itself, so a line stays half as long.
+  // On a phone (style.css's phone block) the bubble covers the top bar's chips, so a line stays half as long.
   const PHONE_BUBBLE = 0.5;
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
   const OMINOUS_CHANCE = 0.12, OMINOUS_NIGHT = 0.35; // share of idle lines that are OMINOUS (more after midnight)
@@ -363,9 +363,11 @@ window.FiveOnkey = (() => {
   let el = null, hideTimer = null, idleTimer = null, lastSaid = '', lastAt = 0;
   const hushed = () => { try { return Number(sessionStorage.getItem('fs.onkeyHush') || 0) > Date.now(); } catch (e) { return false; } };
 
-  function speak(text, { loud = false, excited = false, ominous = false } = {}) {
+  // `table`: a line of the dealer's, which casino.js sends here on a phone, where no dealer sits on the felt; it's the
+  // one thing he says on the quiet views. `tone` ('gold' / 'red') tints the bubble, as the dealer's does.
+  function speak(text, { loud = false, excited = false, ominous = false, table = false, tone = '' } = {}) {
     if (!el || !text || hushed()) return;
-    if (QUIET_VIEWS.has(state?.view)) return;
+    if (QUIET_VIEWS.has(state?.view) && !table) return;
     if (text === lastSaid) return; // never twice in a row
     lastSaid = text; lastAt = Date.now();
     const words = text.split(/\s+/).length;
@@ -373,6 +375,8 @@ window.FiveOnkey = (() => {
     const noises = Array.from({ length: n }, (_, i) => (excited ? (i % 3 === 2 ? 'ook' : 'eek') : (i % 3 === 1 ? 'eek' : 'ook')));
     el.querySelector('.ook').textContent = noises.map((x) => x[0].toUpperCase() + x.slice(1) + (excited ? '!' : '')).join(' ');
     el.querySelector('.say').textContent = text;
+    el.classList.toggle('tone-gold', tone === 'gold');
+    el.classList.toggle('tone-red', tone === 'red');
     const brand = el.closest('.brand');
     brand.classList.remove('onkey-talking', 'onkey-excited', 'onkey-ominous');
     void brand.offsetWidth; // restart the hop
@@ -586,7 +590,7 @@ window.FiveOnkey = (() => {
   }
 
   function walk(view) {
-    const atTable = QUIET_VIEWS.has(view);
+    const atTable = QUIET_VIEWS.has(view) && !onPhone(); // on a phone he stays in the logo and deals from there
     if (atTable === away) return;
     const from = logoRect();
     away = atTable;

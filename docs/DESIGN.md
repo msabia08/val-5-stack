@@ -43,7 +43,7 @@ retire an old one, update this file in the same pull request.
 
 Everything for phones is in one block at the end of `style.css`, `@media (max-width: 640px)`, checked at 393 × 659
 (an iPhone 15 with Safari's bars showing). It rearranges what the desktop page already draws: no separate markup, and the only
-JS is the menu button's. So far it covers the top bar, the Overview and Slots; other pages still show their desktop layout.
+JS is the menu button's. So far it covers the top bar, the Overview, Slots and Blackjack; other pages still show their desktop layout.
 
 - **No sideways scrolling.** `document.documentElement.scrollWidth` equals the screen width. A phone zooms the
   whole page out when anything is wider, which shrinks all the text. Grid columns are `minmax(0, 1fr)` so content
@@ -57,8 +57,11 @@ JS is the menu button's. So far it covers the top bar, the Overview and Slots; o
   Theme (and Log out, on a site with a password) are hidden in the bar and pinned along the menu's bottom edge.
   A pick, a page change, the account menu or Escape closes it. A new page needs nothing extra: it's the same
   markup as the desktop dropdowns.
-- **Onkey's bubble** hangs under the logo over the page, so his lines stay up half as long (`PHONE_BUBBLE` in
-  `onkey.js`).
+- **Onkey's bubble** opens to the right of the logo, over the bar's chips, and reaches at most about 30px below
+  the bar, so it doesn't cover the top of the page (the dealer's cards at the tables). Taps pass through it to the
+  chips and ☰, so it can't be tapped to hush him. His lines stay up half as long (`PHONE_BUBBLE` in `onkey.js`). He never leaves the logo on a phone: at the casino tables there's no dealer on the felt (`walk()`
+  does nothing), and the dealer's lines come from the logo's bubble (`say()` in `casino.js` hands them to
+  `FiveOnkey.speak()` with `table: true`). So no Greg in the dealer's chair either.
 - **Overview:** Record and Last session side by side, Form and Next game full width under them, then the six cards
   one per row in their desktop order. Who's trending drops its sparkline column. It scrolls; the
   one-screen rule is for the desktop.
@@ -69,6 +72,11 @@ JS is the menu button's. So far it covers the top bar, the Overview and Slots; o
   has no panel or screws, just two rows on the case: the seven bet keys, then the readout. The LED frame is drawn with fewer lights along the top and
   bottom and more in the corners (`ledFrame(true)` in `slots.js`), so they stay about 12px apart all the way round. The whole machine fits one screen under the bar. The pay table, recent
   spins, season and biggest wins follow, one per row.
+- **Blackjack:** the table first, a screen tall (the whole hand and its controls fit under the bar), then the
+  table picker (`.casino-bar`, moved under the felt), then the side cards. The sound button is a round button in
+  the felt's top right corner, like the slot machine's. The felt has no dealer, no table print and no tip row. Cards are 100px wide (88 and 56 as hands split; a hand of five or more closes its fan up to fit the width),
+  the seven stake chips are 42px in one row with a plain Deal card under them (no fan of card backs, no shine, no
+  hover), and the four moves share one row beside your bet's chip. Only the solo table has been checked.
 - **Tap targets:** things you tap are at least about 30px tall (Form chips, odds buttons, nav entries).
 - **Checking:** open the page in a phone-sized browser with touch (the Playwright `--device "iPhone 15"` profile),
   signed in so the chips show, and check dark first. The desktop page must be unchanged at 1920×1080.
@@ -471,6 +479,13 @@ The table is the page's personality, like the slots cabinet; the side cards are 
   win, the "Placed" stamp, hot and cold odds borders. No entrance animations on sections or hover effects on every
   card.
 - Respect `prefers-reduced-motion` (Greg drops and confetti already do).
+
+## Onkey's help at blackjack
+
+His hints and his peeks at a card come in a gold-tinted bubble (`tone-gold`), so they stand apart from table talk;
+the follow-up once the card shows is gold if he told the truth and red (`tone-red`) if he lied. The peek itself is
+always gold: the page isn't told it's a lie until the card is out. `say()` in `casino.js` takes the tone, and passes
+it to the logo's bubble on a phone.
 
 ## Accessibility
 
