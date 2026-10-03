@@ -992,7 +992,8 @@ Onkey has a backstory, told in full in [`docs/onkey-lore.md`](docs/onkey-lore.md
   already shutting down, and its only advice on caring for him was one word: bananas. The first week's bananas
   cost $653.
 - A **scientist** offered $25,000 for him and wouldn't say why. The owner kept Onkey, and the scientist has been
-  trying to get him ever since.
+  trying to get him ever since. He talks in a very stereotypical German accent, full of z's: "zis" for "this",
+  "zat" for "that".
 - **Man Strudel**, the scientist's enormous henchman with knife arms, was sent to take Onkey and only asked to
   pet him. He's friendly, which the scientist treats as a fault to fix.
 - A **cowboy and a fortune-telling mirror** tried to steal him too, and backed off when the mirror found it
