@@ -43,7 +43,7 @@ retire an old one, update this file in the same pull request.
 
 Everything for phones is in one block at the end of `style.css`, `@media (max-width: 640px)`, checked at 393 × 659
 (an iPhone 15 with Safari's bars showing). It rearranges what the desktop page already draws: no separate markup, and the only
-JS is the menu button's and the bet slip's handle. So far it covers the top bar, the Overview, Place bets, Slots, Blackjack and the Daily wheel; other pages still show their desktop layout.
+JS is the menu button's, the bet slip's handle and the Banana Hunt's field. So far it covers the top bar, the Overview, Place bets, the Banana Hunt, Slots, Blackjack and the Daily wheel; other pages still show their desktop layout.
 
 - **No sideways scrolling.** `document.documentElement.scrollWidth` equals the screen width. A phone zooms the
   whole page out when anything is wider, which shrinks all the text. Grid columns are `minmax(0, 1fr)` so content
@@ -75,6 +75,11 @@ JS is the menu button's and the bet slip's handle. So far it covers the top bar,
   - *Bet slip:* a bar pinned to the bottom of the screen once it holds a pick, showing the count; tapping it
     opens the slip as a sheet (up to 72% of the screen) with the stakes and the Place button, and tapping again
     closes it. `html.slip-open`, toggled from the slip's heading in `bets.js`; an empty slip shows no bar.
+- **Banana Hunt:** the field comes first, upright and about a screen tall, with no title or description over it;
+  then the tiles two to a row and the top pickers. The server's field is 1200 × 600, so `layout()` in `hunt.js`
+  turns it on its side (the server's x runs down the screen, its y across) and scales each axis to fit. A tap
+  within `TAP_R` (30px, a fingertip) of the banana as drawn counts as picking it and is sent as the banana's
+  own spot, as a keyboard pick is; any other tap is sent where it fell, a miss. The banana is 46px.
 - **Slots:** the cabinet is the screen's width with no lever, no Spin button and no result line under the reels:
   tapping the reel window spins (`slots.js` clicks the hidden Spin button, so a spin under way, too few credits
   and signing in behave the same), and the readout's Win box says what a spin paid. The reels are drawn at 0.65

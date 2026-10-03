@@ -2614,4 +2614,16 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   html:not(.slip-open) #slip > :not(h2) { display: none; }
   .slip-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
     background: var(--accent); color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; }
+  /* Banana Hunt: the field first, upright and about a screen tall (hunt.js layout() sizes it and turns the server's
+     field on its side), with no title or description over it; then the tiles two to a row and the top pickers. */
+  #view:has(.hunt-card) { display: flex; flex-direction: column; }
+  .hunt-card { order: -1; padding: 8px; }
+  .hunt-card > h2, .hunt-card > .how { display: none; }
+  .hunt-stage { margin-top: 0; }
+  .hunt-card > #hunt-live { margin: 8px 4px 2px; }
+  .hunt-banana, .hunt-fly { font-size: 46px; }
+  .hunt-deco { font-size: 30px; }
+  .hunt-onkey { right: 6px; bottom: 4px; width: 84px; }
+  .hunt-onkey.full { width: 110px; }
+  .hunt-msg { max-width: 86%; font-size: 14px; }
 }

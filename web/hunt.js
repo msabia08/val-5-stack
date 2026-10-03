@@ -30,6 +30,22 @@ window.FiveHunt = (() => {
 
   function init(ctx) { ({ state, $, api, draw, esc, fmt, kpi, renderMe, toast, plainName } = ctx); }
 
+  // On a phone the server's field (1200 wide, 600 tall) doesn't fit, so the page draws it upright: the server's x
+  // runs down the screen and its y across, each scaled to a field as wide as the screen and about a screen tall.
+  // `at()` is where a field point is drawn. A tap is judged in screen pixels (within TAP_R of the banana as drawn,
+  // about a fingertip) and reported to the server as the banana's own spot, as picking it with the keyboard is; a
+  // tap anywhere else is reported where it fell, which the server calls a miss. The desktop draws the field as it is.
+  const TAP_R = 30;
+  const onPhone = () => matchMedia('(max-width: 640px)').matches;
+  function layout() {
+    const f = data.hunt.field;
+    if (!onPhone()) return { phone: false, w: f.w, h: f.h, at: (t) => ({ x: t.x, y: t.y }), toField: (x, y) => ({ x, y }) };
+    const w = Math.min(f.h, document.documentElement.clientWidth - 42); // the page's and the card's padding either side
+    const h = Math.min(f.w, Math.max(320, window.innerHeight - 130)); // under the top bar, with the live line below
+    const kx = w / f.h, ky = h / f.w;
+    return { phone: true, w, h, at: (t) => ({ x: t.y * kx, y: t.x * ky }), toField: (x, y) => ({ x: y / ky, y: x / kx }) };
+  }
+
   async function load() {
     const name = state.me?.name || null;
     const next = await api('/api/hunt');
@@ -50,7 +66,7 @@ window.FiveHunt = (() => {
   function scenery() {
     return SCENERY.map(([e, x, y]) => `<span class="hunt-deco" style="left:${x}%;top:${y}%" aria-hidden="true">${e}</span>`).join('');
   }
-  const bananaHtml = (t) => `<button type="button" class="hunt-banana land" id="hunt-banana" style="left:${t.x}px;top:${t.y}px" aria-label="Pick the banana">🍌</button>`;
+  const bananaHtml = (t) => { const p = layout().at(t); return `<button type="button" class="hunt-banana land" id="hunt-banana" style="left:${p.x}px;top:${p.y}px" aria-label="Pick the banana">🍌</button>`; };
 
   function liveLine() {
     const me = data && data.me, h = data && data.hunt;
@@ -62,8 +78,8 @@ window.FiveHunt = (() => {
   const todaySub = (me, h) => (me.done ? 'done for today' : me.under_floor ? `over the cap, but under ${fmt.credits(h.floor)} credits` : `${h.per_banana} credit each`);
 
   function field() {
-    const h = data.hunt, me = data.me;
-    const size = `width:${h.field.w}px;height:${h.field.h}px`;
+    const h = data.hunt, me = data.me, lay = layout();
+    const size = `width:${lay.w}px;height:${lay.h}px`;
     if (!me) return `<div class="hunt-field hunt-locked" style="${size}"><div class="hunt-msg"><a href="#" data-signin>Sign in</a> to hunt bananas for Onkey. Every one you pick is a credit.</div></div>`;
     if (me.done) {
       return `<div class="hunt-field hunt-locked" style="${size}">${scenery()}<img class="hunt-onkey full" src="/assets/onkey.png" alt="" aria-hidden="true">` +
@@ -125,16 +141,17 @@ window.FiveHunt = (() => {
     flying = true;
     const onkey = $('#hunt-onkey', fieldEl);
     if (onkey) { onkey.classList.remove('throw'); void onkey.offsetWidth; onkey.classList.add('throw'); }
-    const x0 = fieldEl.clientWidth - 96, y0 = fieldEl.clientHeight - 104; // Onkey's hand, in the bottom-right corner
+    const lay = layout(), to = lay.at(t);
+    const x0 = fieldEl.clientWidth - (lay.phone ? 66 : 96), y0 = fieldEl.clientHeight - (lay.phone ? 72 : 104); // Onkey's hand, in the bottom-right corner
     const fly = document.createElement('span');
     fly.className = 'hunt-fly';
     fly.textContent = '🍌';
     fly.setAttribute('aria-hidden', 'true');
     fieldEl.appendChild(fly);
-    const dist = Math.hypot(t.x - x0, t.y - y0), arc = Math.max(110, Math.min(240, dist * 0.4));
+    const dist = Math.hypot(to.x - x0, to.y - y0), arc = Math.max(lay.phone ? 60 : 110, Math.min(240, dist * 0.4));
     const frames = [], N = 30;
     for (let i = 0; i <= N; i++) {
-      const k = i / N, x = x0 + (t.x - x0) * k, y = y0 + (t.y - y0) * k - arc * 4 * k * (1 - k);
+      const k = i / N, x = x0 + (to.x - x0) * k, y = y0 + (to.y - y0) * k - arc * 4 * k * (1 - k);
       frames.push({ offset: k, transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) rotate(${Math.round(k * 540)}deg) scale(${(1 + 0.35 * Math.sin(Math.PI * k)).toFixed(3)})` });
     }
     fly.style.transform = frames[0].transform; // in Onkey's hand during the wind-up, not at the field's corner
@@ -173,7 +190,8 @@ window.FiveHunt = (() => {
     set('#hunt-live', liveLine());
   }
 
-  async function pick(x, y, fieldEl) {
+  // x, y: the click in field pixels (what the server judges); `shown`: where it was on the page, for the "+1".
+  async function pick(x, y, fieldEl, shown = layout().at({ x, y })) {
     if (busy || flying || !target || !state.me || !data.me || data.me.done) return;
     busy = true;
     const b = $('#hunt-banana', fieldEl);
@@ -187,7 +205,7 @@ window.FiveHunt = (() => {
         session += 1;
         me.season += r.paid; me.all_time += r.paid; me.bananas += 1;
         if (state.me) { state.me.balance = r.balance; renderMe(); }
-        pop(fieldEl, x, y, `+${r.paid}`);
+        pop(fieldEl, shown.x, shown.y, `+${r.paid}`);
         if (session % 25 === 0) window.FiveOnkey?.note('hunt', { n: session, today: r.today });
       }
       target = r.target;
@@ -212,8 +230,12 @@ window.FiveHunt = (() => {
     if (!fieldEl) return;
     fieldEl.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      const r = fieldEl.getBoundingClientRect();
-      pick(e.clientX - r.left, e.clientY - r.top, fieldEl);
+      const r = fieldEl.getBoundingClientRect(), lay = layout();
+      const shown = { x: e.clientX - r.left, y: e.clientY - r.top };
+      if (!lay.phone) { pick(shown.x, shown.y, fieldEl, shown); return; }
+      const b = target && lay.at(target);
+      const at = b && Math.hypot(shown.x - b.x, shown.y - b.y) <= TAP_R ? target : lay.toField(shown.x, shown.y);
+      pick(at.x, at.y, fieldEl, shown);
     });
     fieldEl.addEventListener('keydown', (e) => { // the banana is a button: Enter or Space picks it
       if ((e.key === 'Enter' || e.key === ' ') && e.target.id === 'hunt-banana' && target) {
