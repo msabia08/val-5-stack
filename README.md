@@ -984,6 +984,28 @@ walks over to deal at the blackjack and poker tables (leaving the logo empty) an
 keeps quiet there, where the dealer does the talking, and clicking his bubble hushes him
 for 15 minutes. His lines are in `web/onkey.js`.
 
+### Onkey's story
+
+Onkey has a backstory, told in full in [`docs/onkey-lore.md`](docs/onkey-lore.md). The short version:
+
+- He turned up in a cardboard box at the home of a man who never ordered him. The company that sent him was
+  already shutting down, and its only advice on caring for him was one word: bananas. The first week's bananas
+  cost $653.
+- A **scientist** offered $25,000 for him and wouldn't say why. The owner kept Onkey, and the scientist has been
+  trying to get him ever since.
+- **Man Strudel**, the scientist's enormous henchman with knife arms, was sent to take Onkey and only asked to
+  pet him. He's friendly, which the scientist treats as a fault to fix.
+- A **cowboy and a fortune-telling mirror** tried to steal him too, and backed off when the mirror found it
+  couldn't read his mind.
+- Two **visitors from under the floorboards** have invited him to a party. The invitation is still open.
+- The scientist built a **plush copy** of Onkey, and now seems to take orders from it.
+- At Halloween the scientist sent **evil M&M's** (their M's turned into E's) to wreck the house. Onkey beat them
+  and rescued Man Strudel.
+
+Nobody knows where Onkey came from or what he's thinking, and the site keeps it that way. The story is where his
+lines, his love of bananas and his darker moments come from. The scientist's portrait is
+`web/assets/scientist.png`.
+
 ## Going online (share it with the squad)
 
 The server can publish itself through a Cloudflare Tunnel, so your friends can
@@ -1110,7 +1132,8 @@ web/                   index.html, app.js, viz.js (charts), bets.js (betting UI)
                        slots.js, blackjack.js, poker.js and casino.js (the Casino: cards, Onkey the dealer),
                        recap.js (match recap), style.css,
                        assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
-                       onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song) (no build step)
+                       onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song;
+                       scientist.png, the scientist from Onkey's story) (no build step)
 tests/selftest.py      offline test of detection, stats, odds and settlement
 data/, tools/          created at runtime (database, cloudflared); not committed
 ```
@@ -1125,6 +1148,9 @@ structures from real responses), what the tracker stores, and what the website's
 
 [`docs/DESIGN.md`](docs/DESIGN.md) is the design guide for the website: the 1920×1080 dark-first target, the phone layout, layout,
 colour tokens, type, the shared components, wording, and how to check a UI change.
+
+[`docs/onkey-lore.md`](docs/onkey-lore.md) is Onkey's story so far: where he came from, the scientist who wants him, and the
+rest of the cast. Anything Onkey says or does on the site should fit it.
 
 ## Notes and limits
 
