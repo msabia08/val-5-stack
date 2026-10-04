@@ -1364,6 +1364,131 @@ def blackjack(shared):
     shared.casino_db = db
 
 
+@section("roulette")
+def roulette(shared):
+    from fivestack import roulette as R
+    from fivestack.house import casino_nets
+
+    db, bets = shared.db, shared.bets
+    # The layout: every bet a real table takes, paying what a real table pays; the banana (zero) pays 36 to 1 straight,
+    # which is exactly fair, and everything else carries the single-zero edge.
+    kinds = {}
+    for b in R.BETS.values():
+        kinds[b["kind"]] = kinds.get(b["kind"], 0) + 1
+    assert kinds == {"straight": 37, "split": 60, "street": 14, "corner": 23, "six": 11, "dozen": 3, "column": 3, "even": 6}, kinds
+    assert len(R.WHEEL) == 37 and sorted(R.WHEEL) == list(range(37)) and len(R.REDS) == 18
+    assert R.BETS["straight:0"]["pays"] == R.BANANA_PAYS == 36 and R.BETS["straight:17"]["pays"] == 35
+    assert abs(R.edge("straight:0")) < 1e-12 and all(abs(R.edge(k) - 1 / 37) < 1e-12 for k in R.BETS if k != "straight:0")
+    assert R.payout({"straight:17": 10, "red": 20, "split:17-20": 5}, 17) == (360 + 90, ["straight:17", "split:17-20"])
+    assert R.payout({"red": 20, "dozen:1": 10, "corner:0-1-2-3": 5}, 0) == (45, ["corner:0-1-2-3"])  # the banana beats the rest
+    assert R.payout({"straight:0": 5}, 0) == (185, ["straight:0"]) and R.colour(0) == "banana" and R.colour(1) == "red"
+    for bad in (None, {}, {"nope": 5}, {"red": 3}, {"red": 7}, {"red": 5.5}, {"red": 505}, {"red": 300, "black": 250}, {"red": "5"},
+                {k: 5 for k in list(R.BETS)[:R.MAX_SPOTS + 1]}):
+        try:
+            R.check_bets(bad)
+            raise AssertionError(f"{bad} should be refused")
+        except BetError:
+            pass
+    assert R.check_bets([{"key": "red", "amount": 5}, {"key": "red", "amount": 10}]) == {"red": 15}
+
+    now = [2_000_000_000.0]
+    rm = R.RouletteManager(db, clock=lambda: now[0])
+    draws = []
+    rm._draw = lambda: draws.pop(0)
+    bets.register("Rou", "secret1")
+    bets.register("Lette", "secret1")
+    start = db.get_bettor("Rou")["balance"]
+    board = {r["name"]: r for r in bets.leaderboard()}
+
+    # The solo table: bets, the spin and the payout in one go, and a retry never charges twice.
+    draws.append(17)
+    v = rm.spin("Rou", {"straight:17": 10, "red": 20}, "roulette-solo-0001")
+    assert v["table"] == "solo" and v["phase"] == "done" and v["result"] == 17 and v["colour"] == "black" and v["history"][0]["number"] == 17
+    last = v["me"]["last"]
+    assert last["staked"] == 30 and last["paid"] == 360 and last["net"] == 330 and last["won"] == ["straight:17"], last
+    assert db.get_bettor("Rou")["balance"] == start + 330 and v["me"]["balance"] == start + 330
+    assert rm.spin("Rou", {"straight:17": 10, "red": 20}, "roulette-solo-0001")["me"]["last"]["id"] == last["id"]
+    assert db.get_bettor("Rou")["balance"] == start + 330 and not draws
+    led = db.query_one("SELECT * FROM house_ledger WHERE game='roulette' AND ref=?", (f"spin:{last['id']}",))
+    assert led["staked"] == 30 and led["take"] == -330 and abs(led["expected"] - 30 / 37) < 1e-3, dict(led)
+    # The banana: a straight bet on it pays 36 to 1, and every bet that doesn't cover it loses.
+    draws.append(0)
+    v = rm.spin("Rou", {"straight:0": 5, "red": 50, "even": 50}, "roulette-solo-0002")
+    assert v["colour"] == "banana" and v["me"]["last"]["paid"] == 185 and v["me"]["last"]["net"] == 80, v["me"]["last"]
+    assert v["log"][-1]["kind"] == "banana" and v["log"][-1]["amount"] == 80
+    for bad_bets, why in (({"red": 500, "black": 5}, "up to 500"),):
+        try:
+            rm.spin("Rou", bad_bets, "roulette-solo-0003")
+            raise AssertionError(why)
+        except BetError as e:
+            assert why in str(e), e
+    db.execute("UPDATE bettors SET balance = 20 WHERE name='Lette'")
+    try:
+        rm.spin("Lette", {"red": 25}, "roulette-solo-0004")
+        raise AssertionError("not enough credits")
+    except BetError as e:
+        assert "Not enough credits" in str(e), e
+    assert db.get_bettor("Lette")["balance"] == 20 and not db.query("SELECT 1 FROM roulette_spins WHERE bettor='Lette'")
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name='Lette'")
+
+    # The shared table: chips go down while betting is open, the clock spins, and nobody sees who won until the wheel stops.
+    balance = db.get_bettor("Rou")["balance"]
+    v = rm.bet("Rou", {"red": 100}, "roulette-shared-0001")
+    assert v["phase"] == "betting" and v["deadline"] == now[0] + R.BET_WINDOW_S and v["me"]["down"] == 100 and v["result"] is None
+    now[0] += 5
+    rm.bet("Lette", {"black": 50, "straight:0": 5}, "roulette-shared-0002")
+    v = rm.bet("Rou", {"dozen:1": 50}, "roulette-shared-0003")
+    assert v["me"]["down"] == 150 and v["me"]["bets"] == {"red": 100, "dozen:1": 50} and len(v["seats"]) == 2
+    assert v["deadline"] == now[0] - 5 + R.BET_WINDOW_S  # more chips don't reopen the clock
+    try:
+        rm.bet("Rou", {"black": 400}, "roulette-shared-0004")
+        raise AssertionError("over the table's limit across bets")
+    except BetError as e:
+        assert "150 down already" in str(e), e
+    assert db.get_bettor("Rou")["balance"] == balance - 150
+    rm.tick(now[0] + 1)
+    assert rm.view("Rou", "shared")["phase"] == "betting"
+    now[0] += R.BET_WINDOW_S
+    draws.append(3)  # red, first dozen
+    rm.tick()
+    v = rm.view("Rou", "shared")
+    assert v["phase"] == "spinning" and v["result"] == 3 and all(s["net"] is None for s in v["seats"]), v["seats"]
+    assert not any(e["kind"] in ("win", "lose", "number") for e in v["log"])  # nothing gives it away yet
+    assert db.get_bettor("Rou")["balance"] == balance - 150 + 200 + 150  # paid as the ball is let go: the page holds it
+    try:
+        rm.bet("Rou", {"red": 5}, "roulette-shared-0005")
+        raise AssertionError("no more bets")
+    except BetError as e:
+        assert "No more bets" in str(e), e
+    now[0] += R.SPIN_S
+    rm.tick()
+    v = rm.view("Lette", "shared")
+    nets = {s["bettor"]: s["net"] for s in v["seats"]}
+    assert v["phase"] == "done" and nets == {"Rou": 200, "Lette": -55} and v["history"][0] == {"number": 3, "colour": "red"}, (nets, v["history"])
+    assert [e["kind"] for e in v["log"] if e["kind"] in ("win", "lose")] == ["win", "lose"] and v["me"]["last"]["net"] == -55
+    now[0] += R.RESULT_S
+    rm.tick()
+    v = rm.view("Rou", "shared")
+    assert v["phase"] == "betting" and v["seats"] == [] and v["result"] is None and v["me"]["down"] == 0 and v["deadline"] is None
+    # Chips still waiting for a spin come back at start-up and on a season reset.
+    balance = db.get_bettor("Lette")["balance"]
+    rm.bet("Lette", {"red": 25}, "roulette-shared-0006")
+    assert db.get_bettor("Lette")["balance"] == balance - 25
+    with rm.lock:
+        rm.void_open("test")
+    assert db.get_bettor("Lette")["balance"] == balance and rm.view("Lette", "shared")["seats"] == []
+    assert db.query_one("SELECT status, payout FROM roulette_spins WHERE request_id='roulette-shared-0006'") == {"status": "void", "payout": 25}
+    # The season's numbers, and the leaderboard's casino column: roulette counts there and stays out of betting profit.
+    season = rm.season("Rou")
+    assert season["spins"] == 4 and season["wins"] == 4 and season["bananas"] == 1 and season["net"] == 330 + 80 + 200, season
+    assert casino_nets(db)["rou"]["roulette"] == 610 and casino_nets(db)["lette"]["roulette"] == -55
+    row = {r["name"]: r for r in bets.leaderboard()}["Rou"]
+    assert row["casino"] == board["Rou"]["casino"] + 610 and abs(row["profit"] - board["Rou"]["profit"]) < 1e-9, row
+    # A signed-out view of the layout has what the page needs to draw the table.
+    lay = R.RouletteManager.layout()
+    assert lay["table_max"] == 500 and lay["banana_pays"] == 36 and len(lay["bets"]) == 157 and lay["bets"]["red"]["pays"] == 1
+
+
 @section("poker")
 def poker(shared):
     from unittest.mock import patch

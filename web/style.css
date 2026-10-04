@@ -2489,6 +2489,74 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   animation: hunt-rain .5s linear infinite; }
 @keyframes hunt-rain { to { background-position: -22px 80px; } }
 
+/* ---- Roulette (web/roulette.js): Onkey's wheel beside the result, the betting layout under them. The wheel and the
+   layout are SVG; the layout's click zones (.rl-zone) are invisible shapes over the cells, the lines and the corners,
+   so every inside bet has its own spot. Colours are the table's own, whatever the theme, like the felt. ---- */
+/* The result on the left, the wheel in the middle, Onkey on the right, where his bubble has room to open. */
+.rl-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 28px; margin: -12px 0 8px; }
+.rl-top .rl-readout { grid-column: 1; grid-row: 1; justify-self: end; align-items: flex-end; }
+.rl-top .rl-wheel { grid-column: 2; grid-row: 1; }
+.rl-top .onkey-dealer { grid-column: 3; grid-row: 1; justify-self: start; }
+/* The wheel is as big as the window's height leaves room for, so the whole table still fits one screen. */
+.rl-wheel { --rl-wheel: clamp(230px, calc(100vh - 648px), 340px); width: var(--rl-wheel); height: var(--rl-wheel); filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .5)); }
+.rl-bowl { fill: #3b2414; stroke: #d9b44a; stroke-width: 3; }
+.rl-pocket { stroke: #d9b44a; stroke-width: .8; }
+.rl-pocket.red, .rl-cell.red rect, .rl-number.red, .rl-history .red, .rl-dot.red { fill: #b3261e; background: #b3261e; }
+.rl-pocket.black, .rl-cell.black rect, .rl-number.black, .rl-history .black, .rl-dot.black { fill: #17171a; background: #17171a; }
+.rl-pocket.banana, .rl-cell.banana path, .rl-number.banana, .rl-history .banana, .rl-dot.banana { fill: #f2c230; background: #f2c230; }
+.rl-pocket-n { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.rl-cone { fill: #5a3416; stroke: #d9b44a; stroke-width: 1.5; }
+.rl-hub { fill: #2e1a0b; stroke: #d9b44a; stroke-width: 2; }
+.rl-ball { fill: #fdfdfb; stroke: #b9b7ad; stroke-width: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); }
+.rl-readout { display: flex; flex-direction: column; gap: 12px; }
+.rl-number { width: 108px; height: 108px; border-radius: 16px; display: grid; place-items: center; font-size: 54px; font-weight: 900; color: #fff;
+  border: 3px solid #d9b44a; font-variant-numeric: tabular-nums; }
+.rl-number.none, .rl-number.rolling { background: rgba(0, 0, 0, .28); color: var(--felt-dim); }
+.rl-number.rolling { animation: rl-roll 0.9s ease-in-out infinite alternate; }
+@keyframes rl-roll { from { opacity: .45; } to { opacity: 1; } }
+.rl-history { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 220px; }
+.rl-history span:not(.muted) { min-width: 26px; height: 26px; padding: 0 4px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff;
+  border: 1px solid rgba(255, 255, 255, .25); font-variant-numeric: tabular-nums; }
+.rl-history span:first-child:not(.muted) { outline: 2px solid #d9b44a; }
+.rl-board { max-width: 920px; margin: 0 auto; }
+.rl-layout { display: block; width: 100%; height: auto; user-select: none; }
+.rl-cell rect, .rl-cell path { stroke: #d9b44a; stroke-width: 1.5; }
+.rl-cell.outside rect { fill: rgba(0, 0, 0, .22); }
+.rl-cell.outside.red rect { fill: #b3261e; }
+.rl-cell.outside.black rect { fill: #17171a; }
+.rl-cell text { fill: #fff; font-size: 18px; font-weight: 800; text-anchor: middle; dominant-baseline: central; pointer-events: none; font-variant-numeric: tabular-nums; }
+.rl-cell.outside text { font-size: 14px; }
+.rl-cell.lit rect, .rl-cell.lit path { filter: brightness(1.55); }
+.rl-cell.hit rect, .rl-cell.hit path { stroke: #fff; stroke-width: 4; filter: brightness(1.35); }
+.rl-zone { fill: transparent; cursor: pointer; }
+circle.rl-zone:hover { fill: rgba(255, 255, 255, .35); }
+rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
+.rl-chip { pointer-events: none; }
+.rl-chip circle { fill: #ffd54a; stroke: #7a5200; stroke-width: 2; stroke-dasharray: 4 3; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .55)); }
+.rl-chip text { fill: #3a2600; font-size: 11px; font-weight: 900; text-anchor: middle; dominant-baseline: central; }
+.rl-chip.placed circle { fill: #f3f1e8; stroke: #2f7de0; stroke-dasharray: none; }
+.rl-chip.placed text { fill: #14365f; }
+.rl-chip.won circle { stroke: #fff; stroke-width: 3; filter: drop-shadow(0 0 6px #ffd54a); }
+.rl-chip.other circle { fill: rgba(170, 200, 255, .85); stroke: #14365f; stroke-width: 1.5; stroke-dasharray: none; }
+.rl-controls { gap: 14px; flex-wrap: wrap; min-height: 0; }
+.rl-felt .felt-status { margin: 10px 0 8px; min-height: 24px; }
+.rl-chips { display: flex; gap: 6px; }
+.rl-pick { background: none; border: 0; padding: 3px; border-radius: 50%; cursor: pointer; opacity: .6; }
+.rl-pick.on { opacity: 1; box-shadow: 0 0 0 2px #ffd54a; }
+.rl-pick:hover { opacity: 1; }
+.rl-total { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+.rl-total b { font-size: 20px; }
+.rl-go { flex: none; width: auto; min-width: 130px; padding: 12px 22px; font-size: 16px; font-weight: 700; }
+.rl-last { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
+.rl-dot { min-width: 34px; height: 34px; padding: 0 6px; border-radius: 8px; display: grid; place-items: center; font-weight: 800; color: #fff; }
+.rl-bets { list-style: none; margin: 0; padding: 0; }
+.rl-bets li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }
+.rl-bets li:last-child { border-bottom: 0; }
+.rl-bets li.won span:first-child { color: var(--up); font-weight: 700; }
+.rl-season { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rl-season b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+.rl-pays th { font-weight: 500; text-align: left; }
+
 /* ---- phone ------------------------------------------------------------
    Up to 640px wide; checked at 393 × 659 (an iPhone 15). See "Phone" in docs/DESIGN.md. */
 @media (max-width: 640px) {

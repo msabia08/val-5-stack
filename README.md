@@ -18,7 +18,7 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack** and **Poker**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack**, **Poker** and **Roulette**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
@@ -131,6 +131,31 @@ casino results, and he thanks you for it.
 Keys: H hit, S stand, D double, P split, Enter deals. Onkey deals each card in turn and turns his hole card over
 before he draws, and the result shows once the last card is down. A hand still open when the server restarts or the
 season ends is refunded.
+
+## Roulette
+
+**Casino › Roulette** is Onkey's wheel: the numbers 1 to 36 and one **banana pocket** where the zero would be, 37
+pockets in all. Like Blackjack there's a **solo table** you spin whenever you like and one **shared table** where
+everyone bets on the same spin.
+
+- **Betting.** Pick a chip (5 to 500), then click the layout to put it down. Every bet a real table takes is there:
+  a single number, a split (the line between two numbers), a street (the bottom edge of a column of three), a corner,
+  a six-line, the dozens and columns, and red / black, odd / even, 1-18 / 19-36. Hovering a spot lights up the numbers
+  it covers. Right-click a spot to take its chips off; Undo and Clear do what they say. You can put up to
+  **500 credits** on one spin.
+- **Payouts.** A number pays 35 to 1, a split 17, a street 11, a corner 8, a six-line 5, a dozen or column 2, and the
+  even-money bets 1 to 1. A straight bet on the **banana pays 36 to 1**, one more than a number.
+- **The odds.** Every bet keeps the same share for the house, 1 in 37 (2.7%), except the straight bet on the banana,
+  which at 36 to 1 is exactly fair. The banana beats every bet that doesn't cover it.
+- **Solo table.** Spin sends your chips and spins at once. Your chips stay on the layout afterwards, so the same bet
+  is one click away.
+- **Shared table.** Place bets puts your chips down for the round (they can't be taken back). The wheel spins
+  20 seconds after the round's first chip, and everyone's chips and results show on the table.
+- **The spin.** The number is drawn the moment the ball is let go; the ball then rolls round the wheel and rattles
+  into that pocket. Nothing gives the result away before it lands: the result line, Onkey and the credits in the top
+  bar all wait for the ball.
+
+Roulette counts in the Standings' **Casino** column with the other casino games, outside betting profit and ROI.
 
 ## Poker
 
@@ -1142,6 +1167,7 @@ fivestack/             the backend package
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table
+  roulette.py          Casino: roulette on Onkey's wheel (a banana for the zero), solo tables and the shared table
   poker.py             Casino: the Texas Hold'em table (lobby, betting, side pots, rake)
   cards.py             decks, shuffling and poker hand ranking
   tables.py            what the live tables share: locking, long-polling, the action log
@@ -1149,7 +1175,7 @@ fivestack/             the backend package
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
 web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), shop.js (Onkey's Shop and Monkeys), arcade.js (Onkey's Arcade),
-                       slots.js, blackjack.js, poker.js and casino.js (the Casino: cards, Onkey the dealer),
+                       slots.js, blackjack.js, poker.js, roulette.js and casino.js (the Casino: cards, Onkey the dealer),
                        recap.js (match recap), style.css,
                        assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
                        onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song;

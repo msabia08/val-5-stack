@@ -25,7 +25,7 @@ window.FiveOnkey = (() => {
   const PHONE_BUBBLE = 0.5;
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
   const OMINOUS_CHANCE = 0.12, OMINOUS_NIGHT = 0.35; // share of idle lines that are OMINOUS (more after midnight)
-  const QUIET_VIEWS = new Set(['blackjack', 'poker']); // the dealer talks there
+  const QUIET_VIEWS = new Set(['blackjack', 'poker', 'roulette']); // the dealer talks there
   const SCI_CHANCE = 0.03; // share of idle lines the scientist takes over (docs/onkey-lore.md); kept rare
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   const fill = (line, vars) => line.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
