@@ -1489,6 +1489,139 @@ def roulette(shared):
     assert lay["table_max"] == 500 and lay["banana_pays"] == 36 and len(lay["bets"]) == 157 and lay["bets"]["red"]["pays"] == 1
 
 
+@section("crash")
+def crash(shared):
+    import math
+    from fivestack import crash as K
+    from fivestack.house import casino_nets
+
+    db, bets = shared.db, shared.bets
+    # The draw: the chance the rocket reaches m is (1 - EDGE) / m, so every cash-out target is worth the same.
+    assert K.crash_point(K.DRAW_N - 1) == 1.0 and K.crash_point(0) == K.MAX_MULT and K.crash_point(485_000 - 1) == 2.0
+    assert K.crash_point(485_000) == 1.99 and K.crash_point(970_000 - 1) == 1.0 and K.crash_point(9_700) == 99.98
+    points = [K.crash_point(r) for r in range(0, K.DRAW_N, 7)]
+    for m in (1.01, 1.5, 2.0, 10.0, 100.0):
+        share = sum(p >= m for p in points) / len(points)
+        assert abs(share - (1 - K.EDGE) / m) < 2e-3 and abs(K.reach_chance(m) - (1 - K.EDGE) / m) < 1e-5, (m, share)
+        assert abs(m * K.reach_chance(m) - (1 - K.EDGE)) < 1e-3  # what a credit on that target is worth
+    assert sum(p == 1.0 for p in points) / len(points) > K.EDGE  # the rocket that never leaves the pad
+    # The climb: e^(GROWTH x seconds), cut to cents, never past the top.
+    assert K.multiplier_at(0) == 1.0 and K.multiplier_at(-3) == 1.0 and K.multiplier_at(1000) == K.MAX_MULT
+    assert K.multiplier_at(K.time_to(2.0) + 1e-6) == 2.0 and K.multiplier_at(K.time_to(2.0) - 0.01) == 1.99
+    assert abs(K.time_to(2.0) - math.log(2) / K.GROWTH) < 1e-12
+    for bad in (None, 0, 7, 5.5, "5", 500, True):
+        _expect_error(K.check_stake, bad, contains="Pick a stake")
+    for bad in (1.0, 100.5, "2", -3, float("nan")):
+        _expect_error(K.check_auto, bad, contains="Auto cash-out")
+    assert K.check_auto(None) is None and K.check_auto("") is None and K.check_auto(2) == 2.0 and K.check_auto(1.239) == 1.24
+
+    now = [2_100_000_000.0]
+    km = K.CrashManager(db, clock=lambda: now[0])
+    assert km.timers is False  # under a test clock nothing runs on a real timer
+    draws = []
+    km._draw = lambda: draws.pop(0)
+    for name in ("Kra", "Shh", "Pad"):
+        bets.register(name, "secret1")
+    start = db.get_bettor("Kra")["balance"]
+    board = {r["name"]: r for r in bets.leaderboard()}
+
+    # The pad: one bet each, the launch a fixed time after the first, and a retry never charges twice.
+    v = km.bet("Kra", 100, None, "crash-bet-00000001")
+    assert v["phase"] == "betting" and v["round"] == 1 and v["deadline"] == now[0] + K.BET_WINDOW_S and v["crash"] is None
+    assert v["me"]["bet"] == {"stake": 100, "auto": None, "cashout": None, "paid": 0} and db.get_bettor("Kra")["balance"] == start - 100
+    assert km.bet("Kra", 100, None, "crash-bet-00000001")["me"]["balance"] == start - 100
+    _expect_error(km.bet, "Kra", 50, None, "crash-bet-00000002", contains="already aboard")
+    _expect_error(km.bet, "Nobody", 50, None, "crash-bet-00000003", contains="Sign in")
+    _expect_error(km.bet, "Shh", 50, None, "short", contains="reference")
+    db.execute("UPDATE bettors SET balance = 20 WHERE name='Pad'")
+    _expect_error(km.bet, "Pad", 25, None, "crash-bet-00000004", contains="Not enough credits")
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name='Pad'")
+    now[0] += 3
+    v = km.bet("Shh", 50, 1.5, "crash-bet-00000005")
+    assert v["deadline"] == now[0] - 3 + K.BET_WINDOW_S and len(v["seats"]) == 2  # a later bet doesn't move the launch
+    km.bet("Pad", 25, 3.0, "crash-bet-00000006")
+    _expect_error(km.cashout, "Kra", contains="not aboard")  # still on the pad
+    km.tick(now[0] + 1)
+    assert km.view()["phase"] == "betting"
+
+    # The flight: the crash point stays on the server; an auto cash-out is paid at exactly its target; a cash-out by
+    # hand at the multiplier when it arrives.
+    launch = now[0] - 3 + K.BET_WINDOW_S
+    draws.append(2.5)
+    now[0] = launch + 0.1
+    km.tick()
+    v = km.view("Kra")
+    assert v["phase"] == "flying" and v["started"] == launch and v["crash"] is None and "crash" not in [e["kind"] for e in v["log"]]
+    assert "2.5" not in json.dumps({k: v[k] for k in v if k != "server_time"})  # nothing in the answer gives it away
+    _expect_error(km.bet, "Kra", 5, None, "crash-bet-00000007", contains="has left")
+    now[0] = launch + K.time_to(1.5) + 0.2
+    km.tick()
+    seats = {s["bettor"]: s for s in km.view()["seats"]}
+    assert seats["Shh"]["cashout"] == 1.5 and seats["Shh"]["paid"] == 75 and seats["Pad"]["cashout"] is None, seats
+    now[0] = launch + K.time_to(2.0) + 0.001
+    v = km.cashout("Kra")
+    assert v["me"]["bet"]["cashout"] == 2.0 and v["me"]["bet"]["paid"] == 200 and db.get_bettor("Kra")["balance"] == start + 100
+    assert km.cashout("Kra")["me"]["balance"] == start + 100  # a second click pays nothing more
+    led = db.query_one("SELECT * FROM house_ledger WHERE game='crash' AND bettor='Kra'")
+    assert led["staked"] == 100 and led["take"] == -100 and abs(led["expected"] - 3) < 1e-9, dict(led)
+    # The crash: whoever is still aboard loses the stake, and only now does the page learn where it crashed.
+    pad = db.get_bettor("Pad")["balance"]
+    now[0] = launch + K.time_to(2.5) + 0.01
+    _expect_error(km.cashout, "Pad", contains="Too late: it crashed at 2.50x")
+    v = km.view("Pad")
+    assert v["phase"] == "crashed" and v["crash"] == 2.5 and v["history"] == [2.5] and db.get_bettor("Pad")["balance"] == pad
+    seats = {s["bettor"]: s for s in v["seats"]}
+    assert seats["Pad"]["lost"] and not seats["Kra"]["lost"] and v["me"]["last"]["net"] == -25 and v["me"]["last"]["crash"] == 2.5
+    assert [e["kind"] for e in v["log"]][-4:] == ["cashout", "cashout", "crash", "lose"], [e["kind"] for e in v["log"]]
+    assert {r["crash"] for r in db.query("SELECT crash FROM crash_bets WHERE round=1")} == {2.5}
+    now[0] += K.RESULT_S
+    km.tick()
+    v = km.view("Kra")
+    assert v["phase"] == "betting" and v["seats"] == [] and v["me"]["bet"] is None and v["deadline"] is None and v["history"] == [2.5]
+
+    # A rocket that never leaves the pad (1.00x) takes every stake, auto cash-out or not.
+    km.bet("Shh", 10, 1.01, "crash-bet-00000008")
+    draws.append(1.0)
+    now[0] += K.BET_WINDOW_S
+    km.tick()
+    v = km.view("Shh")
+    assert v["phase"] == "crashed" and v["crash"] == 1.0 and v["me"]["last"]["net"] == -10 and v["round"] == 2
+    now[0] += K.RESULT_S
+    km.tick()
+    # One that makes it to the top pays everyone still aboard there, and an auto target on the crash point itself is paid.
+    km.bet("Kra", 5, None, "crash-bet-00000009")
+    km.bet("Shh", 5, 100, "crash-bet-00000010")
+    draws.append(K.MAX_MULT)
+    now[0] += K.BET_WINDOW_S + K.time_to(K.MAX_MULT) + 1
+    km.tick()
+    v = km.view("Kra")
+    assert v["phase"] == "crashed" and v["crash"] == 100.0 and [s["paid"] for s in v["seats"]] == [500, 500] and v["log"][-1]["moon"]
+    now[0] += K.RESULT_S
+    km.tick()
+
+    # Bets on the pad or in the air come back at start-up and on a season reset; ones already cashed out stand.
+    km.bet("Pad", 25, None, "crash-bet-00000011")
+    km.bet("Shh", 50, 1.2, "crash-bet-00000012")
+    draws.append(50.0)
+    now[0] += K.BET_WINDOW_S + K.time_to(1.3)
+    km.tick()
+    pad, shh = db.get_bettor("Pad")["balance"], db.get_bettor("Shh")["balance"]
+    with km.lock:
+        km.void_open("test")
+    assert db.get_bettor("Pad")["balance"] == pad + 25 and db.get_bettor("Shh")["balance"] == shh and km.view()["phase"] == "betting"
+    assert db.query_one("SELECT status, payout FROM crash_bets WHERE request_id='crash-bet-00000011'") == {"status": "void", "payout": 25}
+    assert K.CrashManager(db, clock=lambda: now[0]).table.round == 4  # a restart carries on counting rounds
+
+    # The season's numbers, and the leaderboard's casino column: crash counts there and stays out of betting profit.
+    season = km.season("Kra")
+    assert season["rounds"] == 2 and season["cashed"] == 2 and season["best_mult"] == 100 and season["net"] == 100 + 495, season
+    assert casino_nets(db)["kra"]["crash"] == 595 and casino_nets(db)["pad"]["crash"] == -25
+    row = {r["name"]: r for r in bets.leaderboard()}["Kra"]
+    assert row["casino"] == board["Kra"]["casino"] + 595 and abs(row["profit"] - board["Kra"]["profit"]) < 1e-9, row
+    signed_out = km.view()
+    assert signed_out["me"] is None and signed_out["stakes"] == K.STAKES and signed_out["edge"] == 0.03 and signed_out["growth"] == K.GROWTH
+
+
 @section("poker")
 def poker(shared):
     from unittest.mock import patch

@@ -334,6 +334,27 @@ CREATE TABLE IF NOT EXISTS roulette_spins (
 );
 CREATE INDEX IF NOT EXISTS idx_roulette_season ON roulette_spins(season_id, bettor);
 
+-- Crash (crash.py): one row per bet on a round of the rocket.
+CREATE TABLE IF NOT EXISTS crash_bets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL REFERENCES bettors(name),
+    round INTEGER NOT NULL,
+    stake REAL NOT NULL,
+    auto REAL,                   -- the auto cash-out multiplier set with the bet; NULL to cash out by hand
+    cashout REAL,                -- the multiplier cashed out at; NULL when the rocket crashed first
+    crash REAL,                  -- the round's crash point, written once it crashed
+    payout REAL NOT NULL,        -- stake x cashout; 0 for a loss; the refund for a void row
+    status TEXT NOT NULL,        -- playing (on the pad or in the air), settled or void
+    note TEXT,
+    created_ts REAL NOT NULL,
+    settled_ts REAL,
+    request_id TEXT NOT NULL,
+    expected REAL,               -- the house's expected take (the stake x crash.EDGE)
+    season_id INTEGER REFERENCES seasons(id),
+    UNIQUE(bettor, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_crash_season ON crash_bets(season_id, bettor);
+
 -- Poker (poker.py): the chips at the table (the escrow, one row per seated bettor), every buy-in, top-up and
 -- cash-out, every finished hand and each player's net from it. All but the seats are kept through resets.
 CREATE TABLE IF NOT EXISTS poker_seats (
@@ -846,7 +867,7 @@ class DB:
                 self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("DELETE FROM loans")  # debts are forgiven with the balances
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
-                for table in ("house_ledger", "house_payouts", "blackjack_hands", "roulette_spins", "poker_buyins", "poker_hands",
+                for table in ("house_ledger", "house_payouts", "blackjack_hands", "roulette_spins", "crash_bets", "poker_buyins", "poker_hands",
                               "poker_results", "hunt_days"):
                     self.conn.execute(f"UPDATE {table} SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))

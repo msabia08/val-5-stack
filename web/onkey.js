@@ -280,6 +280,15 @@ window.FiveOnkey = (() => {
       'Onkey Says is Onkey\'s favourite. Obviously.'],
     view_slots: ['Pull the lever. Onkey dares you.', 'The machine is hungry. Feed it.', 'Somewhere in there is a Golden Onkey. Go find him.',
       'Space bar spins. Onkey checked.', 'The Golden Onkey is wild now. Onkey taught him that.'],
+    view_crash: ['Onkey built the rocket. Onkey did not test the rocket.', 'It goes up. Then it stops going up. Get out before that.',
+      'Onkey has never seen it land.', 'The rocket is a banana. Onkey sees no problem with this.'],
+    crash_out: ['Out at {mult}. {amount} credits. Onkey would have held. Onkey would have been wrong.', '{mult} and safe. Sensible. Onkey respects it.',
+      'You got out at {mult}. The rocket did not.'],
+    crash_big: ['{mult}! Onkey could barely see you up there.', 'Out at {mult}! {amount} credits! Onkey is waving from the ground.'],
+    crash_lost: ['It crashed at {mult}. Onkey heard it from here.', 'Gone at {mult}. Onkey will build another one.',
+      'The rocket is fine. The rocket is not fine.', 'Onkey said get out. Onkey did not say it out loud.'],
+    crash_pad: ['It never left the pad. Onkey is looking into it.', 'That one was a practice rocket.'],
+    crash_moon: ['All the way up! Onkey did not know it could do that.'],
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.', 'Onkey greased the wheel. For luck.'],
     view_hunt: ['Onkey is throwing bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each, 250 a day.'],
     hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
@@ -500,6 +509,10 @@ window.FiveOnkey = (() => {
         else if (d.kind === 'boost' || d.kind === 'insurance') react('wheel_token', { label: d.kind === 'boost' ? 'boost token' : 'insurance token' });
         else if (d.kind === 'item') react('wheel_item', vars, { excited: true });
         else if (d.kind === 'again') react('wheel_again');
+      } else if (kind === 'crash') {
+        if (d.kind === 'out') react(d.big ? 'crash_big' : 'crash_out', { mult: d.mult, amount: d.amount }, { excited: d.big });
+        else if (d.kind === 'moon') react('crash_moon', {}, { excited: true });
+        else chime(d.kind === 'pad' ? 'crash_pad' : 'crash_lost', { mult: d.mult }, 0.5);
       } else if (kind === 'hunt') {
         react('hunt', { n: d.n, today: d.today });
       } else if (kind === 'scientist') {

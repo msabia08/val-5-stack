@@ -100,6 +100,8 @@ CASINO_NET_SQL = {
     "poker": "SELECT bettor, SUM(net) AS net FROM poker_results WHERE season_id IS NULL GROUP BY bettor",
     "roulette": "SELECT bettor, SUM(payout - stake) AS net FROM roulette_spins "
                 "WHERE season_id IS NULL AND status='settled' GROUP BY bettor",
+    "crash": "SELECT bettor, SUM(payout - stake) AS net FROM crash_bets "
+             "WHERE season_id IS NULL AND status='settled' GROUP BY bettor",
 }
 
 
