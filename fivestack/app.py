@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .arcade import ArcadeManager
 from .blackjack import BlackjackManager
+from .roulette import RouletteManager
 from .house import HouseManager
 from .poker import PokerManager
 from .slots import DEMO_GOLDEN_BOOST, SlotManager
@@ -95,6 +96,7 @@ class App:
         self.house = HouseManager(self.db, self.bets, self.rewards)  # the take (bets and the casino) and what it gives back
         self.wheel = WheelManager(self.db, self.house, unlimited=demo)  # demo: spin as often as you like
         self.blackjack = BlackjackManager(self.db)
+        self.roulette = RouletteManager(self.db)
         self.poker = PokerManager(self.db)
         self.auth = Auth(cfg, self.db)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
@@ -121,7 +123,7 @@ class App:
         """Run the live tables' clocks (turn timers, betting windows, the pause between hands) on a daemon thread."""
         def loop():
             while True:
-                for manager in (self.blackjack, self.poker):
+                for manager in (self.blackjack, self.poker, self.roulette):
                     try:
                         manager.tick()
                     except Exception as e:  # a clock failure must never stop the others
@@ -143,8 +145,9 @@ class App:
     def reset_season(self):
         """End the season: the casino tables close first (open blackjack hands refunded, poker seats cashed out), with
         their locks held so nobody sits back down before the reset is done."""
-        with self.blackjack.lock, self.poker.lock:
+        with self.blackjack.lock, self.poker.lock, self.roulette.lock:
             self.blackjack.void_open("The season ended")
+            self.roulette.void_open("The season ended")
             self.poker.close_all("The season ended")
             return self.bets.reset()
 
@@ -327,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _casino_post(app, name, path, body):
-        bj, pk = app.blackjack, app.poker
+        bj, pk, rl = app.blackjack, app.poker, app.roulette
         which = body.get("table") or "solo"
         routes = {
             "/api/blackjack/sit": lambda: bj.sit(name),
@@ -336,6 +339,8 @@ class Handler(BaseHTTPRequestHandler):
             "/api/blackjack/emote": lambda: bj.emote(name, which, body.get("emote")),
             "/api/blackjack/tip": lambda: bj.tip(name, which, body.get("amount")),
             "/api/blackjack/action": lambda: bj.action(name, which, body.get("action"), body.get("step")),
+            "/api/roulette/spin": lambda: app.with_looks(rl.spin(name, body.get("bets"), body.get("request_id"))),
+            "/api/roulette/bet": lambda: app.with_looks(rl.bet(name, body.get("bets"), body.get("request_id"))),
             "/api/poker/sit": lambda: pk.sit(name, body.get("buyin")),
             "/api/poker/leave": lambda: pk.leave(name),
             "/api/poker/ready": lambda: pk.set_ready(name, body.get("ready")),
@@ -584,6 +589,22 @@ class Handler(BaseHTTPRequestHandler):
             if which == "solo" and not name:
                 return self._json(app.blackjack.view(None, "shared") | {"table": "solo", "seats": [], "log": [], "looks": {}})
             return self._json(app.with_looks(app.blackjack.view(name, which)))
+        if path == "/api/roulette":
+            me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
+            name = me["name"] if me else None
+            which = qs.get("table") or "solo"
+            if which not in ("solo", "shared"):
+                return self._json({"error": "Pick the solo table or the shared table."}, 400)
+            try:
+                since = int(qs["since"]) if "since" in qs else None
+            except ValueError:
+                since = None
+            if since is not None and which == "shared":  # long-poll: answer when the table changes, or after 20 seconds
+                app.roulette.wait(app.roulette.tables["shared"], since, 20)
+            if which == "solo" and not name:  # signed out: the layout, with nothing on it
+                return self._json(app.roulette.view(None, "shared") | {"table": "solo", "seats": [], "log": [], "history": [],
+                                                                       "phase": "betting", "result": None, "looks": {}})
+            return self._json(app.with_looks(app.roulette.view(name, which)))
         if path == "/api/troop":
             return self._json(app.bananas.troop())
         if path == "/api/troop/profile":
@@ -788,7 +809,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not me:
                     return self._json({"error": "Sign in as a bettor to spin."}, 403)
                 return self._json(app.slots.spin(me["name"], body.get("machine"), body.get("stake"), body.get("request_id")))
-            if path.startswith("/api/blackjack/") or path.startswith("/api/poker/"):
+            if path.startswith(("/api/blackjack/", "/api/poker/", "/api/roulette/")):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to play."}, 403)

@@ -25,7 +25,7 @@ window.FiveOnkey = (() => {
   const PHONE_BUBBLE = 0.5;
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
   const OMINOUS_CHANCE = 0.12, OMINOUS_NIGHT = 0.35; // share of idle lines that are OMINOUS (more after midnight)
-  const QUIET_VIEWS = new Set(['blackjack', 'poker']); // the dealer talks there
+  const QUIET_VIEWS = new Set(['blackjack', 'poker', 'roulette']); // the dealer talks there
   const SCI_CHANCE = 0.03; // share of idle lines the scientist takes over (docs/onkey-lore.md); kept rare
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   const fill = (line, vars) => line.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
@@ -281,13 +281,13 @@ window.FiveOnkey = (() => {
     view_slots: ['Pull the lever. Onkey dares you.', 'The machine is hungry. Feed it.', 'Somewhere in there is a Golden Onkey. Go find him.',
       'Space bar spins. Onkey checked.', 'The Golden Onkey is wild now. Onkey taught him that.'],
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.', 'Onkey greased the wheel. For luck.'],
-    view_hunt: ['Onkey dropped the bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each.'],
+    view_hunt: ['Onkey is throwing bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each, 250 a day.'],
     hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
     hunt_found: ['You found {label}! Onkey hid that one himself.', 'Ook! {label}. Onkey forgot he buried it there.'],
     sci_back: ['Onkey is back. Ignore the man with the glasses.', 'Don\'t listen to him. Onkey is staying.', 'Ook. He does that. Hang up next time.', 'Onkey is not for sale.'],
     sci_refused: ['Onkey heard that. Thank you.', 'Not for sale. Onkey knew you\'d say it.'],
     hunt_claw: ['That was his claw. Onkey knows that claw.', 'He took a banana. He wants more than bananas.'],
-    hunt_done: ['{today} bananas! Onkey is full. Come back tomorrow.', 'That\'s the lot for today. Onkey needs a nap.'],
+    hunt_done: ['{today} credits of bananas! Onkey is full. Come back tomorrow.', 'That\'s the lot for today. Onkey needs a nap.'],
     view_bettors: ['The standings. Find yourself. Onkey will wait.', 'Who\'s on top? Onkey already knows.',
       'Leaderboard time. Onkey loves a rivalry.'],
     view_matches: ['Recaps! Relive the glory. Or the pain.', 'Onkey watched every round. Twice.', 'Pick a game. Onkey remembers them all.'],

@@ -1364,6 +1364,131 @@ def blackjack(shared):
     shared.casino_db = db
 
 
+@section("roulette")
+def roulette(shared):
+    from fivestack import roulette as R
+    from fivestack.house import casino_nets
+
+    db, bets = shared.db, shared.bets
+    # The layout: every bet a real table takes, paying what a real table pays; the banana (zero) pays 36 to 1 straight,
+    # which is exactly fair, and everything else carries the single-zero edge.
+    kinds = {}
+    for b in R.BETS.values():
+        kinds[b["kind"]] = kinds.get(b["kind"], 0) + 1
+    assert kinds == {"straight": 37, "split": 60, "street": 14, "corner": 23, "six": 11, "dozen": 3, "column": 3, "even": 6}, kinds
+    assert len(R.WHEEL) == 37 and sorted(R.WHEEL) == list(range(37)) and len(R.REDS) == 18
+    assert R.BETS["straight:0"]["pays"] == R.BANANA_PAYS == 36 and R.BETS["straight:17"]["pays"] == 35
+    assert abs(R.edge("straight:0")) < 1e-12 and all(abs(R.edge(k) - 1 / 37) < 1e-12 for k in R.BETS if k != "straight:0")
+    assert R.payout({"straight:17": 10, "red": 20, "split:17-20": 5}, 17) == (360 + 90, ["straight:17", "split:17-20"])
+    assert R.payout({"red": 20, "dozen:1": 10, "corner:0-1-2-3": 5}, 0) == (45, ["corner:0-1-2-3"])  # the banana beats the rest
+    assert R.payout({"straight:0": 5}, 0) == (185, ["straight:0"]) and R.colour(0) == "banana" and R.colour(1) == "red"
+    for bad in (None, {}, {"nope": 5}, {"red": 3}, {"red": 7}, {"red": 5.5}, {"red": 505}, {"red": 300, "black": 250}, {"red": "5"},
+                {k: 5 for k in list(R.BETS)[:R.MAX_SPOTS + 1]}):
+        try:
+            R.check_bets(bad)
+            raise AssertionError(f"{bad} should be refused")
+        except BetError:
+            pass
+    assert R.check_bets([{"key": "red", "amount": 5}, {"key": "red", "amount": 10}]) == {"red": 15}
+
+    now = [2_000_000_000.0]
+    rm = R.RouletteManager(db, clock=lambda: now[0])
+    draws = []
+    rm._draw = lambda: draws.pop(0)
+    bets.register("Rou", "secret1")
+    bets.register("Lette", "secret1")
+    start = db.get_bettor("Rou")["balance"]
+    board = {r["name"]: r for r in bets.leaderboard()}
+
+    # The solo table: bets, the spin and the payout in one go, and a retry never charges twice.
+    draws.append(17)
+    v = rm.spin("Rou", {"straight:17": 10, "red": 20}, "roulette-solo-0001")
+    assert v["table"] == "solo" and v["phase"] == "done" and v["result"] == 17 and v["colour"] == "black" and v["history"][0]["number"] == 17
+    last = v["me"]["last"]
+    assert last["staked"] == 30 and last["paid"] == 360 and last["net"] == 330 and last["won"] == ["straight:17"], last
+    assert db.get_bettor("Rou")["balance"] == start + 330 and v["me"]["balance"] == start + 330
+    assert rm.spin("Rou", {"straight:17": 10, "red": 20}, "roulette-solo-0001")["me"]["last"]["id"] == last["id"]
+    assert db.get_bettor("Rou")["balance"] == start + 330 and not draws
+    led = db.query_one("SELECT * FROM house_ledger WHERE game='roulette' AND ref=?", (f"spin:{last['id']}",))
+    assert led["staked"] == 30 and led["take"] == -330 and abs(led["expected"] - 30 / 37) < 1e-3, dict(led)
+    # The banana: a straight bet on it pays 36 to 1, and every bet that doesn't cover it loses.
+    draws.append(0)
+    v = rm.spin("Rou", {"straight:0": 5, "red": 50, "even": 50}, "roulette-solo-0002")
+    assert v["colour"] == "banana" and v["me"]["last"]["paid"] == 185 and v["me"]["last"]["net"] == 80, v["me"]["last"]
+    assert v["log"][-1]["kind"] == "banana" and v["log"][-1]["amount"] == 80
+    for bad_bets, why in (({"red": 500, "black": 5}, "up to 500"),):
+        try:
+            rm.spin("Rou", bad_bets, "roulette-solo-0003")
+            raise AssertionError(why)
+        except BetError as e:
+            assert why in str(e), e
+    db.execute("UPDATE bettors SET balance = 20 WHERE name='Lette'")
+    try:
+        rm.spin("Lette", {"red": 25}, "roulette-solo-0004")
+        raise AssertionError("not enough credits")
+    except BetError as e:
+        assert "Not enough credits" in str(e), e
+    assert db.get_bettor("Lette")["balance"] == 20 and not db.query("SELECT 1 FROM roulette_spins WHERE bettor='Lette'")
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name='Lette'")
+
+    # The shared table: chips go down while betting is open, the clock spins, and nobody sees who won until the wheel stops.
+    balance = db.get_bettor("Rou")["balance"]
+    v = rm.bet("Rou", {"red": 100}, "roulette-shared-0001")
+    assert v["phase"] == "betting" and v["deadline"] == now[0] + R.BET_WINDOW_S and v["me"]["down"] == 100 and v["result"] is None
+    now[0] += 5
+    rm.bet("Lette", {"black": 50, "straight:0": 5}, "roulette-shared-0002")
+    v = rm.bet("Rou", {"dozen:1": 50}, "roulette-shared-0003")
+    assert v["me"]["down"] == 150 and v["me"]["bets"] == {"red": 100, "dozen:1": 50} and len(v["seats"]) == 2
+    assert v["deadline"] == now[0] - 5 + R.BET_WINDOW_S  # more chips don't reopen the clock
+    try:
+        rm.bet("Rou", {"black": 400}, "roulette-shared-0004")
+        raise AssertionError("over the table's limit across bets")
+    except BetError as e:
+        assert "150 down already" in str(e), e
+    assert db.get_bettor("Rou")["balance"] == balance - 150
+    rm.tick(now[0] + 1)
+    assert rm.view("Rou", "shared")["phase"] == "betting"
+    now[0] += R.BET_WINDOW_S
+    draws.append(3)  # red, first dozen
+    rm.tick()
+    v = rm.view("Rou", "shared")
+    assert v["phase"] == "spinning" and v["result"] == 3 and all(s["net"] is None for s in v["seats"]), v["seats"]
+    assert not any(e["kind"] in ("win", "lose", "number") for e in v["log"])  # nothing gives it away yet
+    assert db.get_bettor("Rou")["balance"] == balance - 150 + 200 + 150  # paid as the ball is let go: the page holds it
+    try:
+        rm.bet("Rou", {"red": 5}, "roulette-shared-0005")
+        raise AssertionError("no more bets")
+    except BetError as e:
+        assert "No more bets" in str(e), e
+    now[0] += R.SPIN_S
+    rm.tick()
+    v = rm.view("Lette", "shared")
+    nets = {s["bettor"]: s["net"] for s in v["seats"]}
+    assert v["phase"] == "done" and nets == {"Rou": 200, "Lette": -55} and v["history"][0] == {"number": 3, "colour": "red"}, (nets, v["history"])
+    assert [e["kind"] for e in v["log"] if e["kind"] in ("win", "lose")] == ["win", "lose"] and v["me"]["last"]["net"] == -55
+    now[0] += R.RESULT_S
+    rm.tick()
+    v = rm.view("Rou", "shared")
+    assert v["phase"] == "betting" and v["seats"] == [] and v["result"] is None and v["me"]["down"] == 0 and v["deadline"] is None
+    # Chips still waiting for a spin come back at start-up and on a season reset.
+    balance = db.get_bettor("Lette")["balance"]
+    rm.bet("Lette", {"red": 25}, "roulette-shared-0006")
+    assert db.get_bettor("Lette")["balance"] == balance - 25
+    with rm.lock:
+        rm.void_open("test")
+    assert db.get_bettor("Lette")["balance"] == balance and rm.view("Lette", "shared")["seats"] == []
+    assert db.query_one("SELECT status, payout FROM roulette_spins WHERE request_id='roulette-shared-0006'") == {"status": "void", "payout": 25}
+    # The season's numbers, and the leaderboard's casino column: roulette counts there and stays out of betting profit.
+    season = rm.season("Rou")
+    assert season["spins"] == 4 and season["wins"] == 4 and season["bananas"] == 1 and season["net"] == 330 + 80 + 200, season
+    assert casino_nets(db)["rou"]["roulette"] == 610 and casino_nets(db)["lette"]["roulette"] == -55
+    row = {r["name"]: r for r in bets.leaderboard()}["Rou"]
+    assert row["casino"] == board["Rou"]["casino"] + 610 and abs(row["profit"] - board["Rou"]["profit"]) < 1e-9, row
+    # A signed-out view of the layout has what the page needs to draw the table.
+    lay = R.RouletteManager.layout()
+    assert lay["table_max"] == 500 and lay["banana_pays"] == 36 and len(lay["bets"]) == 157 and lay["bets"]["red"]["pays"] == 1
+
+
 @section("poker")
 def poker(shared):
     from unittest.mock import patch
@@ -1757,7 +1882,8 @@ def banana_hunt(shared):
     st = hunt.status(name, now=t)
     assert st["today"] == 5 and st["done"] and st["target"] is None and db.get_bettor(name)["balance"] == before + 5
     assert hunt.start(name, now=t)["target"] is None  # starting again doesn't help
-    # Under the floor the cap doesn't apply: with 247 credits, three more picks are allowed, then it's done again.
+    # Under the floor (250 in this manager; 50 by default, checked below) the cap doesn't apply: with 247 credits,
+    # three more picks are allowed, then it's done again.
     db.execute("UPDATE bettors SET balance = 247 WHERE name=?", (name,))
     st = hunt.start(name, now=t)
     assert st["under_floor"] and st["left"] == 3 and not st["done"] and st["target"], st
@@ -1801,7 +1927,7 @@ def banana_hunt(shared):
     assert hunt.summary(db.get_bettor(name), now=nxt + 2)["me"]["today"] == 1 and hunt.summary()["me"] is None
     shared.hunt_rows = 2
 
-    # ---- the extras: what Onkey throws, catches in the air, the combo, Greg, the streak, the hidden item ----
+    # ---- the extras: what Onkey throws, catches in the air, the combo, Greg, the hidden item ----
     import random as _random
     from fivestack import hunt as H
 
@@ -1826,22 +1952,21 @@ def banana_hunt(shared):
     day = wheel_day(now)
     assert hx.terms(now)["theme"] == H.theme(day) and H.theme(day) in H.THEMES and hx.terms(now)["extras"]
     assert len({H.theme(wheel_day(now + d * 86400)) for d in range(40)}) > 1  # the field changes by the day
-    # The streak: picks on the two days before make this day 3, so the first banana pays 3 and the cap is 2 higher.
+    # No streaks: picking on the days before changes nothing. The first banana pays one, and the cap is the cap.
     for back in (1, 2):
         db.execute("INSERT INTO hunt_days(bettor, day, bananas, credits, updated_ts) VALUES(?,?,?,?,?)",
                    (who, wheel_day(now - back * 86400), 4, 4.0, now - back * 86400))
     st = hx.start(who, now=now)
-    assert st["streak"] == {"days": 3, "bonus": 2, "paid": False} and st["cap"] == 502 and st["left"] == 502 and st["target"]["kind"] == "banana", st
+    assert "streak" not in st and "cap" not in st and st["left"] == 500 and st["target"]["kind"] == "banana", st
     r = hx.click(who, st["target"]["x"], st["target"]["y"], now=now + 1)
-    assert r["hit"] and r["paid"] == 3 and r["streak_bonus"] == 2 and r["combo"] == 1 and r["mult"] == 1 and r["today"] == 3, r
-    assert hx.status(who, now=now + 1)["streak"]["paid"]
+    assert r["hit"] and r["paid"] == 1 and "streak_bonus" not in r and r["combo"] == 1 and r["mult"] == 1 and r["today"] == 1, r
     # The same banana isn't swapped by starting again (no fishing for a golden one).
     tgt = r["target"]
     assert hx.start(who, now=now + 1.2)["target"] == tgt
     # Caught in the air: a click on the arc pays double; a click off the arc is a miss and breaks the combo.
     ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
     r = hx.click(who, ax + 5, ay - 5, now=now + 1.6, air=0.5)
-    assert r["hit"] and r["air"] and r["paid"] == 2 and r["combo"] == 2 and r["streak_bonus"] == 0, r
+    assert r["hit"] and r["air"] and r["paid"] == 2 and r["combo"] == 2, r
     tgt = r["target"]
     ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
     r = hx.click(who, ax + H.AIR_R + 30, ay, now=now + 2.0, air=0.5)
@@ -1938,15 +2063,30 @@ def banana_hunt(shared):
     assert hx._found(who, day, nth, now) is None  # never twice
     # Everything paid is in the day's row and the balance.
     st = hx.status(who, now=now)
-    assert st["today"] == round(db.get_bettor(who)["balance"] - start_balance) and st["left"] == st["cap"] - st["today"], st
+    assert st["today"] == round(db.get_bettor(who)["balance"] - start_balance) and st["left"] == 500 - st["today"], st
     # The cap counts credits: a golden banana can't pay past what's left.
     tight = HuntManager(db, {"hunt_daily_max": st["today"] + 2, "hunt_floor": 0})
     tight.rng = Rig()
     tight.rng.rolls = [GOLD]
     st = tight.start(who, now=now + 1)
-    assert st["left"] == 4 and st["target"]["kind"] == "golden", st  # two under the cap, plus the streak's two
+    assert st["left"] == 2 and st["target"]["kind"] == "golden", st  # two under the cap
     r = tight.click(who, st["target"]["x"], st["target"]["y"], now=now + 2)
-    assert r["hit"] and r["paid"] == 4 and r["done"] and r["target"] is None, r
+    assert r["hit"] and r["paid"] == 2 and r["done"] and r["target"] is None, r
+    # Past the cap there's only the top-up: by default, back up to 50 credits and no further.
+    from fivestack.hunt import FLOOR
+    topup = HuntManager(db, {"hunt_daily_max": 1})  # well past this cap already
+    topup.rng = Rig()
+    assert FLOOR == 50 and topup.floor == 50 and topup.terms()["floor"] == 50
+    assert topup.start(who, now=now + 3)["done"]  # plenty of credits: closed for the day
+    db.execute("UPDATE bettors SET balance = 47 WHERE name=?", (who,))
+    st = topup.start(who, now=now + 3)
+    assert st["under_floor"] and st["left"] == 3 and not st["done"], st
+    for n in range(3):
+        r = topup.click(who, st["target"]["x"], st["target"]["y"], now=now + 4 + n)
+        assert r["hit"] and r["paid"] == 1, r
+        st["target"] = r["target"]
+    assert r["done"] and r["target"] is None and db.get_bettor(who)["balance"] == 50, r
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name=?", (who,))
     shared.hunt_rows = db.query_one("SELECT COUNT(*) AS n FROM hunt_days")["n"]
 
 

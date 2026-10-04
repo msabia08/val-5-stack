@@ -18,7 +18,7 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack** and **Poker**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack**, **Poker** and **Roulette**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
@@ -131,6 +131,31 @@ casino results, and he thanks you for it.
 Keys: H hit, S stand, D double, P split, Enter deals. Onkey deals each card in turn and turns his hole card over
 before he draws, and the result shows once the last card is down. A hand still open when the server restarts or the
 season ends is refunded.
+
+## Roulette
+
+**Casino › Roulette** is Onkey's wheel: the numbers 1 to 36 and one **banana pocket** where the zero would be, 37
+pockets in all. Like Blackjack there's a **solo table** you spin whenever you like and one **shared table** where
+everyone bets on the same spin.
+
+- **Betting.** Pick a chip (5 to 500), then click the layout to put it down. Every bet a real table takes is there:
+  a single number, a split (the line between two numbers), a street (the bottom edge of a column of three), a corner,
+  a six-line, the dozens and columns, and red / black, odd / even, 1-18 / 19-36. Hovering a spot lights up the numbers
+  it covers. Right-click a spot to take its chips off; Undo and Clear do what they say. You can put up to
+  **500 credits** on one spin.
+- **Payouts.** A number pays 35 to 1, a split 17, a street 11, a corner 8, a six-line 5, a dozen or column 2, and the
+  even-money bets 1 to 1. A straight bet on the **banana pays 36 to 1**, one more than a number.
+- **The odds.** Every bet keeps the same share for the house, 1 in 37 (2.7%), except the straight bet on the banana,
+  which at 36 to 1 is exactly fair. The banana beats every bet that doesn't cover it.
+- **Solo table.** Spin sends your chips and spins at once. Your chips stay on the layout afterwards, so the same bet
+  is one click away.
+- **Shared table.** Place bets puts your chips down for the round (they can't be taken back). The wheel spins
+  20 seconds after the round's first chip, and everyone's chips and results show on the table.
+- **The spin.** The number is drawn the moment the ball is let go; the ball then rolls round the wheel and rattles
+  into that pocket. Nothing gives the result away before it lands: the result line, Onkey and the credits in the top
+  bar all wait for the ball.
+
+Roulette counts in the Standings' **Casino** column with the other casino games, outside betting profit and ROI.
 
 ## Poker
 
@@ -773,8 +798,8 @@ server turns down any score a game couldn't reach in the time it ran.
 
 ## Onkey's Bank
 
-Broke before the next game? The Standings page's sidebar has **Onkey's Bank**,
-where any signed-in bettor can borrow credits:
+Broke before the next game? Click your **credits** in the top bar, on any page,
+to open **Onkey's Bank**, where any signed-in bettor can borrow credits:
 
 - Borrow any whole amount up to **`loan_max`** (default 1000) at
   **`loan_interest`** (default 10%): borrow 500 and you owe 550.
@@ -805,9 +830,7 @@ one you click is **1 credit**.
   send him off.
 - Picks in a row build a **combo**: every banana pays double from 10 in a row
   and triple from 25, until you miss, pick a rotten one, lose one to Greg or
-  stop for 8 seconds.
-- Hunt on days in a row and the day's first banana pays your **streak**'s day
-  (2 on day 2, up to 7), on top of the day's cap.
+  the claw, or stop for 8 seconds.
 - One of your picks each day turns up a **hidden item**: 25 shop bananas, a
   boost token or an insurance token.
 - The **field of the day** changes its scenery: jungle, night, rain, beach or
@@ -819,12 +842,12 @@ The rules underneath:
   count: a miss pays nothing and leaves the banana where it is, and picks off
   the ground less than about half a second apart aren't paid.
 - Each bettor can pick **`hunt_daily_max`** (default 250) credits a day. The
-  extras only get you there sooner; they never raise the cap (the streak's
-  bonus is the one thing on top). The day turns over at midnight Pacific, like
-  the daily wheel.
-- The cap has a floor: with fewer than **`hunt_floor`** (default 250) credits,
-  you keep picking past the cap until you have that many, so nobody is ever
-  stuck broke.
+  extras only get you there sooner; nothing pays past the cap. The day turns
+  over at midnight Pacific, like the daily wheel.
+- Once you've had the day's 250 the hunt is closed, with one exception: a
+  top-up. With fewer than **`hunt_floor`** (default 50) credits, you can pick
+  until you have that many, and no further, so nobody is ever stuck with
+  nothing.
 - Credits from the hunt show in their own **Hunt** column on Standings and stay
   out of betting profit, ROI and record, like game rewards. The page's Top
   pickers table ranks everyone by what they picked this season.
@@ -834,8 +857,8 @@ The rules underneath:
 ## Sending credits
 
 Bettors can pay each other: settle a side bet, pay off a lost argument, spot a
-friend who went broke. In the Standings page's sidebar (next to Game rewards),
-**Send credits** takes a recipient (any bettor account, claimed or not), an
+friend who went broke. Click your **credits** in the top bar, on any page: under
+Onkey's Bank, **Send credits** takes a recipient (any bettor account, claimed or not), an
 amount (at least 1, no more than your balance) and an optional note of up to 80
 characters. A confirm line spells out who gets how much before anything moves,
 because there's no undo.
@@ -875,8 +898,8 @@ blackjack edge, the poker rake). What that has taken (estimated from the price o
 each bet and round, every season) is the house's money, and it goes back to the squad and the bettors. Half of it is
 the **pot**, which pays for secret objectives and bad-beat refunds, and half builds the
 **jackpot**, which the daily wheel pays out. The Standings page's sidebar shows both, along with the next game's
-objectives (how many and what they're worth, not what they are), the last
-game's objectives revealed, and the latest giveaways.
+objectives (how many and what they're worth, not what they are) and the last
+game's objectives revealed.
 
 ### Secret objectives
 
@@ -1013,7 +1036,7 @@ He's kept rare, but he's around:
 - **In Onkey's corner.** Now and then his face takes over the logo for one line, and Onkey shoves back in. Some
   of Onkey's darker lines are about him too.
 - **On the login page.** One visit in twenty, he's watching from the corner.
-- **At Onkey's Bank.** Take a loan and he calls; while you owe, he's waiting on the bank card. Debt is his plan.
+- **At Onkey's Bank.** Take a loan and he calls; while you owe, he's waiting in the bank (click your credits). Debt is his plan.
 - **His offer.** With fewer than 100 credits you get a call on Standings: $25,000 for Onkey. The only answer is
   "Onkey is not for sale", which earns the **Not For Sale** title for free.
 - **On the house card.** Sometimes he has a word about what the house takes.
@@ -1099,7 +1122,7 @@ time you log in.
 | `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
 | `loan_interest` | 0.1 | Interest on a loan, as a share of the amount borrowed (0.1 = borrow 500, owe 550). |
 | `hunt_daily_max` | 250 | Credits a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
-| `hunt_floor` | 250 | Below this many credits the daily cap doesn't apply: a bettor keeps picking until they have this much. |
+| `hunt_floor` | 50 | The top-up past the daily cap: a bettor with fewer credits than this can keep picking until they have this much, and no further. `0` makes the cap absolute. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
 `--config=path/to/other.json`.
@@ -1142,6 +1165,7 @@ fivestack/             the backend package
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table
+  roulette.py          Casino: roulette on Onkey's wheel (a banana for the zero), solo tables and the shared table
   poker.py             Casino: the Texas Hold'em table (lobby, betting, side pots, rake)
   cards.py             decks, shuffling and poker hand ranking
   tables.py            what the live tables share: locking, long-polling, the action log
@@ -1149,7 +1173,7 @@ fivestack/             the backend package
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
 web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), shop.js (Onkey's Shop and Monkeys), arcade.js (Onkey's Arcade),
-                       slots.js, blackjack.js, poker.js and casino.js (the Casino: cards, Onkey the dealer),
+                       slots.js, blackjack.js, poker.js, roulette.js and casino.js (the Casino: cards, Onkey the dealer),
                        recap.js (match recap), style.css,
                        assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
                        onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song;

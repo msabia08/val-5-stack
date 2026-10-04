@@ -51,6 +51,7 @@
         <a href="#slots" data-view="slots" data-icon="🎰" role="menuitem"><b><span class="nav-icon" aria-hidden="true">🎰</span>Slots</b><span>Spin the reels with your betting credits</span></a>
         <a href="#blackjack" data-view="blackjack" data-icon="🂡" role="menuitem"><b><span class="nav-icon" aria-hidden="true">🂡</span>Blackjack</b><span>Beat Onkey to 21, solo or at the shared table</span></a>
         <a href="#poker" data-view="poker" data-icon="♠️" role="menuitem"><b><span class="nav-icon" aria-hidden="true">♠️</span>Poker</b><span>Texas Hold'em with the squad, Onkey dealing</span></a>
+        <a href="#roulette" data-view="roulette" data-icon="🎯" role="menuitem"><b><span class="nav-icon" aria-hidden="true">🎯</span>Roulette</b><span>Onkey's wheel: 36 numbers and a banana</span></a>
         <a href="#hunt" data-view="hunt" data-icon="🍌" role="menuitem"><b><span class="nav-icon" aria-hidden="true">🍌</span>Banana Hunt</b><span>Pick up Onkey's bananas, a credit each</span></a>
         <a href="#wheel" data-view="wheel" data-icon="🎡" role="menuitem"><b><span class="nav-icon" aria-hidden="true">🎡</span>Daily wheel</b><span>One free spin a day for prizes and the jackpot</span></a>
       </div>
@@ -68,7 +69,9 @@
   </nav>
   <div class="topbar-right">
     <a id="me-wheel" class="me-chip me-wheel hidden" href="#wheel" title="Your daily wheel spin is ready">🎡 <b>Spin ready</b></a>
-    <a id="me-credits" class="me-chip me-stat" href="#bettors"></a>
+    <!-- The credits chip opens the wallet menu (app.js walletMenu): Onkey's Bank and Send credits. -->
+    <button type="button" id="me-credits" class="me-chip me-stat" aria-haspopup="true" aria-expanded="false" aria-controls="wallet-menu"></button>
+    <div class="nav-menu wallet-menu hidden" id="wallet-menu" role="dialog" aria-label="Your credits"></div>
     <a id="me-bananas" class="me-chip me-stat" href="#shop"></a>
     <!-- The profile chip opens the account menu (app.js bindAccountMenu): sign in or create an account, or, signed in,
          your profile, a password change and sign out. -->
@@ -96,6 +99,7 @@
 <script src="/casino.js"></script>
 <script src="/blackjack.js"></script>
 <script src="/poker.js"></script>
+<script src="/roulette.js"></script>
 <script src="/wheel.js"></script>
 <script src="/hunt.js"></script>
 <script src="/onkey.js"></script>

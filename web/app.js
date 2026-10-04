@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'hunt', 'slots', 'blackjack', 'poker', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'hunt', 'slots', 'blackjack', 'poker', 'roulette', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -137,7 +137,7 @@
     bananas.classList.toggle('hidden', !me);
     wheelReady(me);
     credits.innerHTML = `<b>${me ? fmt.credits(bal) : '–'}</b><span class="me-unit">credits</span>`;
-    credits.title = me ? `${fmt.credits(bal)} credits${me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on open bets` : ''}. Open the rankings.` : 'Sign in to see your credits';
+    credits.title = me ? `${fmt.credits(bal)} credits${me.open_bets ? `, plus ${fmt.credits(me.open_stake)} on open bets` : ''}. Open Onkey's Bank and Send credits.` : 'Sign in to see your credits';
     const nb = me && me.bananas != null ? shop.bn(me.bananas) : '–';
     bananas.innerHTML = `<b>${nb}</b><span aria-hidden="true">🍌</span><span class="sr-only">bananas</span>`;
     bananas.title = me ? `${nb} bananas. Open Onkey's Shop.` : 'Sign in to see your bananas';
@@ -146,6 +146,7 @@
     chip.classList.toggle('me-anon', !me); // a phone shows the avatar alone once you're signed in
     chip.title = me ? `Signed in as ${me.name}: your profile, password and sign out` : 'Sign in to bet and shop';
     accountMenuRefresh();
+    walletMenuRefresh();
     if (!me) return;
     // The credits chip counts to a new balance.
     const was = shownBalance && shownBalance.name === me.name ? shownBalance.balance : null;
@@ -341,7 +342,7 @@
   const loadMatches = async () => { state.matches = (await api('/api/matches?limit=400')).matches; };
   const loadRecap = async () => { state.recap = await api('/api/recap' + (state.recapId ? '?match=' + encodeURIComponent(state.recapId) : '')); };
   // The betting UI lives in web/bets.js (window.FiveBets); these names keep the call sites below unchanged.
-  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard } = window.FiveBets;
+  const { loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard, loadWallet, walletHtml, bindWallet } = window.FiveBets;
   async function loadOdds() {
     const p = new URLSearchParams();
     if (state.ctx.map) p.set('map', state.ctx.map);
@@ -1183,6 +1184,7 @@
         case 'arcade': view.innerHTML = window.FiveArcade.viewArcade(); break;
         case 'slots': view.innerHTML = window.FiveSlots.view(); break;
         case 'blackjack': view.innerHTML = window.FiveBlackjack.view(); break;
+        case 'roulette': view.innerHTML = window.FiveRoulette.view(); break;
         case 'poker': view.innerHTML = window.FivePoker.view(); break;
         case 'wheel': view.innerHTML = window.FiveWheel.view(); break;
         case 'hunt': view.innerHTML = window.FiveHunt.view(); break;
@@ -1215,6 +1217,7 @@
         case 'arcade': await window.FiveArcade.load(); break;
         case 'slots': await window.FiveSlots.load(); break;
         case 'blackjack': await window.FiveBlackjack.load(); break;
+        case 'roulette': await window.FiveRoulette.load(); break;
         case 'poker': await window.FivePoker.load(); break;
         case 'wheel': await window.FiveWheel.load(); break;
         case 'hunt': await window.FiveHunt.load(); break;
@@ -1273,6 +1276,7 @@
     window.FiveArcade.bind(view);
     window.FiveSlots.bind(view);
     window.FiveBlackjack.bind(view);
+    window.FiveRoulette.bind(view);
     window.FivePoker.bind(view);
     window.FiveWheel.bind(view);
     window.FiveHunt.bind(view);
@@ -1544,6 +1548,48 @@
       '<div class="btn-row"><button class="btn primary small" id="bettor-signin">Sign in</button><button type="button" class="btn ghost small" id="bettor-register">Create account</button></div>' +
       `<p class="muted small">Your own password, so nobody can bet or cancel under your name. New accounts start with ${fmt.credits(state.status.starting_balance)} credits; add your Riot ID and you're on the squad, so your games count and your rewards land here.</p></form>`;
   }
+  // The wallet menu: the credits chip opens Onkey's Bank and Send credits (bets.js walletHtml()), on any page. It's
+  // drawn from what's in state, then again once loadWallet() has fresh numbers, and after every redraw (the cards'
+  // own handlers reload and call draw()); whatever had the focus keeps it across a redraw.
+  let walletOpen = false;
+  function walletPaint() {
+    const menu = $('#wallet-menu');
+    const focus = menu.contains(document.activeElement) ? document.activeElement.id : '';
+    const top = menu.scrollTop;
+    menu.innerHTML = walletHtml();
+    bindWallet(menu);
+    menu.scrollTop = top;
+    if (focus) document.getElementById(focus)?.focus();
+  }
+  function walletMenuRefresh() {
+    if (!walletOpen) return;
+    if (!state.me) { walletMenu(false); return; }
+    walletPaint();
+  }
+  function walletMenu(open) {
+    const menu = $('#wallet-menu'), chip = $('#me-credits');
+    walletOpen = open && !!state.me;
+    menu.classList.toggle('hidden', !walletOpen);
+    chip.setAttribute('aria-expanded', String(walletOpen));
+    if (!walletOpen) return;
+    closeNavMenus();
+    navSheet(false);
+    accountMenu(false);
+    menu.style.right = `${Math.max(0, menu.parentElement.getBoundingClientRect().right - chip.getBoundingClientRect().right)}px`;
+    walletPaint();
+    loadWallet().then(() => { if (walletOpen) walletPaint(); }).catch(() => {});
+  }
+  function bindWalletMenu() {
+    const menu = $('#wallet-menu'), chip = $('#me-credits');
+    chip.addEventListener('click', () => walletMenu(!walletOpen));
+    menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { walletMenu(false); chip.focus(); } });
+    menu.addEventListener('click', (e) => { if (e.target.closest('a.wallet-more')) walletMenu(false); });
+    document.addEventListener('click', (e) => {
+      // A redraw replaces the menu's contents, so a click on something that's since been replaced is still inside it.
+      if (walletOpen && e.target.isConnected && !e.target.closest('#wallet-menu, #me-credits')) walletMenu(false);
+    });
+  }
+
   function accountMenu(open) {
     const menu = $('#account-menu'), chip = $('#me-chip');
     accountOpen = open;
@@ -1552,6 +1598,7 @@
     if (!open) return;
     closeNavMenus();
     navSheet(false);
+    if (walletOpen) walletMenu(false);
     // Right-aligned under the chip (the menu sits in .topbar-right, which is position: relative).
     menu.style.right = `${Math.max(0, menu.parentElement.getBoundingClientRect().right - chip.getBoundingClientRect().right)}px`;
     menu.innerHTML = accountMenuHtml();
@@ -1677,6 +1724,7 @@
     window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance });
     window.FiveCasino.init({ esc, state, nameHtml: shop.nameHtml, confetti });
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
+    window.FiveRoulette.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance });
     window.FiveHunt.init({ state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName });
@@ -1766,6 +1814,7 @@
     $('#sync-btn').addEventListener('click', () => sync(false));
     bindNavMenus();
     bindAccountMenu();
+    bindWalletMenu();
     window.addEventListener('hashchange', route);
     try {
       await Promise.all([loadStatus(), loadMe(), shop.loadTroop().catch(() => {})]); // the troop's looks style names everywhere
