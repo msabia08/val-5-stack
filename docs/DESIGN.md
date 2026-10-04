@@ -353,7 +353,7 @@ ticking up as the squad spins), your fire meter (`.st-meter`: a flame bar with t
 comes at the bet you've picked, glowing near full), the title with
 Onkey peeking over it, the 5 × 4 reel window, a result line, and the deck (bet keys, a Credits / Bet / Win readout,
 Auto and Turbo, and a round Spin button that reads Skip while a spin plays). Symbols are drawn, not emoji:
-carved-looking letters for 9 to A, SVG coconut, bongo drums, banana bunch and Valorant tile, and pictures for Greg,
+carved-looking letters for 9 to A, SVG coconut, bongo drums, banana bunch (those three in a flat sticker style: plain fills, a thick dark outline) and Valorant tile, and pictures for Greg,
 the Golden Onkey, the Bongo Onkey wild (with a gold WILD tag), the spike and the fireball (with the credits it pays
 printed on it). Higher symbols get a soft halo.
 
