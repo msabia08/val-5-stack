@@ -35,6 +35,14 @@ window.FiveBets = (() => {
     state.bank = k;
     if (state.me) { state.bettor = state.me.name; localStorage.setItem('fs.bettor', state.bettor); }
   };
+  // The wallet menu (the top bar's credits chip, app.js walletMenu()): Onkey's Bank and Send credits, on every page.
+  // It loads only what those two cards read; their handlers reload everything and redraw, which refreshes the menu.
+  const loadWallet = async () => {
+    const [l, m, t, k] = await Promise.all([api('/api/bettors'), api('/api/bettor/me'), api('/api/transfers?limit=30'), api('/api/bank')]);
+    state.bettors = l.bettors; state.me = m.bettor || null; state.transfers = t.transfers; state.bank = k;
+  };
+  const walletHtml = () => `${bankCard()}${transferCard()}<a class="wallet-more" href="#bettors">Open the standings ›</a>`;
+  const bindWallet = (root) => { bindBank(root); bindTransfers(root); };
   const isMine = (b) => !!state.me && b.bettor.toLowerCase() === state.me.name.toLowerCase();
 
   // ---- bet slip and tickets -----------------------------------------------------
@@ -646,7 +654,7 @@ window.FiveBets = (() => {
       ${settledSection()}
       ${pastSeasonsCard()}
       ${state.bettingReport ? window.FiveViz.oddsAccuracy(state.bettingReport, vizHelpers) : ''}
-      </div><aside class="odds-side bettors-side">${offerCard()}${houseCard()}${bankCard()}${transferCard()}${rewardsCard()}</aside></div>`;
+      </div><aside class="odds-side bettors-side">${offerCard()}${houseCard()}${rewardsCard()}</aside></div>`;
   }
 
   // Onkey's Bank (bank.py, /api/bank): borrow up to the limit at interest and pay it back any time, oldest loan
@@ -932,14 +940,12 @@ window.FiveBets = (() => {
       return `<li class="${esc(o.status)}"><span class="house-mark" aria-label="${esc(o.status)}">${mark[o.status] || ''}</span>` +
         `<div><div>${esc(o.text)} <span class="muted small">${fmt.credits(o.prize)}</span></div><div class="muted small">${who}</div></div></li>`;
     }).join('')}</ul>` : '';
-    const recent = h.recent.length ? `<h3>Latest giveaways</h3><ul class="house-recent">${h.recent.map((g) =>
-      `<li><span>${plainName(g.bettor)}</span><span class="muted small">${esc(g.note || '')}</span><span class="num up">+${fmt.credits(g.amount)}</span></li>`).join('')}</ul>` : '';
     // Now and then the scientist has a word about the house's take (`sciHouse`; see docs/onkey-lore.md).
     const sci = sciHouse ? window.sciNote('Every credit ze house takes is one you cannot spend on bananas. Zis pleases me.') : '';
     return `<section class="card house-card"><h2>The house</h2>${how('Some of what the house takes goes back to you.', rule)}${sci}` +
       `<div class="house-pots"><div><span class="tile-label">Pot</span><b>${credits(h.pot)}</b></div>` +
       `<div><span class="tile-label">Jackpot</span><b>${credits(h.jackpot)}</b><a class="muted small" href="#wheel">Win it on the daily wheel</a></div></div>` +
-      `${next}${last}${recent}</section>`;
+      `${next}${last}</section>`;
   }
 
   function rewardsCard() {
@@ -974,8 +980,6 @@ window.FiveBets = (() => {
     $('#settled-game', view)?.addEventListener('change', (e) => { state.settledGame = e.target.value; draw(); });
     bindSlip();
     bindCustom(view);
-    bindTransfers(view);
-    bindBank(view);
     bindOffer(view);
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
       const headers = {};
@@ -1010,5 +1014,5 @@ window.FiveBets = (() => {
     });
   }
 
-  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard };
+  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard, loadWallet, walletHtml, bindWallet };
 })();

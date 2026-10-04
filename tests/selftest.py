@@ -1882,7 +1882,8 @@ def banana_hunt(shared):
     st = hunt.status(name, now=t)
     assert st["today"] == 5 and st["done"] and st["target"] is None and db.get_bettor(name)["balance"] == before + 5
     assert hunt.start(name, now=t)["target"] is None  # starting again doesn't help
-    # Under the floor the cap doesn't apply: with 247 credits, three more picks are allowed, then it's done again.
+    # Under the floor (250 in this manager; 50 by default, checked below) the cap doesn't apply: with 247 credits,
+    # three more picks are allowed, then it's done again.
     db.execute("UPDATE bettors SET balance = 247 WHERE name=?", (name,))
     st = hunt.start(name, now=t)
     assert st["under_floor"] and st["left"] == 3 and not st["done"] and st["target"], st
@@ -1926,7 +1927,7 @@ def banana_hunt(shared):
     assert hunt.summary(db.get_bettor(name), now=nxt + 2)["me"]["today"] == 1 and hunt.summary()["me"] is None
     shared.hunt_rows = 2
 
-    # ---- the extras: what Onkey throws, catches in the air, the combo, Greg, the streak, the hidden item ----
+    # ---- the extras: what Onkey throws, catches in the air, the combo, Greg, the hidden item ----
     import random as _random
     from fivestack import hunt as H
 
@@ -1951,22 +1952,21 @@ def banana_hunt(shared):
     day = wheel_day(now)
     assert hx.terms(now)["theme"] == H.theme(day) and H.theme(day) in H.THEMES and hx.terms(now)["extras"]
     assert len({H.theme(wheel_day(now + d * 86400)) for d in range(40)}) > 1  # the field changes by the day
-    # The streak: picks on the two days before make this day 3, so the first banana pays 3 and the cap is 2 higher.
+    # No streaks: picking on the days before changes nothing. The first banana pays one, and the cap is the cap.
     for back in (1, 2):
         db.execute("INSERT INTO hunt_days(bettor, day, bananas, credits, updated_ts) VALUES(?,?,?,?,?)",
                    (who, wheel_day(now - back * 86400), 4, 4.0, now - back * 86400))
     st = hx.start(who, now=now)
-    assert st["streak"] == {"days": 3, "bonus": 2, "paid": False} and st["cap"] == 502 and st["left"] == 502 and st["target"]["kind"] == "banana", st
+    assert "streak" not in st and "cap" not in st and st["left"] == 500 and st["target"]["kind"] == "banana", st
     r = hx.click(who, st["target"]["x"], st["target"]["y"], now=now + 1)
-    assert r["hit"] and r["paid"] == 3 and r["streak_bonus"] == 2 and r["combo"] == 1 and r["mult"] == 1 and r["today"] == 3, r
-    assert hx.status(who, now=now + 1)["streak"]["paid"]
+    assert r["hit"] and r["paid"] == 1 and "streak_bonus" not in r and r["combo"] == 1 and r["mult"] == 1 and r["today"] == 1, r
     # The same banana isn't swapped by starting again (no fishing for a golden one).
     tgt = r["target"]
     assert hx.start(who, now=now + 1.2)["target"] == tgt
     # Caught in the air: a click on the arc pays double; a click off the arc is a miss and breaks the combo.
     ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
     r = hx.click(who, ax + 5, ay - 5, now=now + 1.6, air=0.5)
-    assert r["hit"] and r["air"] and r["paid"] == 2 and r["combo"] == 2 and r["streak_bonus"] == 0, r
+    assert r["hit"] and r["air"] and r["paid"] == 2 and r["combo"] == 2, r
     tgt = r["target"]
     ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
     r = hx.click(who, ax + H.AIR_R + 30, ay, now=now + 2.0, air=0.5)
@@ -2063,15 +2063,30 @@ def banana_hunt(shared):
     assert hx._found(who, day, nth, now) is None  # never twice
     # Everything paid is in the day's row and the balance.
     st = hx.status(who, now=now)
-    assert st["today"] == round(db.get_bettor(who)["balance"] - start_balance) and st["left"] == st["cap"] - st["today"], st
+    assert st["today"] == round(db.get_bettor(who)["balance"] - start_balance) and st["left"] == 500 - st["today"], st
     # The cap counts credits: a golden banana can't pay past what's left.
     tight = HuntManager(db, {"hunt_daily_max": st["today"] + 2, "hunt_floor": 0})
     tight.rng = Rig()
     tight.rng.rolls = [GOLD]
     st = tight.start(who, now=now + 1)
-    assert st["left"] == 4 and st["target"]["kind"] == "golden", st  # two under the cap, plus the streak's two
+    assert st["left"] == 2 and st["target"]["kind"] == "golden", st  # two under the cap
     r = tight.click(who, st["target"]["x"], st["target"]["y"], now=now + 2)
-    assert r["hit"] and r["paid"] == 4 and r["done"] and r["target"] is None, r
+    assert r["hit"] and r["paid"] == 2 and r["done"] and r["target"] is None, r
+    # Past the cap there's only the top-up: by default, back up to 50 credits and no further.
+    from fivestack.hunt import FLOOR
+    topup = HuntManager(db, {"hunt_daily_max": 1})  # well past this cap already
+    topup.rng = Rig()
+    assert FLOOR == 50 and topup.floor == 50 and topup.terms()["floor"] == 50
+    assert topup.start(who, now=now + 3)["done"]  # plenty of credits: closed for the day
+    db.execute("UPDATE bettors SET balance = 47 WHERE name=?", (who,))
+    st = topup.start(who, now=now + 3)
+    assert st["under_floor"] and st["left"] == 3 and not st["done"], st
+    for n in range(3):
+        r = topup.click(who, st["target"]["x"], st["target"]["y"], now=now + 4 + n)
+        assert r["hit"] and r["paid"] == 1, r
+        st["target"] = r["target"]
+    assert r["done"] and r["target"] is None and db.get_bettor(who)["balance"] == 50, r
+    db.execute("UPDATE bettors SET balance = 1000 WHERE name=?", (who,))
     shared.hunt_rows = db.query_one("SELECT COUNT(*) AS n FROM hunt_days")["n"]
 
 

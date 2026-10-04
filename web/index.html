@@ -69,7 +69,9 @@
   </nav>
   <div class="topbar-right">
     <a id="me-wheel" class="me-chip me-wheel hidden" href="#wheel" title="Your daily wheel spin is ready">🎡 <b>Spin ready</b></a>
-    <a id="me-credits" class="me-chip me-stat" href="#bettors"></a>
+    <!-- The credits chip opens the wallet menu (app.js walletMenu): Onkey's Bank and Send credits. -->
+    <button type="button" id="me-credits" class="me-chip me-stat" aria-haspopup="true" aria-expanded="false" aria-controls="wallet-menu"></button>
+    <div class="nav-menu wallet-menu hidden" id="wallet-menu" role="dialog" aria-label="Your credits"></div>
     <a id="me-bananas" class="me-chip me-stat" href="#shop"></a>
     <!-- The profile chip opens the account menu (app.js bindAccountMenu): sign in or create an account, or, signed in,
          your profile, a password change and sign out. -->

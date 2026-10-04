@@ -5,7 +5,7 @@
  * lands on it pays and moves it somewhere else (the server judges each click and picks each spot, so the page only
  * reports where you clicked). Misses leave it where it is; picks faster than the server pays aren't paid; there's a
  * daily cap in credits that turns over at midnight Pacific, like the daily wheel, which doesn't apply while you're
- * under the floor (250 credits). Onkey, in his corner, winds up and throws every banana in along an arc (`throwTo()`,
+ * under the floor (50 credits). Onkey, in his corner, winds up and throws every banana in along an arc (`throwTo()`,
  * the Web Animations API, THROW_MS). The whole page is only redrawn when the hunt closes for the day; everything else
  * is updated in place so the hunt stays snappy.
  *
@@ -17,8 +17,7 @@
  * - picks in a row build a combo (x2, x3) shown in the corner of the field; a miss breaks it;
  * - from Onkey's lore: the scientist's claw comes down for a banana (`dropClaw()`), and Man Strudel visits
  *   (`visitStrudel()`), who takes nothing;
- * - the day's first banana pays your streak's day, one pick a day hides an item, and the field's scenery changes by
- *   the day (`hunt.theme`).
+ * - one pick a day hides an item, and the field's scenery changes by the day (`hunt.theme`).
  *
  * FiveHunt.init(ctx) gets app.js's helpers; load(), view() and bind() are called like the other pages'.
  * Plain JS, no dependencies; loaded before app.js.
@@ -98,17 +97,15 @@ window.FiveHunt = (() => {
   function liveLine() {
     const me = data && data.me, h = data && data.hunt;
     if (!me) return '';
-    if (me.done) return `Onkey has all the bananas he wanted today. The hunt reopens at ${resetAt(me)}.`;
-    if (me.under_floor) return `Past today's cap, but Onkey won't let you starve: ${plural(me.left, 'more credit')} until you have ${fmt.credits(h.floor)} credits.`;
-    return `${plural(me.left, 'credit')} left to pick today.`;
+    if (me.done) return `That's today's ${h.daily_max} credits. The hunt reopens at ${resetAt(me)}. Drop under ${fmt.credits(h.floor)} credits before then and you can pick back up to ${fmt.credits(h.floor)}.`;
+    if (me.under_floor) return `You've had today's ${h.daily_max} credits. This is a top-up: ${plural(me.left, 'more credit')}, until you have ${fmt.credits(h.floor)}.`;
+    return `${plural(me.left, 'credit')} left of today's ${h.daily_max}.`;
   }
-  const todaySub = (me, h) => (me.done ? 'done for today' : me.under_floor ? `over the cap, but under ${fmt.credits(h.floor)} credits` : 'credits picked');
+  const todaySub = (me, h) => (me.done ? 'done for today' : me.under_floor ? `past the cap: topping up to ${fmt.credits(h.floor)} credits` : 'credits picked');
   const comboSub = (me, h) => {
     const next = h.combo.steps.find((s) => me.combo < s);
     return me.mult > 1 ? (next ? `x${me.mult} now · x${me.mult + 1} at ${next} in a row` : `x${me.mult}: as high as it goes`) : `x2 at ${h.combo.steps[0]} in a row`;
   };
-  const streakSub = (me) => (me.streak.paid ? `tomorrow's first banana pays ${Math.min(me.streak.days + 1, data.hunt.streak_max)}`
-    : me.streak.bonus ? `today's first banana pays ${me.streak.bonus + data.hunt.per_banana}` : 'pick tomorrow too and the first one pays 2');
 
   function comboHtml() {
     const me = data.me, steps = data.hunt.combo.steps;
@@ -121,10 +118,11 @@ window.FiveHunt = (() => {
   function field() {
     const h = data.hunt, me = data.me, lay = layout();
     const size = `width:${lay.w}px;height:${lay.h}px`, cls = `hunt-field hunt-theme-${themeOf()}`;
-    if (!me) return `<div class="${cls} hunt-locked" style="${size}"><div class="hunt-msg"><a href="#" data-signin>Sign in</a> to hunt bananas for Onkey. Every one you pick is a credit.</div></div>`;
+    if (!me) return `<div class="${cls} hunt-locked" style="${size}"><div class="hunt-msg"><a href="#" data-signin>Sign in</a> to hunt bananas for Onkey. Every one you pick is a credit, up to ${h.daily_max} a day.</div></div>`;
     if (me.done) {
       return `<div class="${cls} hunt-locked" style="${size}">${scenery()}<img class="hunt-onkey full" src="/assets/onkey.png" alt="" aria-hidden="true">` +
-        `<div class="hunt-msg"><b>Onkey is full.</b> ${fmt.credits(me.today)} credits picked today. The hunt reopens at ${resetAt(me)} (midnight Pacific).</div></div>`;
+        `<div class="hunt-msg"><b>Onkey is full.</b> ${fmt.credits(me.today)} credits picked today. The hunt reopens at ${resetAt(me)} (midnight Pacific). ` +
+        `If you drop under ${fmt.credits(h.floor)} credits before then, you can pick back up to ${fmt.credits(h.floor)}.</div></div>`;
     }
     // The banana isn't in the markup: bind() has Onkey throw it in.
     return `<div class="${cls}" id="hunt-field" style="${size}">${scenery()}<div class="hunt-combo" id="hunt-combo" aria-hidden="true">${comboHtml()}</div>` +
@@ -150,9 +148,9 @@ window.FiveHunt = (() => {
     }
     const h = data.hunt, me = data.me;
     const tiles = me ? `<section class="kpis">
-        ${kpi('Today', `<span id="hunt-today">${me.today}</span> <span class="ov-unit">/ ${me.cap}</span>`, `<span id="hunt-today-sub">${todaySub(me, h)}</span>`)}
+        ${kpi('Today', `<span id="hunt-today">${me.today}</span> <span class="ov-unit">/ ${h.daily_max}</span>`, `<span id="hunt-today-sub">${todaySub(me, h)}</span>`)}
         ${kpi('Combo', `<span id="hunt-combo-n">${me.combo}</span> <span class="ov-unit">in a row</span>`, `<span id="hunt-combo-sub">${comboSub(me, h)}</span>`)}
-        ${kpi('Streak', `Day ${me.streak.days}`, `<span id="hunt-streak-sub">${streakSub(me)}</span>`)}
+        ${kpi('This season', `<span id="hunt-season">${fmt.credits(me.season)}</span>`, `${fmt.credits(me.all_time)} credits all time`)}
         ${kpi('Hunt reopens', resetAt(me), `today's field: ${THEME_NAME[themeOf()]}`)}
       </section>` : '';
     return `${tiles}<section class="card hunt-card"><h2>Banana Hunt</h2>
@@ -160,10 +158,10 @@ window.FiveHunt = (() => {
         `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
         `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
         `The scientist's <b>claw</b> sometimes comes down for one: it can't be sent off, so pick the banana before it gets there. Man Strudel only wants to say hello. ` +
-        `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg or stop for ${h.combo.idle_s} seconds. ` +
-        `Hunt on days in a row and the day's first banana pays the <b>streak</b>'s day (up to ${h.streak_max}), on top of the day's cap. One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
+        `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg or the claw, or stop for ${h.combo.idle_s} seconds. ` +
+        `One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
         `The server places every banana and judges every click, and picks less than ${Math.round(h.min_interval_s * 1000)} ms apart on the ground aren't paid. The day's ${h.daily_max} credits turn over at midnight Pacific, like the daily wheel; ` +
-        `the extras only get you there sooner. With fewer than ${fmt.credits(h.floor)} credits the cap doesn't apply: you keep picking until you have ${fmt.credits(h.floor)}, so nobody is stuck broke. ` +
+        `the extras only get you there sooner, and nothing pays past it. Once you've had the day's ${h.daily_max} the hunt closes, with one exception, a top-up: if you have fewer than ${fmt.credits(h.floor)} credits you can pick until you have ${fmt.credits(h.floor)}, so nobody is stuck with nothing. ` +
         'Credits from the hunt show in their own column on Standings and stay out of betting profit, like game rewards.')}
       <div class="hunt-stage">${field()}</div>
       <p class="muted small" id="hunt-live" aria-live="polite">${liveLine()}</p></section>
@@ -331,7 +329,7 @@ window.FiveHunt = (() => {
     set('#hunt-today-sub', todaySub(me, h));
     set('#hunt-combo-n', me.combo);
     set('#hunt-combo-sub', comboSub(me, h));
-    set('#hunt-streak-sub', streakSub(me));
+    set('#hunt-season', fmt.credits(me.season));
     set('#hunt-live', liveLine());
     const combo = $('#hunt-combo');
     if (combo) { combo.innerHTML = comboHtml(); combo.dataset.mult = me.mult; }
@@ -353,11 +351,10 @@ window.FiveHunt = (() => {
     const here = shown || (was ? layout().at(was) : { x: fieldEl.clientWidth / 2, y: fieldEl.clientHeight / 2 });
     if (r.hit) {
       session += 1;
-      me.season += r.paid; me.all_time += r.paid; me.bananas += 1; me.picks += 1; me.streak.paid = true;
+      me.season += r.paid; me.all_time += r.paid; me.bananas += 1; me.picks += 1;
       if (state.me && r.balance !== undefined) { state.me.balance = r.balance; renderMe(); }
       pop(fieldEl, here.x, here.y, `${r.air ? 'Caught! ' : ''}+${r.paid}`, r.kind === 'golden' ? 'gold' : r.air ? 'air' : '');
       if (r.swept) pop(fieldEl, here.x, here.y - 34, `Whole bunch! +${r.bunch_bonus}`, 'air');
-      if (r.streak_bonus) toast(`Day ${r.streak} in a row: the first banana paid ${r.paid}.`, 'good');
       if (r.found) { toast(`You found the hidden item: ${r.found.label}!`, 'good'); pop(fieldEl, here.x, here.y - 34, 'Hidden item!', 'gold'); window.FiveOnkey?.note('hunt_found', { label: r.found.label }); }
       if (session % 25 === 0) window.FiveOnkey?.note('hunt', { n: session, today: r.today });
     } else if (r.reason === 'rotten') { pop(fieldEl, here.x, here.y, 'Rotten!', 'bad'); freeze(fieldEl, r.frozen_s || data.hunt.freeze_s); }
