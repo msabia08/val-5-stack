@@ -18,7 +18,7 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Blackjack**, **Poker**, **Roulette** and **Crash**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Onkey Stampede**, **Blackjack**, **Poker**, **Roulette** and **Crash**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
@@ -95,6 +95,42 @@ casino game's payouts minus stakes this season); match-betting profit, ROI and
 records exclude them. The casino has nothing to do with bananas: it never earns
 or costs any. A season reset
 keeps the spin records with that season and starts fresh slot totals.
+
+## Onkey Stampede
+
+Open **Casino → Onkey Stampede** for the bigger machine: five reels of four
+symbols and 1,024 ways to win. Three or more of a symbol on adjacent reels from
+the left, in any row, pay; two of it on one reel and two on the next make four
+ways, and so on. Stakes are 2, 5, 10, 25, 50 or 100 credits. The Bongo Onkey is
+wild on reels 2 to 5. A spin only counts as a win when it pays more than your
+bet; a smaller payout says how much of your bet came back.
+
+- **Free spins:** three or more spikes anywhere pay and give 8, 12 or 20 free
+  spins on richer reels, where every wild carries ×2 or ×3 and wilds in a win
+  multiply each other. Three more spikes add 5 spins (50 at most).
+- **Hold and spin:** six or more golden fireballs stick, each showing the
+  credits it pays, and you get three respins; every new fireball resets them to
+  three. When they run out every fireball pays, and filling all 20 cells adds a
+  100× bonus.
+- **Fire meter and the jackpot pick:** every fireball you land adds your bet
+  to your own fire meter (it keeps between visits), so bigger bets fill it
+  faster. At 3,000 it opens the jackpot pick: crack fireballs open until one
+  jackpot shows three times and it's yours, or three smokes end it with nothing.
+  Mini, Minor, Major and Grand are shared credit amounts (starting at 100, 250,
+  800 and 5,000), the same for everyone, and grow with every spin anyone makes.
+- **Events:** now and then Onkey stampedes across the reels and leaves wilds
+  behind (always enough for a win), bananas rain down and turn into fireballs,
+  or, on a win, Onkey breathes fire on it for ×2, ×3 or ×5.
+
+It pays back about 95% of stakes over time, jackpots included: a paying spin
+about 1 in 5, most of them more than the bet; free spins and hold and spin each
+about 1 spin in 190; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
+Space spins, and pressing it again skips ahead; **Auto** spins 10, 25 or 50 times
+and stops for a bonus, the pick or a big win; **Turbo** speeds everything up. In
+October it wears its Halloween look. After an Epic win or a Major or Grand
+jackpot, Onkey sings you an encore. Like the other slots it counts in the
+**Casino** column of Standings, and its house edge grows the daily wheel's
+jackpot without ever taking from it.
 
 ## Blackjack
 

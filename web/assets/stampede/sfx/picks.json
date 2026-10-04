@@ -1,0 +1,17 @@
+[
+  {"file": "win-small-1.wav", "role": "win_small"},
+  {"file": "win-small-2.wav", "role": "win_small"},
+  {"file": "win-medium-1.wav", "role": "win_medium"},
+  {"file": "win-big-1.wav", "role": "win_big"},
+  {"file": "megawin.mp3", "role": "win_epic"},
+  {"file": "jackpot-1.wav", "role": "jackpot"},
+  {"file": "megawin.mp3", "role": "jackpot_big"},
+  {"file": "stampede-1.wav", "role": "stampede"},
+  {"file": "bonus-start-1.wav", "role": "bonus_start"},
+  {"file": "bonus-music-1.wav", "role": "bonus_music"},
+  {"file": "bonus-music-2.wav", "role": "bonus_music"},
+  {"file": "count-1.wav", "role": "count_run"},
+  {"file": "../../onkey-song.wav", "role": "encore"},
+  {"file": "../../onkey-bongos.m4a", "role": "encore"},
+  {"file": "../../onkey-halloween-song.m4a", "role": "encore", "october": true}
+]

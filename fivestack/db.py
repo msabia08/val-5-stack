@@ -275,6 +275,50 @@ CREATE TABLE IF NOT EXISTS slot_spins (
 );
 CREATE INDEX IF NOT EXISTS idx_slots_season ON slot_spins(season_id, bettor);
 
+-- Onkey Stampede's spins (stampede.py), kept through resets like slot_spins: the whole spin as JSON in result.
+CREATE TABLE IF NOT EXISTS stampede_spins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bettor TEXT NOT NULL REFERENCES bettors(name),
+    stake REAL NOT NULL,
+    result TEXT NOT NULL,
+    multiplier REAL NOT NULL,
+    payout REAL NOT NULL,
+    rtp REAL NOT NULL,  -- the expected return the spin was played at
+    created_ts REAL NOT NULL,
+    request_id TEXT NOT NULL,
+    season_id INTEGER REFERENCES seasons(id),
+    UNIQUE(bettor, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_stampede_season ON stampede_spins(season_id, bettor);
+
+-- Onkey Stampede's shared jackpots: each one's size in credits. Never reset.
+CREATE TABLE IF NOT EXISTS stampede_pots (
+    key TEXT PRIMARY KEY,
+    size REAL NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0,
+    last_bettor TEXT,
+    last_payout REAL,
+    last_ts REAL
+);
+
+-- Each bettor's Onkey Stampede fire meter: credits of fireballs (each adds its spin's stake) since their last jackpot
+-- pick. Kept through resets.
+CREATE TABLE IF NOT EXISTS stampede_meters (
+    bettor TEXT PRIMARY KEY,
+    heat REAL NOT NULL DEFAULT 0,
+    updated_ts REAL
+);
+
+-- Every Onkey Stampede jackpot won, every season.
+CREATE TABLE IF NOT EXISTS stampede_jackpots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spin_id INTEGER NOT NULL REFERENCES stampede_spins(id),
+    bettor TEXT NOT NULL,
+    key TEXT NOT NULL,
+    amount REAL NOT NULL,
+    created_ts REAL NOT NULL
+);
+
 -- The house's side of every casino round (house.py): kept through resets, season_id NULL means the current season.
 CREATE TABLE IF NOT EXISTS house_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -867,7 +911,7 @@ class DB:
                 self.conn.execute("DELETE FROM transfers")
                 self.conn.execute("DELETE FROM loans")  # debts are forgiven with the balances
                 self.conn.execute("UPDATE slot_spins SET season_id=? WHERE season_id IS NULL", (sid,))
-                for table in ("house_ledger", "house_payouts", "blackjack_hands", "roulette_spins", "crash_bets", "poker_buyins", "poker_hands",
+                for table in ("stampede_spins", "house_ledger", "house_payouts", "blackjack_hands", "roulette_spins", "crash_bets", "poker_buyins", "poker_hands",
                               "poker_results", "hunt_days"):
                     self.conn.execute(f"UPDATE {table} SET season_id=? WHERE season_id IS NULL", (sid,))
                 self.conn.execute("UPDATE bettors SET balance=?", (balance,))

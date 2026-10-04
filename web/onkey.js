@@ -289,6 +289,17 @@ window.FiveOnkey = (() => {
       'The rocket is fine. The rocket is not fine.', 'Onkey said get out. Onkey did not say it out loud.'],
     crash_pad: ['It never left the pad. Onkey is looking into it.', 'That one was a practice rocket.'],
     crash_moon: ['All the way up! Onkey did not know it could do that.'],
+    view_stampede: ['The stampede machine. Onkey ran through it once. On purpose.', 'Five reels, four rows, one Onkey. Mostly Onkey.',
+      'Onkey can hear the jackpots growing. They hum.', 'Watch for fireballs. Onkey lit them himself.'],
+    st_win: ['+{net}. The herd approves.', 'A little stampede of credits. +{net}.', 'Ways! So many ways! +{net}.'],
+    st_big: ['{mult}x! Onkey felt that in his feet!', 'The whole machine is shaking. That was you. +{net}!', '+{net}! Onkey is telling everyone.'],
+    st_free: ['Free spins! Onkey brought the bongos.', 'Spikes! Onkey is drumming already.', 'Three spikes. Onkey knew. Onkey always knows.'],
+    st_hold: ['Fireballs! Hold them! HOLD THEM!', 'Hold and spin! Onkey is not breathing until it\'s over.', 'Onkey loves a fireball. From a distance.'],
+    st_jackpot: ['The {jackpot} jackpot! +{net}! Onkey saw the whole thing!', '{jackpot} jackpot! Onkey is screaming into a banana!'],
+    st_grand: ['THE GRAND!!! Onkey needs to sit down.', 'The Grand. Onkey will tell this story forever.', 'GRAND JACKPOT. Onkey is crying. Happy crying.'],
+    st_stampede: ['That was Onkey running through. Sorry. You\'re welcome.', 'Stampede! Onkey left some wilds behind.'],
+    st_inferno: ['Onkey breathed on it. Times {inferno}.', 'Inferno! Onkey had spicy bananas.'],
+    st_lose: ['The herd went the other way.', 'Not this time. The reels are still warm.'],
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.', 'Onkey greased the wheel. For luck.'],
     view_hunt: ['Onkey is throwing bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each, 250 a day.'],
     hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
@@ -537,6 +548,17 @@ window.FiveOnkey = (() => {
         else if (d.added) chime(d.n >= 3 ? 'slip_many' : 'slip_add', { desc: desc(d.desc), n: d.n }, d.n >= 3 ? 0.5 : 0.3);
       } else if (kind === 'theme') {
         chime(`theme_${d.theme}`, {}, d.theme.startsWith('th-') ? 0.9 : 0.5, { excited: d.theme === 'th-greg' });
+      } else if (kind === 'stampede') {
+        const vars = { net: credits(Math.max(0, d.payout - d.stake)), mult: Math.round(d.multiplier), jackpot: d.jackpot, inferno: d.inferno };
+        if (d.jackpot === 'Grand') react('st_grand', vars, { excited: true });
+        else if (d.jackpot) react('st_jackpot', vars, { excited: true });
+        else if (d.free_spins) react('st_free', vars, { excited: true });
+        else if (d.hold) react('st_hold', vars, { excited: true });
+        else if (d.multiplier >= 15) react('st_big', vars, { excited: true });
+        else if (d.inferno) chime('st_inferno', vars, 0.7);
+        else if (d.event === 'stampede') chime('st_stampede', vars, 0.5);
+        else if (d.payout > d.stake) chime('st_win', vars, 0.3);
+        else if (!d.payout) chime('st_lose', vars, 0.06);
       } else if (kind === 'slots_tease') {
         // The tease: he gasps along with the reel (no chatter over its drone), whatever else he said a moment ago.
         speak(pick(SAY.slots_tease), { excited: true });

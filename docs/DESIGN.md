@@ -103,7 +103,7 @@ JS is the menu button's, the bet slip's handle and the Banana Hunt's field. So f
 ## Navigation
 
 - The top bar holds 🏠 **Overview** on its own, then four dropdown groups (`.nav-group` in `index.html`):
-  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings), 🃏 **Casino** (Slots, Blackjack, Poker, Banana Hunt, Daily wheel) and 🐒 **Onkey's**
+  📊 **Stats** (Players, Squad, Forecasts, Charts, Matches), 🎲 **Betting** (Place bets, Standings), 🃏 **Casino** (Slots, Onkey Stampede, Blackjack, Poker, Banana Hunt, Daily wheel) and 🐒 **Onkey's**
   (Shop, Arcade, Monkeys). A new page joins the group it belongs to, as a menu row with an emoji, a name and a
   one-line description; don't add another top-level entry without a good reason.
 - A group's button shows the name and emoji of the page you're on (`syncNavGroups()`), so you always know where you
@@ -337,6 +337,50 @@ still until it's used. Results use a live status region and errors appear inline
 request locks stakes and offers "Check last spin"; "Sign in to spin" uses the
 existing account menu.
 
+### Onkey Stampede
+
+`#stampede` lives under Casino, after Slots. It's the bigger, louder machine, and the page is laid out
+like Slots: the cabinet starts the page, a 360px sidebar card holds the pay table (each symbol's ×3 / ×4 / ×5 in
+credits at the stake picked, the wild, spikes, fireballs, the fire meter, the jackpots and events folded in a
+`how()`, and the latest jackpots), and three cards sit under the cabinet in the same column (your recent spins with
+feature chips, your season, the season's biggest wins), so nothing leaves a gap beside the tall sidebar.
+
+The cabinet (`.st-cabinet`) is dark in every theme, like the classic one, but its own palette: ember browns, fire
+and gold (`--st-*`), turned purple and orange in October (`.st-october`, with the pumpkin Onkey as the top symbol),
+deep blue during free spins (`.st-free`) and red-hot during hold and spin (`.st-hold`). From the top: the four
+jackpots (Grand widest, then Major, Minor, Mini, each its own colour and emblem, in credits, the same for everyone,
+ticking up as the squad spins), your fire meter (`.st-meter`: a flame bar with the count and how often the pick
+comes at the bet you've picked, glowing near full), the title with
+Onkey peeking over it, the 5 × 4 reel window, a result line, and the deck (bet keys, a Credits / Bet / Win readout,
+Auto and Turbo, and a round Spin button that reads Skip while a spin plays). Symbols are drawn, not emoji:
+carved-looking letters for 9 to A, SVG coconut, bongo drums, banana bunch and Valorant tile, and pictures for Greg,
+the Golden Onkey, the Bongo Onkey wild (with a gold WILD tag), the spike and the fireball (with the credits it pays
+printed on it). Higher symbols get a soft halo.
+
+Each jackpot has an emblem (`emblem()`, `.st-emb-*`): a coin in its colour with a picture, never a bare word. Mini
+is a banana bunch on green, Minor a coconut on blue, Major the Golden Onkey on purple, Grand the charging Onkey in a
+crown on red; the pick's Smoke is a grey cloud. Use them wherever a jackpot is named.
+
+Being honest about money is a rule here: a spin is only a "Win!" (gold) when it paid more than the bet. A payout
+under the bet reads "7 of your 10 back" in muted text, its cells light without the pulse, and it gets no win
+sound. Celebrations (sounds, Inferno, Big / Mega / Epic) are for real wins.
+
+Motion carries the dopamine, so the rules are about keeping it readable: reels blur while moving and bounce on
+landing; a reel that could finish a bonus glows and spins on (a tease from what's showing, never from the result);
+events have one clear beat each (Onkey charging across with dust and a rumble, wilds stamping in one by one,
+bananas falling then fireballs dropping into cells, flames up the window with a banner); every fireball throws a
+spark into the meter; wins light their cells and dim the rest, then take turns after the spin; banners are short,
+centred over the reels and gone in about a second and a half. A bonus explains itself before it starts: hold and
+spin opens with a rules card (`.st-howto`: three short lines), then swaps the title for a display of respins left,
+fireballs out of 20 and the bonus so far (`.st-hud`), with empty cells visibly spinning and stopping reel by reel,
+a note for each respin ("+2 fireballs! Back to 3 respins", "1 respin left") and a collect into the Win at the end.
+The jackpot pick (`.st-pick`) covers the reels with fifteen fireballs and a tracker of three pips per kind; a
+kind with two lights up; "Pick for me" picks one every half second. Big wins (10×, 25×, 50×) and jackpots get a
+full overlay on the reels with a counting number and coins. Turbo shortens everything, and Spin or Space skips
+ahead. After an Epic win or a Major or Grand jackpot, Onkey sings an encore (one of his own recordings) under the
+result line, "Onkey is singing for you", until the next spin; it's kept for those moments so it stays special.
+The phone layout doesn't cover this page yet.
+
 ### Onkey's Shop: the casino section
 
 The shop's catalogue comes in groups (`groups` from `/api/shop`): Your looks, then Onkey's Casino, which opens with a
@@ -532,6 +576,10 @@ crossed out when muted, in the button's text colour. Slots, the casino tables an
 5. Update this file if the change adds or retires a pattern.
 
 ## Known issues and backlog
+
+- **Onkey Stampede** (2026-10-04) was checked in dark and light at 1920×1080 with headless Chrome: a plain win, a
+  Stampede, free spins and a forced Grand. Its sound clips haven't been heard together in a real browser yet (the
+  headless checks only confirm they load and play without errors), and it has no phone layout yet.
 
 The 2026-09-30 review at 1920×1080 fixed: page widths, the signed-out top bar, nav icons, all-caps labels, link
 styles, dimmed names in tables, Overview's duplicate "Last game", bet-slip card gaps, the Shop's exchange-rate card,

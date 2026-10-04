@@ -1065,6 +1065,161 @@ def slots(shared):
     assert MACHINES["jackpot"]["spot1"] == 3000 and SlotManager(db).machines["jackpot"] is MACHINES["jackpot"]
 
 
+@section("stampede")
+def stampede(shared):
+    import random
+    from fivestack import stampede as st
+    from fivestack.house import HouseManager, casino_nets
+    from fivestack.stampede import (BASE_STRIPS, FS_STRIPS, GOLDEN, JACKPOTS, METER_FULL, NINE, PICK_KINDS, SPIKE, TEN,
+                                    WILD, StampedeManager, breakdown, hold_and_spin, pick_game, play, rtp, ways_wins)
+
+    # The exact return is 95% (within a twentieth of a point), every part of it counted: ways wins (with the Inferno),
+    # scatter pays, free spins, hold and spin's fireballs and full-grid bonus, and the jackpots (each one's seed x how
+    # often the pick gives it, plus what every spin grows it by).
+    b = breakdown()
+    assert abs(rtp() - 0.95) < 0.0005, rtp()
+    assert abs(b["line"] + b["scatter"] + b["free_spins"] + b["hold"] + b["jackpots"] - b["rtp"]) < 1e-12
+    assert abs(b["jackpots"] - sum(b["jackpot_hits"][k] * j["seed"] + j["grow"] for k, j in JACKPOTS.items())) < 1e-12
+    assert abs(b["pick_p"] - b["fires"] / METER_FULL) < 1e-12
+    # Medium volatility: free spins and hold and spin each about 1 spin in 150-250; the pick (its chances are per credit
+    # staked) about 1 spin in 250 at a 10-credit bet, and 10 times as often at 100; the jackpots rarer and rarer.
+    assert 150 < 1 / b["fs_p"] < 250 and 150 < 1 / b["hs_p"] < 250 and 200 < 1 / (b["pick_p"] * 10) < 300
+    hits = {k: v * 10 for k, v in b["jackpot_hits"].items()}
+    assert 400 < 1 / hits["mini"] < 1 / hits["minor"] < 1 / hits["major"] < 1 / hits["grand"] < 100_000
+    # The reels: no wild on reel 1, and a reel never shows two spikes.
+    assert WILD not in BASE_STRIPS[0] and WILD not in FS_STRIPS[0]
+    for strip in BASE_STRIPS + FS_STRIPS:
+        assert all(st.window(strip, i).count(SPIKE) <= 1 for i in range(len(strip)))
+    # Ways: nines on reels 1-3 (two on reel 2) make 2 ways of 3; a wild stands in; a gap ends the run; spikes and
+    # fireballs never pay ways.
+    FIRE = st.FIRE
+    grid = [[NINE, TEN, TEN, TEN], [NINE, NINE, TEN, FIRE], [WILD, TEN, FIRE, FIRE], [GOLDEN] * 4, [GOLDEN] * 4]
+    wins = {w["symbol"]: w for w in ways_wins(grid)}
+    assert wins[NINE]["ways"] == 2 and wins[NINE]["reels"] == 3 and wins[NINE]["mult"] == round(2 * st.PAYS[NINE][0], 4)
+    assert wins[TEN]["ways"] == 3 * 1 * 2 and GOLDEN not in wins
+    assert len(wins[NINE]["cells"]) == 4  # the nine, two nines and the wild
+    # Free spins' wilds multiply: x2 on reel 2 and x3 on reel 3 make one way worth six.
+    grid = [[NINE, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [TEN] * 4, [TEN] * 4]
+    fs = {w["symbol"]: w for w in ways_wins(grid, {(1, 0): 2, (2, 0): 3})}
+    assert fs[NINE]["ways"] == 6 and fs[NINE]["mult"] == round(6 * st.PAYS[NINE][0], 4)
+    # The exact math agrees with play(): 30,000 spins from a seeded generator land within a few standard errors, and
+    # most paying spins pay back more than the stake.
+    rng = random.Random(11)
+    n, line, fs_n, hs_n, fires, paid, beat = 30000, 0.0, 0, 0, 0, 0, 0
+    for _ in range(n):
+        r = play(rng.randrange)
+        line += r["line_mult"]
+        fs_n += bool(r["free_spins"])
+        hs_n += bool(r["hold"])
+        fires += len(r["values"])
+        paid += st.cash_mult(r) > 0
+        beat += st.cash_mult(r) > 1
+    assert abs(line / n - b["line"]) < 0.05, (line / n, b["line"])
+    assert abs(fs_n / n - b["fs_p"]) < 4 * (b["fs_p"] / n) ** 0.5 and abs(hs_n / n - b["hs_p"]) < 4 * (b["hs_p"] / n) ** 0.5
+    assert abs(fires / n - b["fires"]) < 0.03 and beat / paid > 0.55
+    # Hold and spin: from six fireballs it ends with about the exact expected count, each new one resets the respins
+    # to three, and it pays every fireball's value (plus the bonus on a full grid).
+    start = [[c, 0, 1] for c in range(5)] + [[0, 1, 1]]
+    finals = []
+    for _ in range(4000):
+        h = hold_and_spin(rng.randrange, start)
+        held = len(start) + sum(len(x["new"]) for x in h["rounds"])
+        finals.append(held)
+        assert all(x["respins"] == 3 for x in h["rounds"] if x["new"]) and (h["rounds"][-1]["respins"] == 0 or h["full"])
+        assert h["cash"] == h["values"] + (st.FULL_GRID_BONUS if h["full"] else 0)
+        assert h["values"] == 6 + sum(v for x in h["rounds"] for _, _, v in x["new"])
+    assert abs(sum(finals) / len(finals) - st._hs_math()[6][0]) < 0.15
+    # The pick: three of each kind on the board; the clicks end on the outcome's third, with every other kind shown
+    # at most twice; smoke three times means no jackpot.
+    for outcome in ("mini", "minor", "major", "grand", None):
+        g = pick_game(outcome, rng.randrange)
+        win = outcome or "smoke"
+        assert sorted(g["picks"] + g["rest"]) == sorted(k for k in PICK_KINDS for _ in range(3))
+        assert g["picks"][-1] == win and g["picks"].count(win) == 3
+        assert all(g["picks"].count(k) <= 2 for k in PICK_KINDS if k != win)
+
+    db = DB(os.path.join(shared.tmp, "stampede.db"))
+    db.create_bettor("Stomper", 1000)
+    db.create_bettor("Broke", 1)
+    bets = BetManager({"starting_balance": 1000}, db, shared.engine)
+    house_mgr = HouseManager(db, bets)
+    manager = StampedeManager(db)
+    seeds = {p["key"]: p["size"] for p in manager.pots()}
+    assert seeds == {k: j["seed"] for k, j in JACKPOTS.items()}
+    wheel_before = house_mgr.summary_pots()[1]
+    # A spin takes the stake and pays its multiple; each fireball adds the stake to the meter; a retry with the same
+    # reference returns the same spin; every spin grows every jackpot by its share of the stake.
+    out = manager.spin("Stomper", 10, "stomp-0000000000000001")
+    spin = out["spin"]
+    assert spin["payout"] == round(10 * spin["result"]["mult"], 2) and out["balance"] == round(1000 - 10 + spin["payout"], 2)
+    assert out["meter"]["heat"] == 10 * len(spin["result"]["values"]) == spin["result"]["meter"]["after"]
+    again = manager.spin("Stomper", 10, "stomp-0000000000000001")
+    assert again["spin"]["id"] == spin["id"] and again["balance"] == out["balance"] and again["meter"] == out["meter"]
+    _expect_error(manager.spin, "Stomper", 25, "stomp-0000000000000001", contains="already been used")
+    _expect_error(manager.spin, "Stomper", 7, "stomp-0000000000000002", contains="stake")
+    _expect_error(manager.spin, "Stomper", 10, "short", contains="reference")
+    _expect_error(manager.spin, "Broke", 2, "stomp-0000000000000003", contains="Not enough")
+    grown = {p["key"]: p["size"] for p in manager.pots()}
+    assert all(abs(grown[k] - seeds[k] - 10 * JACKPOTS[k]["grow"]) < 1e-6 for k in JACKPOTS)
+    # Only demo mode can ask for a spin: the real machine ignores `force` (no pick unless the meter really filled).
+    plain = manager.spin("Stomper", 2, "stomp-0000000000000004", force="grand")
+    assert not plain["spin"]["result"].get("pick") and not plain["spin"]["result"]["jackpots"]
+    assert plain["meter"]["heat"] == out["meter"]["heat"] + 2 * len(plain["spin"]["result"]["values"])
+    # Demo mode: a forced Mini fills the meter, and the pick pays the Mini's size in credits (the same at any bet),
+    # then resets the Mini and empties the meter; anything over the top carries on.
+    demo = StampedeManager(db, demo=True)
+    db.execute("DELETE FROM stampede_meters")
+    mini_size = {p["key"]: p["size"] for p in demo.pots()}["mini"] + 5 * JACKPOTS["mini"]["grow"]
+    won = demo.spin("Stomper", 5, "stomp-0000000000000005", force="mini")["spin"]
+    r = won["result"]
+    assert r["pick"]["outcome"] == "mini" and r["pick"]["picks"][-1] == "mini"
+    jp = r["jackpots"][0]
+    assert jp["key"] == "mini" and abs(jp["amount"] - round(mini_size, 2)) < 0.006
+    assert won["payout"] == round(5 * r["cash_mult"] + jp["amount"], 2)
+    assert demo.meter("Stomper")["heat"] == r["meter"]["after"] == r["meter"]["before"] + r["meter"]["added"] - METER_FULL
+    assert {p["key"]: p for p in demo.pots()}["mini"]["size"] == JACKPOTS["mini"]["seed"]
+    # A bigger bet fills the meter faster: 100 a fireball against 2.
+    db.execute("INSERT OR REPLACE INTO stampede_meters(bettor, heat) VALUES('Stomper', ?)", (METER_FULL - 1,))
+    grand = demo.spin("Stomper", 100, "stomp-0000000000000006", force="grand")["spin"]
+    g = grand["result"]
+    assert g["meter"]["added"] == 100 * len(g["values"]) and g["jackpots"][-1]["key"] == "grand"
+    assert g["jackpots"][-1]["amount"] >= JACKPOTS["grand"]["seed"]
+    pots = {p["key"]: p for p in demo.pots()}
+    assert pots["grand"]["size"] == JACKPOTS["grand"]["seed"] and pots["grand"]["hits"] == 1
+    # Three smokes: the meter empties and nothing is paid from the jackpots.
+    smoke = demo.spin("Stomper", 2, "stomp-0000000000000007", force="smoke")["spin"]["result"]
+    assert smoke["pick"]["outcome"] is None and smoke["pick"]["picks"][-1] == "smoke" and smoke["jackpots"] == []
+    # A forced full grid pays the bonus.
+    full = demo.spin("Stomper", 2, "stomp-0000000000000008", force="full")["spin"]["result"]
+    assert full["hold"]["full"] and full["hold"]["cash"] == full["hold"]["values"] + st.FULL_GRID_BONUS
+    assert db.query_one("SELECT COUNT(*) AS n FROM stampede_jackpots WHERE key='grand'")["n"] == 1
+    assert demo.summary()["jackpot_log"][0]["key"] == "grand"
+    # The house: a ledger row per spin with the edge's expected take, which grows the daily wheel's jackpot; nothing
+    # the machine pays (jackpots included) comes out of the house's pot or the wheel's jackpot.
+    rows = db.query("SELECT * FROM house_ledger WHERE game='stampede'")
+    count = db.query_one("SELECT COUNT(*) AS n FROM stampede_spins")["n"]
+    assert len(rows) == count == 6
+    assert all(abs(r["expected"] - r["staked"] * (1 - rtp())) < 1e-3 for r in rows)
+    assert db.query_one("SELECT COUNT(*) AS n FROM house_payouts")["n"] == 0
+    assert house_mgr.summary_pots()[1] > wheel_before
+    # The season: its net counts in the casino column, kept out of match-betting profit; a reset tags the spins and
+    # keeps the jackpots and the meters where they are.
+    net = round(db.get_bettor("Stomper")["balance"] - 1000, 2)
+    assert casino_nets(db)["stomper"]["stampede"] == net
+    row = next(r for r in bets.leaderboard() if r["name"] == "Stomper")
+    assert row["stampede"] == net and row["casino"] == net and row["profit"] == 0
+    me = demo.summary(db.get_bettor("Stomper"))
+    assert me["me"]["spins"] == 6 and me["me"]["picks"] == 3 and me["me"]["net"] == net and me["meter"]["full"] == METER_FULL
+    kept, meter = demo.pots(), demo.meter("Stomper")
+    season = bets.reset()
+    assert db.query_one("SELECT COUNT(*) AS n FROM stampede_spins WHERE season_id=?", (season["id"],))["n"] == 6
+    assert demo.summary(db.get_bettor("Stomper"))["me"]["spins"] == 0 and demo.pots() == kept
+    assert demo.meter("Stomper") == meter
+    # Old retry keys survive the reset.
+    assert manager.spin("Stomper", 10, "stomp-0000000000000001")["spin"]["id"] == spin["id"]
+    db.conn.close()
+
+
 def _expect_error(fn, *args, contains=""):
     try:
         fn(*args)
