@@ -355,7 +355,7 @@ window.FiveCasino = (() => {
     let t = a.currentTime + 0.02;
     for (const n of noises) { syllable(a, n, t); t += n === 'ook' ? 0.17 : 0.12; }
   }
-  // Small table sounds: a card flick, chips, a win.
+  // Small table sounds: a card flick, chips, a win, and Crash's launch and boom.
   function sound(kind) {
     const a = ctx();
     if (!a) return;
@@ -389,6 +389,26 @@ window.FiveCasino = (() => {
         g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.09 + 0.3);
         o.connect(g); g.connect(a.destination); o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.35);
       });
+    } else if (kind === 'launch' || kind === 'boom') {
+      // Crash's rocket: filtered noise, sweeping up for the launch and down, with a thump, for the crash.
+      const boom = kind === 'boom', len = boom ? 0.9 : 0.7;
+      const buf = a.createBuffer(1, a.sampleRate * len, a.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) {
+        const p = i / d.length;
+        d[i] = (Math.random() * 2 - 1) * (boom ? (1 - p) ** 2 : Math.min(1, p / 0.15) * (1 - p));
+      }
+      const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+      src.buffer = buf;
+      f.type = 'lowpass';
+      f.frequency.setValueAtTime(boom ? 1800 : 300, t); f.frequency.exponentialRampToValueAtTime(boom ? 90 : 2600, t + len);
+      g.gain.value = boom ? 0.4 : 0.16;
+      src.connect(f); f.connect(g); g.connect(a.destination); src.start(t);
+      if (boom) {
+        const o = a.createOscillator(), og = a.createGain();
+        o.type = 'sine'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.5);
+        og.gain.setValueAtTime(0.35, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+        o.connect(og); og.connect(a.destination); o.start(t); o.stop(t + 0.6);
+      }
     }
   }
   const speaker = () => `<button type="button" class="btn ghost icon casino-mute" aria-pressed="${!muted}" aria-label="${muted ? 'Turn sound on' : 'Turn sound off'}" title="${muted ? 'Sound off' : 'Sound on'}">${window.speakerIcon(muted, 18)}</button>`;

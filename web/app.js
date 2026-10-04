@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'hunt', 'slots', 'stampede', 'blackjack', 'poker', 'roulette', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'hunt', 'slots', 'stampede', 'blackjack', 'poker', 'roulette', 'crash', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -1186,6 +1186,7 @@
         case 'stampede': view.innerHTML = window.FiveStampede.view(); break;
         case 'blackjack': view.innerHTML = window.FiveBlackjack.view(); break;
         case 'roulette': view.innerHTML = window.FiveRoulette.view(); break;
+        case 'crash': view.innerHTML = window.FiveCrash.view(); break;
         case 'poker': view.innerHTML = window.FivePoker.view(); break;
         case 'wheel': view.innerHTML = window.FiveWheel.view(); break;
         case 'hunt': view.innerHTML = window.FiveHunt.view(); break;
@@ -1220,6 +1221,7 @@
         case 'stampede': await window.FiveStampede.load(); break;
         case 'blackjack': await window.FiveBlackjack.load(); break;
         case 'roulette': await window.FiveRoulette.load(); break;
+        case 'crash': await window.FiveCrash.load(); break;
         case 'poker': await window.FivePoker.load(); break;
         case 'wheel': await window.FiveWheel.load(); break;
         case 'hunt': await window.FiveHunt.load(); break;
@@ -1280,6 +1282,7 @@
     window.FiveStampede.bind(view);
     window.FiveBlackjack.bind(view);
     window.FiveRoulette.bind(view);
+    window.FiveCrash.bind(view);
     window.FivePoker.bind(view);
     window.FiveWheel.bind(view);
     window.FiveHunt.bind(view);
@@ -1729,6 +1732,7 @@
     window.FiveCasino.init({ esc, state, nameHtml: shop.nameHtml, confetti });
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveRoulette.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance });
+    window.FiveCrash.init({ state, $, api, draw, esc, fmt, loadMe, confetti });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FiveWheel.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, toast, holdBalance, releaseBalance });
     window.FiveHunt.init({ state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName });

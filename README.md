@@ -18,7 +18,7 @@ remembers your pick.
 **Getting around.** The top bar has 🏠 **Overview**, then three menus: 📊
 **Stats** (Players, Forecasts, Charts, Matches), 🎲 **Betting** (**Place bets**:
 the odds for the next game and your bet slip; **Standings**: rankings, results,
-seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Onkey Stampede**, **Blackjack**, **Poker** and **Roulette**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
+seasons, credits and rewards), 🃏 **Casino** (**Slots**, **Onkey Stampede**, **Blackjack**, **Poker**, **Roulette** and **Crash**, played with betting credits, the **Banana Hunt** and the **Daily wheel**) and 🐒 **Onkey's** (Shop, Arcade, Monkeys). A menu's
 button shows the page you're on.
 
 ## Slots
@@ -192,6 +192,28 @@ everyone bets on the same spin.
   bar all wait for the ball.
 
 Roulette counts in the Standings' **Casino** column with the other casino games, outside betting profit and ROI.
+
+## Crash
+
+**Casino › Crash** is Onkey's banana rocket: a banana with fins, Onkey riding it. There's one round for everyone: bet while it's on the pad, watch the multiplier
+climb from 1.00x once it launches, and **cash out before it crashes**.
+
+- **Betting.** Pick a stake (5 to 250 credits) and click Bet. The rocket launches 5 seconds after the round's first
+  bet, so there's time for everyone to get aboard. One bet each per round. A bet made while a round is in the air
+  goes in for the next one.
+- **Cashing out.** While it flies, the Cash out button shows what you'd get right now: your stake times the
+  multiplier. Click it (or press Space) and that's yours. If the rocket crashes first, the stake is gone.
+- **Auto cash-out.** Type a multiplier (1.01 to 100) next to the stake and the bet cashes out by itself when the
+  rocket gets there. You can still cash out sooner by hand.
+- **The odds.** Where it crashes is drawn the moment it launches and stays on the server until it does. The chance it
+  reaches a multiplier is 97% divided by that multiplier: 48.5% for 2x, 9.7% for 10x, about 1% for 100x. So every
+  cash-out point is worth the same, and the house keeps 3% of the stakes on average. About 3 rounds in 100 never
+  leave the pad (1.00x). A rocket that reaches **100x** stops there and pays everyone still aboard.
+- **Timing.** A cash-out counts when it reaches the server, at the multiplier at that moment.
+
+It flies over the jungle at night, past a tree on the right that never ends: the higher the rocket goes, the more tree there is. The row of chips above the sky is where the last rounds crashed, and the side cards show who's aboard and what they
+got out with. Crash counts in the Standings' **Casino** column with the other casino games, outside betting profit
+and ROI. A bet still on the pad or in the air when the site restarts or a season ends is refunded.
 
 ## Poker
 
@@ -1234,6 +1256,7 @@ fivestack/             the backend package
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table
   roulette.py          Casino: roulette on Onkey's wheel (a banana for the zero), solo tables and the shared table
+  crash.py             Casino: Crash, one shared round of Onkey's banana rocket (bet, climb, cash out before it crashes)
   poker.py             Casino: the Texas Hold'em table (lobby, betting, side pots, rake)
   cards.py             decks, shuffling and poker hand ranking
   tables.py            what the live tables share: locking, long-polling, the action log
@@ -1241,7 +1264,7 @@ fivestack/             the backend package
   tunnel.py            Cloudflare Tunnel runner (downloads cloudflared into tools/)
   demo_seed.py         synthetic data for --demo
 web/                   index.html, app.js, viz.js (charts), bets.js (betting UI), shop.js (Onkey's Shop and Monkeys), arcade.js (Onkey's Arcade),
-                       slots.js, blackjack.js, poker.js, roulette.js and casino.js (the Casino: cards, Onkey the dealer),
+                       slots.js, blackjack.js, poker.js, roulette.js, crash.js and casino.js (the Casino: cards, Onkey the dealer),
                        recap.js (match recap), style.css,
                        assets/ (onkey-logo.png, the top-left logo; greg.png and greg-logo.png for Greg Mode;
                        onkey.png, the logo's full-size original; onkey-song.wav, Onkey's song;

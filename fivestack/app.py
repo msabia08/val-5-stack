@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .arcade import ArcadeManager
 from .blackjack import BlackjackManager
 from .roulette import RouletteManager
+from .crash import CrashManager
 from .house import HouseManager
 from .poker import PokerManager
 from .slots import DEMO_GOLDEN_BOOST, SlotManager
@@ -102,6 +103,7 @@ class App:
         self.wheel = WheelManager(self.db, self.house, unlimited=demo)  # demo: spin as often as you like
         self.blackjack = BlackjackManager(self.db)
         self.roulette = RouletteManager(self.db)
+        self.crash = CrashManager(self.db)
         self.poker = PokerManager(self.db)
         self.auth = Auth(cfg, self.db)
         # Posts to the squad's Discord channel (game results, jackpots). Never in demo mode.
@@ -132,7 +134,7 @@ class App:
         """Run the live tables' clocks (turn timers, betting windows, the pause between hands) on a daemon thread."""
         def loop():
             while True:
-                for manager in (self.blackjack, self.poker, self.roulette):
+                for manager in (self.blackjack, self.poker, self.roulette, self.crash):
                     try:
                         manager.tick()
                     except Exception as e:  # a clock failure must never stop the others
@@ -154,8 +156,9 @@ class App:
     def reset_season(self):
         """End the season: the casino tables close first (open blackjack hands refunded, poker seats cashed out), with
         their locks held so nobody sits back down before the reset is done."""
-        with self.blackjack.lock, self.poker.lock, self.roulette.lock:
+        with self.blackjack.lock, self.poker.lock, self.roulette.lock, self.crash.lock:
             self.blackjack.void_open("The season ended")
+            self.crash.void_open("The season ended")
             self.roulette.void_open("The season ended")
             self.poker.close_all("The season ended")
             return self.bets.reset()
@@ -368,6 +371,8 @@ class Handler(BaseHTTPRequestHandler):
             "/api/blackjack/action": lambda: bj.action(name, which, body.get("action"), body.get("step")),
             "/api/roulette/spin": lambda: app.with_looks(rl.spin(name, body.get("bets"), body.get("request_id"))),
             "/api/roulette/bet": lambda: app.with_looks(rl.bet(name, body.get("bets"), body.get("request_id"))),
+            "/api/crash/bet": lambda: app.with_looks(app.crash.bet(name, body.get("stake"), body.get("auto"), body.get("request_id"))),
+            "/api/crash/cashout": lambda: app.with_looks(app.crash.cashout(name)),
             "/api/poker/sit": lambda: pk.sit(name, body.get("buyin")),
             "/api/poker/leave": lambda: pk.leave(name),
             "/api/poker/ready": lambda: pk.set_ready(name, body.get("ready")),
@@ -636,6 +641,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(app.roulette.view(None, "shared") | {"table": "solo", "seats": [], "log": [], "history": [],
                                                                        "phase": "betting", "result": None, "looks": {}})
             return self._json(app.with_looks(app.roulette.view(name, which)))
+        if path == "/api/crash":
+            me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
+            try:
+                since = int(qs["since"]) if "since" in qs else None
+            except ValueError:
+                since = None
+            if since is not None:  # long-poll: answer when the round moves, or after 20 seconds
+                app.crash.wait(app.crash.table, since, 20)
+            return self._json(app.with_looks(app.crash.view(me["name"] if me else None)))
         if path == "/api/troop":
             return self._json(app.bananas.troop())
         if path == "/api/troop/profile":
@@ -849,7 +863,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "Sign in as a bettor to spin."}, 403)
                 return self._json(app.stampede.spin(me["name"], body.get("stake"), body.get("request_id"),
                                                     force=body.get("force")))  # honoured in demo mode only
-            if path.startswith(("/api/blackjack/", "/api/poker/", "/api/roulette/")):
+            if path.startswith(("/api/blackjack/", "/api/poker/", "/api/roulette/", "/api/crash/")):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to play."}, 403)
