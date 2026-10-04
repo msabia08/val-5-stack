@@ -594,39 +594,39 @@ def timelines(shared):
 @section("rewards")
 def rewards(shared):
     cfg, db, bets = shared.cfg, shared.db, shared.bets
-    # Game rewards: 50 per game + up to 150 for beating your own baseline.
+    # Game rewards: 250 per game + up to 250 for beating your own baseline.
     assert beat_share(250, [100, 150, 200, 250, 300, 350]) == 3.5 / 6 and beat_share(9, [1, 2]) == 1.0 and beat_share(5, []) is None
     db.set_meta("rewards_since", db.match("m9")["started_ts"] - 60)  # rewards switched on after m1 / m3 were played
     rm = RewardManager({**cfg, "members": [{"riot_id": "P1#TAG", "bettor": "Tester"}] + MEMBERS[1:]}, db)
     base_rows = [{"puuid": "x", "started_ts": 1, "rounds_won": 13, "rounds_lost": 7, "score": sc} for sc in (2000, 3000, 4000, 5000, 6000, 7000)]
     base_rows.append({"puuid": "x", "started_ts": 99, "rounds_won": 13, "rounds_lost": 7, "score": 1})  # after the game: ignored
     q = rm.quote({"started_ts": 10, "rounds_won": 13, "rounds_lost": 7}, {"puuid": "x", "score": 5000}, base_rows)
-    assert q["acs"] == 250 and q["baseline_games"] == 6 and q["bonus"] == 90, q  # 150 * 3.5/6 = 87.5 -> nearest 5
+    assert q["acs"] == 250 and q["baseline_games"] == 6 and q["bonus"] == 145, q  # 250 * 3.5/6 = 145.8 -> nearest 5
     assert rm.pay_for_match(db.match("m1"), db.match_players("m1")) == []  # games from before rewards existed
     assert rm.pay_for_match(db.match("m3"), db.match_players("m3")) == []
     lb_before = {r["name"]: r for r in bets.leaderboard()}
     paid = rm.pay_for_match(db.match("m9"), db.match_players("m9"))
     by = {r["puuid"]: r for r in paid}
-    assert len(paid) == 5 and all(r["base"] == 50 and 0 <= r["bonus"] <= 150 and r["bonus"] % 5 == 0 for r in paid), paid
+    assert len(paid) == 5 and all(r["base"] == 250 and 0 <= r["bonus"] <= 250 and r["bonus"] % 5 == 0 for r in paid), paid
     assert by["puuid-1"]["bettor"] == "Tester"  # config override
     p2 = db.get_bettor("P2")  # no account yet -> created unclaimed, named after the member
-    assert p2 and not p2.get("password_hash") and p2["balance"] == 1000 + 50 + by["puuid-2"]["bonus"], p2
-    assert by["puuid-2"]["beat_share"] is None and by["puuid-2"]["bonus"] == 75  # only 2 baseline games: neutral bonus
+    assert p2 and not p2.get("password_hash") and p2["balance"] == 1000 + 250 + by["puuid-2"]["bonus"], p2
+    assert by["puuid-2"]["beat_share"] is None and by["puuid-2"]["bonus"] == 125  # only 2 baseline games: neutral bonus
     assert rm.pay_for_match(db.match("m9"), db.match_players("m9")) == []  # never paid twice
     loss = {**db.match("m9"), "match_id": "m10", "started_ts": db.match("m9")["started_ts"] + 3600,
             "rounds_won": 9, "rounds_lost": 13, "result": "loss"}
     db.insert_match(loss, [{**p, "match_id": "m10"} for p in db.match_players("m9")])
     lost = rm.pay_for_match(db.match("m10"), db.match_players("m10"))  # a loss pays the same way
-    assert len(lost) == 5 and all(r["base"] == 50 and 0 <= r["bonus"] <= 150 for r in lost), lost
-    assert next(r for r in lost if r["puuid"] == "puuid-2")["bonus"] == 75
+    assert len(lost) == 5 and all(r["base"] == 250 and 0 <= r["bonus"] <= 250 for r in lost), lost
+    assert next(r for r in lost if r["puuid"] == "puuid-2")["bonus"] == 125
     # The bonus compares against earlier 5-stack games only: P2 has m1, m3 before m9 and m1, m3, m9 before m10
     # (their two non-5-stack games, m2 and m5, don't count).
     assert by["puuid-2"]["baseline_games"] == 2 and next(r for r in lost if r["puuid"] == "puuid-2")["baseline_games"] == 3
     lb_after = {r["name"]: r for r in bets.leaderboard()}
     assert lb_after["Tester"]["profit"] == lb_before["Tester"]["profit"]  # rewards are not betting profit
     tester_lost = next(r for r in lost if r["puuid"] == "puuid-1")["bonus"]
-    assert lb_after["Tester"]["rewards"] == 50 + by["puuid-1"]["bonus"] + 50 + tester_lost and lb_after["P2"]["profit"] == 0
-    assert lb_after["P2"]["rewards"] == 125 + 125 and len(db.rewards()) == 10
+    assert lb_after["Tester"]["rewards"] == 250 + by["puuid-1"]["bonus"] + 250 + tester_lost and lb_after["P2"]["profit"] == 0
+    assert lb_after["P2"]["rewards"] == 375 + 375 and len(db.rewards()) == 10
     # bettor_names.json maps a nickname to another account (any case); a config.json `bettor` still wins over it.
     named = RewardManager({**cfg, "members": [{"riot_id": "P1#TAG", "bettor": "Tester"}] + MEMBERS[1:]}, db,
                           {"p3": "Kikii", "P1": "Ignored"})
@@ -635,8 +635,8 @@ def rewards(shared):
     names = load_bettor_names()  # the committed mapping parses
     assert names.get("it") == "Kikii" and names.get("fat") == "fatty", names
     win_rm = RewardManager({**cfg, "win_reward": 100}, db)  # optional extra for wins
-    assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 150
-    assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 50
+    assert win_rm.quote(db.match("m9"), db.match_players("m9")[0], [])["base"] == 350
+    assert win_rm.quote(db.match("m10"), db.match_players("m10")[0], [])["base"] == 250
 
 
 @section("bananas")
@@ -2438,7 +2438,7 @@ def seasons(shared):
     assert db.rewards() == [] and db.reward_totals() == {} and db.get_bettor("P2")["balance"] == 1000 and db.bets() == []
     assert season["name"] == "Season 1" and season["bets"] == before["bets"] and season["rewards"] == before["rewards"]
     saved = {r["name"]: r for r in season["standings"]}
-    assert saved["Tester"]["balance"] == before["standings"]["Tester"]["balance"] and saved["P2"]["rewards"] == 250
+    assert saved["Tester"]["balance"] == before["standings"]["Tester"]["balance"] and saved["P2"]["rewards"] == 750
     archived = db.archived_bets(season["id"])
     assert len(archived) == before["bets"] and not any(b["status"] == "pending" for b in archived)
     assert sum(b["note"] == "Still open when the season was reset" for b in archived) == before["open"]
@@ -3431,9 +3431,9 @@ def daily_wheel(shared):
     # One spin a day. Credit prizes are free: a giveaway in the standings, but nothing comes out of the pot.
     hbets.register("Wes", "secret1")
     before, pot = hdb.get_bettor("Wes")["balance"], house.pot()
-    r = wheel.spin("Wes", now=day, segment=at["c100"])
-    assert r["amount"] == 100 and r["spins_left"] == 0 and hdb.get_bettor("Wes")["balance"] == before + 100
-    assert abs(house.pot() - pot) < 0.01 and house.totals()["wes"] == 100
+    r = wheel.spin("Wes", now=day, segment=at["c250"])
+    assert r["amount"] == 250 and r["spins_left"] == 0 and hdb.get_bettor("Wes")["balance"] == before + 250
+    assert abs(house.pot() - pot) < 0.01 and house.totals()["wes"] == 250
     try:
         wheel.spin("Wes", now=day + 3600)
         raise AssertionError("one spin a day")
@@ -3442,11 +3442,11 @@ def daily_wheel(shared):
     assert wheel.summary({"name": "Wes"}, now=day)["me"]["spins_left"] == 0
     # "2x respin" gives two more spins the same day; the next day brings a fresh one.
     assert wheel.spin("Wes", now=day + 86400, segment=at["again2"])["spins_left"] == 2
-    assert wheel.spin("Wes", now=day + 86400, segment=at["c1000"])["spins_left"] == 1
+    assert wheel.spin("Wes", now=day + 86400, segment=at["c2000"])["spins_left"] == 1
     bananas = hdb.banana_wallet("Wes")
     last = wheel.spin("Wes", now=day + 86400, segment=at["b100"])
     assert last["amount"] == 100 and last["spins_left"] == 0 and hdb.banana_wallet("Wes") == bananas + 100
-    assert [s["amount"] for s in SEGMENTS if s["kind"] == "credits"] == [100, 250, 500, 1000]
+    assert [s["amount"] for s in SEGMENTS if s["kind"] == "credits"] == [250, 500, 1000, 2000]
     assert not any(s["kind"] == "nothing" for s in SEGMENTS)
     # A free cosmetic they didn't own, and the jackpot: all of it.
     item = wheel.spin("Wes", now=day + 2 * 86400, segment=at["item"])
@@ -3494,14 +3494,14 @@ def daily_wheel(shared):
     assert hdb.get_bettor("Wes")["balance"] == balance + TOKEN_MAX_STAKE and "Insured" in hdb.bet(bet["id"])["note"]
     # A live server ignores a requested slice; demo mode honours it and has no daily limit.
     try:
-        wheel.spin("Wes", now=day + 5 * 86400, force="c1000")
+        wheel.spin("Wes", now=day + 5 * 86400, force="c2000")
         raise AssertionError("still one spin a day")
     except BetError:
         pass
     demo = WheelManager(hdb, house, unlimited=True)
     hbets.register("Dee", "secret1")
-    spins = [demo.spin("Dee", now=day, force=key)["prize"] for key in ("again2", "again2", "c100", "nope")]
-    assert spins[:3] == ["again2", "again2", "c100"] and spins[3] in at and demo.summary({"name": "Dee"}, now=day)["unlimited"]
+    spins = [demo.spin("Dee", now=day, force=key)["prize"] for key in ("again2", "again2", "c250", "nope")]
+    assert spins[:3] == ["again2", "again2", "c250"] and spins[3] in at and demo.summary({"name": "Dee"}, now=day)["unlimited"]
     summary = wheel.summary({"name": "Wes"}, now=day + 5 * 86400)
     assert not summary["unlimited"] and len(summary["me"]["history"]) == 8 and summary["recent"][0]["bettor"] == "Dee" and summary["segments"] == SEGMENTS
 

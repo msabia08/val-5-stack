@@ -738,12 +738,12 @@ there are 2+ picks.
 Playing earns credits too. For every 5-stack game recorded, won or lost, each
 squad member's bettor account gets:
 
-- **`game_reward`** (default 50), plus `win_reward` on top for a win (default
+- **`game_reward`** (default 250), plus `win_reward` on top for a win (default
   0, so wins and losses pay the same unless you set it), and
-- a **performance bonus** of up to `performance_bonus_max` (default 150). The
+- a **performance bonus** of up to `performance_bonus_max` (default 250). The
   bonus is the share of your *previous 5-stack games* that this game's ACS
   beats, so you're measured against how you usually play with the squad. Beat
-  80% of them and you get 120; set a new 5-stack best and you get the full 150.
+  80% of them and you get 200; set a new 5-stack best and you get the full 250.
   With fewer than 5 earlier 5-stack games to compare against, the bonus is half
   (75).
   Bonuses are paid in steps of 5 credits (rounded to the nearest 5).
@@ -1016,16 +1016,16 @@ slice's size on the wheel is its chance:
 
 | Prize | Chance |
 |---|---|
-| 100 credits | 1 in 4 |
-| 250 credits | 1 in 7 |
+| 250 credits | 1 in 4 |
+| 500 credits | 1 in 7 |
 | 50 bananas | 1 in 8 |
 | Boost token: a single or one leg of a parlay, on a bet of up to 250 credits, pays 50% more profit | 1 in 11 |
 | Insurance token: if a single loses, you get the stake back (up to 250) | 1 in 13 |
-| 500 credits | 1 in 13 |
+| 1000 credits | 1 in 13 |
 | 100 bananas | 1 in 14 |
 | 2x respin: two more spins today | 1 in 18 |
 | A free cosmetic from Onkey's Shop you don't own yet (100 bananas if you own them all) | 1 in 20 |
-| 1000 credits | 1 in 33 |
+| 2000 credits | 1 in 33 |
 | **The jackpot**: all of it | 1 in 200 |
 
 Credit prizes and insurance refunds are free: they don't come out of the
@@ -1215,9 +1215,9 @@ time you log in.
 | `starting_balance` | 1000 | Credits for a new bettor. |
 | `bet_grace_minutes` | 2 | A bet placed this soon after a game starts still counts for that game. `0` means only bets placed before the start. |
 | `bet_cancel_minutes` | 1 | How long after placing a bet its bettor can still cancel it. The admin can cancel open bets any time. |
-| `game_reward` | 50 | Credits each member earns per 5-stack game, win or loss. `0` turns it off. |
+| `game_reward` | 250 | Credits each member earns per 5-stack game, win or loss. `0` turns it off. |
 | `win_reward` | 0 | Extra credits each member earns on top for a win. |
-| `performance_bonus_max` | 150 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
+| `performance_bonus_max` | 250 | Most a member can earn per game for beating their own baseline. `0` turns it off. |
 | `starting_bananas` | 50 | Bananas every account starts each season with (new accounts get them straight away). Not counted as earned. `0` turns it off. |
 | `banana_per_game` | 5 | Bananas each squad member earns for every Competitive game they play, squad game or not, for Onkey's Shop. Whole numbers. `0` stops paying bananas. |
 | `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
