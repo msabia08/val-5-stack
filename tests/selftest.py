@@ -2665,6 +2665,77 @@ def resync(shared):
     assert tracker.sync()["full"] is False and db.count_matches() == 4
 
 
+@section("discord")
+def discord(shared):
+    from fivestack import discord as D
+
+    # Only a real Discord webhook URL switches it on; anything else is ignored and nothing is ever sent.
+    sent = []
+    post = lambda url, payload: (sent.append((url, payload)) or (True, "HTTP 204"))  # noqa: E731
+    hook = "https://discord.com/api/webhooks/123/abc"
+    off, bad = D.Discord("", post=post, background=False), D.Discord("https://example.com/hook", post=post, background=False)
+    assert not off.enabled and not off.ignored and not bad.enabled and bad.ignored
+    assert off.send({"content": "x"}) is False and bad.send({"content": "x"}) is False and not sent
+    on = D.Discord(f"  {hook}  ", post=post, background=False)
+    assert on.enabled and on.send(D.test_message()) is True and sent == [(hook, D.test_message())]
+    assert on.send(None) is False and len(sent) == 1
+    # A post that fails (or raises) is reported as failed and never raises.
+    assert D.Discord(hook, post=lambda u, p: (False, "HTTP 404"), background=False).send({"content": "x"}) is False
+    assert D.Discord(hook, post=lambda u, p: 1 / 0, background=False).send({"content": "x"}) is False
+    # In the background (the default) it reports the message as on its way.
+    done = []
+    bg = D.Discord(hook, post=lambda u, p: (done.append(p) or (True, "ok")))
+    assert bg.send({"content": "bg"}) is True
+    for _ in range(100):
+        if done:
+            break
+        time.sleep(0.01)
+    assert done == [{"content": "bg"}]
+
+    # Only recent games are posted, a few per sync, oldest first: a first sync of a long history stays quiet.
+    now = 2_000_000_000
+    games = [{"match_id": f"g{i}", "started_ts": now - i * 3600} for i in range(12)]
+    assert [m["match_id"] for m in D.fresh(games, now)] == ["g2", "g1", "g0"]
+    assert D.fresh([{"match_id": "old", "started_ts": now - D.FRESH_S - 1}], now) == [] and D.fresh([], now) == []
+
+    # The game post: result, the top of the scoreboard, the best highlight, the betting, and long shots.
+    match = {"match_id": "m-d", "map": "Ascent", "result": "win", "rounds_won": 13, "rounds_lost": 11, "started_ts": 1_800_000_000}
+    board = [{"nickname": "Matt", "kills": 18, "deaths": 15, "assists": 4, "acs": 221.4},
+             {"nickname": "Jordan", "kills": 24, "deaths": 14, "assists": 6, "acs": 262.6}]
+    bets = [{"bettor": "Matt", "status": "won", "stake": 50, "payout": 120, "odds_decimal": 2.4, "description": "Match result: Win"},
+            {"bettor": "Matt", "status": "lost", "stake": 20, "payout": 0, "odds_decimal": 1.9, "description": "Matt Kills Over 20.5"},
+            {"bettor": "Sam", "status": "lost", "stake": 60, "payout": 0, "odds_decimal": 2.1, "description": "Match result: Loss"},
+            {"bettor": "Alex", "status": "won", "stake": 10, "payout": 75, "odds_decimal": 7.5, "description": "Final score: 13-11"},
+            {"bettor": "Riley", "status": "void", "stake": 30, "payout": 30, "odds_decimal": 2.0, "description": "A push"}]
+    msg = D.game_message(match, board, {"title": "Snapped a 3-game losing streak", "detail": "Squad"}, bets)
+    embed = msg["embeds"][0]
+    assert msg["username"] == "Onkey" and embed["title"] == "Win 13-11 on Ascent" and embed["color"] == D.WIN_COLOUR
+    # Nothing a bettor types can ping the channel: every kind of post turns mentions off.
+    pinger = [{"bettor": "@everyone", "status": "won", "stake": 1, "payout": 9, "odds_decimal": 9.0, "description": "@here"}]
+    for post_ in (msg, D.game_message(match, board, None, pinger), D.jackpot_message("@everyone", 5), D.test_message()):
+        assert post_["allowed_mentions"] == {"parse": []}, post_
+    assert embed["description"] == "**Snapped a 3-game losing streak**\nSquad" and embed["timestamp"].startswith("2027-01-15")
+    fields = {f["name"]: f["value"] for f in embed["fields"]}
+    assert fields["Top of the scoreboard"] == "**Jordan** · 24/14/6 · 263 ACS", fields
+    assert fields["Betting"].split("\n") == ["🟢 **Alex** +65 (1 of 1 bet won)", "🟢 **Matt** +50 (1 of 2 bets won)",
+                                            "🔴 **Sam** -60 (0 of 1 bet won)"], fields["Betting"]  # the void bet is left out
+    assert fields["Long shot"] == '🎯 **Alex** hit "Final score: 13-11" at 7.50 for +65'
+    loss = D.game_message({**match, "result": "loss", "rounds_won": 5, "rounds_lost": 13}, None, None, None)["embeds"][0]
+    assert loss["title"] == "Loss 5-13 on Ascent" and loss["color"] == D.LOSS_COLOUR and loss["fields"] == [] and "description" not in loss
+    # Discord's limits: a title is at most 256 characters and a field 1024, however much there is to say.
+    many = [{"bettor": f"Bettor number {i} with a long name", "status": "won", "stake": 1, "payout": 3, "odds_decimal": 3.0,
+             "description": "x" * 400} for i in range(40)]
+    big = D.game_message({**match, "map": "M" * 400}, board, {"title": "T" * 3000, "detail": "d"}, many)["embeds"][0]
+    assert len(big["title"]) <= 256 and len(big["description"]) <= 2000 and all(len(f["value"]) <= 1024 for f in big["fields"])
+    assert "more" in big["fields"][1]["value"]
+    jackpot = D.jackpot_message("Wes", 1284)["embeds"][0]
+    assert jackpot["title"] == "JACKPOT!" and "**Wes**" in jackpot["description"] and "1,284 credits" in jackpot["description"]
+    # A real game from this database goes through the recap into a post without tripping on anything.
+    recap = build_recap(shared.db, shared.engine, None, {}, 150)
+    real = D.game_message(recap["match"], recap["players"], (recap["highlights"] or [None])[0], shared.db.bets(limit=50))
+    assert real["embeds"][0]["title"].split()[0] in ("Win", "Loss") and json.dumps(real)
+
+
 @section("config docs")
 def config_docs(shared):
     # Every setting in config.example.json is documented in the README's configuration table.
