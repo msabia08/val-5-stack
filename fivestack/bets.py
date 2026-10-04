@@ -222,6 +222,7 @@ class BetManager:
                 "transfers": round(received, 2),
                 "casino": round(nets.get("total", 0.0), 2),  # every casino game this season
                 "slots": round(nets.get("slots", 0.0), 2),
+                "stampede": round(nets.get("stampede", 0.0), 2),
                 "giveaways": round(given, 2),
                 "hunt": round(hunted, 2),  # credits from the Banana Hunt this season
                 "roi": round((s["returned"] - s["staked"]) / s["staked"], 3) if s["staked"] else None,

@@ -25,6 +25,7 @@ from .roulette import RouletteManager
 from .house import HouseManager
 from .poker import PokerManager
 from .slots import DEMO_GOLDEN_BOOST, SlotManager
+from .stampede import StampedeManager
 from .auth import CLEAR_BETTOR_COOKIE, CLEAR_COOKIE, THROTTLE_MSG, Auth
 from .bananas import BananaManager
 from .bank import BankManager
@@ -59,6 +60,8 @@ MIME = {
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
     ".ico": "image/x-icon",
 }
 
@@ -94,6 +97,7 @@ class App:
         self.hunt = HuntManager(self.db, cfg)
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db, golden_boost=DEMO_GOLDEN_BOOST if demo else 1)  # demo: Golden Onkeys to test
+        self.stampede = StampedeManager(self.db, demo=demo)  # demo: a spin can ask for a feature
         self.house = HouseManager(self.db, self.bets, self.rewards)  # the take (bets and the casino) and what it gives back
         self.wheel = WheelManager(self.db, self.house, unlimited=demo)  # demo: spin as often as you like
         self.blackjack = BlackjackManager(self.db)
@@ -593,6 +597,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(app.wheel.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/slots":
             return self._json(app.slots.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
+        if path == "/api/stampede":
+            return self._json(app.stampede.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
+        if path == "/api/stampede/pots":
+            return self._json({"pots": app.stampede.pots(), "jackpot_log": app.stampede.jackpot_log()})
         if path in ("/api/blackjack", "/api/poker"):
             me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
             name = me["name"] if me else None
@@ -835,6 +843,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not me:
                     return self._json({"error": "Sign in as a bettor to spin."}, 403)
                 return self._json(app.slots.spin(me["name"], body.get("machine"), body.get("stake"), body.get("request_id")))
+            if path == "/api/stampede/spin":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to spin."}, 403)
+                return self._json(app.stampede.spin(me["name"], body.get("stake"), body.get("request_id"),
+                                                    force=body.get("force")))  # honoured in demo mode only
             if path.startswith(("/api/blackjack/", "/api/poker/", "/api/roulette/")):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
