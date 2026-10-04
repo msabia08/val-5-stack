@@ -2651,7 +2651,8 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 @keyframes st-shake { 10%, 50%, 90% { transform: translate(-6px, 2px) rotate(-.4deg); } 30%, 70% { transform: translate(6px, -2px) rotate(.4deg); } }
 @keyframes st-rumble { 50% { transform: translate(0, 3px); } }
 
-.st-winline { display: grid; justify-items: center; gap: 2px; min-height: 52px; padding: 8px 0 2px; text-align: center; }
+/* Tall enough for its two-line message, so the deck under it stays put when a spin swaps that for one line. */
+.st-winline { display: grid; justify-items: center; align-content: center; gap: 2px; box-sizing: border-box; min-height: 58px; padding: 8px 0 2px; text-align: center; }
 .st-winline b { font: 800 22px/1.2 system-ui, sans-serif; color: var(--st-gold); }
 .st-winline span { font-size: 13px; color: var(--st-muted); }
 
