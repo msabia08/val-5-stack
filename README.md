@@ -773,8 +773,8 @@ server turns down any score a game couldn't reach in the time it ran.
 
 ## Onkey's Bank
 
-Broke before the next game? The Standings page's sidebar has **Onkey's Bank**,
-where any signed-in bettor can borrow credits:
+Broke before the next game? Click your **credits** in the top bar, on any page,
+to open **Onkey's Bank**, where any signed-in bettor can borrow credits:
 
 - Borrow any whole amount up to **`loan_max`** (default 1000) at
   **`loan_interest`** (default 10%): borrow 500 and you owe 550.
@@ -805,9 +805,7 @@ one you click is **1 credit**.
   send him off.
 - Picks in a row build a **combo**: every banana pays double from 10 in a row
   and triple from 25, until you miss, pick a rotten one, lose one to Greg or
-  stop for 8 seconds.
-- Hunt on days in a row and the day's first banana pays your **streak**'s day
-  (2 on day 2, up to 7), on top of the day's cap.
+  the claw, or stop for 8 seconds.
 - One of your picks each day turns up a **hidden item**: 25 shop bananas, a
   boost token or an insurance token.
 - The **field of the day** changes its scenery: jungle, night, rain, beach or
@@ -819,12 +817,12 @@ The rules underneath:
   count: a miss pays nothing and leaves the banana where it is, and picks off
   the ground less than about half a second apart aren't paid.
 - Each bettor can pick **`hunt_daily_max`** (default 250) credits a day. The
-  extras only get you there sooner; they never raise the cap (the streak's
-  bonus is the one thing on top). The day turns over at midnight Pacific, like
-  the daily wheel.
-- The cap has a floor: with fewer than **`hunt_floor`** (default 250) credits,
-  you keep picking past the cap until you have that many, so nobody is ever
-  stuck broke.
+  extras only get you there sooner; nothing pays past the cap. The day turns
+  over at midnight Pacific, like the daily wheel.
+- Once you've had the day's 250 the hunt is closed, with one exception: a
+  top-up. With fewer than **`hunt_floor`** (default 50) credits, you can pick
+  until you have that many, and no further, so nobody is ever stuck with
+  nothing.
 - Credits from the hunt show in their own **Hunt** column on Standings and stay
   out of betting profit, ROI and record, like game rewards. The page's Top
   pickers table ranks everyone by what they picked this season.
@@ -834,8 +832,8 @@ The rules underneath:
 ## Sending credits
 
 Bettors can pay each other: settle a side bet, pay off a lost argument, spot a
-friend who went broke. In the Standings page's sidebar (next to Game rewards),
-**Send credits** takes a recipient (any bettor account, claimed or not), an
+friend who went broke. Click your **credits** in the top bar, on any page: under
+Onkey's Bank, **Send credits** takes a recipient (any bettor account, claimed or not), an
 amount (at least 1, no more than your balance) and an optional note of up to 80
 characters. A confirm line spells out who gets how much before anything moves,
 because there's no undo.
@@ -875,8 +873,8 @@ blackjack edge, the poker rake). What that has taken (estimated from the price o
 each bet and round, every season) is the house's money, and it goes back to the squad and the bettors. Half of it is
 the **pot**, which pays for secret objectives and bad-beat refunds, and half builds the
 **jackpot**, which the daily wheel pays out. The Standings page's sidebar shows both, along with the next game's
-objectives (how many and what they're worth, not what they are), the last
-game's objectives revealed, and the latest giveaways.
+objectives (how many and what they're worth, not what they are) and the last
+game's objectives revealed.
 
 ### Secret objectives
 
@@ -1013,7 +1011,7 @@ He's kept rare, but he's around:
 - **In Onkey's corner.** Now and then his face takes over the logo for one line, and Onkey shoves back in. Some
   of Onkey's darker lines are about him too.
 - **On the login page.** One visit in twenty, he's watching from the corner.
-- **At Onkey's Bank.** Take a loan and he calls; while you owe, he's waiting on the bank card. Debt is his plan.
+- **At Onkey's Bank.** Take a loan and he calls; while you owe, he's waiting in the bank (click your credits). Debt is his plan.
 - **His offer.** With fewer than 100 credits you get a call on Standings: $25,000 for Onkey. The only answer is
   "Onkey is not for sale", which earns the **Not For Sale** title for free.
 - **On the house card.** Sometimes he has a word about what the house takes.
@@ -1099,7 +1097,7 @@ time you log in.
 | `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
 | `loan_interest` | 0.1 | Interest on a loan, as a share of the amount borrowed (0.1 = borrow 500, owe 550). |
 | `hunt_daily_max` | 250 | Credits a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
-| `hunt_floor` | 250 | Below this many credits the daily cap doesn't apply: a bettor keeps picking until they have this much. |
+| `hunt_floor` | 50 | The top-up past the daily cap: a bettor with fewer credits than this can keep picking until they have this much, and no further. `0` makes the cap absolute. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
 `--config=path/to/other.json`.

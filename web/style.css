@@ -491,25 +491,25 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 /* Standings sidebar: Send credits and Game rewards, compact like the bet slip's cards. Unlike the bet slip it
    scrolls with the page: it's taller than the window, and a pinned column would need its own scrollbar. */
 .bettors-side { position: static; max-height: none; overflow: visible; }
-.bettors-side h2 { font-size: 16px; }
-.bettors-side h3 { margin: 12px 0 4px; }
-.bettors-side .tax-banner { padding: 8px 10px; font-size: 13px; gap: 8px; }
-.bettors-side .transfer-form { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: end; }
-.bettors-side .transfer-form label.grow { grid-column: 1 / -1; }
-.bettors-side .transfer-form select, .bettors-side .transfer-form input { width: 100%; min-width: 0; }
-.bettors-side .transfer-form input[type="number"] { width: 100%; }
-.bettors-side #tr-send { grid-column: 1 / -1; width: 100%; }
-.bettors-side .transfer-confirm { font-size: 13px; }
-.bettors-side .recent-row { font-size: 13px; gap: 4px 8px; }
-.bettors-side .recent-row.transfer-row { grid-template-columns: minmax(0, 1fr) auto; }
-.bettors-side .transfer-row > :nth-child(2) { text-align: right; }
+:is(.bettors-side, .wallet-menu) h2 { font-size: 16px; }
+:is(.bettors-side, .wallet-menu) h3 { margin: 12px 0 4px; }
+:is(.bettors-side, .wallet-menu) .tax-banner { padding: 8px 10px; font-size: 13px; gap: 8px; }
+:is(.bettors-side, .wallet-menu) .transfer-form { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: end; }
+:is(.bettors-side, .wallet-menu) .transfer-form label.grow { grid-column: 1 / -1; }
+:is(.bettors-side, .wallet-menu) .transfer-form select, :is(.bettors-side, .wallet-menu) .transfer-form input { width: 100%; min-width: 0; }
+:is(.bettors-side, .wallet-menu) .transfer-form input[type="number"] { width: 100%; }
+:is(.bettors-side, .wallet-menu) #tr-send { grid-column: 1 / -1; width: 100%; }
+:is(.bettors-side, .wallet-menu) .transfer-confirm { font-size: 13px; }
+:is(.bettors-side, .wallet-menu) .recent-row { font-size: 13px; gap: 4px 8px; }
+:is(.bettors-side, .wallet-menu) .recent-row.transfer-row { grid-template-columns: minmax(0, 1fr) auto; }
+:is(.bettors-side, .wallet-menu) .transfer-row > :nth-child(2) { text-align: right; }
 /* Onkey's Bank: the same form row as Send credits; the repay row ends in two buttons. */
-.bettors-side .bank-form { grid-template-columns: 1fr auto; }
-.bettors-side .bank-form:has(#loan-pay-all) { grid-template-columns: 1fr auto auto; }
-.bettors-side .bank-form .btn { white-space: nowrap; }
+:is(.bettors-side, .wallet-menu) .bank-form { grid-template-columns: 1fr auto; }
+:is(.bettors-side, .wallet-menu) .bank-form:has(#loan-pay-all) { grid-template-columns: 1fr auto auto; }
+:is(.bettors-side, .wallet-menu) .bank-form .btn { white-space: nowrap; }
 .bank-standing { margin: 0 0 10px; font-size: 14px; }
-.bettors-side .recent-row.loan-row { grid-template-columns: minmax(0, 1fr) auto; }
-.bettors-side .loan-row > :nth-child(2) { text-align: right; }
+:is(.bettors-side, .wallet-menu) .recent-row.loan-row { grid-template-columns: minmax(0, 1fr) auto; }
+:is(.bettors-side, .wallet-menu) .loan-row > :nth-child(2) { text-align: right; }
 /* Game rewards: a header line per game (result, score, map, date), then who got what in two tidy columns */
 .bettors-side .rewards-card .how { margin-bottom: 4px; }
 /* The house (Standings sidebar, houseCard() in bets.js): the pot and jackpot, the next game's objectives, the last
@@ -520,14 +520,12 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .house-pots b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .house-pots .muted { font-size: 12px; }
 .house-next { margin: 0; font-size: 14px; }
-.house-goals, .house-recent { list-style: none; margin: 0; padding: 0; }
+.house-goals { list-style: none; margin: 0; padding: 0; }
 .house-goals li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }
-.house-goals li:last-child, .house-recent li:last-child { border-bottom: 0; }
+.house-goals li:last-child { border-bottom: 0; }
 .house-mark { font-weight: 700; color: var(--muted); }
 .house-goals .met .house-mark { color: var(--up); }
 .house-goals .missed .house-mark { color: var(--down); }
-.house-recent li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 14px; }
-.house-recent li > .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bettors-side .recent-row.reward-row { grid-template-columns: 28px auto minmax(0, 1fr) auto; gap: 8px 10px; padding: 12px 0; }
 .bettors-side .reward-row .rewards-list { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px;
   font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
@@ -537,6 +535,13 @@ td.prop .prop-pair .odd.cold.on { background: var(--accent); }
 .bettors-side .reward-row .recent-score { font-weight: 600; }
 /* The account menu under the profile chip (top right): the sign-in form, or your profile, password and sign out. */
 .nav-menu.account-menu { left: auto; width: 300px; padding: 12px; gap: 4px; }
+/* The wallet menu under the credits chip (app.js walletMenu): Onkey's Bank and Send credits, their cards without
+   the card chrome, scrolling inside the window. */
+.nav-menu.wallet-menu { left: auto; width: 440px; max-height: calc(100vh - 76px); overflow-y: auto; padding: 14px 16px; gap: 0; }
+.wallet-menu .card { border: 0; background: none; box-shadow: none; padding: 0; margin: 0; }
+.wallet-menu .card + .card { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); border-radius: 0; }
+.wallet-more { display: block; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; text-decoration: none; }
+button.me-chip { font: inherit; cursor: pointer; }
 .acct-form { display: grid; gap: 8px; }
 .acct-form label { width: 100%; }
 .acct-form input { width: 100%; }
@@ -2508,7 +2513,7 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   .topbar .topbar-right > .me-profile.me-anon { padding: 0 10px 0 4px; }
   .topbar .topbar-right > .me-profile:not(.me-anon) .me-name { display: none; }  /* the avatar alone; the account menu names you */
   .topbar .topbar-right > .nav-toggle { display: inline-flex; }
-  .topbar .nav-menu.account-menu { left: 12px; right: 12px !important; width: auto; }  /* over the inline right that app.js sets */
+  .topbar .nav-menu.account-menu, .topbar .nav-menu.wallet-menu { left: 12px; right: 12px !important; width: auto; }  /* over the inline right that app.js sets */
   /* Onkey's bubble opens to the right of the logo, over the bar's chips, so it stays off the page under the bar (the
      dealer's cards at the tables). Taps go through it to the chips and ☰ underneath. */
   .onkey-says { left: calc(100% + 10px); top: -3px; min-width: 0; max-width: calc(100vw - 86px); padding: 6px 10px; font-size: 13px; line-height: 1.3;
