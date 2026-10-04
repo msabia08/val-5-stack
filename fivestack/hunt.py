@@ -7,13 +7,13 @@ leave the banana where it is. The server decides every position and judges every
 hit; two more things keep a script from farming it: hits closer than MIN_INTERVAL_S to the last paid one aren't
 paid (the page has Onkey throw the next banana in from his corner, which takes about that long), and each bettor is
 capped at `hunt_daily_max` credits a day (`hunt_days`, one row per bettor per Pacific day, like the daily wheel; the
-day turns at midnight Pacific). The cap has a floor under it: a bettor with fewer than `hunt_floor` credits keeps
-picking past the cap until they have that many, so nobody is stuck broke (`_room()`). Credits picked are reported on
+day turns at midnight Pacific). Past the cap there's only a small top-up: a bettor with fewer than `hunt_floor`
+credits (50) can keep picking until they have that many, so nobody is stuck with nothing (`_room()`). Credits picked are reported on
 the leaderboard in their own column (`hunt`) and left out of betting profit, like game rewards. A season reset tags
 the day rows with the season and the cap carries on by the day.
 
 The extras (all on unless the manager is built with `extras=False`) make it a game. None of them raises the day's cap,
-which counts credits: they only get a bettor there sooner, except the streak's bonus, which sits on top of it.
+which counts credits: they only get a bettor there sooner.
 
 - What Onkey throws (`_new_target()`): mostly a plain banana; sometimes a golden one (GOLD_VALUE credits, but it rots
   GOLD_TTL_S after landing), a bunch (BUNCH_SIZE at once, BUNCH_TTL_S to sweep them, BUNCH_BONUS for all of them), a
@@ -25,8 +25,6 @@ which counts credits: they only get a bettor there sooner, except the streak's b
   `arc_at()` turns into a spot to judge the click against) pays double.
 - The combo: picks in a row without a miss (`_mult()`: x2 from COMBO_STEPS[0] in a row, x3 from COMBO_STEPS[1]); a
   miss, a rotten banana, a theft or COMBO_IDLE_S without a pick resets it.
-- The daily streak (`streak()`): on the N-th day in a row with a pick, the day's first banana pays N credits (up to
-  STREAK_MAX), and the day's cap is that much higher.
 - The hidden item (`_hidden()`): one pick a day, a different one for every bettor, also turns up shop bananas or a
   daily wheel token (ledger reason `hunt`, once per bettor per day).
 - The field of the day (`theme()`): the scenery the page draws, one of THEMES by the Pacific day.
@@ -50,7 +48,7 @@ MIN_HOP = 160  # the banana never lands closer than this to where it was
 MIN_INTERVAL_S = 0.6  # the fastest paid pace: Onkey's throw on the page takes a little longer than this
 CREDIT_PER_BANANA = 1
 DAILY_MAX = 250  # config hunt_daily_max
-FLOOR = 250  # config hunt_floor: with fewer credits than this, the daily cap doesn't apply
+FLOOR = 50  # config hunt_floor: past the day's cap, a bettor with fewer credits than this can pick back up to it
 
 # The throw, as the page draws it: from Onkey's hand in the bottom-right corner along an arc, AIR_S in the air.
 HAND = (FIELD_W - 96, FIELD_H - 104)
@@ -71,7 +69,6 @@ CLAW_S = 1.8  # how long the scientist's claw takes to reach the banana once it 
 GREG_S = 1.5  # how long Greg takes to walk to the banana once it has landed
 COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
 COMBO_IDLE_S = 8.0
-STREAK_MAX = 7
 HIDDEN_FROM, HIDDEN_TO = 5, 50  # the hidden item is one of the day's picks in this range
 HIDDEN_BANANAS = 25
 THEMES = ("jungle", "night", "rain", "beach", "ruins")
@@ -112,12 +109,12 @@ class HuntManager:
                 "air": {"s": AIR_S, "r": AIR_R, "from": AIR_FROM, "to": AIR_TO, "mult": AIR_MULT, "hand": list(HAND)},
                 "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S, "claw_s": CLAW_S,
                 "bunch": {"size": BUNCH_SIZE, "ttl_s": BUNCH_TTL_S, "bonus": BUNCH_BONUS},
-                "combo": {"steps": list(COMBO_STEPS), "idle_s": COMBO_IDLE_S}, "streak_max": STREAK_MAX}
+                "combo": {"steps": list(COMBO_STEPS), "idle_s": COMBO_IDLE_S}}
 
-    def _room(self, today, balance, cap=None):
+    def _room(self, today, balance):
         """How many more credits a bettor may pick right now, and whether that's only because they're under the
         floor: what the day's cap leaves, else (with fewer than `hunt_floor` credits) what gets them back to it."""
-        cap_left = max(0, int(math.floor((self.daily_max if cap is None else cap) - today + 1e-9)))
+        cap_left = max(0, int(math.floor(self.daily_max - today + 1e-9)))
         if cap_left > 0:
             return cap_left, False
         if balance < self.floor:
@@ -232,23 +229,6 @@ class HuntManager:
         """Credits this bettor picked today: what the day's cap counts."""
         return int(round(self._day(name, now or time.time())[1]))
 
-    def streak(self, name, now=None):
-        """Which day in a row this is for the bettor (1 when they didn't pick yesterday), counting today whether
-        they've picked yet or not."""
-        if not self.extras:
-            return 1
-        now = now or time.time()
-        days = {r["day"] for r in self.db.query("SELECT DISTINCT day FROM hunt_days WHERE lower(bettor)=lower(?) AND bananas > 0", (name,))}
-        n, at = 1, now - 86400
-        while wheel_day(at) in days and n < 400:
-            n, at = n + 1, at - 86400
-        return n
-
-    def _streak_bonus(self, name, now):
-        """Credits the day's first banana pays on top, and the day's cap is raised by: the streak's day, less the
-        credit the banana pays anyway."""
-        return (min(self.streak(name, now), STREAK_MAX) - 1) * CREDIT_PER_BANANA
-
     def _hidden(self, name, day):
         """(which of the day's picks hides the item, what it is: 'bananas' / 'boost' / 'insurance') for a bettor."""
         secret = self.db.get_meta("cookie_secret") or ""
@@ -278,23 +258,21 @@ class HuntManager:
 
     # ---- reading ---------------------------------------------------------------------
     def status(self, name, now=None):
-        """The bettor's hunt: today's credits and what's left (and whether only the floor allows it), their totals,
-        streak and combo, and the banana (None once they're done)."""
+        """The bettor's hunt: today's credits and what's left (and whether only the floor allows it), their totals
+        and combo, and the banana (None once they're done)."""
         now = now or time.time()
         bettor = self.db.get_bettor(name)
         balance = bettor["balance"] if bettor else 0.0
         picks, credits = self._day(name, now)
-        streak, bonus = self.streak(name, now), self._streak_bonus(name, now)
-        left, under = self._room(credits, balance, self.daily_max + bonus)
+        left, under = self._room(credits, balance)
         totals = self.db.hunt_totals().get(name.lower()) or {}
         t = self.targets.get(name.lower()) if left else None
         combo = self._combo(name.lower(), now)
         return {"name": name, "today": int(round(credits)), "picks": picks, "left": left, "done": left == 0, "under_floor": under,
-                "floor": self.floor, "cap": self.daily_max + bonus,
+                "floor": self.floor,
                 "balance": round(balance, 2), "day": wheel_day(now),
                 "resets_ts": next_reset(now), "season": round(totals.get("season") or 0, 2),
                 "all_time": round(totals.get("all_time") or 0, 2), "bananas": int(totals.get("bananas") or 0),
-                "streak": {"days": streak, "bonus": bonus, "paid": picks > 0},
                 "combo": combo["n"], "mult": self._mult(combo["n"]),
                 "target": self._public(t)}
 
@@ -309,7 +287,7 @@ class HuntManager:
             raise BetError("The hunt is closed.")
         now = now or time.time()
         name = bettor["name"]
-        if self._room(self._day(name, now)[1], bettor["balance"], self.daily_max + self._streak_bonus(name, now))[0] > 0:
+        if self._room(self._day(name, now)[1], bettor["balance"])[0] > 0:
             t, _ = self._target(name, now)
             with self.lock:
                 shift = now - t["born"]
@@ -358,9 +336,7 @@ class HuntManager:
         name = bettor["name"]
         key = name.lower()
         picks, credits = self._day(name, now)
-        bonus = self._streak_bonus(name, now)
-        cap = self.daily_max + bonus
-        left, under = self._room(credits, bettor["balance"], cap)
+        left, under = self._room(credits, bettor["balance"])
         if left <= 0:
             return {"hit": False, "reason": "done", "today": int(round(credits)), "left": 0, "done": True, "under_floor": False,
                     "target": None, "combo": 0, "mult": 1}
@@ -416,20 +392,18 @@ class HuntManager:
         if t["kind"] == "golden":
             value *= GOLD_VALUE
 
-        # A hit. The combo counts it, then multiplies it; the bunch's bonus and the streak's come on top.
+        # A hit. The combo counts it, then multiplies it; the bunch's bonus comes on top. Never past what's left.
         combo["n"], combo["ts"] = combo["n"] + 1, now
         mult = self._mult(combo["n"])
         swept = False
         if item is not None:
             item["picked"] = True
             swept = all(i["picked"] for i in t["items"])
-        pay = value * mult + (BUNCH_BONUS if swept else 0)
-        streak_paid = bonus if picks == 0 else 0  # the day's first banana
-        pay = min(pay + streak_paid, left)
+        pay = min(value * mult + (BUNCH_BONUS if swept else 0), left)
         self.db.hunt_pay(name, wheel_day(now), pay, now)
         picks, credits = picks + 1, credits + pay
         found = self._found(name, wheel_day(now), picks, now)
-        left, under = self._room(credits, bettor["balance"] + pay, cap)
+        left, under = self._room(credits, bettor["balance"] + pay)
         with self.lock:
             t["paid_ts"] = now
             if left <= 0:
@@ -437,7 +411,7 @@ class HuntManager:
             elif item is None or swept:
                 self.targets[key] = self._new_target(t, now, now)
         return reply(True, paid=pay, kind=t["kind"], air=air is not None, swept=swept, bunch_bonus=BUNCH_BONUS if swept else 0,
-                     streak_bonus=streak_paid, streak=self.streak(name, now), found=found)
+                     found=found)
 
     def nudge(self, name, now=None):
         """The page's timer ran out (a golden banana rotted, a bunch's time is up, Greg arrived): replace the target
@@ -448,7 +422,7 @@ class HuntManager:
         now = now or time.time()
         name = bettor["name"]
         picks, credits = self._day(name, now)
-        left, under = self._room(credits, bettor["balance"], self.daily_max + self._streak_bonus(name, now))
+        left, under = self._room(credits, bettor["balance"])
         if left <= 0:
             return {"reason": "done", "today": int(round(credits)), "left": 0, "done": True, "under_floor": False, "target": None,
                     "combo": 0, "mult": 1}

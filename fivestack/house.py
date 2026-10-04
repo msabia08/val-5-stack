@@ -99,6 +99,8 @@ CASINO_NET_SQL = {
     "blackjack": "SELECT bettor, SUM(payout - stake - COALESCE(tip, 0)) AS net FROM blackjack_hands "
                  "WHERE season_id IS NULL AND status='settled' GROUP BY bettor",
     "poker": "SELECT bettor, SUM(net) AS net FROM poker_results WHERE season_id IS NULL GROUP BY bettor",
+    "roulette": "SELECT bettor, SUM(payout - stake) AS net FROM roulette_spins "
+                "WHERE season_id IS NULL AND status='settled' GROUP BY bettor",
 }
 
 
