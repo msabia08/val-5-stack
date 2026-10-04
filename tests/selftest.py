@@ -1070,34 +1070,58 @@ def stampede(shared):
     import random
     from fivestack import stampede as st
     from fivestack.house import HouseManager, casino_nets
-    from fivestack.stampede import (BASE_STRIPS, FS_STRIPS, GOLDEN, JACKPOTS, METER_FULL, NINE, PICK_KINDS, SPIKE, TEN,
-                                    WILD, StampedeManager, breakdown, hold_and_spin, pick_game, play, rtp, ways_wins)
+    from fivestack.stampede import (BASE_STRIPS, FS_STRIPS, GOLDEN, JACKPOTS, METER_FULL, NINE, ONKEY, PICK_KINDS,
+                                    SPIKE, TEN, WILD, StampedeManager, breakdown, hold_and_spin, pick_game, play, rtp,
+                                    shape_wins, ways_wins)
 
     # The exact return is 95% (within a twentieth of a point), every part of it counted: ways wins (with the Inferno),
-    # scatter pays, free spins, hold and spin's fireballs and full-grid bonus, and the jackpots (each one's seed x how
-    # often the pick gives it, plus what every spin grows it by).
+    # walls and squares, the Golden Onkey's spot pay, scatter pays, free spins (the spike plant's included), hold and
+    # spin's fireballs and full-grid bonus, and the jackpots (each one's seed x how often the pick gives it, plus what
+    # every spin grows it by).
     b = breakdown()
     assert abs(rtp() - 0.95) < 0.0005, rtp()
-    assert abs(b["line"] + b["scatter"] + b["free_spins"] + b["hold"] + b["jackpots"] - b["rtp"]) < 1e-12
+    assert abs(b["line"] + b["shapes"] + b["spot"] + b["scatter"] + b["free_spins"] + b["hold"] + b["jackpots"]
+               - b["rtp"]) < 1e-12
     assert abs(b["jackpots"] - sum(b["jackpot_hits"][k] * j["seed"] + j["grow"] for k, j in JACKPOTS.items())) < 1e-12
     assert abs(b["pick_p"] - b["fires"] / METER_FULL) < 1e-12
-    # Medium volatility: free spins and hold and spin each about 1 spin in 150-250; the pick (its chances are per credit
-    # staked) about 1 spin in 250 at a 10-credit bet, and 10 times as often at 100; the jackpots rarer and rarer.
-    assert 150 < 1 / b["fs_p"] < 250 and 150 < 1 / b["hs_p"] < 250 and 200 < 1 / (b["pick_p"] * 10) < 300
+    # Medium volatility: free spins about 1 spin in 100-150 (the spike plant finds some), hold and spin about 1 in
+    # 150-250; the pick (its chances are per credit staked) about 1 spin in 250 at a 10-credit bet, and 10 times as
+    # often at 100; the jackpots rarer and rarer. The spike plant about 1 spin in 75, the Golden Onkey about 1 in 230.
+    assert 100 < 1 / b["fs_p"] < 150 and 150 < 1 / b["hs_p"] < 250 and 200 < 1 / (b["pick_p"] * 10) < 300
+    assert 50 < 1 / b["plant_p"] < 100 and 150 < 1 / b["golden_p"] < 400
     hits = {k: v * 10 for k, v in b["jackpot_hits"].items()}
     assert 400 < 1 / hits["mini"] < 1 / hits["minor"] < 1 / hits["major"] < 1 / hits["grand"] < 100_000
-    # The reels: no wild on reel 1, and a reel never shows two spikes.
+    # The reels: no wild on reel 1, and a reel never shows two spikes. The Golden Onkey is a secret: never on a strip,
+    # and what the page gets of the machine says nothing of what he pays.
     assert WILD not in BASE_STRIPS[0] and WILD not in FS_STRIPS[0]
+    assert all(GOLDEN not in strip for strip in BASE_STRIPS + FS_STRIPS)
+    described = st.machine()
+    assert str(GOLDEN) not in described["pays"] and not any(k.startswith("golden") for k in described)
     for strip in BASE_STRIPS + FS_STRIPS:
         assert all(st.window(strip, i).count(SPIKE) <= 1 for i in range(len(strip)))
     # Ways: nines on reels 1-3 (two on reel 2) make 2 ways of 3; a wild stands in; a gap ends the run; spikes and
     # fireballs never pay ways.
     FIRE = st.FIRE
-    grid = [[NINE, TEN, TEN, TEN], [NINE, NINE, TEN, FIRE], [WILD, TEN, FIRE, FIRE], [GOLDEN] * 4, [GOLDEN] * 4]
+    grid = [[NINE, TEN, TEN, TEN], [NINE, NINE, TEN, FIRE], [WILD, TEN, FIRE, FIRE], [ONKEY] * 4, [ONKEY] * 4]
     wins = {w["symbol"]: w for w in ways_wins(grid)}
     assert wins[NINE]["ways"] == 2 and wins[NINE]["reels"] == 3 and wins[NINE]["mult"] == round(2 * st.PAYS[NINE][0], 4)
-    assert wins[TEN]["ways"] == 3 * 1 * 2 and GOLDEN not in wins
+    assert wins[TEN]["ways"] == 3 * 1 * 2 and ONKEY not in wins
     assert len(wins[NINE]["cells"]) == 4  # the nine, two nines and the wild
+    # The Golden Onkey is wild worth three ways on his reel.
+    grid[2][0] = GOLDEN
+    assert {w["symbol"]: w for w in ways_wins(grid)}[NINE]["ways"] == 2 * 3
+    # Shapes: the two Onkey reels are walls, and every 2 x 2 between them a square (three); nothing else is (the tens
+    # on reel 2 stop at a fireball). A reel of wilds alone, or a block with a spike in it, is no shape.
+    shapes = shape_wins(grid)
+    kinds = sorted((x["kind"], x["symbol"], tuple(x["cells"][0])) for x in shapes)
+    assert kinds == [("square", ONKEY, (3, 0)), ("square", ONKEY, (3, 1)),
+                     ("square", ONKEY, (3, 2)), ("wall", ONKEY, (3, 0)), ("wall", ONKEY, (4, 0))], kinds
+    assert all(x["mult"] == (st.WALL_PAYS if x["kind"] == "wall" else st.SQUARE_PAYS)[st.SYMBOLS[x["symbol"]]["tier"]]
+               for x in shapes)
+    # Wilds next to tens make a square of tens, though.
+    tens = {"kind": "square", "symbol": TEN, "mult": st.SQUARE_PAYS["low"]}
+    assert shape_wins([[WILD] * 4, [GOLDEN, SPIKE, TEN, TEN], [WILD, NINE, TEN, TEN], [FIRE] * 4, [NINE, TEN] * 2]) == [
+        {**tens, "cells": [[0, 2], [0, 3], [1, 2], [1, 3]]}, {**tens, "cells": [[1, 2], [1, 3], [2, 2], [2, 3]]}]
     # Free spins' wilds multiply: x2 on reel 2 and x3 on reel 3 make one way worth six.
     grid = [[NINE, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [TEN] * 4, [TEN] * 4]
     fs = {w["symbol"]: w for w in ways_wins(grid, {(1, 0): 2, (2, 0): 3})}
@@ -1105,18 +1129,42 @@ def stampede(shared):
     # The exact math agrees with play(): 30,000 spins from a seeded generator land within a few standard errors, and
     # most paying spins pay back more than the stake.
     rng = random.Random(11)
-    n, line, fs_n, hs_n, fires, paid, beat = 30000, 0.0, 0, 0, 0, 0, 0
+    n, line, shape, fs_n, hs_n, fires, paid, plants, goldens = 30000, 0.0, 0.0, 0, 0, 0, 0, 0, 0
+    within = lambda got, p: abs(got / n - p) < 4 * (p / n) ** 0.5
     for _ in range(n):
         r = play(rng.randrange)
         line += r["line_mult"]
+        shape += r["shape_mult"]
         fs_n += bool(r["free_spins"])
         hs_n += bool(r["hold"])
         fires += len(r["values"])
         paid += st.cash_mult(r) > 0
-        beat += st.cash_mult(r) > 1
+        assert st.cash_mult(r) == round(r["line_mult"] + r["shape_mult"] + r["spot"]
+                                        + (r["scatter"]["mult"] if r["scatter"] else 0)
+                                        + (r["free_spins"]["mult"] if r["free_spins"] else 0)
+                                        + (r["hold"]["cash"] if r["hold"] else 0), 4)
+        if r["golden"]:
+            # Only on a spin without an event, on a cell that held a paying symbol, never with the plant.
+            c, row = r["golden"]
+            goldens += 1
+            assert r["grid"][c][row] == GOLDEN and r["landed"][c][row] < WILD and not r["event"] and not r["plant"]
+            assert r["spot"] == st.GOLDEN_SPOT
+        if r["plant"]:
+            # Two spikes as it landed; the reels without one spun again (the others as they landed), and it's found
+            # when the grid shows a third.
+            plants += 1
+            pl = r["plant"]
+            assert sum(col.count(SPIKE) for col in r["landed"]) == 2 and not r["event"]
+            assert pl["reels"] == [c for c in range(5) if SPIKE not in r["landed"][c]]
+            assert all(r["grid"][c] == (pl["landed"][pl["reels"].index(c)] if c in pl["reels"] else r["landed"][c])
+                       for c in range(5))
+            assert pl["found"] == (sum(col.count(SPIKE) for col in r["grid"]) >= 3) == bool(r["free_spins"])
     assert abs(line / n - b["line"]) < 0.05, (line / n, b["line"])
-    assert abs(fs_n / n - b["fs_p"]) < 4 * (b["fs_p"] / n) ** 0.5 and abs(hs_n / n - b["hs_p"]) < 4 * (b["hs_p"] / n) ** 0.5
-    assert abs(fires / n - b["fires"]) < 0.03 and beat / paid > 0.55
+    assert abs(shape / n - b["shapes"]) < 0.01, (shape / n, b["shapes"])
+    assert within(fs_n, b["fs_p"]) and within(hs_n, b["hs_p"]) and within(plants, b["plant_p"])
+    assert within(goldens, b["golden_p"])
+    # Plenty of visual wins: about 2 spins in 5 pay something (mostly the small shapes).
+    assert abs(fires / n - b["fires"]) < 0.03 and 0.35 < paid / n < 0.45
     # Hold and spin: from six fireballs it ends with about the exact expected count, each new one resets the respins
     # to three, and it pays every fireball's value (plus the bonus on a full grid).
     start = [[c, 0, 1] for c in range(5)] + [[0, 1, 1]]
