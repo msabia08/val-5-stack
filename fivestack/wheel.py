@@ -27,16 +27,16 @@ from .bets import TOKEN_BOOST, TOKEN_MAX_STAKE, BetError
 
 # key, label (what the slice says), kind, amount, weight (out of 1000; the slice's share of the wheel)
 SEGMENTS = [
-    {"key": "c100", "label": "100 credits", "kind": "credits", "amount": 100, "weight": 260},
+    {"key": "c250", "label": "250 credits", "kind": "credits", "amount": 250, "weight": 260},
     {"key": "b50", "label": "50 bananas", "kind": "bananas", "amount": 50, "weight": 130},
     {"key": "boost", "label": "Boost token", "kind": "boost", "amount": None, "weight": 90},
-    {"key": "c250", "label": "250 credits", "kind": "credits", "amount": 250, "weight": 150},
+    {"key": "c500", "label": "500 credits", "kind": "credits", "amount": 500, "weight": 150},
     {"key": "again2", "label": "2x respin", "kind": "again", "amount": 2, "weight": 55},
-    {"key": "c500", "label": "500 credits", "kind": "credits", "amount": 500, "weight": 80},
+    {"key": "c1000", "label": "1000 credits", "kind": "credits", "amount": 1000, "weight": 80},
     {"key": "insure", "label": "Insurance", "kind": "insurance", "amount": None, "weight": 80},
     {"key": "b100", "label": "100 bananas", "kind": "bananas", "amount": 100, "weight": 70},
     {"key": "jackpot", "label": "Jackpot", "kind": "jackpot", "amount": None, "weight": 5},
-    {"key": "c1000", "label": "1000 credits", "kind": "credits", "amount": 1000, "weight": 30},
+    {"key": "c2000", "label": "2000 credits", "kind": "credits", "amount": 2000, "weight": 30},
     {"key": "item", "label": "Free cosmetic", "kind": "item", "amount": None, "weight": 50},
 ]
 # Spins a prize adds to its day, by the spin's stored key ("again" is the retired "Spin again" slice).

@@ -518,7 +518,7 @@ window.FiveOnkey = (() => {
       } else if (kind === 'wheel') {
         const vars = { amount: credits(d.amount || 0), label: d.label };
         if (d.kind === 'jackpot') react('wheel_jackpot', vars, { excited: true });
-        else if (d.kind === 'credits') react(d.amount >= 500 ? 'wheel_big' : 'wheel_credits', vars, { excited: d.amount >= 500 });
+        else if (d.kind === 'credits') react(d.amount >= 1000 ? 'wheel_big' : 'wheel_credits', vars, { excited: d.amount >= 1000 });
         else if (d.kind === 'bananas') react('wheel_bananas', vars);
         else if (d.kind === 'boost' || d.kind === 'insurance') react('wheel_token', { label: d.kind === 'boost' ? 'boost token' : 'insurance token' });
         else if (d.kind === 'item') react('wheel_item', vars, { excited: true });
