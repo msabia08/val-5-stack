@@ -2489,6 +2489,319 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   animation: hunt-rain .5s linear infinite; }
 @keyframes hunt-rain { to { background-position: -22px 80px; } }
 
+/* ---- Onkey Stampede (web/stampede.js) ---------------------------------------
+   The 5 x 4 video slot. Like the classic cabinet it stays dark in every theme: an ember-and-gold machine (--st-*),
+   purple and orange in October (.st-october), deep blue in free spins (.st-free) and red-hot in hold and spin
+   (.st-hold). Cells are --st-ch tall; stampede.js measures them, so the size can change here alone. */
+:root {
+  --st-case: #1c0c06; --st-case-2: #3b1708; --st-inset: #0b0503; --st-trim: #6e3a12;
+  --st-gold: #ffc53d; --st-gold-dark: #a8741c; --st-fire: #ff6a00; --st-ember: #ff3d1f;
+  --st-text: #fff3e0; --st-muted: #d9b99a; --st-reel: #1a0b05; --st-reel-2: #2b1209; --st-ch: 112px;
+}
+.st-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.st-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+.st-cabinet { position: relative; padding: 12px 18px 14px; border-radius: 26px; color: var(--st-text); overflow: hidden; isolation: isolate;
+  background: radial-gradient(ellipse 80% 45% at 50% 0%, var(--st-case-2), var(--st-case) 70%);
+  border: 2px solid var(--st-trim); box-shadow: 0 0 0 4px #220d04, 0 0 0 6px var(--st-gold-dark), 0 14px 30px rgba(0, 0, 0, .5); }
+.st-cabinet.st-october { --st-case: #170b22; --st-case-2: #3a1452; --st-trim: #6a2f86; --st-fire: #ff7b00; --st-reel: #150a1f; --st-reel-2: #24103a; --st-muted: #c9b2db; }
+.st-cabinet.st-free { --st-case: #0b0f2a; --st-case-2: #1d2a6b; --st-trim: #3d5bc2; --st-reel: #0b1028; --st-reel-2: #16205a; }
+.st-cabinet.st-hold { --st-case: #2a0603; --st-case-2: #6b1206; --st-trim: #b3330c; --st-reel: #1f0503; --st-reel-2: #3a0a04; }
+.st-cabinet, .st-reel { transition: background .5s, box-shadow .3s; }
+
+/* The four jackpots across the top. */
+.st-jackpots { display: grid; grid-template-columns: 1.45fr 1.15fr 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.st-pot { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 14px; border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pot) 55%, #000), color-mix(in srgb, var(--pot) 22%, #000));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pot) 70%, #fff), 0 0 14px color-mix(in srgb, var(--pot) 35%, transparent); }
+.st-pot small { font-size: 13px; font-weight: 700; color: color-mix(in srgb, var(--pot) 35%, #fff); }
+.st-pot b { font: 800 22px/1 ui-monospace, 'Cascadia Code', Consolas, monospace; color: var(--st-gold); font-variant-numeric: tabular-nums; text-shadow: 0 0 10px color-mix(in srgb, var(--st-gold) 55%, transparent); }
+.st-pot-grand { --pot: #e0242c; } .st-pot-grand b { font-size: 28px; }
+.st-pot-major { --pot: #9b3ff0; } .st-pot-minor { --pot: #2f8fe8; } .st-pot-mini { --pot: #2fbf5a; }
+.st-pot.st-pot-hit { animation: st-pot-hit .35s steps(2) 10; }
+@keyframes st-pot-hit { 50% { filter: brightness(1.9); transform: scale(1.04); } }
+
+.st-title { position: relative; display: flex; align-items: center; justify-content: center; gap: 14px; height: 58px; }
+.st-title h2 { margin: 0; font: 900 40px/1 system-ui, sans-serif; letter-spacing: .02em; color: var(--st-text);
+  text-shadow: 0 2px 0 #000, 0 0 18px color-mix(in srgb, var(--st-fire) 60%, transparent); }
+.st-title h2 span { background: linear-gradient(180deg, #fff6b0, var(--st-gold) 40%, var(--st-fire) 75%, var(--st-ember)); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 2px 0 #000) drop-shadow(0 0 10px color-mix(in srgb, var(--st-fire) 70%, transparent)); }
+.st-title-onkey { height: 54px; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .6)); }
+.st-ways { font-size: 13px; font-weight: 700; color: var(--st-muted); padding: 3px 10px; border-radius: 999px; border: 1px solid var(--st-trim); background: var(--st-inset); }
+.st-sound { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border-radius: 50%; border: 1px solid var(--st-trim); color: var(--st-text); background: var(--st-inset); cursor: pointer; }
+.st-sound[aria-pressed=false] { color: var(--st-muted); }
+.st-sound:hover { border-color: var(--st-gold); color: var(--st-gold); }
+
+/* The reel window. */
+.st-stage { position: relative; }
+.st-window { position: relative; padding: 10px; border-radius: 16px; background: var(--st-inset);
+  box-shadow: 0 0 0 3px #000, 0 0 0 6px var(--st-gold-dark), 0 0 0 7px #3b2408, inset 0 0 26px #000, 0 0 30px color-mix(in srgb, var(--st-fire) 22%, transparent); }
+.st-reels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.st-reel { position: relative; height: calc(var(--st-ch) * 4); overflow: hidden; border-radius: 10px; isolation: isolate;
+  background: linear-gradient(180deg, var(--st-reel), var(--st-reel-2) 50%, var(--st-reel)); box-shadow: inset 0 0 0 1px rgba(255, 190, 90, .14); }
+.st-reel::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background: linear-gradient(180deg, rgba(0, 0, 0, .55), transparent 16%, transparent 84%, rgba(0, 0, 0, .55)); }
+.st-strip { will-change: transform; }
+.st-reel.st-moving .st-strip { filter: blur(1.4px) brightness(1.1); }
+.st-reel.st-landed .st-strip { animation: st-bounce .26s ease-out; }
+@keyframes st-bounce { 0% { transform: translate3d(0, 0, 0); } 40% { transform: translate3d(0, 9px, 0); } 100% { transform: translate3d(0, 0, 0); } }
+.st-reel.st-windup .st-strip { transform: translate3d(0, -10px, 0) !important; transition: transform .15s ease-out; }
+.st-reel.st-teasing { box-shadow: inset 0 0 0 2px var(--st-gold), 0 0 22px var(--st-fire); animation: st-tease .45s ease-in-out infinite alternate; }
+@keyframes st-tease { to { box-shadow: inset 0 0 0 3px #fff3b0, 0 0 40px var(--st-ember); } }
+
+/* Cells and symbols. */
+.st-cell { position: relative; height: var(--st-ch); display: grid; place-items: center; user-select: none; }
+.st-low { font: 900 66px/1 system-ui, 'Segoe UI', sans-serif; letter-spacing: -.02em; -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 2px rgba(0, 0, 0, .55); filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .7)) drop-shadow(0 0 8px var(--glow)); }
+.st-l-nine { background-image: linear-gradient(180deg, #b6fff1, #2fd8bc 50%, #0b8a78); --glow: rgba(47, 216, 188, .35); }
+.st-l-ten { background-image: linear-gradient(180deg, #e7d6ff, #a77bff 50%, #5a2fc0); --glow: rgba(167, 123, 255, .35); font-size: 58px; }
+.st-l-jack { background-image: linear-gradient(180deg, #d8ffc4, #79e05a 50%, #2a8c22); --glow: rgba(121, 224, 90, .35); }
+.st-l-queen { background-image: linear-gradient(180deg, #ffd8f0, #ff6fc2 50%, #b8247a); --glow: rgba(255, 111, 194, .35); }
+.st-l-king { background-image: linear-gradient(180deg, #d6ecff, #5fb0ff 50%, #1f5fc4); --glow: rgba(95, 176, 255, .35); }
+.st-l-ace { background-image: linear-gradient(180deg, #fff0c4, #ffb23f 50%, #d65e0b); --glow: rgba(255, 178, 63, .4); }
+.st-svg { width: 92px; height: 92px; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .55)); }
+.st-img { max-width: 92%; max-height: 98px; object-fit: contain; pointer-events: none; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .6)); }
+.st-t-high::before, .st-t-top::before, .st-t-wild::before { content: ''; position: absolute; inset: 8px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, color-mix(in srgb, var(--halo, var(--st-gold)) 30%, transparent), transparent 70%); }
+.st-k-banana { --halo: #ffe14d; } .st-k-valorant { --halo: #ff4655; } .st-k-greg { --halo: #9fd4ff; }
+.st-k-golden { --halo: #ffcc00; } .st-k-wild { --halo: #ff8a00; }
+.st-golden { filter: sepia(1) saturate(3.2) hue-rotate(-8deg) brightness(1.18) drop-shadow(0 0 4px #ffe066) drop-shadow(0 0 12px rgba(255, 196, 0, .75)); }
+.st-pumpkin { filter: drop-shadow(0 0 8px rgba(255, 122, 0, .8)); }
+.st-greg { max-height: 86px; border-radius: 12px; }
+.st-wild-img { max-height: 92px; margin-top: -10px; }
+.st-tag { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); padding: 1px 10px; border-radius: 6px; font: 900 15px/1.2 system-ui, sans-serif; letter-spacing: .12em;
+  color: #2a1200; background: linear-gradient(180deg, #fff3a8, var(--st-gold) 50%, #d98a00); box-shadow: 0 2px 0 #000, 0 0 10px rgba(255, 170, 0, .6); }
+.st-mult { position: absolute; top: 6px; right: 8px; display: grid; place-items: center; min-width: 34px; height: 34px; padding: 0 4px; border-radius: 50%; font: 900 15px/1 system-ui, sans-serif;
+  color: #fff; background: radial-gradient(circle at 35% 30%, #ff8a7a, #d81f1f 60%, #7a0505); box-shadow: 0 0 0 2px var(--st-gold), 0 0 12px rgba(255, 60, 30, .8); }
+.st-spike-img { max-height: 100px; filter: drop-shadow(0 0 8px rgba(70, 230, 255, .75)) drop-shadow(0 4px 4px rgba(0, 0, 0, .6)); }
+.st-fireball { width: 100px; height: 100px; filter: drop-shadow(0 0 10px rgba(255, 140, 0, .8)); animation: st-flicker 1.6s ease-in-out infinite alternate; }
+.st-october .st-fireball { filter: hue-rotate(-14deg) saturate(1.3) drop-shadow(0 0 12px rgba(255, 110, 0, .9)); }
+@keyframes st-flicker { to { filter: drop-shadow(0 0 16px rgba(255, 170, 0, .95)) brightness(1.08); } }
+.st-val { position: absolute; left: 50%; top: 58%; transform: translate(-50%, -50%); font: 900 24px/1 system-ui, sans-serif; color: #fff; white-space: nowrap;
+  -webkit-text-stroke: 1px #6b2300; text-shadow: 0 2px 0 #5a1b00, 0 0 8px rgba(0, 0, 0, .6); }
+
+/* A spin's moments. */
+.st-cell.st-pop { animation: st-pop .45s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes st-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+.st-cell.st-stamp { animation: st-stamp .5s cubic-bezier(.3, 1.7, .5, 1); }
+@keyframes st-stamp { 0% { transform: scale(2.2) rotate(-10deg); opacity: 0; } 55% { transform: scale(.9); opacity: 1; } 100% { transform: scale(1); } }
+.st-cell.st-drop { animation: st-drop .45s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes st-drop { 0% { transform: translateY(-160px) scale(.6); opacity: 0; } 70% { transform: translateY(6px) scale(1.08); opacity: 1; } 100% { transform: none; } }
+.st-cell.st-pulse { animation: st-pulse .5s ease-in-out 4 alternate; }
+@keyframes st-pulse { to { transform: scale(1.14); filter: brightness(1.4); } }
+#st-reels.st-showing .st-cell:not(.st-hit) { opacity: .32; filter: saturate(.4); transition: opacity .2s; }
+.st-cell.st-hit { z-index: 1; animation: st-hit .7s ease-in-out infinite alternate; }
+.st-cell.st-hit::after { content: ''; position: absolute; inset: 5px; border-radius: 14px; pointer-events: none; z-index: -1;
+  background: radial-gradient(circle, color-mix(in srgb, var(--st-gold) 30%, transparent), transparent 72%);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--st-gold) 85%, transparent), 0 0 18px color-mix(in srgb, var(--st-fire) 55%, transparent); }
+@keyframes st-hit { to { transform: scale(1.06); filter: brightness(1.15); } }
+
+/* Hold and spin. */
+/* An empty cell keeps the full cell height (the slot is drawn inset), so the grid never drifts. */
+.st-cell.st-empty::before { content: ''; position: absolute; inset: 4px; border-radius: 10px; background: radial-gradient(circle, #3a0d05, #170402 70%); box-shadow: inset 0 0 0 1px rgba(255, 120, 40, .18); }
+.st-cell.st-held { background: radial-gradient(circle, rgba(255, 140, 0, .28), transparent 70%); }
+.st-cell.st-collect { animation: st-collect .3s ease-out; filter: brightness(1.6); }
+@keyframes st-collect { 50% { transform: scale(1.18); } }
+.st-cell.st-collected { opacity: .55; }
+/* Centred with `translate`, not `transform`, so the bump animations (which use transform) can't throw it off. */
+.st-counter { position: absolute; top: -34px; left: 50%; translate: -50% -50%; z-index: 6; padding: 5px 16px; border-radius: 999px; white-space: nowrap; font-size: 15px;
+  color: var(--st-text); background: var(--st-inset); box-shadow: 0 0 0 2px var(--st-gold-dark), 0 0 16px color-mix(in srgb, var(--st-fire) 40%, transparent); }
+.st-counter b { color: var(--st-gold); }
+/* While a bonus counts its spins the counter takes the title's place. */
+.st-cabinet:has(.st-counter:not(.hidden)) .st-title > :not(.st-sound) { visibility: hidden; }
+.st-counter.st-reset { animation: st-pop .45s cubic-bezier(.3, 1.6, .5, 1); box-shadow: 0 0 0 2px var(--st-gold), 0 0 26px var(--st-fire); }
+.st-dots { display: inline-flex; gap: 5px; margin: 0 6px; vertical-align: middle; }
+.st-dots i { width: 12px; height: 12px; border-radius: 50%; background: #3b1a10; box-shadow: inset 0 0 0 1px var(--st-gold-dark); }
+.st-dots i.on { background: radial-gradient(circle at 35% 30%, #fff3b0, var(--st-gold) 50%, var(--st-fire)); box-shadow: 0 0 8px var(--st-fire); }
+
+/* Banners, the big-win and jackpot shows, and the effects layer over the reels. */
+.st-banner-slot { position: absolute; inset: 0; z-index: 7; display: grid; place-items: center; pointer-events: none; }
+.st-banner { display: grid; justify-items: center; gap: 4px; padding: 16px 40px; border-radius: 18px; background: rgba(10, 4, 2, .82);
+  box-shadow: 0 0 0 3px var(--st-gold), 0 0 50px var(--st-fire); animation: st-banner-in .4s cubic-bezier(.3, 1.6, .5, 1); }
+.st-banner b { font: 900 52px/1 system-ui, sans-serif; background: linear-gradient(180deg, #fff8c8, var(--st-gold) 45%, var(--st-fire)); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 3px 0 #000); }
+.st-banner span { font-size: 18px; font-weight: 700; color: var(--st-text); }
+.st-banner.out { animation: st-banner-out .25s ease-in forwards; }
+.st-b-free { box-shadow: 0 0 0 3px #7fe7ff, 0 0 50px #2f6bff; }
+.st-b-free b { background-image: linear-gradient(180deg, #ffffff, #8ff0ff 45%, #2f8fff); }
+.st-b-grand, .st-b-inferno { box-shadow: 0 0 0 3px #fff, 0 0 70px var(--st-ember); }
+@keyframes st-banner-in { from { transform: scale(.4); opacity: 0; } }
+@keyframes st-banner-out { to { transform: scale(1.2); opacity: 0; } }
+.st-fx { position: absolute; inset: 0; z-index: 6; overflow: hidden; pointer-events: none; border-radius: 16px; }
+.st-particle { position: absolute; top: 0; font-size: 30px; }
+.st-runner { position: absolute; left: 0; top: 18%; height: 230px; z-index: 3; filter: drop-shadow(0 10px 8px rgba(0, 0, 0, .6)); }
+.st-flames { position: absolute; inset: 0; mix-blend-mode: screen; animation: st-flames 1.8s ease-out forwards;
+  background: radial-gradient(ellipse 30% 60% at 15% 100%, rgba(255, 120, 0, .9), transparent 70%), radial-gradient(ellipse 30% 70% at 50% 100%, rgba(255, 70, 0, .9), transparent 70%),
+    radial-gradient(ellipse 30% 60% at 85% 100%, rgba(255, 160, 0, .9), transparent 70%), linear-gradient(0deg, rgba(255, 60, 0, .5), transparent 60%); }
+@keyframes st-flames { 0% { transform: translateY(100%); opacity: 0; } 25% { transform: translateY(10%); opacity: 1; } 70% { opacity: .9; } 100% { transform: translateY(0); opacity: 0; } }
+.st-bigwin, .st-jackpot-show { position: absolute; inset: 0; z-index: 8; display: grid; place-content: center; justify-items: center; gap: 8px; background: rgba(8, 3, 1, .72); animation: st-banner-in .45s cubic-bezier(.3, 1.6, .5, 1); }
+.st-bigwin b, .st-jackpot-show b { font: 900 88px/1 system-ui, sans-serif; background: linear-gradient(180deg, #fffbe0, var(--st-gold) 40%, var(--st-fire) 80%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 4px 0 #000) drop-shadow(0 0 24px color-mix(in srgb, var(--st-fire) 80%, transparent)); animation: st-throb .5s ease-in-out infinite alternate; }
+.st-bigwin span, .st-jackpot-show span { font: 900 54px/1 ui-monospace, Consolas, monospace; color: #fff; text-shadow: 0 0 20px var(--st-gold); font-variant-numeric: tabular-nums; }
+.st-jackpot-show small { font-size: 22px; font-weight: 800; color: var(--st-muted); }
+.st-tier-3 b { background-image: linear-gradient(90deg, #ff4d4d, #ffb84d, #fff04d, #5dff7a, #4dc3ff, #b34dff); }
+.st-jackpot-show { box-shadow: inset 0 0 0 4px var(--pot); background: radial-gradient(circle, color-mix(in srgb, var(--pot) 45%, rgba(0, 0, 0, .7)), rgba(0, 0, 0, .85)); }
+.st-bigwin.out { animation: st-banner-out .3s ease-in forwards; }
+@keyframes st-throb { to { transform: scale(1.06); } }
+.st-cabinet.st-shake { animation: st-shake .5s; }
+.st-cabinet.st-shake-hard { animation: st-shake 1s; animation-timing-function: steps(12); }
+.st-cabinet.st-rumble { animation: st-rumble .25s; }
+@keyframes st-shake { 10%, 50%, 90% { transform: translate(-6px, 2px) rotate(-.4deg); } 30%, 70% { transform: translate(6px, -2px) rotate(.4deg); } }
+@keyframes st-rumble { 50% { transform: translate(0, 3px); } }
+
+.st-winline { display: grid; justify-items: center; gap: 2px; min-height: 52px; padding: 8px 0 2px; text-align: center; }
+.st-winline b { font: 800 22px/1.2 system-ui, sans-serif; color: var(--st-gold); }
+.st-winline span { font-size: 13px; color: var(--st-muted); }
+
+/* The deck: bet keys, readout, Auto and Turbo, Spin. */
+.st-deck { display: flex; align-items: stretch; gap: 10px; margin-top: 6px; padding: 10px; border-radius: 14px; background: linear-gradient(180deg, #2a1208, #150803); box-shadow: inset 0 1px 0 rgba(255, 200, 120, .15), 0 0 0 2px #000; }
+.st-well { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 10px; background: var(--st-inset); box-shadow: inset 0 2px 6px #000; }
+.st-stakes button { display: grid; justify-items: center; min-width: 50px; padding: 4px 6px; border-radius: 8px; border: 1px solid #4a2610; cursor: pointer; color: #ffbe7a; background: #1f0c04; font: inherit; }
+.st-stakes button small { font-size: 10px; color: var(--st-muted); }
+.st-stakes button b { font: 800 17px/1.1 ui-monospace, Consolas, monospace; }
+.st-stakes button[aria-pressed=true] { color: #2a1000; background: linear-gradient(180deg, #ffe08a, var(--st-gold) 55%, #e08a00); box-shadow: 0 0 14px rgba(255, 180, 40, .6); }
+.st-stakes button[aria-pressed=true] small { color: #5a3000; }
+.st-stakes button:disabled { opacity: .55; cursor: default; }
+.st-readout { flex: 1; justify-content: space-around; }
+.st-readout span { display: grid; justify-items: center; }
+.st-readout small { font-size: 11px; color: var(--st-muted); }
+.st-readout b { font: 800 20px/1.1 ui-monospace, Consolas, monospace; color: #ffb547; text-shadow: 0 0 8px rgba(255, 150, 30, .55); font-variant-numeric: tabular-nums; }
+.st-opts .st-opt { display: grid; justify-items: center; min-width: 58px; padding: 4px 8px; border-radius: 8px; border: 1px solid #4a2610; background: #1f0c04; color: var(--st-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.st-opts .st-opt b { font: 800 15px/1.2 ui-monospace, Consolas, monospace; color: #ffbe7a; }
+.st-opts .st-opt.on { box-shadow: 0 0 0 1px var(--st-gold), 0 0 10px rgba(255, 180, 40, .5); color: var(--st-gold); }
+.st-spin-well { padding: 6px 12px; }
+.st-spin { display: grid; place-content: center; width: 96px; height: 96px; margin: -14px 0; border-radius: 50%; border: 0; cursor: pointer; color: #fff; font: 900 22px/1 system-ui, sans-serif;
+  background: radial-gradient(circle at 35% 28%, #ffd27a, #ff7a00 35%, #d8260a 70%, #7a0d02); box-shadow: 0 0 0 4px #3b1404, 0 0 0 6px var(--st-gold-dark), 0 6px 0 #3b0b02, 0 0 26px rgba(255, 90, 0, .6);
+  text-shadow: 0 2px 0 #6b1a00; transition: transform .08s; }
+.st-spin small { font-size: 11px; font-weight: 700; }
+.st-spin:active { transform: translateY(3px); box-shadow: 0 0 0 4px #3b1404, 0 0 0 6px var(--st-gold-dark), 0 3px 0 #3b0b02; }
+.st-spin:disabled { filter: grayscale(.7) brightness(.7); cursor: default; }
+.st-busy .st-spin { background: radial-gradient(circle at 35% 28%, #ffe9a8, #ffb000 40%, #d86a00 75%, #7a3a02); }
+.st-error { min-height: 18px; margin: 6px 0 0; text-align: center; font-size: 13px; color: #ff8f7a; }
+.st-error:empty { display: none; }
+.st-demo { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--st-muted); }
+.st-demo .btn { color: var(--st-text); border-color: var(--st-trim); }
+
+/* Beside and below the machine. */
+.st-side h2 { margin-top: 0; }
+.st-side h3 { margin: 14px 0 6px; }
+.st-pays { width: 100%; }
+.st-pays th, .st-pays td { padding: 2px 6px; }
+.st-pays tbody th { width: 64px; }
+.st-mini { display: inline-block; width: 56px; height: 46px; overflow: hidden; border-radius: 8px; background: #1a0b05; vertical-align: middle; }
+.st-mini .st-cell { --st-ch: 46px; }
+.st-mini .st-low { font-size: 30px; -webkit-text-stroke: 1px rgba(0, 0, 0, .5); }
+.st-mini .st-img, .st-mini .st-svg, .st-mini .st-fireball { max-height: 40px; width: auto; height: 40px; }
+.st-mini .st-tag { font-size: 8px; padding: 0 4px; bottom: 2px; }
+.st-mini .st-val { font-size: 12px; }
+.st-mini .st-wild-img { margin-top: -4px; height: 36px; }
+.st-feature { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: start; margin: 10px 0; font-size: 13px; }
+.st-feature b { display: block; }
+.st-feature span { color: var(--text-2); }
+.st-jplog { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.st-jplog li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.st-jplog li b { margin-left: auto; }
+.st-jp-name { padding: 1px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; color: #fff; background: var(--pot); }
+.st-main { min-width: 0; }
+.st-lower { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16px; margin-top: 16px; align-items: start; }
+.st-history { width: 100%; font-size: 13px; }
+.st-history td.up { color: var(--up); font-weight: 600; }
+.st-history td:first-child { white-space: nowrap; }
+.st-chip { display: inline-block; margin: 1px 4px 1px 0; padding: 0 7px; border-radius: 999px; font-size: 11px; background: var(--surface-2); color: var(--text-2); }
+.st-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.st-tiles .tile-value .up { color: var(--up); } .st-tiles .tile-value .down { color: var(--down); }
+.st-big { margin: 0; padding-left: 20px; font-size: 14px; }
+.st-big li { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.st-big li b { margin-left: auto; }
+
+/* Jackpot emblems: a coin in the jackpot's colour with a picture on it (Mini a banana bunch, Minor a coconut, Major the
+   Golden Onkey, Grand the charging Onkey in a crown); the pick's smoke is a grey one. */
+.st-emb { --emb: #2fbf5a; display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.st-emb-art { position: relative; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; overflow: visible;
+  background: radial-gradient(circle at 38% 30%, color-mix(in srgb, var(--emb) 30%, #fff), var(--emb) 55%, color-mix(in srgb, var(--emb) 45%, #000));
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--emb) 40%, #fff6c0), 0 0 0 2px #000, 0 0 14px color-mix(in srgb, var(--emb) 60%, transparent); }
+.st-emb-art svg, .st-emb-art img { width: 70%; height: 70%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .6)); }
+.st-emb-art .st-crown { position: absolute; top: -22%; left: 22%; width: 56%; height: auto; }
+.st-emb b { font: 900 13px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 0 #000; }
+.st-emb-mini { --emb: #2fbf5a; } .st-emb-minor { --emb: #2f8fe8; } .st-emb-major { --emb: #9b3ff0; } .st-emb-grand { --emb: #e0242c; } .st-emb-smoke { --emb: #6b665f; }
+.st-pot { align-items: center; justify-content: flex-start; gap: 8px; }
+.st-pot .st-emb-art { width: 30px; height: 30px; }
+.st-pot b { margin-left: auto; }
+.st-pot-grand .st-emb-art { width: 36px; height: 36px; }
+
+/* The fire meter: your own progress to the jackpot pick. */
+.st-meter { display: flex; align-items: center; gap: 12px; margin: 0 2px 4px; padding: 6px 12px; border-radius: 10px; background: var(--st-inset); box-shadow: inset 0 0 0 1px var(--st-trim); font-size: 13px; }
+.st-meter-label { font-weight: 800; color: var(--st-gold); white-space: nowrap; }
+.st-meter-track { position: relative; flex: 1; height: 14px; border-radius: 999px; overflow: hidden; background: #2a1209; box-shadow: inset 0 1px 3px #000; }
+.st-meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; transition: width .25s ease-out;
+  background: linear-gradient(90deg, #ff3d1f, #ff8a00 60%, #ffd23f); box-shadow: 0 0 12px rgba(255, 120, 0, .8); }
+.st-meter-fill::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 18px, rgba(255, 255, 255, .25) 18px 20px); }
+.st-meter-count { font: 800 14px ui-monospace, Consolas, monospace; color: var(--st-text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.st-meter-hint { color: var(--st-muted); white-space: nowrap; }
+.st-meter.hot .st-meter-fill { animation: st-meter-hot .6s ease-in-out infinite alternate; }
+.st-meter.full { box-shadow: inset 0 0 0 2px var(--st-gold), 0 0 18px var(--st-fire); }
+.st-meter.off { justify-content: center; }
+@keyframes st-meter-hot { to { filter: brightness(1.35); box-shadow: 0 0 20px rgba(255, 200, 0, .95); } }
+.st-spark { position: fixed; z-index: 60; width: 18px; height: 18px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, #fff8c0, #ffb000 45%, rgba(255, 80, 0, 0) 72%); box-shadow: 0 0 14px #ff8a00; }
+
+/* The result line: a win only when it beat the bet. */
+.st-winline b.st-back, .st-winline b.st-none { color: var(--st-muted); }
+.st-winline b.st-won { color: var(--st-gold); }
+#st-reels.st-small .st-cell.st-hit::after { box-shadow: inset 0 0 0 2px rgba(255, 220, 160, .35); background: none; }
+#st-reels.st-small .st-cell.st-hit { animation: none; }
+
+/* Hold and spin: the rules card, the HUD in the title's place, and empty cells that visibly spin. */
+.st-howto { pointer-events: auto; cursor: pointer; padding: 18px 28px; border-radius: 16px; background: rgba(10, 4, 2, .92); box-shadow: 0 0 0 3px var(--st-gold), 0 0 40px var(--st-fire); animation: st-banner-in .4s cubic-bezier(.3, 1.6, .5, 1); max-width: 560px; }
+.st-howto > b { display: block; margin-bottom: 8px; font: 900 34px/1 system-ui, sans-serif; color: var(--st-gold); text-align: center; }
+.st-howto ul { margin: 0; padding-left: 20px; font-size: 17px; line-height: 1.6; color: var(--st-text); }
+.st-howto li b { color: var(--st-gold); }
+.st-counter.st-counter-hud { top: -38px; padding: 4px 18px; }
+.st-hud { display: inline-flex; align-items: center; gap: 22px; }
+.st-hud-item { display: inline-flex; align-items: baseline; gap: 6px; }
+.st-hud-item small { font-size: 12px; color: var(--st-muted); }
+.st-hud-item b { font: 800 18px ui-monospace, Consolas, monospace; color: var(--st-gold); }
+.st-hud-item .st-hud-big { font-size: 28px; color: #fff; text-shadow: 0 0 10px var(--st-fire); }
+.st-hud em { font-style: normal; font-weight: 800; color: #fff3b0; animation: st-note 1.3s ease-out forwards; }
+@keyframes st-note { 0% { opacity: 0; transform: scale(.7); } 15% { opacity: 1; transform: scale(1.1); } 30%, 75% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.st-counter.st-down { animation: st-shake .4s; }
+/* While it respins, an empty cell is its own little reel: dim fireballs streaming down inside its slot. */
+.st-empty-spin { position: absolute; inset: 4px; border-radius: 10px; overflow: hidden; opacity: 0; }
+.st-cell.st-respin .st-empty-spin { opacity: 1; filter: blur(1.5px); animation: st-empty-spin .22s linear infinite;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 170, 60, .55) 0 18px, rgba(255, 90, 0, .25) 26px, transparent 34px) 0 0 / 100% 64px repeat-y; }
+@keyframes st-empty-spin { from { background-position: 0 0; } to { background-position: 0 64px; } }
+
+/* The jackpot pick, over the reels. */
+.st-pick { position: absolute; inset: 0; z-index: 7; display: grid; grid-template-rows: auto 1fr auto; gap: 8px; padding: 14px 18px; border-radius: 16px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(80, 20, 4, .96), rgba(12, 4, 2, .97)); box-shadow: inset 0 0 0 2px var(--st-gold); animation: st-banner-in .4s cubic-bezier(.3, 1.6, .5, 1); }
+.st-pick-head { display: flex; align-items: baseline; gap: 14px; }
+.st-pick-head b { font: 900 28px/1 system-ui, sans-serif; color: var(--st-gold); }
+.st-pick-head span { color: var(--st-text); font-size: 15px; }
+.st-pick-body { display: grid; grid-template-columns: 1fr 220px; gap: 16px; align-items: center; min-height: 0; }
+.st-pick-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.st-pk-ball { display: grid; place-items: center; height: 108px; padding: 0; border: 0; border-radius: 14px; cursor: pointer; background: rgba(255, 120, 0, .08); box-shadow: inset 0 0 0 1px rgba(255, 170, 60, .25); transition: transform .12s; }
+.st-pk-ball svg { width: 84px; height: 84px; filter: drop-shadow(0 0 10px rgba(255, 140, 0, .8)); animation: st-flicker 1.6s ease-in-out infinite alternate; }
+.st-pk-ball:hover:not(.open) { transform: scale(1.07); box-shadow: inset 0 0 0 2px var(--st-gold); }
+.st-pk-ball.open { cursor: default; animation: st-pop .45s cubic-bezier(.3, 1.6, .5, 1); background: rgba(0, 0, 0, .35); }
+.st-pk-ball.open .st-emb-art { width: 72px; height: 72px; }
+.st-pk-ball.missed { opacity: .35; animation: none; }
+.st-pk-ball.won { box-shadow: inset 0 0 0 3px var(--st-gold), 0 0 24px var(--st-fire); }
+.st-pick-track { display: grid; gap: 6px; }
+.st-pk-row { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-radius: 10px; background: rgba(0, 0, 0, .3); }
+.st-pk-row .st-emb { flex-direction: row; gap: 8px; }
+.st-pk-row .st-emb-art { width: 32px; height: 32px; }
+.st-pk-row .st-emb b { font-size: 14px; min-width: 52px; }
+.st-pk-pips { display: inline-flex; gap: 5px; margin-left: auto; }
+.st-pk-pips i { width: 14px; height: 14px; border-radius: 50%; background: #3b1a10; box-shadow: inset 0 0 0 1px var(--st-gold-dark); }
+.st-pk-pips i.on { background: radial-gradient(circle at 35% 30%, #fff3b0, var(--st-gold) 50%, var(--st-fire)); }
+.st-pk-row.close { box-shadow: inset 0 0 0 2px var(--st-gold); animation: st-tease .5s ease-in-out infinite alternate; }
+.st-pk-row.st-pk-smoke.close { animation: none; box-shadow: inset 0 0 0 2px #8a847c; }
+.st-pk-row.won { box-shadow: inset 0 0 0 3px #fff3b0, 0 0 20px var(--st-fire); }
+.st-pick-foot { display: flex; align-items: center; gap: 14px; }
+.st-pick-foot .btn { color: var(--st-text); border-color: var(--st-trim); background: var(--st-inset); }
+.st-b-pick { box-shadow: 0 0 0 3px var(--st-gold), 0 0 60px var(--st-ember); }
+.st-b-smoke { box-shadow: 0 0 0 3px #8a847c, 0 0 40px rgba(120, 120, 120, .6); }
+.st-b-smoke b { background-image: linear-gradient(180deg, #ffffff, #b9b3ab 50%, #6b665f); }
+.st-mini-emb { display: grid; place-items: center; background: none; }
+.st-mini-emb .st-emb-art { width: 40px; height: 40px; }
+
 /* ---- phone ------------------------------------------------------------
    Up to 640px wide; checked at 393 × 659 (an iPhone 15). See "Phone" in docs/DESIGN.md. */
 @media (max-width: 640px) {

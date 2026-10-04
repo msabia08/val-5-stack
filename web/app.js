@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'hunt', 'slots', 'blackjack', 'poker', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
+  const VIEWS = ['overview', 'players', 'squad', 'forecasts', 'viz', 'odds', 'bettors', 'hunt', 'slots', 'stampede', 'blackjack', 'poker', 'wheel', 'shop', 'arcade', 'troop', 'matches', 'setup'];
   const state = {
     view: 'overview',
     status: null, stats: null, matches: null, odds: null, content: null, insights: null, forecasts: null,
@@ -1182,6 +1182,7 @@
         case 'troop': view.innerHTML = window.FiveShop.viewTroop(); break;
         case 'arcade': view.innerHTML = window.FiveArcade.viewArcade(); break;
         case 'slots': view.innerHTML = window.FiveSlots.view(); break;
+        case 'stampede': view.innerHTML = window.FiveStampede.view(); break;
         case 'blackjack': view.innerHTML = window.FiveBlackjack.view(); break;
         case 'poker': view.innerHTML = window.FivePoker.view(); break;
         case 'wheel': view.innerHTML = window.FiveWheel.view(); break;
@@ -1214,6 +1215,7 @@
         case 'troop': await Promise.all([window.FiveShop.loadTroop(), window.FiveShop.loadProfile(), state.shop ? null : window.FiveShop.loadShop()]); break;
         case 'arcade': await window.FiveArcade.load(); break;
         case 'slots': await window.FiveSlots.load(); break;
+        case 'stampede': await window.FiveStampede.load(); break;
         case 'blackjack': await window.FiveBlackjack.load(); break;
         case 'poker': await window.FivePoker.load(); break;
         case 'wheel': await window.FiveWheel.load(); break;
@@ -1272,6 +1274,7 @@
     window.FiveShop.bind(view);
     window.FiveArcade.bind(view);
     window.FiveSlots.bind(view);
+    window.FiveStampede.bind(view);
     window.FiveBlackjack.bind(view);
     window.FivePoker.bind(view);
     window.FiveWheel.bind(view);
@@ -1675,6 +1678,7 @@
     window.FiveBets.init({ state, $, $$, api, bettorSlot, draw, esc, fmt, kpi, memberIndex, plainName, toast, nameHtml: shop.nameHtml, ticketClass: shop.ticketClass, ticketExtras: shop.ticketExtras });
     window.FiveArcade.init({ state, $, $$, api, draw, esc, fmt, toast, nameHtml: shop.nameHtml, loadMe });
     window.FiveSlots.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance });
+    window.FiveStampede.init({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance });
     window.FiveCasino.init({ esc, state, nameHtml: shop.nameHtml, confetti });
     window.FiveBlackjack.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
     window.FivePoker.init({ state, $, api, draw, esc, fmt, loadMe, confetti, plainName });
