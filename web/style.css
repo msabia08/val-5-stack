@@ -2564,11 +2564,22 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .st-l-ace { background-image: linear-gradient(180deg, #fff0c4, #ffb23f 50%, #d65e0b); --glow: rgba(255, 178, 63, .4); }
 .st-svg { width: 92px; height: 92px; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .55)); }
 .st-img { max-width: 92%; max-height: 98px; object-fit: contain; pointer-events: none; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .6)); }
-.st-t-high::before, .st-t-top::before, .st-t-wild::before { content: ''; position: absolute; inset: 8px; border-radius: 50%; z-index: -1;
+.st-t-high::before, .st-t-top::before, .st-t-wild::before, .st-t-secret::before { content: ''; position: absolute; inset: 8px; border-radius: 50%; z-index: -1;
   background: radial-gradient(circle, color-mix(in srgb, var(--halo, var(--st-gold)) 30%, transparent), transparent 70%); }
 .st-k-banana { --halo: #ffe14d; } .st-k-valorant { --halo: #ff4655; } .st-k-greg { --halo: #9fd4ff; }
-.st-k-golden { --halo: #ffcc00; } .st-k-wild { --halo: #ff8a00; }
+.st-k-onkey { --halo: #ffcc00; } .st-k-wild { --halo: #ff8a00; } .st-k-golden { --halo: #fff1a0; }
 .st-golden { filter: sepia(1) saturate(3.2) hue-rotate(-8deg) brightness(1.18) drop-shadow(0 0 4px #ffe066) drop-shadow(0 0 12px rgba(255, 196, 0, .75)); }
+/* The Golden Onkey, the secret symbol: shining where a spin landed him. */
+.st-k-golden .st-golden { animation: st-shine 1.1s ease-in-out infinite alternate; }
+@keyframes st-shine { to { filter: sepia(1) saturate(3.6) hue-rotate(-8deg) brightness(1.4) drop-shadow(0 0 8px #fff3b0) drop-shadow(0 0 22px rgba(255, 210, 0, .95)); } }
+.st-tag-gold { letter-spacing: .06em; padding: 1px 8px; }
+.st-cell.st-golden-cell { z-index: 2; }
+.st-spotted { position: absolute; top: 4px; left: 50%; transform: translateX(-50%) rotate(-6deg); padding: 2px 10px; border-radius: 8px; white-space: nowrap; pointer-events: none;
+  font: 900 15px/1.2 system-ui, sans-serif; color: #2a1200; background: linear-gradient(180deg, #fffbe0, #ffd23f); box-shadow: 0 2px 0 #000, 0 0 16px #ffd23f;
+  animation: st-pop .5s cubic-bezier(.3, 1.6, .5, 1); }
+.st-cabinet.st-gold .st-window { box-shadow: 0 0 0 3px #000, 0 0 0 6px #ffd23f, 0 0 0 7px #fff3b0, inset 0 0 26px #000, 0 0 60px rgba(255, 210, 0, .7); transition: box-shadow .3s; }
+.st-b-golden { box-shadow: 0 0 0 3px #fff3b0, 0 0 70px #ffd23f; }
+.st-b-golden b { background-image: linear-gradient(180deg, #ffffff, #fff1a0 40%, #ffb800); }
 .st-pumpkin { filter: drop-shadow(0 0 8px rgba(255, 122, 0, .8)); }
 .st-greg { max-height: 86px; border-radius: 12px; }
 .st-wild-img { max-height: 92px; margin-top: -10px; }
@@ -2598,6 +2609,31 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   background: radial-gradient(circle, color-mix(in srgb, var(--st-gold) 30%, transparent), transparent 72%);
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--st-gold) 85%, transparent), 0 0 18px color-mix(in srgb, var(--st-fire) 55%, transparent); }
 @keyframes st-hit { to { transform: scale(1.06); filter: brightness(1.15); } }
+/* Walls and squares: a frame round the shape's cells, labelled, with what it paid. */
+.st-shape { position: absolute; z-index: 1; border-radius: 14px; pointer-events: none; box-shadow: inset 0 0 0 3px var(--shape), 0 0 22px var(--shape), inset 0 0 26px color-mix(in srgb, var(--shape) 35%, transparent);
+  --shape: #7fe7ff; animation: st-shape-in .35s cubic-bezier(.3, 1.6, .5, 1); transition: opacity .25s; }
+.st-shape.st-t-mid { --shape: #9dff7a; } .st-shape.st-t-high { --shape: #ff7ad9; } .st-shape.st-t-top { --shape: #ffd23f; }
+.st-shape b { position: absolute; top: -2px; left: 50%; transform: translate(-50%, -40%); padding: 1px 10px; border-radius: 8px; white-space: nowrap;
+  font: 900 14px/1.3 system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #0a0a0a; background: var(--shape); box-shadow: 0 2px 0 #000; }
+.st-shape em { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 900 30px/1 system-ui, sans-serif; font-style: normal; color: #fff; white-space: nowrap;
+  -webkit-text-stroke: 1px #000; text-shadow: 0 3px 0 #000, 0 0 14px var(--shape); animation: st-shape-pay .9s ease-out forwards; }
+.st-shape.out { opacity: 0; }
+.st-shape.st-shape-still { animation: none; }
+@keyframes st-shape-in { from { transform: scale(1.25); opacity: 0; } }
+@keyframes st-shape-pay { 0% { transform: translate(-50%, -30%) scale(.6); opacity: 0; } 30% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; } 100% { transform: translate(-50%, -90%) scale(1); opacity: 1; } }
+.st-shape-ico { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 46px; height: 46px; padding: 4px; border-radius: 10px; box-shadow: inset 0 0 0 2px #7fe7ff, 0 0 10px rgba(127, 231, 255, .5); flex: none; }
+.st-shape-ico i { border-radius: 4px; background: linear-gradient(180deg, #b6fff1, #2fd8bc); }
+.st-shape-pays { margin-top: 6px; }
+.st-shape-pays th[scope="row"] { font-weight: 600; text-align: left; }
+/* The spike plant: the two spikes arm and blink red while the other reels spin again. */
+.st-cell.st-planted { z-index: 1; animation: st-armed .5s ease-in-out infinite alternate; }
+.st-cell.st-planted::after { content: ''; position: absolute; inset: 6px; border-radius: 14px; pointer-events: none; box-shadow: inset 0 0 0 3px #ff4655, 0 0 24px #ff4655; }
+@keyframes st-armed { to { filter: brightness(1.35) drop-shadow(0 0 10px #ff4655); transform: scale(1.06); } }
+.st-b-plant { box-shadow: 0 0 0 3px #ff4655, 0 0 50px #ff4655; }
+.st-b-plant b { background-image: linear-gradient(180deg, #ffffff, #ff9aa3 45%, #ff2f45); }
+.st-b-boom { box-shadow: 0 0 0 3px #fff, 0 0 80px #ff7a00; }
+.st-window.st-flash { animation: st-flash .7s ease-out; }
+@keyframes st-flash { 0% { filter: brightness(2.4) saturate(.4); } 100% { filter: none; } }
 
 /* Hold and spin. */
 /* An empty cell keeps the full cell height (the slot is drawn inset), so the grid never drifts. */

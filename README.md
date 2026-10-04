@@ -105,7 +105,17 @@ ways, and so on. Stakes are 2, 5, 10, 25, 50 or 100 credits. The Bongo Onkey is
 wild on reels 2 to 5. A spin only counts as a win when it pays more than your
 bet; a smaller payout says how much of your bet came back.
 
-- **Free spins:** three or more spikes anywhere pay and give 8, 12 or 20 free
+- **Walls and squares:** anywhere on the reels, on top of the ways, a reel of
+  four of one symbol (a wall) and a 2 × 2 block of one symbol on neighbouring
+  reels (a square; a bigger block makes several) pay too, wilds filling in. By
+  the symbol: 9 to A pay 0.5× for a wall and 0.15× for a square, coconut and
+  drum 1× / 0.4×, banana, Valorant and Greg 3× / 1.5×, Onkey 5× / 2.5×. Most are
+  small, but they come often: something pays on about 2 spins in 5.
+- **Spike planted:** with exactly two spikes showing, about a quarter of the
+  time the spike plants: the two arm, and every reel without one spins again,
+  looking for the third (about 1 spin in 75). A third detonates it into free
+  spins; otherwise it's defused.
+- **Free spins:** three or more spikes anywhere pay and give 7, 10 or 15 free
   spins on richer reels, where every wild carries ×2 or ×3 and wilds in a win
   multiply each other. Three more spikes add 5 spins (50 at most).
 - **Hold and spin:** six or more golden fireballs stick, each showing the
@@ -121,10 +131,13 @@ bet; a smaller payout says how much of your bet came back.
 - **Events:** now and then Onkey stampedes across the reels and leaves wilds
   behind (always enough for a win), bananas rain down and turn into fireballs,
   or, on a win, Onkey breathes fire on it for ×2, ×3 or ×5.
+- **The Golden Onkey:** a secret symbol, on no reel strip and not in the pay
+  table. About 1 spin in 230, a symbol turns into him as his reel lands: he's
+  wild worth three ways on his reel, and pays 5× just for being spotted.
 
 It pays back about 95% of stakes over time, jackpots included: a paying spin
-about 1 in 5, most of them more than the bet; free spins and hold and spin each
-about 1 spin in 190; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
+about 1 in 2.5, most of them less than the bet; free spins about 1 spin in 120
+and hold and spin about 1 in 190; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
 Space spins, and pressing it again skips ahead; **Auto** spins 10, 25 or 50 times
 and stops for a bonus, the pick or a big win; **Turbo** speeds everything up. In
 October it wears its Halloween look. After an Epic win or a Major or Grand

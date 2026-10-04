@@ -354,16 +354,26 @@ comes at the bet you've picked, glowing near full), the title with
 Onkey peeking over it, the 5 × 4 reel window, a result line, and the deck (bet keys, a Credits / Bet / Win readout,
 Auto and Turbo, and a round Spin button that reads Skip while a spin plays). Symbols are drawn, not emoji:
 carved-looking letters for 9 to A, SVG coconut, bongo drums, banana bunch (those three in a flat sticker style: plain fills, a thick dark outline) and Valorant tile, and pictures for Greg,
-the Golden Onkey, the Bongo Onkey wild (with a gold WILD tag), the spike and the fireball (with the credits it pays
-printed on it). Higher symbols get a soft halo.
+Onkey (plain, never gold: gold is the secret's), the Bongo Onkey wild (with a gold WILD tag), the spike and the
+fireball (with the credits it pays printed on it). Higher symbols get a soft halo. The Golden Onkey, the secret
+symbol, is only ever drawn where a spin landed him: Onkey in gold, shining, with a "WILD ×3" tag and a tilted
+"Spotted!" label; the window's rim turns gold for his banner. Nothing else on the page (pay table, history chips,
+biggest wins) mentions him.
 
 Each jackpot has an emblem (`emblem()`, `.st-emb-*`): a coin in its colour with a picture, never a bare word. Mini
-is a banana bunch on green, Minor a coconut on blue, Major the Golden Onkey on purple, Grand the charging Onkey in a
+is a banana bunch on green, Minor a coconut on blue, Major Onkey on purple, Grand the charging Onkey in a
 crown on red; the pick's Smoke is a grey cloud. Use them wherever a jackpot is named.
 
 Being honest about money is a rule here: a spin is only a "Win!" (gold) when it paid more than the bet. A payout
-under the bet reads "7 of your 10 back" in muted text, its cells light without the pulse, and it gets no win
-sound. Celebrations (sounds, Inferno, Big / Mega / Epic) are for real wins.
+under the bet reads in muted text, named for what paid ("Wall! +5", "3 shapes! +4") over "5 of your 10 back"; its
+ways cells light without the pulse and get no win sound. Walls and squares are the exception, there to be seen: each
+gets a frame round its cells (`.st-shape`, coloured by tier: cyan for 9 to A, green, pink, gold for Onkey) with a
+label, the amount rising out of it and a mallet note, one after another, and they join the wins that take turns
+after the spin. Celebrations (Inferno, Big / Mega / Epic) are still for real wins.
+
+The spike plant is its own beat: the two spikes arm (a red ring and a blink, `.st-planted`), a "Spike planted" banner,
+a beep that speeds up while the other reels spin again (every one of them teasing), then "Detonated!" (a white
+flash, a boom, a hard shake) or a grey "Defused".
 
 Motion carries the dopamine, so the rules are about keeping it readable: reels blur while moving and bounce on
 landing; a reel that could finish a bonus glows and spins on (a tease from what's showing, never from the result);
@@ -578,7 +588,8 @@ crossed out when muted, in the button's text colour. Slots, the casino tables an
 ## Known issues and backlog
 
 - **Onkey Stampede** (2026-10-04) was checked in dark and light at 1920×1080 with headless Chrome: a plain win, a
-  Stampede, free spins and a forced Grand. Its sound clips haven't been heard together in a real browser yet (the
+  Stampede, free spins and a forced Grand; walls, the Golden Onkey and the spike plant (detonated and defused) were
+  checked in dark the same way. Its sound clips haven't been heard together in a real browser yet (the
   headless checks only confirm they load and play without errors), and it has no phone layout yet.
 
 The 2026-09-30 review at 1920×1080 fixed: page widths, the signed-out top bar, nav icons, all-caps labels, link

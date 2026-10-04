@@ -300,6 +300,9 @@ window.FiveOnkey = (() => {
     st_stampede: ['That was Onkey running through. Sorry. You\'re welcome.', 'Stampede! Onkey left some wilds behind.'],
     st_inferno: ['Onkey breathed on it. Times {inferno}.', 'Inferno! Onkey had spicy bananas.'],
     st_lose: ['The herd went the other way.', 'Not this time. The reels are still warm.'],
+    st_golden: ['The Golden Onkey! Onkey has never looked better.', 'Did you see him? Golden. Shining. Onkey, basically.', 'Golden Onkey spotted. Onkey says keep it quiet. +{net}.'],
+    st_detonated: ['Spike planted, spike detonated. Onkey covered his ears.', 'BOOM. Third spike. Onkey knew it was coming.'],
+    st_defused: ['Defused. Onkey was so sure.', 'Somebody defused it. Not Onkey. Onkey was rooting for the boom.'],
     view_wheel: ['Round and round she goes.', 'The wheel is shiny today.', 'Onkey greased the wheel. For luck.'],
     view_hunt: ['Onkey is throwing bananas. Again. Pick them up?', 'Bananas everywhere! Onkey will pay. One credit each, 250 a day.'],
     hunt: ['{n} bananas picked. Onkey\'s arms are tired just watching.', 'Ook! {n} already? Keep going.', 'That\'s {n}. Onkey could do it faster. Probably.'],
@@ -552,10 +555,13 @@ window.FiveOnkey = (() => {
         const vars = { net: credits(Math.max(0, d.payout - d.stake)), mult: Math.round(d.multiplier), jackpot: d.jackpot, inferno: d.inferno };
         if (d.jackpot === 'Grand') react('st_grand', vars, { excited: true });
         else if (d.jackpot) react('st_jackpot', vars, { excited: true });
+        else if (d.golden) react('st_golden', vars, { excited: true });
+        else if (d.plant === 'detonated') react('st_detonated', vars, { excited: true });
         else if (d.free_spins) react('st_free', vars, { excited: true });
         else if (d.hold) react('st_hold', vars, { excited: true });
         else if (d.multiplier >= 15) react('st_big', vars, { excited: true });
         else if (d.inferno) chime('st_inferno', vars, 0.7);
+        else if (d.plant === 'defused') chime('st_defused', vars, 0.5);
         else if (d.event === 'stampede') chime('st_stampede', vars, 0.5);
         else if (d.payout > d.stake) chime('st_win', vars, 0.3);
         else if (!d.payout) chime('st_lose', vars, 0.06);
