@@ -32,6 +32,7 @@ from .hunt import HuntManager
 from .bets import TAX_MIN_TRANSFER, TAX_RATE, BetError, BetManager
 from .config import CONFIG_PATH, DATA_DIR, TOOLS_DIR, WEB_DIR, config_problems, load_bettor_names, load_config, mask
 from .db import DB
+from .discord import Discord, fresh, game_message, jackpot_message, test_message
 from .forecasts import build_forecasts
 from .gamestate import ending
 from .henrik import HenrikClient, HenrikError
@@ -99,6 +100,10 @@ class App:
         self.roulette = RouletteManager(self.db)
         self.poker = PokerManager(self.db)
         self.auth = Auth(cfg, self.db)
+        # Posts to the squad's Discord channel (game results, jackpots). Never in demo mode.
+        self.discord = Discord("" if demo else cfg.get("discord_webhook"))
+        if self.discord.ignored:
+            print("[discord] discord_webhook isn't a Discord webhook URL (https://discord.com/api/webhooks/...): nothing will be posted", flush=True)
         self.tunnel = Tunnel(cfg, port, TOOLS_DIR)
         self.problems = [] if demo else config_problems(cfg)
         self.client = None
@@ -152,11 +157,12 @@ class App:
             return self.bets.reset()
 
     def on_new_matches(self, matches):
-        settled = []
+        settled, by_match = [], {}
         for m in matches:
             players = self.db.match_players(m["match_id"])
             done = self.bets.settle_for_match(m, players)
             settled.extend(done)
+            by_match[m["match_id"]] = done
             paid = self.rewards.pay_for_match(m, players)
             if paid:
                 print(f"[rewards] {m['map']} {m['result']}: " + ", ".join(f"{r['bettor']} +{r['base'] + r['bonus']:.0f}" for r in paid), flush=True)
@@ -164,7 +170,23 @@ class App:
             if given:
                 print(f"[house] {m['map']}: " + ", ".join(f"{g['bettor']} +{g['amount']:g} ({g['kind']})" for g in given), flush=True)
         self.bananas.earn()  # bananas for the games just stored
+        self.announce_games(matches, by_match)
         return settled
+
+    def announce_games(self, matches, settled_by_match):
+        """Post the new games to Discord (discord.py): the recent ones only, each with its top highlight and the
+        bets settled on it. A failure here never touches settlement."""
+        if not self.discord.enabled:
+            return
+        try:
+            bettor_of = {m["puuid"]: self.rewards.account_name(m) for m in self.db.members()}
+            for m in fresh(matches):
+                recap = build_recap(self.db, self.engine, m["match_id"], bettor_of, self.rewards.bonus_max) or {}
+                highlights = recap.get("highlights") or []
+                self.discord.send(game_message(m, recap.get("players"), highlights[0] if highlights else None,
+                                               settled_by_match.get(m["match_id"])))
+        except Exception as e:
+            print(f"[discord] could not build the game post: {e}", flush=True)
 
     def on_sync(self, summary):
         """After every sync, new squad games or not: bananas for every game each member played."""
@@ -221,6 +243,7 @@ class App:
         st = {
             "configured": not self.problems,
             "demo": self.demo,
+            "discord": self.discord.enabled,  # a webhook is set: games and jackpots are posted
             "problems": self.problems,
             "region": self.cfg.get("region"),
             "modes": sorted(MODES),
@@ -803,7 +826,10 @@ class Handler(BaseHTTPRequestHandler):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to spin the wheel."}, 403)
-                return self._json(app.wheel.spin(me["name"], force=body.get("segment")))  # honoured in demo mode only
+                spun = app.wheel.spin(me["name"], force=body.get("segment"))  # `segment` is honoured in demo mode only
+                if spun.get("prize") == "jackpot" and (spun.get("amount") or 0) > 0:
+                    app.discord.send(jackpot_message(spun["bettor"], spun["amount"]))
+                return self._json(spun)
             if path == "/api/slots/spin":
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
@@ -887,6 +913,14 @@ def main():
         if arg.startswith("--config="):
             config_path = os.path.abspath(arg.split("=", 1)[1])
     cfg = load_config(config_path)
+    if "--discord-test" in sys.argv:  # send one test message to the configured webhook and exit
+        hook = Discord(cfg.get("discord_webhook"), background=False)
+        if not hook.enabled:
+            print("Set discord_webhook in config.json to a Discord webhook URL (https://discord.com/api/webhooks/...) first.")
+            sys.exit(1)
+        ok = hook.send(test_message())
+        print("Sent a test message to Discord." if ok else "Discord did not accept the message (see the line above).")
+        sys.exit(0 if ok else 1)
     host = cfg.get("host") or "127.0.0.1"
     port = int(cfg.get("port") or 8080)
     for arg in sys.argv:

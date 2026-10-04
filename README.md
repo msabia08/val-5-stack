@@ -1049,6 +1049,36 @@ He's kept rare, but he's around:
 - **In the shop.** The **Send the Scientist** prank (he watches a friend's badge and bet tickets for three games),
   the **Lab Coat** badge and **The Lab** theme.
 
+## Discord posts
+
+The site can post to a channel in your squad's Discord server, so nobody has to open the site to see how a game
+went. It only ever sends messages; it can't read the channel.
+
+**What it posts**
+
+- **Every new squad game:** the result and score, the top of the scoreboard, the recap's best highlight, what each
+  bettor won or lost on it, and any long shot (odds of 6.00 or longer) that came in.
+- **The jackpot:** when someone lands the daily wheel's jackpot slice.
+
+**Setting it up**
+
+1. In Discord, open the channel's settings: **Edit Channel › Integrations › Webhooks › New Webhook**, then
+   **Copy Webhook URL**.
+2. Paste it into `config.json` as `discord_webhook`.
+3. Run `python server.py --discord-test`. It sends one message to the channel and says whether Discord accepted it.
+4. Restart the site.
+
+**Keep the webhook URL secret.** Anyone who has it can post to that channel. It belongs only in `config.json`,
+which git ignores: never put it in `config.example.json`, a commit, an issue, a pull request or a screenshot. If it
+does leak, delete the webhook in Discord and make a new one. The site never shows the URL: the page only learns
+whether one is set, and the console logs a failed post's status, not the address.
+
+The posts name bettors and what they won or lost, so point it at the squad's own channel. They can't ping anyone:
+mentions are switched off in every message, whatever a bettor calls themselves.
+
+Only games that started in the last six hours are posted, at most three per sync, so setting up a fresh database
+with months of history doesn't flood the channel. Demo mode never posts.
+
 ## Going online (share it with the squad)
 
 The server can publish itself through a Cloudflare Tunnel, so your friends can
@@ -1122,6 +1152,7 @@ time you log in.
 | `loan_max` | 1000 | Most a bettor can have out on loan from Onkey's Bank at once. `0` closes the bank. |
 | `loan_interest` | 0.1 | Interest on a loan, as a share of the amount borrowed (0.1 = borrow 500, owe 550). |
 | `hunt_daily_max` | 250 | Credits a bettor can pick in the Banana Hunt per day (midnight Pacific). `0` closes the hunt. |
+| `discord_webhook` | `""` | A Discord webhook URL (`https://discord.com/api/webhooks/...`). When set, new squad games and daily-wheel jackpots are posted to that channel. Empty posts nothing. Test it with `python server.py --discord-test`. |
 | `hunt_floor` | 50 | The top-up past the daily cap: a bettor with fewer credits than this can keep picking until they have this much, and no further. `0` makes the cap absolute. |
 
 Command-line flags: `--demo`, `--no-browser`, `--port=8090`, `--tunnel`, `--no-tunnel`,
@@ -1162,6 +1193,7 @@ fivestack/             the backend package
   bananas.py           Onkey's Shop: bananas earned per game played, the catalogue, buying and wearing items
   bank.py              Onkey's Bank: loans with interest, within a limit on what's out
   hunt.py              the Banana Hunt: bananas placed and judged by the server (golden, rotten, bunches, Greg, combos, streaks), capped per day
+  discord.py           posts game results and jackpots to a Discord channel through a webhook
   arcade.py            Onkey's Arcade: paid plays, score checks and high-score boards
   slots.py             Casino: slots
   blackjack.py         Casino: blackjack, solo tables and the shared table
