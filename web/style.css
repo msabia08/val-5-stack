@@ -107,9 +107,10 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .brand.onkey-talking.onkey-ominous .logo-link { transform-origin: 50% 90%; animation: onkey-dread 1.1s ease-in-out infinite alternate; }
 @keyframes onkey-dread { from { transform: rotate(-2.5deg) translateX(-0.5px); } to { transform: rotate(2.5deg) translateX(0.5px); } }
 /* At the blackjack and poker tables Onkey walks from the logo to the dealer's seat (walk() in onkey.js): the logo
-   empties while he's away and the dealer's face waits for him; .onkey-walker is him on the way. */
+   empties while he's away and the dealer's face waits for him; .onkey-walker is him on the way. He walks to his
+   corner of the Banana Hunt's field the same way. */
 html.onkey-away .topbar .brand .logo-link { visibility: hidden; }
-html.onkey-walking .onkey-dealer .onkey-face { visibility: hidden; }
+html.onkey-walking .onkey-dealer .onkey-face, html.onkey-walking .hunt-field .hunt-onkey { visibility: hidden; }
 .onkey-walker { position: fixed; z-index: 100; pointer-events: none; object-fit: contain; transform-origin: 50% 90%;
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 @keyframes onkey-hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-7px) rotate(-6deg); } 65% { transform: translateY(0) rotate(4deg); } }
@@ -2417,6 +2418,9 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 
 /* ---- the Banana Hunt (web/hunt.js): the field Onkey dropped his bananas in. The jungle is always dark green,
    whatever the theme, like the arcade's machines; the banana is a button so it can be picked from the keyboard. ---- */
+/* The field's card with your four tiles in a column to its right: the 1200px field and the column fit the 1600px page. */
+.hunt-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+.hunt-side .kpis { grid-template-columns: 1fr; margin-bottom: 0; }
 .hunt-stage { display: flex; justify-content: center; margin-top: 12px; }
 .hunt-field { position: relative; overflow: hidden; border-radius: 16px; border: 1px solid var(--border); cursor: crosshair; user-select: none;
   touch-action: manipulation; background: radial-gradient(ellipse at 30% 20%, #2f6b2f 0%, #1d4a22 45%, #122f17 100%);
@@ -3267,8 +3271,11 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .slip-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
     background: var(--accent); color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; }
   /* Banana Hunt: the field first, upright and about a screen tall (hunt.js layout() sizes it and turns the server's
-     field on its side), with no title or description over it; then the tiles two to a row and the top pickers. */
+     field on its side), with no title or description over it; then the tiles two to a row (and the top pickers, when
+     hunt.js has that card switched on). */
   #view:has(.hunt-card) { display: flex; flex-direction: column; }
+  .hunt-layout, .hunt-side { display: contents; }
+  .hunt-side .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
   .hunt-card { order: -1; padding: 8px; }
   .hunt-card > h2, .hunt-card > .how { display: none; }
   .hunt-stage { margin-top: 0; }

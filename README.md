@@ -938,8 +938,9 @@ The rules underneath:
   until you have that many, and no further, so nobody is ever stuck with
   nothing.
 - Credits from the hunt show in their own **Hunt** column on Standings and stay
-  out of betting profit, ROI and record, like game rewards. The page's Top
-  pickers table ranks everyone by what they picked this season.
+  out of betting profit, ROI and record, like game rewards. (The page's Top
+  pickers table, which ranks everyone by what they picked this season, is
+  switched off for now: `SHOW_BOARD` in `web/hunt.js` brings it back.)
 - A season reset keeps the day rows (tagged with the season), and the daily cap
   carries on by the day.
 
@@ -1094,7 +1095,8 @@ prizes, credits you send, things you buy, wear or prank people with, and new squ
 then he chimes in on smaller things too: a pick added to your slip, a theme change, your arcade score when you leave
 the machine, a sync, coming back to the tab after a few minutes, or hovering over him. He
 walks over to deal at the blackjack and poker tables (leaving the logo empty) and walks back when you leave; he
-keeps quiet there, where the dealer does the talking, and clicking his bubble hushes him
+keeps quiet there, where the dealer does the talking. He walks to his corner of the Banana Hunt's field the same
+way, and throws the first banana once he's there, and clicking his bubble hushes him
 for 15 minutes. His lines are in `web/onkey.js`.
 
 ### Onkey's story

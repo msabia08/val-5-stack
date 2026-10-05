@@ -54,6 +54,7 @@ window.FiveHunt = (() => {
   // about a fingertip) and reported to the server as that thing's own spot, as picking it with the keyboard is; a
   // tap anywhere else is reported where it fell, which the server calls a miss. The desktop draws the field as it is.
   const TAP_R = 30;
+  const SHOW_BOARD = false; // the Top pickers card under the field: set to true to bring it back
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
   function layout() {
     const f = data.hunt.field;
@@ -153,7 +154,7 @@ window.FiveHunt = (() => {
         ${kpi('This season', `<span id="hunt-season">${fmt.credits(me.season)}</span>`, `${fmt.credits(me.all_time)} credits all time`)}
         ${kpi('Hunt reopens', resetAt(me), `today's field: ${THEME_NAME[themeOf()]}`)}
       </section>` : '';
-    return `${tiles}<section class="card hunt-card"><h2>Banana Hunt</h2>
+    const card = `<section class="card hunt-card"><h2>Banana Hunt</h2>
       ${how(`Onkey throws bananas into the field. Pick one for ${plural(h.per_banana, 'credit')}, or catch it in the air for double, up to ${h.daily_max} credits a day.`,
         `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
         `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
@@ -164,8 +165,9 @@ window.FiveHunt = (() => {
         `the extras only get you there sooner, and nothing pays past it. Once you've had the day's ${h.daily_max} the hunt closes, with one exception, a top-up: if you have fewer than ${fmt.credits(h.floor)} credits you can pick until you have ${fmt.credits(h.floor)}, so nobody is stuck with nothing. ` +
         'Credits from the hunt show in their own column on Standings and stay out of betting profit, like game rewards.')}
       <div class="hunt-stage">${field()}</div>
-      <p class="muted small" id="hunt-live" aria-live="polite">${liveLine()}</p></section>
-      ${boardCard()}`;
+      <p class="muted small" id="hunt-live" aria-live="polite">${liveLine()}</p></section>`;
+    // Your four tiles stand in a column to the right of the field. Signed out there are none, and the card has the page.
+    return `${tiles ? `<div class="hunt-layout">${card}<aside class="hunt-side">${tiles}</aside></div>` : card}${SHOW_BOARD ? boardCard() : ''}`;
   }
 
   // ---- the throw --------------------------------------------------------------------------------------------------
@@ -443,10 +445,24 @@ window.FiveHunt = (() => {
         send({ x: p.x, y: p.y }, fieldEl, layout().at(p));
       }
     });
-    if (target) throwTo(fieldEl, target); // the first banana of the visit comes in the same way
-    else if (data && data.me && !data.me.done) { // the server had nothing down: ask for a banana
-      api('/api/hunt/start', { method: 'POST', body: '{}' }).then((r) => { data.me = r.me; target = r.me.target; throwTo(fieldEl, target); }).catch(() => {});
-    }
+    // The server puts a banana down (or starts the timers of the one that's there again), and Onkey throws it in.
+    const begin = () => api('/api/hunt/start', { method: 'POST', body: '{}' }).then((r) => {
+      if (!document.body.contains(fieldEl)) return;
+      data.me = r.me; target = r.me.target; throwTo(fieldEl, target);
+    }).catch(() => {});
+    if (document.documentElement.classList.contains('onkey-walking')) {
+      // Onkey is still walking over from the logo (onkey.js): the first banana waits until he's in his corner.
+      let begun = false;
+      const go = () => {
+        if (begun) return;
+        begun = true;
+        document.removeEventListener('onkey:seated', go);
+        if (document.body.contains(fieldEl) && data && data.me && !data.me.done) begin();
+      };
+      document.addEventListener('onkey:seated', go);
+      setTimeout(go, 8000); // he never keeps the hunt waiting for good
+    } else if (target) throwTo(fieldEl, target); // the first banana of the visit comes in the same way
+    else if (data && data.me && !data.me.done) begin(); // the server had nothing down: ask for a banana
   }
 
   return { init, load, view, bind };

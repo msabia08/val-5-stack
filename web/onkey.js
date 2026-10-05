@@ -627,11 +627,15 @@ window.FiveOnkey = (() => {
   // ---- walking to the tables ----------------------------------------------------------------------------------------
   // At the blackjack and poker tables Onkey is the dealer, so he gets up from the logo (which stays empty while he's
   // away: html.onkey-away) and waddles across the page to the dealer's seat; the dealer's face stays hidden until he
-  // arrives (html.onkey-walking). Leaving the tables, he walks back from where he sat.
-  const SEAT = '.onkey-dealer .onkey-face';
-  // The tables hear about the walk: 'onkey:walking' when he's about to set off (a listener can set detail.hold, in ms,
-  // to keep him in the logo a while first: casino.js does while Greg says his line), 'onkey:seated' when he's in the
-  // chair (Greg waits for it).
+  // arrives (html.onkey-walking). Leaving the tables, he walks back from where he sat. He walks to the Banana Hunt the
+  // same way, to his corner of the field (he isn't the quiet dealer there: he still talks from the bubble by the logo).
+  const WALK_VIEWS = new Set([...QUIET_VIEWS, 'hunt']);
+  const SEATS = { hunt: '.hunt-field .hunt-onkey' }; // where he ends up, by view; the dealer's face everywhere else
+  const DEALER_SEAT = '.onkey-dealer .onkey-face';
+  let seatSel = DEALER_SEAT;
+  // The pages hear about the walk: 'onkey:walking' when he's about to set off for a table (a listener can set
+  // detail.hold, in ms, to keep him in the logo a while first: casino.js does while Greg says his line), and
+  // 'onkey:seated' when he's there (Greg waits for it; the hunt waits for it to have him throw the first banana).
   const arrive = () => { root.classList.remove('onkey-walking'); document.dispatchEvent(new CustomEvent('onkey:seated')); };
   let away = false, seat = null, walker = null, walkToken = 0;
   const root = document.documentElement;
@@ -678,7 +682,7 @@ window.FiveOnkey = (() => {
     const token = walkToken, t0 = Date.now();
     const look = () => {
       if (token !== walkToken || !away) return;
-      const face = document.querySelector(SEAT);
+      const face = document.querySelector(seatSel);
       if (face && face.getBoundingClientRect().width) { cb(face); return; }
       if (Date.now() - t0 < 5000) setTimeout(look, 80); else arrive();
     };
@@ -686,15 +690,20 @@ window.FiveOnkey = (() => {
   }
 
   function walk(view) {
-    const atTable = QUIET_VIEWS.has(view) && !onPhone(); // on a phone he stays in the logo and deals from there
-    if (atTable === away) return;
+    const atTable = WALK_VIEWS.has(view) && !onPhone(); // on a phone he stays in the logo and deals from there
+    if (atTable) seatSel = SEATS[view] || DEALER_SEAT;
+    if (atTable === away) {
+      if (away) whenSeated((face) => { seat = pageRect(face.getBoundingClientRect()); }); // one table to the next: he walks back from this one
+      return;
+    }
     const from = logoRect();
     away = atTable;
     el?.closest('.brand')?.classList.remove('onkey-talking', 'onkey-excited');
     if (atTable) {
+      seat = null;
       root.classList.add('onkey-walking');
       const plan = { hold: 0 };
-      document.dispatchEvent(new CustomEvent('onkey:walking', { detail: plan }));
+      if (QUIET_VIEWS.has(view)) document.dispatchEvent(new CustomEvent('onkey:walking', { detail: plan })); // only a dealer's chair gets taken
       const token = ++walkToken;
       whenSeated((face) => {
         setTimeout(() => { // he stays in the logo for plan.hold, then gets up
@@ -747,7 +756,7 @@ window.FiveOnkey = (() => {
       pokedAt = Date.now();
       chime('poke', {}, 0.5);
     });
-    if (state && QUIET_VIEWS.has(state.view)) walk(state.view); // opened straight onto a table
+    if (state && WALK_VIEWS.has(state.view)) walk(state.view); // opened straight onto a table or the hunt
   }
 
   return { init, start, note, settled, status, speak, scientist, IDLE, SAY, DYNAMIC, OMINOUS, SCIENTIST };
