@@ -917,6 +917,15 @@ one you click is **1 credit**.
   you can't pick anything for 2 seconds.
 - **Greg** sometimes walks in to take a banana, and he's quick: pick it first,
   or click Greg to send him off.
+- An ear of **corn** sometimes lands beside the banana, and it looks a lot
+  like one. Pick it and it costs you 3 credits and your combo, and Onkey has
+  something to say about it.
+- A **frozen banana** takes two clicks (the first cracks the ice) and pays 2.
+  A **bouncing banana** pays 3 but hops to a new spot every 1.2 seconds. Now
+  and then a plain-looking banana **splits** into 3 pieces when you click it.
+- A **volley** is 5 bananas thrown one after another along a line or an arc,
+  with little time to pick them once they're down. Catch every one in the air
+  for 5 more.
 - Now and then **the scientist** comes for Onkey himself (about 1 throw in 60,
   as often as it comes up). Onkey goes to the middle of the field and arcade claws on long arms come in
   for him from every side, in five waves, each faster than the last: click

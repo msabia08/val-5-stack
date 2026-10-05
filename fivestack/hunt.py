@@ -22,6 +22,12 @@ prize is paid on top of the cap.
   banana Greg is walking to (he takes it GREG_S after it lands unless it's picked or he's shooed first). From Onkey's
   lore (docs/onkey-lore.md): Man Strudel, the scientist's friendly henchman, sometimes walks up to ask to pet Onkey
   and takes nothing.
+- More kinds of banana: a frozen one takes two clicks (the first cracks the ice) and pays FROZEN_VALUE; a bouncing one
+  pays BOUNCE_VALUE but hops to a new spot every BOUNCE_S, BOUNCE_HOPS times, before it settles; a split one breaks
+  into SPLIT_SIZE pieces where it is when picked (a small bunch, SPLIT_BONUS for all of them). And a second decoy:
+  corn, which looks the part and costs CORN_COST credits and the combo if it's picked.
+- Throw patterns: a volley is VOLLEY_SIZE bananas thrown one after another (VOLLEY_GAP_S apart) along a line or an
+  arc. Each can be caught in the air or picked off the ground; catching every one in the air pays VOLLEY_BONUS on top.
 - The boss fight, also from the lore: BOSS_CHANCE of throws aren't a banana but the scientist coming for Onkey himself
   (a target of kind "boss"). Onkey goes to the middle of the field and the claws come in for him from every side, in BOSS_WAVES waves, each
   (how many claws, how many seconds they take to reach him); a click names a claw (`claw`, its id) and stops it. Stop a whole wave in time and the next
@@ -81,6 +87,13 @@ BOSS_CHANCE = 1 / 60
 BOSS_WAVES = ((3, 3.0), (4, 2.8), (5, 2.6), (6, 2.4), (7, 2.2))
 BOSS_INTRO_S, BOSS_GAP_S = 2.2, 1.0
 BOSS_PRIZE = 100  # credits for clearing every wave, on top of the day's cap
+# More to throw (chances per throw, after the ones above).
+CORN_CHANCE, FROZEN_CHANCE, BOUNCE_CHANCE, SPLIT_CHANCE, VOLLEY_CHANCE = 0.08, 0.06, 0.05, 0.05, 0.06
+CORN_COST = 3  # credits a picked ear of corn takes back (never more than the bettor has), with the combo
+FROZEN_VALUE = 2  # a frozen banana: the first click cracks the ice, the second picks it
+BOUNCE_VALUE, BOUNCE_S, BOUNCE_HOPS, BOUNCE_GAP = 3, 1.2, 3, 150  # it hops BOUNCE_HOPS times, BOUNCE_S apart, then stays
+SPLIT_SIZE, SPLIT_BONUS, SPLIT_R = 3, 1, 110  # the pieces land about SPLIT_R from where it was
+VOLLEY_SIZE, VOLLEY_GAP_S, VOLLEY_TTL_S, VOLLEY_BONUS, VOLLEY_STEP = 5, 0.35, 1.25, 5, 120
 COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
 COMBO_IDLE_S = 8.0
 HIDDEN_FROM, HIDDEN_TO = 5, 50  # the hidden item is one of the day's picks in this range
@@ -123,6 +136,10 @@ class HuntManager:
                 "air": {"s": AIR_S, "r": AIR_R, "from": AIR_FROM, "to": AIR_TO, "mult": AIR_MULT, "hand": list(HAND)},
                 "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S,
                 "boss": {"waves": [list(w) for w in BOSS_WAVES], "prize": BOSS_PRIZE},
+                "corn": {"cost": CORN_COST}, "frozen": {"value": FROZEN_VALUE},
+                "bounce": {"value": BOUNCE_VALUE, "hop_s": BOUNCE_S, "hops": BOUNCE_HOPS},
+                "split": {"size": SPLIT_SIZE, "bonus": SPLIT_BONUS},
+                "volley": {"size": VOLLEY_SIZE, "gap_s": VOLLEY_GAP_S, "ttl_s": VOLLEY_TTL_S, "bonus": VOLLEY_BONUS},
                 "bunch": {"size": BUNCH_SIZE, "ttl_s": BUNCH_TTL_S, "bonus": BUNCH_BONUS},
                 "combo": {"steps": list(COMBO_STEPS), "idle_s": COMBO_IDLE_S}}
 
@@ -147,9 +164,11 @@ class HuntManager:
         return {"x": x, "y": y}
 
     def _new_target(self, prev=None, now=0.0, paid_ts=0.0):
-        """What Onkey throws next. A target is {"id", "kind" (banana / golden / bunch), "x", "y", "born" (when it was
-        thrown), "paid_ts" (the last paid pick), and by kind: "expires" (golden, bunch), "items" (bunch: each
-        {"x", "y", "picked"}), "decoy" (a rotten banana's spot), "greg" ({"x", "y": where he starts, "arrives"})}."""
+        """What Onkey throws next. A target is {"id", "kind" (banana / golden / bunch / frozen / bouncy / split / volley /
+        boss), "x", "y", "born" (when it was thrown), "paid_ts" (the last paid pick), and by kind: "expires" (golden,
+        bunch, volley), "items" (bunch, volley: each {"x", "y", "picked"}), "hops" (bouncy: where it goes next),
+        "decoy" (a rotten banana's or an ear of corn's spot, with its "kind"), "greg" ({"x", "y": where he starts,
+        "arrives"})}."""
         self._serial += 1
         spot = self._spot([prev] if prev else ())
         t = {"id": self._serial, "kind": "banana", **spot, "born": now, "paid_ts": paid_ts}
@@ -164,7 +183,7 @@ class HuntManager:
                 items.append(self._spot(items, BUNCH_GAP))
             t.update(kind="bunch", items=[{**i, "picked": False} for i in items], expires=now + AIR_S + BUNCH_TTL_S + SLACK_S)
         elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE:
-            t["decoy"] = self._spot([spot], DECOY_GAP)
+            t["decoy"] = {**self._spot([spot], DECOY_GAP), "kind": "rotten"}
         elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE:
             # Greg comes in from the side further from the banana, level with it or thereabouts.
             gx = 0 if spot["x"] > FIELD_W / 2 else FIELD_W
@@ -174,7 +193,50 @@ class HuntManager:
             t.update(kind="boss", boss=self._wave(0, now, BOSS_INTRO_S))  # no banana: the scientist comes for Onkey
         elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + BOSS_CHANCE + STRUDEL_CHANCE:
             t["strudel"] = {"x": 0 if spot["x"] > FIELD_W / 2 else FIELD_W, "y": spot["y"]}  # a visit: he takes nothing
+        else:
+            roll -= GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + BOSS_CHANCE + STRUDEL_CHANCE
+            if roll < CORN_CHANCE:
+                t["decoy"] = {**self._spot([spot], DECOY_GAP), "kind": "corn"}
+            elif roll < CORN_CHANCE + FROZEN_CHANCE:
+                t.update(kind="frozen", cracked=False)
+            elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE:
+                hops = [spot]
+                while len(hops) <= BOUNCE_HOPS:
+                    hops.append(self._spot(hops, BOUNCE_GAP))
+                t.update(kind="bouncy", hops=hops)
+            elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE + SPLIT_CHANCE:
+                t["kind"] = "split"
+            elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE + SPLIT_CHANCE + VOLLEY_CHANCE:
+                items = self._row(spot)
+                t.update(kind="volley", x=items[0]["x"], y=items[0]["y"], items=[{**i, "picked": False, "air": False} for i in items],
+                         expires=now + (VOLLEY_SIZE - 1) * VOLLEY_GAP_S + AIR_S + VOLLEY_TTL_S + SLACK_S)
         return t
+
+    def _row(self, start):
+        """VOLLEY_SIZE spots VOLLEY_STEP apart for a volley, from `start`: along a straight line, or bending into an arc,
+        in whichever direction keeps them all in the field."""
+        low_x, high_x, low_y, high_y = MARGIN, FIELD_W - MARGIN, MARGIN, FIELD_H - MARGIN
+        for _ in range(60):
+            heading = math.radians(self.rng.randint(0, 359))
+            bend = math.radians(self.rng.randint(-1, 1) * 22)  # 0: a line; either side: an arc
+            pts, x, y = [], float(start["x"]), float(start["y"])
+            for _i in range(VOLLEY_SIZE):
+                pts.append({"x": round(x), "y": round(y)})
+                x, y, heading = x + VOLLEY_STEP * math.cos(heading), y + VOLLEY_STEP * math.sin(heading), heading + bend
+            if all(low_x <= p["x"] <= high_x and low_y <= p["y"] <= high_y for p in pts):
+                return pts
+        y = min(high_y, max(low_y, start["y"]))  # no room from there: straight across the middle
+        return [{"x": FIELD_W // 2 + (i - VOLLEY_SIZE // 2) * VOLLEY_STEP, "y": y} for i in range(VOLLEY_SIZE)]
+
+    def _pieces(self, t):
+        """Where a split banana's pieces land: SPLIT_SIZE spots about SPLIT_R from it, kept inside the field."""
+        turn = self.rng.randint(0, 359)
+        out = []
+        for i in range(SPLIT_SIZE):
+            a = math.radians(turn + i * 360 / SPLIT_SIZE)
+            out.append({"x": round(min(FIELD_W - MARGIN, max(MARGIN, t["x"] + SPLIT_R * math.cos(a)))),
+                        "y": round(min(FIELD_H - MARGIN, max(MARGIN, t["y"] + SPLIT_R * math.sin(a)))), "picked": False})
+        return out
 
     def _wave(self, n, now, wait):
         """Wave `n` of the boss fight: its claws ({"id", "x", "y": where on the field's border each comes in from, on any
@@ -237,8 +299,14 @@ class HuntManager:
         if not t:
             return None
         out = {"id": t["id"], "kind": t["kind"], "x": t["x"], "y": t["y"]}
-        if t["kind"] == "bunch":
+        if t["kind"] in ("bunch", "volley"):
             out["items"] = [{"x": i["x"], "y": i["y"], "picked": i["picked"]} for i in t["items"]]
+        if t["kind"] == "bunch" and "bonus" in t:
+            out["pieces"] = True  # a split banana's pieces: they appear where it was, Onkey doesn't throw them
+        if t["kind"] == "frozen":
+            out["cracked"] = t["cracked"]
+        if t["kind"] == "bouncy":
+            out["hops"] = [dict(h) for h in t["hops"]]
         if t.get("decoy"):
             out["decoy"] = dict(t["decoy"])
         if t.get("greg"):
@@ -412,6 +480,14 @@ class HuntManager:
             return reply(False, "miss")  # nobody there: not a miss that breaks the combo
         near = lambda p, r=TARGET_R: (x - p["x"]) ** 2 + (y - p["y"]) ** 2 <= r ** 2  # noqa: E731
         if t.get("decoy") and air is None and near(t["decoy"]):
+            if t["decoy"].get("kind") == "corn":  # corn: it costs credits (what the bettor has, at most) and the combo
+                cost = min(CORN_COST, max(0, int(bettor["balance"])))
+                if cost:
+                    self.db.hunt_bonus(name, wheel_day(now), -cost, now)
+                with self.lock:
+                    combo["n"] = 0
+                    self.targets[key] = self._new_target(t, now, t["paid_ts"])
+                return reply(False, "corn", lost=cost)
             with self.lock:
                 combo["n"], combo["frozen"] = 0, now + FREEZE_S
                 self.targets[key] = self._new_target(t, now, t["paid_ts"])
@@ -425,6 +501,28 @@ class HuntManager:
                 return reply(False, "miss")
             if now - t["paid_ts"] < BUNCH_INTERVAL_S:
                 return reply(False, "too_fast")
+        elif t["kind"] == "volley":  # each is thrown VOLLEY_GAP_S after the one before: in the air, or down
+            for n, i in enumerate(t["items"]):
+                if i["picked"]:
+                    continue
+                thrown = t["born"] + n * VOLLEY_GAP_S
+                if air is None:
+                    if near(i):
+                        item = i
+                        break
+                elif AIR_FROM <= air <= AIR_TO and -0.2 <= now - thrown <= AIR_S + SLACK_S * 2:
+                    ax, ay = arc_at(i["x"], i["y"], air)
+                    if near({"x": ax, "y": ay}, AIR_R):
+                        item = i
+                        break
+            if item is None:
+                combo["n"] = 0
+                return reply(False, "miss")
+            if now - t["paid_ts"] < BUNCH_INTERVAL_S:
+                return reply(False, "too_fast")
+            if air is not None:
+                value *= AIR_MULT
+            item["air"] = air is not None
         elif air is not None:
             ax, ay = arc_at(t["x"], t["y"], min(1.0, max(0.0, air)))
             if not (AIR_FROM <= air <= AIR_TO) or now - t["born"] > AIR_S + SLACK_S * 2 or not near({"x": ax, "y": ay}, AIR_R):
@@ -436,11 +534,29 @@ class HuntManager:
         else:
             if now - t["paid_ts"] < MIN_INTERVAL_S:
                 return reply(False, "too_fast")
-            if not near(t):
+            spots = [t]
+            if t["kind"] == "bouncy":  # wherever it is now, or was a moment ago on the page (which runs a little behind)
+                landed = now - t["born"] - AIR_S
+                last = len(t["hops"]) - 1
+                spots = t["hops"][max(0, min(last, int((landed - SLACK_S * 1.25) // BOUNCE_S))):max(0, min(last, int(landed // BOUNCE_S))) + 1]
+            if not any(near(s) for s in spots):
                 combo["n"] = 0
                 return reply(False, "miss")
         if t["kind"] == "golden":
             value *= GOLD_VALUE
+        elif t["kind"] == "bouncy":
+            value *= BOUNCE_VALUE
+        elif t["kind"] == "frozen":
+            if not t["cracked"]:  # the ice first: nothing paid, nothing lost
+                with self.lock:
+                    t["cracked"] = True
+                return reply(False, "cracked")
+            value *= FROZEN_VALUE
+        elif t["kind"] == "split":  # it breaks into pieces where it is: a small bunch to sweep
+            with self.lock:
+                t.update(kind="bunch", items=self._pieces(t), bonus=SPLIT_BONUS, expires=now + BUNCH_TTL_S + SLACK_S)
+                t.pop("decoy", None)
+            return reply(False, "split")
 
         # A hit. The combo counts it, then multiplies it; the bunch's bonus comes on top. Never past what's left.
         combo["n"], combo["ts"] = combo["n"] + 1, now
@@ -449,7 +565,10 @@ class HuntManager:
         if item is not None:
             item["picked"] = True
             swept = all(i["picked"] for i in t["items"])
-        pay = min(value * mult + (BUNCH_BONUS if swept else 0), left)
+        bonus = 0
+        if swept:  # a bunch's (or a split banana's) bonus; a volley's only when every one was caught in the air
+            bonus = (VOLLEY_BONUS if all(i["air"] for i in t["items"]) else 0) if t["kind"] == "volley" else t.get("bonus", BUNCH_BONUS)
+        pay = min(value * mult + bonus, left)
         self.db.hunt_pay(name, wheel_day(now), pay, now)
         picks, credits = picks + 1, credits + pay
         found = self._found(name, wheel_day(now), picks, now)
@@ -460,8 +579,7 @@ class HuntManager:
                 self.targets.pop(key, None)
             elif item is None or swept:
                 self.targets[key] = self._new_target(t, now, now)
-        return reply(True, paid=pay, kind=t["kind"], air=air is not None, swept=swept, bunch_bonus=BUNCH_BONUS if swept else 0,
-                     found=found)
+        return reply(True, paid=pay, kind=t["kind"], air=air is not None, swept=swept, bunch_bonus=bonus, found=found)
 
     def nudge(self, name, now=None):
         """The page's timer ran out (a golden banana rotted, a bunch's time is up, Greg arrived): replace the target

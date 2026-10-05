@@ -33,6 +33,7 @@ window.FiveHunt = (() => {
   let frozenUntil = 0; // a rotten banana: no picking until then (performance.now())
   let timers = []; // the timeouts and animations that belong to the target on the field
   let session = 0; // bananas picked since the page was opened
+  let hop = { id: 0, i: 0 }; // a bouncing banana: which of its spots it's on (land() moves it along)
   let comboTimer = 0; // the combo lapses on the server after a while without a pick: the page drops it then too
   const THROW_MS = 750, THROW_DELAY = 120; // how long a banana is in the air, after Onkey's wind-up
   const how = (summary, more) => `<details class="how"><summary>${summary}</summary><div class="how-body">${more}</div></details>`;
@@ -115,7 +116,9 @@ window.FiveHunt = (() => {
   function itemHtml(p, kind, i) {
     const at = layout().at(p), style = `left:${at.x}px;top:${at.y}px`;
     if (kind === 'rotten') return `<span class="hunt-banana rotten land" style="${style}" aria-hidden="true">🍌</span>`;
-    const label = kind === 'golden' ? 'Pick the golden banana' : 'Pick the banana';
+    if (kind === 'corn') return `<span class="hunt-banana corn land" style="${style}" aria-hidden="true">${CORN_SVG}</span>`;
+    const label = { golden: 'Pick the golden banana', frozen: 'Crack the frozen banana, then pick it', bouncy: 'Pick the bouncing banana', split: 'Pick the banana' }[kind] || 'Pick the banana';
+    if (kind === 'frozen' && p.cracked) kind = 'frozen cracked';
     return `<button type="button" class="hunt-banana ${kind} land"${i === undefined ? ' id="hunt-banana"' : ` data-i="${i}"`} style="${style}" aria-label="${label}">🍌</button>`;
   }
 
@@ -179,7 +182,10 @@ window.FiveHunt = (() => {
     const about = `<section class="card hunt-about"><h2>Banana Hunt</h2>
       ${how(`Onkey throws bananas into the field. Pick one for ${plural(h.per_banana, 'credit')}, or catch it in the air for double, up to ${h.daily_max} credits a day.`,
         `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
-        `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
+        `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. ` +
+        `So does an ear of <b>corn</b>, which is not a banana: pick it and it costs you ${plural(h.corn.cost, 'credit')} and your combo. ` +
+        `A <b>frozen banana</b> takes two clicks (the first cracks the ice) and pays ${h.frozen.value}. A <b>bouncing banana</b> pays ${h.bounce.value} but hops to a new spot every ${h.bounce.hop_s} seconds. Any plain-looking banana may turn out to be a <b>split banana</b>: click it and it breaks into ${h.split.size} pieces to sweep up. ` +
+        `A <b>volley</b> is ${h.volley.size} thrown one after another: catch every one in the air for ${h.volley.bonus} more. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
         `Now and then <b>the scientist</b> comes for Onkey himself: his claws come down in ${h.boss.waves.length} waves, each faster than the last, and you click every claw before it reaches Onkey. Stop them all for ${h.boss.prize} credits on top of the day's ${h.daily_max}; let one through and Man Strudel has to set Onkey free, and your combo is gone. Man Strudel himself only wants to say hello. ` +
         `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg, lose to the scientist, or stop for ${h.combo.idle_s} seconds. ` +
         `One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
@@ -213,7 +219,18 @@ window.FiveHunt = (() => {
     const h = data.hunt;
     if (t.kind === 'bunch') t.items.forEach((it, i) => { if (!it.picked) fieldEl.insertAdjacentHTML('beforeend', itemHtml(it, 'bunch', i)); });
     else fieldEl.insertAdjacentHTML('beforeend', itemHtml(t, t.kind));
-    if (t.decoy) fieldEl.insertAdjacentHTML('beforeend', itemHtml(t.decoy, 'rotten'));
+    if (t.decoy) fieldEl.insertAdjacentHTML('beforeend', itemHtml(t.decoy, t.decoy.kind || 'rotten'));
+    if (t.kind === 'bouncy') { // it hops to its next spot every hop_s, then stays on the last
+      hop = { id: t.id, i: 0 };
+      t.hops.slice(1).forEach((next, n) => timers.push(setTimeout(() => {
+        const el = $('#hunt-banana', fieldEl), at = layout().at(next);
+        if (!target || target.id !== t.id || !el) return;
+        hop.i = n + 1;
+        el.style.left = `${at.x}px`;
+        el.style.top = `${at.y}px`;
+        el.classList.remove('hop'); void el.offsetWidth; el.classList.add('hop');
+      }, (n + 1) * h.bounce.hop_s * 1000)));
+    }
     const ttl = t.kind === 'golden' ? h.gold.ttl_s : t.kind === 'bunch' ? h.bunch.ttl_s : 0;
     if (ttl) { // a bar across the top of the field runs down, then the server says what became of it
       fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-clock ${t.kind}" aria-hidden="true"><i style="animation-duration:${ttl}s"></i></div>`);
@@ -377,25 +394,15 @@ window.FiveHunt = (() => {
     clearField(fieldEl);
     if (!t) return;
     if (!('animate' in Element.prototype)) { land(fieldEl, t); return; }
+    if (t.kind === 'volley') { throwVolley(fieldEl, t); return; } // one after another, not all at once
     const onkey = $('#hunt-onkey', fieldEl);
     if (onkey) { onkey.classList.remove('throw'); void onkey.offsetWidth; onkey.classList.add('throw'); }
     const lay = layout();
     const spots = t.kind === 'bunch' ? t.items.filter((it) => !it.picked).map((it) => ({ p: it, cls: 'bunch' })) : [{ p: t, cls: t.kind }];
-    if (t.decoy) spots.push({ p: t.decoy, cls: 'rotten' });
+    if (t.decoy) spots.push({ p: t.decoy, cls: t.decoy.kind || 'rotten' });
     let anim = null;
     spots.forEach(({ p, cls }) => {
-      const fly = document.createElement('span');
-      fly.className = `hunt-fly ${cls}`;
-      fly.textContent = '🍌';
-      fly.setAttribute('aria-hidden', 'true');
-      fieldEl.appendChild(fly);
-      const frames = [], N = 30;
-      for (let i = 0; i <= N; i++) {
-        const k = i / N, at = lay.at(arcAt(p, k));
-        frames.push({ offset: k, transform: `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px) translate(-50%, -50%) rotate(${Math.round(k * 540)}deg) scale(${(1 + 0.35 * Math.sin(Math.PI * k)).toFixed(3)})` });
-      }
-      fly.style.transform = frames[0].transform; // in Onkey's hand during the wind-up, not at the field's corner
-      const a = fly.animate(frames, { duration: THROW_MS, delay: THROW_DELAY, easing: 'linear', fill: 'both' });
+      const a = fly(fieldEl, p, cls, lay, 0).anim;
       timers.push(a);
       if (!anim) anim = a;
     });
@@ -409,6 +416,48 @@ window.FiveHunt = (() => {
     };
     timers.push(setTimeout(finish, THROW_DELAY + THROW_MS + 600));
     anim.onfinish = finish;
+  }
+  // The corn: a bare cob with no husk, straight as corn is, in a banana's colours and at a banana's size.
+  const CORN_COB = 'M18 47 L47 18';
+  const CORN_SVG = '<svg class="hunt-cob" viewBox="0 0 64 64" aria-hidden="true" focusable="false">' +
+    `<path d="${CORN_COB}" fill="none" stroke="#b9860f" stroke-width="27" stroke-linecap="round"/>` +
+    `<path d="${CORN_COB}" fill="none" stroke="#f3c62f" stroke-width="24" stroke-linecap="round"/>` +
+    [-6, -2, 2, 6].map((o) => `<path d="${CORN_COB}" transform="translate(${o} ${o})" fill="none" stroke="${o < -2 ? '#ffe680' : o > 2 ? '#dba51c' : '#fbd74a'}" stroke-width="3.2" stroke-dasharray="3.6 1.6"/>`).join('') +
+    '</svg>';
+  // One thing in the air, from Onkey's hand along its arc to `p`, starting `wait` ms after the wind-up.
+  function fly(fieldEl, p, cls, lay, wait) {
+    const el = document.createElement('span');
+    el.className = `hunt-fly ${cls}`;
+    if (cls === 'corn') el.innerHTML = CORN_SVG; else el.textContent = '🍌';
+    el.setAttribute('aria-hidden', 'true');
+    fieldEl.appendChild(el);
+    const frames = [], N = 30;
+    for (let i = 0; i <= N; i++) {
+      const k = i / N, at = lay.at(arcAt(p, k));
+      frames.push({ offset: k, transform: `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px) translate(-50%, -50%) rotate(${Math.round(k * 540)}deg) scale(${(1 + 0.35 * Math.sin(Math.PI * k)).toFixed(3)})` });
+    }
+    el.style.transform = frames[0].transform; // in Onkey's hand during the wind-up, not at the field's corner
+    return { el, anim: el.animate(frames, { duration: THROW_MS, delay: THROW_DELAY + wait, easing: 'linear', fill: 'both' }) };
+  }
+  // A volley: Onkey throws them one after another (gap_s apart) along a line or an arc. Each can be caught in the air
+  // or picked once it's down; when the last has landed, a clock runs on what's left.
+  function throwVolley(fieldEl, t) {
+    const lay = layout(), h = data.hunt, gap = h.volley.gap_s * 1000, onkey = $('#hunt-onkey', fieldEl);
+    flight = null;
+    t.items.forEach((it, i) => {
+      if (it.picked) return;
+      timers.push(setTimeout(() => { if (onkey) { onkey.classList.remove('throw'); void onkey.offsetWidth; onkey.classList.add('throw'); } }, i * gap));
+      const f = fly(fieldEl, it, 'volley', lay, i * gap);
+      f.el.dataset.i = i;
+      f.anim.onfinish = () => {
+        f.el.remove();
+        if (target && target.id === t.id && !target.items[i].picked) fieldEl.insertAdjacentHTML('beforeend', itemHtml(it, 'volley', i));
+      };
+      timers.push(f.anim);
+    });
+    const down = THROW_DELAY + (t.items.length - 1) * gap + THROW_MS;
+    timers.push(setTimeout(() => fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-clock bunch" aria-hidden="true"><i style="animation-duration:${h.volley.ttl_s}s"></i></div>`), down));
+    timers.push(setTimeout(() => nudge(fieldEl, t), down + h.volley.ttl_s * 1000));
   }
   // How far along its arc the banana in the air is (0-1), or null when nothing can be caught.
   function airK() {
@@ -469,10 +518,17 @@ window.FiveHunt = (() => {
         me.bananas += 1; me.picks += 1;
         pop(fieldEl, here.x, here.y, `${r.air ? 'Caught! ' : ''}+${r.paid}`, r.kind === 'golden' ? 'gold' : r.air ? 'air' : '');
       }
-      if (r.swept) pop(fieldEl, here.x, here.y - 34, `Whole bunch! +${r.bunch_bonus}`, 'air');
+      if (r.swept && r.bunch_bonus) pop(fieldEl, here.x, here.y - 34, `${r.kind === 'volley' ? 'Clean volley' : 'Whole bunch'}! +${r.bunch_bonus}`, 'air');
       if (r.found) { toast(`You found the hidden item: ${r.found.label}!`, 'good'); pop(fieldEl, here.x, here.y - 34, 'Hidden item!', 'gold'); window.FiveOnkey?.note('hunt_found', { label: r.found.label }); }
       if (session % 25 === 0) window.FiveOnkey?.note('hunt', { n: session, today: r.today });
     } else if (r.reason === 'rotten') { pop(fieldEl, here.x, here.y, 'Rotten!', 'bad'); freeze(fieldEl, r.frozen_s || data.hunt.freeze_s); }
+    else if (r.reason === 'corn') { // corn: it costs credits and the combo, and Onkey has something to say
+      pop(fieldEl, here.x, here.y, r.lost ? `Corn! −${r.lost}` : 'Corn!', 'bad');
+      me.season -= r.lost || 0; me.all_time -= r.lost || 0;
+      if (state.me && r.balance !== undefined) { state.me.balance = r.balance; renderMe(); }
+      window.FiveOnkey?.note('hunt_corn', { lost: r.lost || 0 });
+    } else if (r.reason === 'cracked') pop(fieldEl, here.x, here.y, 'Crack!', 'air');
+    else if (r.reason === 'split') pop(fieldEl, here.x, here.y, 'Split!', 'air');
     else if (r.reason === 'rotted') pop(fieldEl, here.x, here.y, 'It rotted', 'bad');
     else if (r.reason === 'stolen') pop(fieldEl, here.x, here.y, 'Greg took it!', 'bad');
     else if (r.reason === 'shooed') { shooGreg(fieldEl); pop(fieldEl, here.x, here.y, 'Shoo!', 'air'); }
@@ -488,17 +544,20 @@ window.FiveHunt = (() => {
     refreshNumbers();
     if (r.reason === 'boss_lost') { rescue(fieldEl); return; } // Man Strudel first, then the next banana
     if (!target) return;
+    if (r.reason === 'split') { clearField(fieldEl); land(fieldEl, target); return; } // its pieces, where it was
+    if (r.reason === 'cracked') { const el = $('#hunt-banana', fieldEl); if (el) { el.classList.remove('picked'); el.classList.add('cracked'); } return; }
     if (target.kind === 'boss' && was && target.id === was.id) { bossSync(fieldEl, target); return; }
     if (!was || target.id !== was.id) throwTo(fieldEl, target); // Onkey throws the next one in
-    else if (r.hit && target.kind === 'bunch') target.items.forEach((it, i) => { if (it.picked) $(`.hunt-banana[data-i="${i}"]`, fieldEl)?.remove(); });
+    else if (r.hit && (target.kind === 'bunch' || target.kind === 'volley')) target.items.forEach((it, i) => { if (it.picked) $$(`[data-i="${i}"]`, fieldEl).forEach((el) => el.remove()); });
   }
 
   // A timer on the field ran out (a golden banana, a bunch, Greg arriving): ask the server what became of it.
   async function nudge(fieldEl, t, tries = 0) {
-    if (target !== t || !document.body.contains(fieldEl)) return;
+    const still = () => target && target.id === t.id && document.body.contains(fieldEl); // the same thing, whatever was picked from it since
+    if (!still()) return;
     try {
       const r = await api('/api/hunt/next', { method: 'POST', body: '{}' });
-      if (target !== t) return;
+      if (!still()) return;
       if (r.target && r.target.id === t.id && tries < 4) { timers.push(setTimeout(() => nudge(fieldEl, t, tries + 1), 350)); return; } // not yet, says the server
       apply(r, fieldEl);
     } catch (err) { /* the next click sorts it out */ }
@@ -528,21 +587,45 @@ window.FiveHunt = (() => {
       const box = greg.getBoundingClientRect(), f = fieldEl.getBoundingClientRect();
       if (near({ x: (box.left + box.width / 2 - f.left) / lay.k, y: (box.top + box.height / 2 - f.top) / lay.k }, 38)) { send({ x: 0, y: 0, shoo: true }, fieldEl, shown); return; }
     }
+    if (target.kind === 'volley') { // each one by itself: down already, or still in the air
+      for (const [i, it] of target.items.entries()) {
+        if (it.picked) continue;
+        const el = $(`.hunt-banana[data-i="${i}"]:not(.picked)`, fieldEl);
+        if (el) {
+          if (!near(lay.at(it))) continue;
+          el.classList.add('picked');
+          const at = lay.phone ? it : lay.toField(shown.x, shown.y);
+          send({ x: Math.round(at.x), y: Math.round(at.y) }, fieldEl, shown);
+          return;
+        }
+        const up = $(`.hunt-fly[data-i="${i}"]:not(.picked)`, fieldEl), anim = up && up.getAnimations()[0];
+        if (!anim) continue;
+        const timing = anim.effect.getTiming(), k = (Number(anim.currentTime) - timing.delay) / timing.duration;
+        const spot = arcAt(it, k);
+        if (!(k >= h.air.from && k <= h.air.to) || !near(lay.at(spot), lay.phone ? TAP_R + 10 : h.air.r)) continue;
+        up.classList.add('picked');
+        const at = lay.phone ? spot : lay.toField(shown.x, shown.y);
+        send({ x: Math.round(at.x), y: Math.round(at.y), air: Number(k.toFixed(3)) }, fieldEl, shown);
+        return;
+      }
+      return;
+    }
     if (flight) { // in the air: a click on it is a catch, anywhere else waits for it to land
       const k = airK();
       if (k === null || k < h.air.from || k > h.air.to) return;
       const spot = arcAt(target, k);
       if (!near(lay.at(spot), lay.phone ? TAP_R + 10 : h.air.r)) return;
       const at = lay.phone ? spot : lay.toField(shown.x, shown.y);
-      $$('.hunt-fly', fieldEl).forEach((el) => { if (!el.classList.contains('rotten')) el.classList.add('picked'); });
+      $$('.hunt-fly', fieldEl).forEach((el) => { if (!el.classList.contains('rotten') && !el.classList.contains('corn')) el.classList.add('picked'); });
       send({ x: Math.round(at.x), y: Math.round(at.y), air: Number(k.toFixed(3)) }, fieldEl, shown);
       return;
     }
     // On the ground: what the click is on, if anything (on a phone it's reported as that thing's own spot).
-    const things = (target.kind === 'bunch' ? target.items.map((it, i) => ({ p: it, el: $(`.hunt-banana[data-i="${i}"]`, fieldEl), live: !it.picked })) : [{ p: target, el: $('#hunt-banana', fieldEl), live: true }])
+    const things = (target.kind === 'bunch' ? target.items.map((it, i) => ({ p: it, el: $(`.hunt-banana[data-i="${i}"]`, fieldEl), live: !it.picked })) : [{ p: target.kind === 'bouncy' && hop.id === target.id ? target.hops[hop.i] : target, el: $('#hunt-banana', fieldEl), live: true }])
       .concat(target.decoy ? [{ p: target.decoy, el: null, live: true }] : []);
     const on = things.find((x) => x.live && near(lay.at(x.p)));
-    if (on && on.el) on.el.classList.add('picked'); // it vanishes at once
+    const stays = target.kind === 'split' || (target.kind === 'frozen' && !target.cracked); // the first click doesn't pick these
+    if (on && on.el && !stays) on.el.classList.add('picked'); // it vanishes at once
     const at = on && lay.phone ? on.p : lay.toField(shown.x, shown.y);
     send({ x: Math.round(at.x), y: Math.round(at.y) }, fieldEl, shown);
   }

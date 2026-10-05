@@ -2464,6 +2464,17 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 @keyframes hunt-gold { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -50%) scale(1.12); } }
 .hunt-banana.rotten, .hunt-fly.rotten { filter: sepia(1) hue-rotate(-28deg) saturate(1.6) brightness(.5) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); cursor: crosshair; }
 .hunt-banana.bunch, .hunt-fly.bunch { font-size: 46px; }
+/* More to pick: corn (a decoy: .hunt-cob, a bare cob drawn at a banana's size and in its colours, meant to pass for one at a glance), a frozen banana (icy until the first
+   click cracks it), a bouncing one (it moves between its spots). A split one has no look of its own: it's a surprise. */
+.hunt-banana.corn { cursor: crosshair; }
+.hunt-cob { display: block; width: 1em; height: 1em; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); }
+.hunt-banana.frozen, .hunt-fly.frozen { filter: hue-rotate(150deg) saturate(.8) brightness(1.3) drop-shadow(0 0 9px #9fe8ff) drop-shadow(0 0 2px #fff); }
+.hunt-banana.frozen.cracked { filter: saturate(.85) drop-shadow(0 0 7px #9fe8ff); animation: hunt-crack .25s ease-out; }
+@keyframes hunt-crack { 30% { transform: translate(-50%, -50%) scale(1.25) rotate(-8deg); } }
+.hunt-banana.bouncy { transition: left .28s cubic-bezier(.3, 1.4, .6, 1), top .28s cubic-bezier(.3, 1.4, .6, 1); filter: drop-shadow(0 8px 4px rgba(0, 0, 0, .45)); }
+.hunt-banana.bouncy.hop { animation: hunt-hop .28s ease-out; }
+@keyframes hunt-hop { 50% { transform: translate(-50%, -95%) scale(1.15); } }
+
 /* The clock on a golden banana or a bunch: a bar across the top of the field that runs down. */
 .hunt-clock { position: absolute; left: 12px; right: 12px; top: 10px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .35); overflow: hidden; pointer-events: none; }
 .hunt-clock i { display: block; height: 100%; width: 100%; transform-origin: left; background: #9ef0ff; animation: hunt-clock linear forwards; }

@@ -2541,6 +2541,75 @@ def banana_hunt(shared):
     r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
     assert r["hit"] and r["paid"] == 1 and hx.nudge(who, now=now + 1.5)["reason"] is None, r  # he takes nothing
     now += 2
+    # More kinds of banana. Corn is a decoy beside the real one: picking it costs credits and the combo.
+    CORN, FROZEN, BOUNCY, SPLIT, VOLLEY = 0.40, 0.48, 0.53, 0.58, 0.63
+    throw = lambda roll: (rig.rolls.append(roll), hx.click(who, r["target"]["x"], r["target"]["y"], now=now))[1]  # noqa: E731
+    r = throw(CORN)
+    tgt, had = r["target"], db.get_bettor(who)["balance"]
+    assert r["hit"] and tgt["kind"] == "banana" and tgt["decoy"]["kind"] == "corn" and r["combo"] >= 1, r
+    r = hx.click(who, tgt["decoy"]["x"], tgt["decoy"]["y"], now=now + 1)
+    assert r["reason"] == "corn" and r["lost"] == H.CORN_COST == 3 and r["combo"] == 0 and r["target"]["id"] != tgt["id"], r
+    assert db.get_bettor(who)["balance"] == had - 3 and hx.status(who, now=now + 1)["today"] == r["today"]  # not off the day's count
+    start_balance -= H.CORN_COST
+    now += 2
+    # A frozen banana takes two clicks: the first cracks the ice (nothing paid, nothing lost), the second pays double.
+    r = throw(FROZEN)
+    tgt = r["target"]
+    assert tgt["kind"] == "frozen" and tgt["cracked"] is False, tgt
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
+    assert not r["hit"] and r["reason"] == "cracked" and r["target"]["cracked"] and r["target"]["id"] == tgt["id"] and r["combo"] == 1, r
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1.2)
+    assert r["hit"] and r["kind"] == "frozen" and r["paid"] == H.FROZEN_VALUE and r["combo"] == 2, r
+    now += 2
+    # A bouncing banana hops to a new spot every BOUNCE_S: a click where it used to be misses, one where it is pays.
+    r = throw(BOUNCY)
+    tgt = r["target"]
+    assert tgt["kind"] == "bouncy" and len(tgt["hops"]) == H.BOUNCE_HOPS + 1 and tgt["hops"][0] == {"x": tgt["x"], "y": tgt["y"]}, tgt
+    late = now + H.AIR_S + H.BOUNCE_S * 2 + 0.3  # on its third spot by now
+    assert hx.click(who, tgt["hops"][0]["x"], tgt["hops"][0]["y"], now=late)["reason"] == "miss"
+    r = hx.click(who, tgt["hops"][2]["x"], tgt["hops"][2]["y"], now=late + 0.7)
+    assert r["hit"] and r["kind"] == "bouncy" and r["paid"] == H.BOUNCE_VALUE and r["combo"] == 1, r
+    now = late + 2
+    # A split banana breaks into pieces where it is: a small bunch, with its own bonus for all of them.
+    r = throw(SPLIT)
+    tgt = r["target"]
+    assert tgt["kind"] == "split", tgt
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
+    pieces = r["target"]
+    assert not r["hit"] and r["reason"] == "split" and pieces["id"] == tgt["id"] and pieces["kind"] == "bunch" and pieces["pieces"], r
+    assert len(pieces["items"]) == H.SPLIT_SIZE and all(H.MARGIN <= i["x"] <= H.FIELD_W - H.MARGIN for i in pieces["items"])
+    paid = [hx.click(who, i["x"], i["y"], now=now + 1.3 + n * 0.2) for n, i in enumerate(pieces["items"])]
+    assert [p["paid"] for p in paid] == [1, 1, 1 + H.SPLIT_BONUS] and paid[-1]["swept"] and paid[-1]["bunch_bonus"] == H.SPLIT_BONUS, paid
+    r = paid[-1]
+    now += 3
+    # A volley: five thrown one after another along a line or an arc. Every one caught in the air: the volley's bonus.
+    r = throw(VOLLEY)
+    tgt = r["target"]
+    assert tgt["kind"] == "volley" and len(tgt["items"]) == H.VOLLEY_SIZE and (tgt["x"], tgt["y"]) == (tgt["items"][0]["x"], tgt["items"][0]["y"])
+    assert all(H.MARGIN <= i["x"] <= H.FIELD_W - H.MARGIN and H.MARGIN <= i["y"] <= H.FIELD_H - H.MARGIN for i in tgt["items"])
+    for n, i in enumerate(tgt["items"]):
+        ax, ay = H.arc_at(i["x"], i["y"], 0.5)
+        r = hx.click(who, ax, ay, now=now + n * H.VOLLEY_GAP_S + 0.45, air=0.5)
+        assert r["hit"] and r["air"] and r["kind"] == "volley", (n, r)
+        assert r["paid"] == H.AIR_MULT * r["mult"] + (H.VOLLEY_BONUS if n == H.VOLLEY_SIZE - 1 else 0), (n, r)
+    assert r["swept"] and r["bunch_bonus"] == H.VOLLEY_BONUS and r["target"]["id"] != tgt["id"]
+    now += 4
+    # Picked off the ground instead, it pays the bananas and no bonus; left too long, what's left is gone.
+    r = throw(VOLLEY)
+    tgt = r["target"]
+    for n, i in enumerate(tgt["items"]):
+        r = hx.click(who, i["x"], i["y"], now=now + 3 + n * 0.2)
+        assert r["hit"] and not r["air"] and r["paid"] == r["mult"], (n, r)
+    assert r["swept"] and r["bunch_bonus"] == 0
+    now += 5
+    r = throw(VOLLEY)
+    gone = hx.nudge(who, now=now + (H.VOLLEY_SIZE - 1) * H.VOLLEY_GAP_S + H.AIR_S + H.VOLLEY_TTL_S + 0.1)
+    assert gone["reason"] == "bunch_over" and gone["target"]["id"] != r["target"]["id"], gone
+    now += 6
+    r = hx.click(who, 0, 0, now=now)  # a miss, so the checks below start from no combo
+    assert r["reason"] == "miss" and r["combo"] == 0
+    now += 1
+    assert {"corn", "frozen", "bounce", "split", "volley"} <= set(hx.terms(now))
     # A bunch: five at once, a credit each, and a bonus for sweeping them all in time.
     rig.rolls = [BUNCH]
     r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
