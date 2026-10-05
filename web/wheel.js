@@ -23,9 +23,9 @@ window.FiveWheel = (() => {
   let audio = null, muted = false;
   try { muted = localStorage.getItem('fs.wheelMuted') === '1'; } catch (e) { /* no storage: sound on */ }
   const ICONS = { credits: '🪙', bananas: '🍌', boost: '⚡', insurance: '🛡️', nothing: '🐒', again: '🔁', item: '🎁', jackpot: '🌟' };
-  const BIG = new Set(['jackpot', 'item', 'c1000']); // slices worth teasing toward
+  const BIG = new Set(['jackpot', 'item', 'c2000']); // slices worth teasing toward
   const BULBS = 48;
-  const BIG_CREDITS = 1000, BIG_MS = 4200; // the top credits slice gets a screen effect of its own, this long
+  const BIG_CREDITS = 2000, BIG_MS = 4200; // the top credits slice gets a screen effect of its own, this long
   const JACKPOT_MS = 9000; // how long the jackpot's screen effect runs: the dim, banner, confetti and rain
   const R = 186; // the slices' radius in the SVG's 400 × 400 frame
 
@@ -527,7 +527,7 @@ window.FiveWheel = (() => {
           rain(['🪙'], 50, 1.4);
           break;
         }
-        sfx.credits(r.amount >= 500); flash('credits'); burst(false); if (r.amount >= 500) shake(5);
+        sfx.credits(r.amount >= 1000); flash('credits'); burst(false); if (r.amount >= 1000) shake(5);
         break;
       case 'bananas': sfx.bananas(); flash('bananas'); burst(false, { emoji: ['🍌'] }); break;
       case 'boost': sfx.boost(); flash('boost', 2); burst(false, { emoji: ['⚡'] }); break;
