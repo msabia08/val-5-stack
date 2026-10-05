@@ -2541,13 +2541,25 @@ def banana_hunt(shared):
     r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
     assert r["hit"] and r["paid"] == 1 and hx.nudge(who, now=now + 1.5)["reason"] is None, r  # he takes nothing
     now += 2
-    # More kinds of banana. Corn is a decoy beside the real one: picking it costs credits and the combo.
+    # More kinds of banana. Corn is thrown alone: picking it costs credits and the combo, and left alone it goes.
     CORN, FROZEN, BOUNCY, SPLIT, VOLLEY = 0.40, 0.48, 0.53, 0.58, 0.63
     throw = lambda roll: (rig.rolls.append(roll), hx.click(who, r["target"]["x"], r["target"]["y"], now=now))[1]  # noqa: E731
     r = throw(CORN)
     tgt, had = r["target"], db.get_bettor(who)["balance"]
-    assert r["hit"] and tgt["kind"] == "banana" and tgt["decoy"]["kind"] == "corn" and r["combo"] >= 1, r
-    r = hx.click(who, tgt["decoy"]["x"], tgt["decoy"]["y"], now=now + 1)
+    assert r["hit"] and tgt["kind"] == "corn" and "decoy" not in tgt and r["combo"] >= 1, r
+    assert hx.nudge(who, now=now + H.AIR_S + 1)["reason"] is None  # still lying there
+    gone = hx.nudge(who, now=now + H.AIR_S + H.CORN_TTL_S + 0.1)
+    assert gone["reason"] == "corn_gone" and gone["target"]["id"] != tgt["id"] and gone["combo"] == r["combo"], gone  # no harm done
+    assert db.get_bettor(who)["balance"] == had and H.CORN_TTL_S == 2.0
+    now += 5
+    r = hx.click(who, gone["target"]["x"], gone["target"]["y"], now=now)
+    assert r["hit"], r
+    rig.rolls.append(CORN)
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now + 1)
+    tgt, had = r["target"], db.get_bettor(who)["balance"]
+    now += 1
+    assert r["hit"] and tgt["kind"] == "corn", r
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
     assert r["reason"] == "corn" and r["lost"] == H.CORN_COST == 3 and r["combo"] == 0 and r["target"]["id"] != tgt["id"], r
     assert db.get_bettor(who)["balance"] == had - 3 and hx.status(who, now=now + 1)["today"] == r["today"]  # not off the day's count
     start_balance -= H.CORN_COST

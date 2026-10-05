@@ -24,8 +24,9 @@ prize is paid on top of the cap.
   and takes nothing.
 - More kinds of banana: a frozen one takes two clicks (the first cracks the ice) and pays FROZEN_VALUE; a bouncing one
   pays BOUNCE_VALUE but hops to a new spot every BOUNCE_S, BOUNCE_HOPS times, before it settles; a split one breaks
-  into SPLIT_SIZE pieces where it is when picked (a small bunch, SPLIT_BONUS for all of them). And a second decoy:
-  corn, which looks the part and costs CORN_COST credits and the combo if it's picked.
+  into SPLIT_SIZE pieces where it is when picked (a small bunch, SPLIT_BONUS for all of them). And corn: now and
+  then Onkey's throw is an ear of corn and nothing else. It looks the part, costs CORN_COST credits and the combo if
+  it's picked, and is gone by itself CORN_TTL_S after it lands (reason corn_gone, nothing lost).
 - Throw patterns: a volley is VOLLEY_SIZE bananas thrown one after another (VOLLEY_GAP_S apart) along a line or an
   arc. Each can be caught in the air or picked off the ground; catching every one in the air pays VOLLEY_BONUS on top.
 - The boss fight, also from the lore: BOSS_CHANCE of throws aren't a banana but the scientist coming for Onkey himself
@@ -89,6 +90,7 @@ BOSS_INTRO_S, BOSS_GAP_S = 2.2, 1.0
 BOSS_PRIZE = 100  # credits for clearing every wave, on top of the day's cap
 # More to throw (chances per throw, after the ones above).
 CORN_CHANCE, FROZEN_CHANCE, BOUNCE_CHANCE, SPLIT_CHANCE, VOLLEY_CHANCE = 0.08, 0.06, 0.05, 0.05, 0.06
+CORN_TTL_S = 2.0  # how long an ear of corn lies there before the next throw
 CORN_COST = 3  # credits a picked ear of corn takes back (never more than the bettor has), with the combo
 FROZEN_VALUE = 2  # a frozen banana: the first click cracks the ice, the second picks it
 BOUNCE_VALUE, BOUNCE_S, BOUNCE_HOPS, BOUNCE_GAP = 3, 1.2, 3, 150  # it hops BOUNCE_HOPS times, BOUNCE_S apart, then stays
@@ -136,7 +138,7 @@ class HuntManager:
                 "air": {"s": AIR_S, "r": AIR_R, "from": AIR_FROM, "to": AIR_TO, "mult": AIR_MULT, "hand": list(HAND)},
                 "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S,
                 "boss": {"waves": [list(w) for w in BOSS_WAVES], "prize": BOSS_PRIZE},
-                "corn": {"cost": CORN_COST}, "frozen": {"value": FROZEN_VALUE},
+                "corn": {"cost": CORN_COST, "ttl_s": CORN_TTL_S}, "frozen": {"value": FROZEN_VALUE},
                 "bounce": {"value": BOUNCE_VALUE, "hop_s": BOUNCE_S, "hops": BOUNCE_HOPS},
                 "split": {"size": SPLIT_SIZE, "bonus": SPLIT_BONUS},
                 "volley": {"size": VOLLEY_SIZE, "gap_s": VOLLEY_GAP_S, "ttl_s": VOLLEY_TTL_S, "bonus": VOLLEY_BONUS},
@@ -167,7 +169,7 @@ class HuntManager:
         """What Onkey throws next. A target is {"id", "kind" (banana / golden / bunch / frozen / bouncy / split / volley /
         boss), "x", "y", "born" (when it was thrown), "paid_ts" (the last paid pick), and by kind: "expires" (golden,
         bunch, volley), "items" (bunch, volley: each {"x", "y", "picked"}), "hops" (bouncy: where it goes next),
-        "decoy" (a rotten banana's or an ear of corn's spot, with its "kind"), "greg" ({"x", "y": where he starts,
+        "decoy" (a rotten banana's spot, with its "kind"), "greg" ({"x", "y": where he starts,
         "arrives"})}."""
         self._serial += 1
         spot = self._spot([prev] if prev else ())
@@ -196,7 +198,7 @@ class HuntManager:
         else:
             roll -= GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + BOSS_CHANCE + STRUDEL_CHANCE
             if roll < CORN_CHANCE:
-                t["decoy"] = {**self._spot([spot], DECOY_GAP), "kind": "corn"}
+                t.update(kind="corn", expires=now + AIR_S + CORN_TTL_S + SLACK_S)  # thrown alone, no banana with it
             elif roll < CORN_CHANCE + FROZEN_CHANCE:
                 t.update(kind="frozen", cracked=False)
             elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE:
@@ -269,7 +271,7 @@ class HuntManager:
         replaced."""
         why = None
         if t.get("expires") and now > t["expires"]:
-            why = "rotted" if t["kind"] == "golden" else "bunch_over"
+            why = {"golden": "rotted", "corn": "corn_gone"}.get(t["kind"], "bunch_over")
         elif t.get("greg") and now > t["greg"]["arrives"]:
             why = "stolen"
             self._combo(key, now)["n"] = 0
@@ -479,15 +481,23 @@ class HuntManager:
                 return reply(False, "shooed")
             return reply(False, "miss")  # nobody there: not a miss that breaks the combo
         near = lambda p, r=TARGET_R: (x - p["x"]) ** 2 + (y - p["y"]) ** 2 <= r ** 2  # noqa: E731
+        if t["kind"] == "corn":  # corn, in the air or down: it costs credits (what the bettor has, at most) and the combo
+            if air is not None:
+                ax, ay = arc_at(t["x"], t["y"], min(1.0, max(0.0, air)))
+                on = AIR_FROM <= air <= AIR_TO and near({"x": ax, "y": ay}, AIR_R)
+            else:
+                on = near(t)
+            if not on:
+                combo["n"] = 0
+                return reply(False, "miss")
+            cost = min(CORN_COST, max(0, int(bettor["balance"])))
+            if cost:
+                self.db.hunt_bonus(name, wheel_day(now), -cost, now)
+            with self.lock:
+                combo["n"] = 0
+                self.targets[key] = self._new_target(t, now, t["paid_ts"])
+            return reply(False, "corn", lost=cost)
         if t.get("decoy") and air is None and near(t["decoy"]):
-            if t["decoy"].get("kind") == "corn":  # corn: it costs credits (what the bettor has, at most) and the combo
-                cost = min(CORN_COST, max(0, int(bettor["balance"])))
-                if cost:
-                    self.db.hunt_bonus(name, wheel_day(now), -cost, now)
-                with self.lock:
-                    combo["n"] = 0
-                    self.targets[key] = self._new_target(t, now, t["paid_ts"])
-                return reply(False, "corn", lost=cost)
             with self.lock:
                 combo["n"], combo["frozen"] = 0, now + FREEZE_S
                 self.targets[key] = self._new_target(t, now, t["paid_ts"])

@@ -116,7 +116,7 @@ window.FiveHunt = (() => {
   function itemHtml(p, kind, i) {
     const at = layout().at(p), style = `left:${at.x}px;top:${at.y}px`;
     if (kind === 'rotten') return `<span class="hunt-banana rotten land" style="${style}" aria-hidden="true">🍌</span>`;
-    if (kind === 'corn') return `<span class="hunt-banana corn land" style="${style}" aria-hidden="true">${CORN_SVG}</span>`;
+    if (kind === 'corn') return `<button type="button" class="hunt-banana corn land" id="hunt-banana" style="${style}" aria-label="Pick the banana">${CORN_SVG}</button>`; // it passes for one
     const label = { golden: 'Pick the golden banana', frozen: 'Crack the frozen banana, then pick it', bouncy: 'Pick the bouncing banana', split: 'Pick the banana' }[kind] || 'Pick the banana';
     if (kind === 'frozen' && p.cracked) kind = 'frozen cracked';
     return `<button type="button" class="hunt-banana ${kind} land"${i === undefined ? ' id="hunt-banana"' : ` data-i="${i}"`} style="${style}" aria-label="${label}">🍌</button>`;
@@ -183,7 +183,7 @@ window.FiveHunt = (() => {
       ${how(`Onkey throws bananas into the field. Pick one for ${plural(h.per_banana, 'credit')}, or catch it in the air for double, up to ${h.daily_max} credits a day.`,
         `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
         `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. ` +
-        `So does an ear of <b>corn</b>, which is not a banana: pick it and it costs you ${plural(h.corn.cost, 'credit')} and your combo. ` +
+        `Now and then what Onkey throws is an ear of <b>corn</b>, which is not a banana: pick it and it costs you ${plural(h.corn.cost, 'credit')} and your combo. Leave it and it's gone in ${h.corn.ttl_s} seconds. ` +
         `A <b>frozen banana</b> takes two clicks (the first cracks the ice) and pays ${h.frozen.value}. A <b>bouncing banana</b> pays ${h.bounce.value} but hops to a new spot every ${h.bounce.hop_s} seconds. Any plain-looking banana may turn out to be a <b>split banana</b>: click it and it breaks into ${h.split.size} pieces to sweep up. ` +
         `A <b>volley</b> is ${h.volley.size} thrown one after another: catch every one in the air for ${h.volley.bonus} more. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
         `Now and then <b>the scientist</b> comes for Onkey himself: his claws come down in ${h.boss.waves.length} waves, each faster than the last, and you click every claw before it reaches Onkey. Stop them all for ${h.boss.prize} credits on top of the day's ${h.daily_max}; let one through and Man Strudel has to set Onkey free, and your combo is gone. Man Strudel himself only wants to say hello. ` +
@@ -237,6 +237,7 @@ window.FiveHunt = (() => {
       if (t.kind === 'golden') timers.push(setTimeout(() => $('#hunt-banana', fieldEl)?.classList.add('rotting'), ttl * 1000 - 600));
       timers.push(setTimeout(() => nudge(fieldEl, t), ttl * 1000));
     }
+    if (t.kind === 'corn') timers.push(setTimeout(() => nudge(fieldEl, t), h.corn.ttl_s * 1000)); // no clock: that would give it away
     if (t.greg) walkGreg(fieldEl, t);
     if (t.strudel) visitStrudel(fieldEl, t);
   }
@@ -417,13 +418,27 @@ window.FiveHunt = (() => {
     timers.push(setTimeout(finish, THROW_DELAY + THROW_MS + 600));
     anim.onfinish = finish;
   }
-  // The corn: a bare cob with no husk, straight as corn is, in a banana's colours and at a banana's size.
-  const CORN_COB = 'M18 47 L47 18';
-  const CORN_SVG = '<svg class="hunt-cob" viewBox="0 0 64 64" aria-hidden="true" focusable="false">' +
-    `<path d="${CORN_COB}" fill="none" stroke="#b9860f" stroke-width="27" stroke-linecap="round"/>` +
-    `<path d="${CORN_COB}" fill="none" stroke="#f3c62f" stroke-width="24" stroke-linecap="round"/>` +
-    [-6, -2, 2, 6].map((o) => `<path d="${CORN_COB}" transform="translate(${o} ${o})" fill="none" stroke="${o < -2 ? '#ffe680' : o > 2 ? '#dba51c' : '#fbd74a'}" stroke-width="3.2" stroke-dasharray="3.6 1.6"/>`).join('') +
-    '</svg>';
+  // The corn: a bare ear with no husk, drawn as an ear of corn is (a fat cob, tilted, tapering to the tip, rows of
+  // rounded kernels with dark gaps between them, lit from the left) at a banana's size and in a banana's yellows.
+  const CORN_SVG = (() => {
+    const half = (y) => 13.5 * Math.sqrt(Math.max(0, 1 - ((y - 34) / 28) ** 2)) * (0.8 + 0.2 * (y / 64)); // narrower toward the tip
+    const mix = (k) => `rgb(${Math.round(255 - 22 * k)}, ${Math.round(222 - 74 * k)}, ${Math.round(70 - 46 * k)})`; // yellow to orange
+    let outline = '', back = '', kernels = '';
+    for (let y = 6; y <= 62; y += 2) outline += `${outline ? 'L' : 'M'}${(32 - half(y) - 1.6).toFixed(1)} ${y}`;
+    for (let y = 62; y >= 6; y -= 2) back += `L${(32 + half(y) + 1.6).toFixed(1)} ${y}`;
+    const COLS = 6, ROW = 4.3;
+    for (let y = 8; y < 60; y += ROW) {
+      for (let c = 0; c < COLS; c++) { // columns evenly spaced round the cob, so the ones at its edges look narrower
+        const a0 = -Math.PI / 2 + Math.PI * c / COLS, a1 = a0 + Math.PI / COLS, mid = (a0 + a1) / 2;
+        const yy = y + 1.6 * Math.cos(mid), w = half(yy + ROW / 2); // each row bows toward the viewer
+        const x0 = 32 + w * Math.sin(a0) + 0.35, x1 = 32 + w * Math.sin(a1) - 0.35;
+        if (x1 - x0 < 0.9) continue;
+        kernels += `<rect x="${x0.toFixed(2)}" y="${yy.toFixed(2)}" width="${(x1 - x0).toFixed(2)}" height="${(ROW - 0.8).toFixed(2)}" rx="1.3" fill="${mix((c + (y % 3) * 0.12) / (COLS - 0.6))}"/>`;
+      }
+    }
+    return '<svg class="hunt-cob" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><g transform="rotate(32 32 33)">' +
+      `<path d="${outline}${back}Z" fill="#6b4410" stroke="#4a2e08" stroke-width="1.2" stroke-linejoin="round"/>${kernels}</g></svg>`;
+  })();
   // One thing in the air, from Onkey's hand along its arc to `p`, starting `wait` ms after the wind-up.
   function fly(fieldEl, p, cls, lay, wait) {
     const el = document.createElement('span');
@@ -529,6 +544,7 @@ window.FiveHunt = (() => {
       window.FiveOnkey?.note('hunt_corn', { lost: r.lost || 0 });
     } else if (r.reason === 'cracked') pop(fieldEl, here.x, here.y, 'Crack!', 'air');
     else if (r.reason === 'split') pop(fieldEl, here.x, here.y, 'Split!', 'air');
+    else if (r.reason === 'corn_gone') pop(fieldEl, here.x, here.y, 'That was corn', 'air');
     else if (r.reason === 'rotted') pop(fieldEl, here.x, here.y, 'It rotted', 'bad');
     else if (r.reason === 'stolen') pop(fieldEl, here.x, here.y, 'Greg took it!', 'bad');
     else if (r.reason === 'shooed') { shooGreg(fieldEl); pop(fieldEl, here.x, here.y, 'Shoo!', 'air'); }
@@ -616,7 +632,7 @@ window.FiveHunt = (() => {
       const spot = arcAt(target, k);
       if (!near(lay.at(spot), lay.phone ? TAP_R + 10 : h.air.r)) return;
       const at = lay.phone ? spot : lay.toField(shown.x, shown.y);
-      $$('.hunt-fly', fieldEl).forEach((el) => { if (!el.classList.contains('rotten') && !el.classList.contains('corn')) el.classList.add('picked'); });
+      $$('.hunt-fly', fieldEl).forEach((el) => { if (!el.classList.contains('rotten')) el.classList.add('picked'); });
       send({ x: Math.round(at.x), y: Math.round(at.y), air: Number(k.toFixed(3)) }, fieldEl, shown);
       return;
     }
