@@ -1355,6 +1355,22 @@ def blackjack(shared):
     assert best(["Ah", "Ac"], "Ts", ("stand", "split")) == "split" and bjstrategy.best(["Th", "Kc"], "6s", ()) is None
     ev = bjstrategy.values(["Th", "6c"], "Ks", ("hit", "stand"))
     assert -0.56 < ev["stand"] < -0.52 and ev["hit"] > ev["stand"]  # 16 against a ten: hitting loses a hair less
+    # The hint knows what the balance covers (`spare` stakes). Fours against a 5 only pay as a split if you can double
+    # after, so on the last stake they're hit; eights split whatever's left. A split is worth more the more its hands
+    # can afford, up to what it's worth with no limit, and ROOMY spare stakes is as good as that.
+    four = ("hit", "stand", "double", "split")
+    assert bjstrategy.best(["4h", "4c"], "5s", four)["move"] == "split" and bjstrategy.best(["4h", "4c"], "5s", four, 1)["move"] == "hit"
+    assert bjstrategy.best(["8h", "8c"], "6s", four, 1)["move"] == "split" and bjstrategy.best(["Ah", "Ac"], "6s", four, 1)["move"] == "split"
+    by_spare = [bjstrategy.values(["8h", "8c"], "6s", four, n)["split"] for n in range(1, bjstrategy.ROOMY)]
+    free = bjstrategy.values(["8h", "8c"], "6s", four)["split"]
+    assert by_spare == sorted(by_spare) and by_spare[0] < free - 0.1 and 0 <= free - by_spare[-1] < 0.001, (by_spare, free)
+    assert bjstrategy.values(["8h", "8c"], "6s", four, bjstrategy.ROOMY) == bjstrategy.values(["8h", "8c"], "6s", four)
+    # A double is charged for the stake it takes from the split hands behind it: 11 against a 6 doubles on the last
+    # stake, unless a pair of eights is waiting to be split with it.
+    three = ("hit", "stand", "double")
+    assert bjstrategy.best(["8h", "3c"], "6s", three, 1)["move"] == "double" and bjstrategy.best(["8h", "3c"], "6s", three, 1, ["2d"])["move"] == "double"
+    assert bjstrategy.best(["8h", "3c"], "6s", three, 1, ["8d"])["move"] == "hit"
+    assert bjstrategy.values(["8h", "3c", "2d"], "6s", ("hit", "stand"), 0) == bjstrategy.values(["8h", "3c", "2d"], "6s", ("hit", "stand"))
     assert abs(bjstrategy.house_edge() - EDGE) < 0.00005
 
     db = DB(os.path.join(shared.tmp, "casino.db"))
@@ -1499,6 +1515,7 @@ def blackjack(shared):
         assert [h["cards"] for h in v["seats"][0]["hands"]] == [["8h", "8c"], ["8d", "Kd"]] and "split" in v["me"]["actions"]
         v = bj.action("Splitz", "solo", "split", 1)
         assert [h["total"] for h in v["seats"][0]["hands"]] == [18, 10, 18] and bal("Splitz") == 970
+        assert [h["id"] for h in v["seats"][0]["hands"]] == [0, 2, 1]  # ids go by when a hand was made, not where it sits
         assert v["log"][-1] == {**v["log"][-1], "kind": "split", "hands": 3}
         v = bj.action("Splitz", "solo", "stand", 2)
         assert v["turn"]["hand"] == 1 and v["me"]["hint"]["move"] == "double"
@@ -1516,6 +1533,30 @@ def blackjack(shared):
         v = bj.action("Splitz", "solo", "split", 1)
     assert [h["total"] for h in v["seats"][0]["hands"]] == [21, 21, 16] and v["phase"] == "done"
     assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "win", "win"] and bal("Splitz") == 1070
+    # Short of credits. A double or split the hand allows but the balance doesn't cover is left out of `actions` and
+    # listed in `short`, and the hint counts what's affordable: with one stake left, fours against a 5 are a hit. Split
+    # them anyway and the 11 that comes can't be doubled, nor the new pair split.
+    db.create_bettor("Skint", 20)
+    with stack("4h", "5s", "4d", "Tc", "7d", "4c", "9h", "2s"):
+        v = bj.bet("Skint", "solo", 10, next(ref))
+        assert v["me"]["actions"] == ["hit", "stand", "double", "split"] and v["me"]["short"] == [] and v["me"]["hint"]["move"] == "hit"
+        v = bj.action("Skint", "solo", "split", 0)
+        assert [h["cards"] for h in v["seats"][0]["hands"]] == [["4h", "7d"], ["4d", "4c"]] and bal("Skint") == 0
+        assert v["me"]["actions"] == ["hit", "stand"] and v["me"]["short"] == ["double"] and v["me"]["hint"]["move"] == "hit"
+        _expect_error(bj.action, "Skint", "solo", "double", 1, contains="can't do that")
+        bj.action("Skint", "solo", "hit", 1)
+        v = bj.action("Skint", "solo", "stand", 2)
+        assert v["turn"]["hand"] == 1 and v["me"]["actions"] == ["hit", "stand"] and v["me"]["short"] == ["double", "split"]
+        v = bj.action("Skint", "solo", "stand", 3)
+    assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "lose"] and bal("Skint") == 20 and v["me"]["short"] == []
+    # A split ace that draws another ace can only be split again. With no stake left for that there's nothing to
+    # decide: it stands by itself (12), and here that ends the round.
+    with stack("Ah", "6s", "Ad", "Tc", "As", "Kh", "5d"):
+        bj.bet("Skint", "solo", 10, next(ref))
+        v = bj.action("Skint", "solo", "split", 0)
+    assert v["phase"] == "done" and [h["cards"] for h in v["seats"][0]["hands"]] == [["Ah", "As"], ["Ad", "Kh"]]
+    assert [h["result"] for h in v["seats"][0]["hands"]] == ["lose", "push"] and bal("Skint") == 10
+    assert [e["kind"] for e in v["log"] if e["kind"] in ("split", "stand")][-2:] == ["split", "stand"]
     # Onkey's peek: he names a card he shouldn't (only the claim reaches the page, decided once per decision), and the
     # truth comes out when the card shows. 16 against a 9: an honest look at the next card, a 4, which the hit draws.
     from fivestack import blackjack as bjmod

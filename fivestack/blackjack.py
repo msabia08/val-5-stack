@@ -8,7 +8,12 @@ surrender. Onkey's save (below) is part of the rules too. That's a house edge of
 bjstrategy.house_edge()), the house's cut.
 
 Onkey's hint: on your turn `me.hint` is the move worth most on average and every legal move's value
-(bjstrategy.best(): basic strategy, worked out for these rules), which the page has him say after a pause.
+(bjstrategy.best(): basic strategy, worked out for these rules), which the page has him say after a pause. It knows what
+you can afford: with only a few stakes left, a split is valued by the doubles and re-splits you could still pay for.
+
+Credits: doubling and splitting each take another stake. A move you could make but can't pay for is left out of
+`me.actions` and listed in `me.short`, so the page can say why its button is off. A split ace that draws another ace
+stays open only to be split again; with no stake for that there's nothing to decide, and it stands by itself.
 
 Onkey's peek: on PEEK_CHANCE of your decisions (where hitting is allowed) he peeks at a card he shouldn't, the next
 card in the shoe or (PEEK_HOLE of the time, once a round) his own hole card, and tells you its rank, lying PEEK_LIE of
@@ -381,7 +386,7 @@ class BlackjackManager(LiveManager):
         t.order = [s for s in t.seats if s in t.players] + [s for s in t.players if s not in t.seats]
         for name in t.order:
             p = t.players[name]
-            p["hands"] = [{"cards": [], "stake": p["stake"], "doubled": False, "split": False, "done": False,
+            p["hands"] = [{"id": 0, "cards": [], "stake": p["stake"], "doubled": False, "split": False, "done": False,
                            "result": None, "payout": 0}]
         for _ in range(2):
             for name in t.order:
@@ -405,36 +410,50 @@ class BlackjackManager(LiveManager):
     def _advance(self, t, now):
         for name in t.order:
             for i, h in enumerate(t.players[name]["hands"]):
-                if not h["done"]:
-                    if t.turn != (name, i):
-                        t.turn = (name, i)
-                        t.deadline = now + TURN_S if t.shared else None
-                    return
+                if h["done"]:
+                    continue
+                # A split ace still open drew another ace: it can only be split again. With no stake for that there's
+                # nothing to choose, so it stands by itself.
+                if h["split"] and h["cards"][0][0] == "A" and self.db.get_bettor(name)["balance"] < h["stake"]:
+                    h["done"] = True
+                    t.add_log("stand", name, now, total=total(h["cards"])[0])
+                    continue
+                if t.turn != (name, i):
+                    t.turn = (name, i)
+                    t.deadline = now + TURN_S if t.shared else None
+                return
         t.turn, t.deadline = None, None
         self._finish(t, now)
 
     # ---- playing -----------------------------------------------------------------
+    def _moves(self, t, name):
+        """(what `name` may do right now, the moves their hand allows but their credits don't cover)."""
+        if t.phase != "playing" or not t.turn or t.turn[0] != name:
+            return [], []
+        h = t.players[name]["hands"][t.turn[1]]
+        funded = self.db.get_bettor(name)["balance"] >= h["stake"]  # doubling and splitting each take another stake
+        split_aces = h["split"] and h["cards"][0][0] == "A"
+        out, short = ["stand"] if split_aces else ["hit", "stand"], []  # a split ace still open drew another ace
+        if len(h["cards"]) == 2 and not split_aces:
+            (out if funded else short).append("double")
+        if len(h["cards"]) == 2 and card_value(h["cards"][0]) == card_value(h["cards"][1]):
+            (out if funded else short).append("split")
+        return out, short
+
     def actions(self, t, name):
         """What `name` may do right now."""
-        if t.phase != "playing" or not t.turn or t.turn[0] != name:
-            return []
-        p = t.players[name]
-        h = p["hands"][t.turn[1]]
-        balance = self.db.get_bettor(name)["balance"]
-        split_aces = h["split"] and h["cards"][0][0] == "A"
-        out = ["stand"] if split_aces else ["hit", "stand"]  # a split ace still open drew another ace: stand or split
-        if len(h["cards"]) == 2 and not split_aces and balance >= h["stake"]:
-            out.append("double")
-        if len(h["cards"]) == 2 and card_value(h["cards"][0]) == card_value(h["cards"][1]) and balance >= h["stake"]:
-            out.append("split")
-        return out
+        return self._moves(t, name)[0]
 
     def hint(self, t, name):
-        """The best move for `name`'s hand right now and every legal move's value (bjstrategy.best), or None."""
+        """The best move for `name`'s hand right now and every legal move's value (bjstrategy.best), or None. It
+        counts what the balance still covers (`spare` stakes) and the split hands waiting behind this one."""
         acts = self.actions(t, name)
         if not acts:
             return None
-        return bjstrategy.best(t.players[name]["hands"][t.turn[1]]["cards"], t.dealer[0], acts)
+        hands, i = t.players[name]["hands"], t.turn[1]
+        spare = int(self.db.get_bettor(name)["balance"] // hands[i]["stake"])
+        later = [h["cards"][1] for h in hands[i + 1:] if not h["done"]]
+        return bjstrategy.best(hands[i]["cards"], t.dealer[0], acts, spare, later)
 
     def _peek(self, t, name):
         """What Onkey claims about a card for `name`'s decision now (decided once per step), or None."""
@@ -499,8 +518,8 @@ class BlackjackManager(LiveManager):
             h["done"] = True
             t.add_log("double", name, now, amount=h["stake"], card=h["cards"][-1])
         elif act == "split":  # the new hand goes right after this one, so hands are played left to right
-            second = {"cards": [h["cards"].pop()], "stake": h["stake"], "doubled": False, "split": True,
-                      "done": False, "result": None, "payout": 0}
+            second = {"id": len(p["hands"]), "cards": [h["cards"].pop()], "stake": h["stake"], "doubled": False,
+                      "split": True, "done": False, "result": None, "payout": 0}
             h["split"] = True
             p["hands"].insert(i + 1, second)
             for x in (h, second):
@@ -673,7 +692,7 @@ class BlackjackManager(LiveManager):
                 p = t.players.get(name)
                 b = self.db.get_bettor(name)
                 me = {"name": name, "seated": name in t.seats, "bet": bool(p), "step": p["step"] if p else 0,
-                      "actions": self.actions(t, name), "hint": self.hint(t, name),
+                      "actions": self.actions(t, name), "short": self._moves(t, name)[1], "hint": self.hint(t, name),
                       "peek": self._peek(t, name) if p and t.turn and t.turn[0] == name else None,
                       "peek_result": p.get("peek_result") if p else None,
                       "tip": {"open": t.phase == "done" and p.get("net", 0) > 0 and not p.get("tip"), "max": p.get("net", 0),

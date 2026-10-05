@@ -2358,6 +2358,8 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 .bj-act:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--base), 0 3px 6px rgba(0, 0, 0, 0.3); }
 .bj-act:focus-visible { outline: 3px solid var(--turn); outline-offset: 3px; }
 .bj-act:disabled { filter: grayscale(0.7) brightness(0.7); opacity: 0.55; cursor: not-allowed; }
+.bj-act.short { opacity: 0.7; }  /* a move you can't pay for: its reason has to stay readable */
+.bj-act.short small { font-size: 11px; line-height: 1.1; opacity: 1; white-space: normal; text-wrap: balance; }
 .bj-act.hinted { box-shadow: 0 0 0 3px var(--turn), 0 0 18px rgba(255, 210, 63, 0.55), 0 4px 0 var(--base); animation: bj-hint-glow 1.4s ease-in-out infinite alternate; }
 @keyframes bj-hint-glow { from { box-shadow: 0 0 0 3px var(--turn), 0 0 8px rgba(255, 210, 63, 0.3), 0 4px 0 var(--base); }
   to { box-shadow: 0 0 0 3px var(--turn), 0 0 22px rgba(255, 210, 63, 0.7), 0 4px 0 var(--base); } }

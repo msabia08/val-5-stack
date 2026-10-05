@@ -174,12 +174,14 @@ Open **Casino → Blackjack**, sign in, and pick a table:
 The rules are fixed: six decks, reshuffled when less than a quarter is left; the dealer stands on every 17;
 blackjack pays 3 to 2; double down on any first two cards (after a split too, except split aces); split any pair,
 and split again as often as a new pair comes; split aces take one card each, though a new ace can be split again;
+doubling and splitting each take another stake, and a button you can't pay for says so;
 the dealer checks for blackjack under an ace or a ten, so a dealer blackjack only takes your original stake; no
 insurance or surrender; and once in a while (1 bust in 100) Onkey takes his pen to the card that busted you,
 crosses out its number and writes in the one that makes 21. That leaves the house about 0.11% over time, which is its
 cut. Take more than 3 seconds over
 a move and Onkey may tip you off (about one pause in three, at most once a round; basic strategy: the move that
-loses least, or wins most, on average), in his own words, and lights that button up. Now and then he peeks instead and tells you the next card, or his own hole card.
+loses least, or wins most, on average, counting what your credits still cover: he won't tell you to split a pair
+that only pays if you can double afterwards), in his own words, and lights that button up. Now and then he peeks instead and tells you the next card, or his own hole card.
 He's the house, so he lies about it fairly often, and he'll let you know once the card shows.
 
 Side bets (switched off for now; `SIDE_BETS_OPEN` in `fivestack/blackjack.py` brings them back) sit either side of
