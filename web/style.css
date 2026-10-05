@@ -2610,12 +2610,13 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--st-gold) 85%, transparent), 0 0 18px color-mix(in srgb, var(--st-fire) 55%, transparent); }
 @keyframes st-hit { to { transform: scale(1.06); filter: brightness(1.15); } }
 /* Walls and squares: a frame round the shape's cells, labelled, with what it paid. */
-.st-shape { position: absolute; z-index: 1; border-radius: 14px; pointer-events: none; box-shadow: inset 0 0 0 3px var(--shape), 0 0 22px var(--shape), inset 0 0 26px color-mix(in srgb, var(--shape) 35%, transparent);
+.st-shape { position: absolute; z-index: 1; pointer-events: none; filter: drop-shadow(0 0 8px var(--shape));
   --shape: #7fe7ff; animation: st-shape-in .35s cubic-bezier(.3, 1.6, .5, 1); transition: opacity .25s; }
-.st-shape.st-t-mid { --shape: #9dff7a; } .st-shape.st-t-high { --shape: #ff7ad9; } .st-shape.st-t-top { --shape: #ffd23f; }
-.st-shape b { position: absolute; top: -2px; left: 50%; transform: translate(-50%, -40%); padding: 1px 10px; border-radius: 8px; white-space: nowrap;
+.st-shape i { position: absolute; box-sizing: border-box; border: 0 solid var(--shape); background: color-mix(in srgb, var(--shape) 14%, transparent); }
+.st-shape.st-t-mid { --shape: #9dff7a; } .st-shape.st-t-high { --shape: #ff7ad9; } .st-shape.st-t-top { --shape: #ffd23f; } .st-shape.st-t-fire { --shape: #ff8a1f; }
+.st-shape b { position: absolute; z-index: 1; top: -2px; left: 50%; transform: translate(-50%, -40%); padding: 1px 10px; border-radius: 8px; white-space: nowrap;
   font: 900 14px/1.3 system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #0a0a0a; background: var(--shape); box-shadow: 0 2px 0 #000; }
-.st-shape em { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 900 30px/1 system-ui, sans-serif; font-style: normal; color: #fff; white-space: nowrap;
+.st-shape em { position: absolute; z-index: 1; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 900 30px/1 system-ui, sans-serif; font-style: normal; color: #fff; white-space: nowrap;
   -webkit-text-stroke: 1px #000; text-shadow: 0 3px 0 #000, 0 0 14px var(--shape); animation: st-shape-pay .9s ease-out forwards; }
 .st-shape.out { opacity: 0; }
 .st-shape.st-shape-still { animation: none; }
@@ -2624,7 +2625,8 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .st-shape-ico { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 46px; height: 46px; padding: 4px; border-radius: 10px; box-shadow: inset 0 0 0 2px #7fe7ff, 0 0 10px rgba(127, 231, 255, .5); flex: none; }
 .st-shape-ico i { border-radius: 4px; background: linear-gradient(180deg, #b6fff1, #2fd8bc); }
 .st-shape-pays { margin-top: 6px; }
-.st-shape-pays th[scope="row"] { font-weight: 600; text-align: left; }
+.st-shape-pays th[scope="row"] { font-weight: 600; text-align: left; white-space: nowrap; }
+.st-shape-pays th, .st-shape-pays td { font-size: 12px; padding: 3px 4px; }
 /* The spike plant: the two spikes arm and blink red while the other reels spin again. */
 .st-cell.st-planted { z-index: 1; animation: st-armed .5s ease-in-out infinite alternate; }
 .st-cell.st-planted::after { content: ''; position: absolute; inset: 6px; border-radius: 14px; pointer-events: none; box-shadow: inset 0 0 0 3px #ff4655, 0 0 24px #ff4655; }

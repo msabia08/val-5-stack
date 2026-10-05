@@ -366,10 +366,17 @@ crown on red; the pick's Smoke is a grey cloud. Use them wherever a jackpot is n
 
 Being honest about money is a rule here: a spin is only a "Win!" (gold) when it paid more than the bet. A payout
 under the bet reads in muted text, named for what paid ("Wall! +5", "3 shapes! +4") over "5 of your 10 back"; its
-ways cells light without the pulse and get no win sound. Walls and squares are the exception, there to be seen: each
-gets a frame round its cells (`.st-shape`, coloured by tier: cyan for 9 to A, green, pink, gold for Onkey) with a
-label, the amount rising out of it and a mallet note, one after another, and they join the wins that take turns
-after the spin. Celebrations (Inferno, Big / Mega / Epic) are still for real wins.
+ways cells light without the pulse and get no win sound. Shapes are the exception, there to be seen: each gets one
+outline round its group of cells (`.st-shape`: a box per cell, edged only where it doesn't touch another of the group
+and reaching across the reel gap to its neighbour, so bent shapes read as one piece; coloured by tier: cyan for 9 to
+A, green, pink, gold for Onkey, orange for fireballs) with its name on top ("3 in a row", "Block of 6", "Wall ×3"),
+the amount rising out of it and a mallet note (a crackle for fireballs), one after another, and they join the wins
+that take turns after the spin. The Inferno comes after the ways and the shapes and multiplies them together.
+Celebrations (Inferno, Big / Mega / Epic) are still for real wins.
+
+Skip (the Spin button or Space while a spin plays) only hurries the base spin: hold and spin, free spins and the
+jackpot pick always play at their own pace (Turbo still shortens them). Auto stops for a bonus or a 10× win unless
+Nonstop (`fs.stNonstop`) is on.
 
 The spike plant is its own beat: the two spikes arm (a red ring and a blink, `.st-planted`), a "Spike planted" banner,
 a beep that speeds up while the other reels spin again (every one of them teasing), then "Detonated!" (a white

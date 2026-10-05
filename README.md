@@ -105,12 +105,19 @@ ways, and so on. Stakes are 2, 5, 10, 25, 50 or 100 credits. The Bongo Onkey is
 wild on reels 2 to 5. A spin only counts as a win when it pays more than your
 bet; a smaller payout says how much of your bet came back.
 
-- **Walls and squares:** anywhere on the reels, on top of the ways, a reel of
-  four of one symbol (a wall) and a 2 × 2 block of one symbol on neighbouring
-  reels (a square; a bigger block makes several) pay too, wilds filling in. By
-  the symbol: 9 to A pay 0.5× for a wall and 0.15× for a square, coconut and
-  drum 1× / 0.4×, banana, Valorant and Greg 3× / 1.5×, Onkey 5× / 2.5×. Most are
-  small, but they come often: something pays on about 2 spins in 5.
+- **Shapes:** anywhere on the reels, on top of the ways, touching symbols of
+  one kind (side by side or one above the other, wilds joining in) make a
+  group, and a group pays once, for its shape: 3 in a straight line, four, a
+  2 × 2 square, a wall (a whole reel), five, a block of 6 or 7, or a mega block
+  of 8 or more. So a 2 × 3 patch is one "Block of 6", never two squares and
+  some rows. What it pays is the symbol's base (9 to A 0.04×, coconut and drum
+  0.08×, banana, Valorant and Greg 0.2×, Onkey 0.4×) times the shape's
+  (3 in a row 1, four 2, square 2.5, wall 3, five 4, block 6, mega 10).
+  Fireballs make shapes too and pay a fifth of the credits printed on them
+  (they still fill the meter). Onkey's Inferno multiplies shapes along with
+  the ways, and the biggest multiplying wild in a shape (the Golden Onkey, a
+  free spin's ×2 or ×3) multiplies it. Free spins pay shapes too. Most shapes
+  are small, but they come often: something pays on about 2 spins in 3.
 - **Spike planted:** with exactly two spikes showing, about a quarter of the
   time the spike plants: the two arm, and every reel without one spins again,
   looking for the third (about 1 spin in 75). A third detonates it into free
@@ -130,16 +137,18 @@ bet; a smaller payout says how much of your bet came back.
   800 and 5,000), the same for everyone, and grow with every spin anyone makes.
 - **Events:** now and then Onkey stampedes across the reels and leaves wilds
   behind (always enough for a win), bananas rain down and turn into fireballs,
-  or, on a win, Onkey breathes fire on it for ×2, ×3 or ×5.
+  or, on a win (ways or shapes), Onkey breathes fire on it for ×2, ×3 or ×5.
 - **The Golden Onkey:** a secret symbol, on no reel strip and not in the pay
   table. About 1 spin in 230, a symbol turns into him as his reel lands: he's
   wild worth three ways on his reel, and pays 5× just for being spotted.
 
 It pays back about 95% of stakes over time, jackpots included: a paying spin
-about 1 in 2.5, most of them less than the bet; free spins about 1 spin in 120
+about 2 in 3, most of them less than the bet; free spins about 1 spin in 120
 and hold and spin about 1 in 190; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
-Space spins, and pressing it again skips ahead; **Auto** spins 10, 25 or 50 times
-and stops for a bonus, the pick or a big win; **Turbo** speeds everything up. In
+Space spins, and pressing it again skips ahead through the spin (the bonuses
+always play at their own pace); **Auto** spins 10, 25 or 50 times and stops for
+a bonus or a big win, unless **Nonstop** is on, when it only stops if your
+credits run short; **Turbo** speeds everything up, bonuses included. In
 October it wears its Halloween look. After an Epic win or a Major or Grand
 jackpot, Onkey sings you an encore. Like the other slots it counts in the
 **Casino** column of Standings, and its house edge grows the daily wheel's

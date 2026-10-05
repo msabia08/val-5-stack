@@ -1072,7 +1072,8 @@ def stampede(shared):
     from fivestack.house import HouseManager, casino_nets
     from fivestack.stampede import (BASE_STRIPS, FS_STRIPS, GOLDEN, JACKPOTS, METER_FULL, NINE, ONKEY, PICK_KINDS,
                                     SPIKE, TEN, WILD, StampedeManager, breakdown, hold_and_spin, pick_game, play, rtp,
-                                    shape_wins, ways_wins)
+                                    shape_kind, shape_wins, ways_wins)
+    from fivestack.stampede import ACE, JACK, KING, QUEEN
 
     # The exact return is 95% (within a twentieth of a point), every part of it counted: ways wins (with the Inferno),
     # walls and squares, the Golden Onkey's spot pay, scatter pays, free spins (the spike plant's included), hold and
@@ -1110,18 +1111,31 @@ def stampede(shared):
     # The Golden Onkey is wild worth three ways on his reel.
     grid[2][0] = GOLDEN
     assert {w["symbol"]: w for w in ways_wins(grid)}[NINE]["ways"] == 2 * 3
-    # Shapes: the two Onkey reels are walls, and every 2 x 2 between them a square (three); nothing else is (the tens
-    # on reel 2 stop at a fireball). A reel of wilds alone, or a block with a spike in it, is no shape.
-    shapes = shape_wins(grid)
-    kinds = sorted((x["kind"], x["symbol"], tuple(x["cells"][0])) for x in shapes)
-    assert kinds == [("square", ONKEY, (3, 0)), ("square", ONKEY, (3, 1)),
-                     ("square", ONKEY, (3, 2)), ("wall", ONKEY, (3, 0)), ("wall", ONKEY, (4, 0))], kinds
-    assert all(x["mult"] == (st.WALL_PAYS if x["kind"] == "wall" else st.SQUARE_PAYS)[st.SYMBOLS[x["symbol"]]["tier"]]
-               for x in shapes)
-    # Wilds next to tens make a square of tens, though.
-    tens = {"kind": "square", "symbol": TEN, "mult": st.SQUARE_PAYS["low"]}
-    assert shape_wins([[WILD] * 4, [GOLDEN, SPIKE, TEN, TEN], [WILD, NINE, TEN, TEN], [FIRE] * 4, [NINE, TEN] * 2]) == [
-        {**tens, "cells": [[0, 2], [0, 3], [1, 2], [1, 3]]}, {**tens, "cells": [[1, 2], [1, 3], [2, 2], [2, 3]]}]
+    # Shapes: touching cells of one symbol (wilds joining in) make one group, which pays once for its shape. The two
+    # Onkey reels and the Golden Onkey beside them are one group of nine (a mega block, not two walls and squares), x3
+    # for him; the nines and he make a bent four, x3 too; the tens on reels 1 and 2 a four. The fireballs make no shape
+    # (three bent ones), and a group of two (the Golden Onkey and the ten under him) pays nothing.
+    shapes = shape_wins(grid, values={(1, 3): 1, (2, 2): 1, (2, 3): 1})
+    assert [(x["kind"], x["symbol"], x["x"], x["mult"]) for x in shapes] == [
+        ("four", NINE, 3, round(st.SHAPE_BASE["low"] * st.SHAPE_FACTOR["four"] * 3, 4)),
+        ("four", TEN, 1, round(st.SHAPE_BASE["low"] * st.SHAPE_FACTOR["four"], 4)),
+        ("mega", ONKEY, 3, round(st.SHAPE_BASE["top"] * st.SHAPE_FACTOR["mega"] * 3, 4))], shapes
+    assert shapes[2]["cells"] == [[2, 0]] + [[c, r] for c in (3, 4) for r in range(4)]
+    # A 2 x 3 block of nines is one block, not squares and rows; three fireballs in a row pay a share of their values.
+    grid2 = [[NINE, NINE, ACE, FIRE], [NINE, NINE, KING, FIRE], [NINE, NINE, ACE, FIRE], [QUEEN, KING, KING, JACK],
+             [ACE, KING, QUEEN, JACK]]
+    shapes = shape_wins(grid2, values={(0, 3): 1, (1, 3): 2, (2, 3): 5})
+    assert [(x["kind"], x["symbol"], x["mult"]) for x in shapes] == [
+        ("block", NINE, round(st.SHAPE_BASE["low"] * st.SHAPE_FACTOR["block"], 4)), ("three", FIRE, round(st.FIRE_SHARE * 8, 4))]
+    # A group of wilds alone is no shape; a fireball group never takes in wilds.
+    assert shape_wins([[SPIKE, FIRE, SPIKE, FIRE], [WILD] * 4, [FIRE, SPIKE, FIRE, SPIKE], [SPIKE, FIRE, SPIKE, FIRE],
+                       [FIRE, SPIKE, FIRE, SPIKE]], values={(c, r): 1 for c in range(5) for r in range(4)}) == []
+    # The shapes themselves: a straight line of three (not a bent one), a wall, a square, a four, five and up by size.
+    assert shape_kind(3, [(0, 0), (0, 1), (0, 2)]) == shape_kind(3, [(0, 1), (1, 1), (2, 1)]) == "three"
+    assert shape_kind(3, [(0, 0), (0, 1), (1, 1)]) is None and shape_kind(2, [(0, 0), (0, 1)]) is None
+    assert shape_kind(4, [(1, r) for r in range(4)]) == "wall" and shape_kind(4, [(0, 0), (0, 1), (1, 0), (1, 1)]) == "square"
+    assert shape_kind(4, [(c, 2) for c in range(4)]) == shape_kind(4, [(0, 0), (1, 0), (1, 1), (2, 1)]) == "four"
+    assert [shape_kind(n) for n in (5, 6, 7, 8, 12)] == ["five", "block", "block", "mega", "mega"]
     # Free spins' wilds multiply: x2 on reel 2 and x3 on reel 3 make one way worth six.
     grid = [[NINE, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [TEN] * 4, [TEN] * 4]
     fs = {w["symbol"]: w for w in ways_wins(grid, {(1, 0): 2, (2, 0): 3})}
@@ -1139,6 +1153,14 @@ def stampede(shared):
         hs_n += bool(r["hold"])
         fires += len(r["values"])
         paid += st.cash_mult(r) > 0
+        # Onkey's Inferno multiplies the shapes with the ways, and only comes on a spin that won one or the other.
+        fresh = shape_wins(r["grid"], values={(c, row): v for c, row, v in r["values"]})
+        assert [x["mult"] for x in r["shapes"]] == [round(x["mult"] * (r["inferno"] or 1), 4) for x in fresh]
+        assert not r["inferno"] or r["wins"] or r["shapes"]
+        # Free spins pay their shapes too.
+        for spin in (r["free_spins"] or {}).get("spins", []):
+            assert spin["mult"] == round(sum(w["mult"] for w in spin["wins"]) + sum(x["mult"] for x in spin["shapes"])
+                                         + (spin["scatter"]["mult"] if spin["scatter"] else 0), 4)
         assert st.cash_mult(r) == round(r["line_mult"] + r["shape_mult"] + r["spot"]
                                         + (r["scatter"]["mult"] if r["scatter"] else 0)
                                         + (r["free_spins"]["mult"] if r["free_spins"] else 0)
@@ -1160,11 +1182,11 @@ def stampede(shared):
                        for c in range(5))
             assert pl["found"] == (sum(col.count(SPIKE) for col in r["grid"]) >= 3) == bool(r["free_spins"])
     assert abs(line / n - b["line"]) < 0.05, (line / n, b["line"])
-    assert abs(shape / n - b["shapes"]) < 0.01, (shape / n, b["shapes"])
+    assert abs(shape / n - b["shapes"]) < 0.03, (shape / n, b["shapes"])
     assert within(fs_n, b["fs_p"]) and within(hs_n, b["hs_p"]) and within(plants, b["plant_p"])
     assert within(goldens, b["golden_p"])
-    # Plenty of visual wins: about 2 spins in 5 pay something (mostly the small shapes).
-    assert abs(fires / n - b["fires"]) < 0.03 and 0.35 < paid / n < 0.45
+    # Plenty of visual wins: about 2 spins in 3 pay something (mostly the small shapes).
+    assert abs(fires / n - b["fires"]) < 0.03 and 0.6 < paid / n < 0.78
     # Hold and spin: from six fireballs it ends with about the exact expected count, each new one resets the respins
     # to three, and it pays every fireball's value (plus the bonus on a full grid).
     start = [[c, 0, 1] for c in range(5)] + [[0, 1, 1]]
