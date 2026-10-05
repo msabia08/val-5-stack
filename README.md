@@ -114,8 +114,8 @@ bet; a smaller payout says how much of your bet came back.
   0.08×, banana, Valorant and Greg 0.2×, Onkey 0.4×) times the shape's
   (3 in a row 1, four 2, square 2.5, wall 3, five 4, block 6, mega 10).
   Fireballs make shapes too and pay a fifth of the credits printed on them
-  (they still fill the meter). Onkey's Inferno multiplies shapes along with
-  the ways, and the biggest multiplying wild in a shape (the Golden Onkey, a
+  (they still fill the meter). A spicy banana's pepper multiplies shapes along
+  with the ways, and the biggest multiplying wild in a shape (the Golden Onkey, a
   free spin's ×2 or ×3) multiplies it. Free spins pay shapes too. Most shapes
   are small, but they come often: something pays on about 2 spins in 3.
 - **Spike planted:** with exactly two spikes showing, about a quarter of the
@@ -135,16 +135,22 @@ bet; a smaller payout says how much of your bet came back.
   jackpot shows three times and it's yours, or three smokes end it with nothing.
   Mini, Minor, Major and Grand are shared credit amounts (starting at 100, 250,
   800 and 5,000), the same for everyone, and grow with every spin anyone makes.
-- **Events:** now and then Onkey stampedes across the reels and leaves wilds
-  behind (always enough for a win), bananas rain down and turn into fireballs,
-  or, on a win (ways or shapes), Onkey breathes fire on it for ×2, ×3 or ×5.
+- **Spicy bananas:** a spicy banana bunch on reels 3 to 5 is wild, and carries
+  a pepper (×2, sometimes ×3). When one lands on a spin that wins anything, Onkey
+  eats it and breathes fire: every win on the spin is multiplied by its pepper,
+  and two or more multiply together. One lands about 1 spin in 7.
+- **Events:** each about 1 spin in 83: Onkey stampedes across the reels and
+  leaves wilds behind (always enough for a win); bananas rain down and turn into
+  fireballs; Greg takes over, putting his face on reels 1 to 3 (always a win) and
+  sometimes on 4 and 5; or Man Strudel slices a reel, and every win through it
+  pays double.
 - **The Golden Onkey:** a secret symbol, on no reel strip and not in the pay
   table. About 1 spin in 230, a symbol turns into him as his reel lands: he's
   wild worth three ways on his reel, and pays 5× just for being spotted.
 
 It pays back about 95% of stakes over time, jackpots included: a paying spin
 about 2 in 3, most of them less than the bet; free spins about 1 spin in 120
-and hold and spin about 1 in 190; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
+and hold and spin about 1 in 160; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
 Space spins, and pressing it again skips ahead through the spin (the bonuses
 always play at their own pace); **Auto** spins 10, 25 or 50 times and stops for
 a bonus or a big win, unless **Nonstop** is on, when it only stops if your

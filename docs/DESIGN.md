@@ -371,8 +371,13 @@ outline round its group of cells (`.st-shape`: a box per cell, edged only where 
 and reaching across the reel gap to its neighbour, so bent shapes read as one piece; coloured by tier: cyan for 9 to
 A, green, pink, gold for Onkey, orange for fireballs) with its name on top ("3 in a row", "Block of 6", "Wall ×3"),
 the amount rising out of it and a mallet note (a crackle for fireballs), one after another, and they join the wins
-that take turns after the spin. The Inferno comes after the ways and the shapes and multiplies them together.
-Celebrations (Inferno, Big / Mega / Epic) are still for real wins.
+that take turns after the spin. A spicy banana's fire ("Spicy! ×2") comes after the ways and the shapes and multiplies
+them together. Celebrations (the spicy fire, Big / Mega / Epic) are still for real wins.
+
+The spicy banana bunch is the banana bunch in fire colours with a chili in its corner, a hot WILD tag and its pepper
+("×2") in the red badge free-spin wilds use. The two newer events each have one clear beat, like the Stampede: Greg
+strolls across while the reels spin and his face stamps in cell by cell; Man Strudel leans in from the right, a knife
+slash runs down one reel and it keeps a pale-blue edge and a "×2" tag (`.st-sliced`) until the next spin.
 
 Skip (the Spin button or Space while a spin plays) only hurries the base spin: hold and spin, free spins and the
 jackpot pick always play at their own pace (Turbo still shortens them). Auto stops for a bonus or a 10× win unless

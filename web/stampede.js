@@ -214,6 +214,10 @@ window.FiveStampede = (() => {
         case 'crack': noise(now, 0.12, 0.12, 'bandpass', 1400, 600, 1.2); tone(220, now, 'triangle', 0.08, 0.1, { glide: 110 }); break;
         case 'smoke': noise(now, 0.9, 0.12, 'lowpass', 1200, 200, 0.7); tone(140, now, 'sine', 0.06, 0.6, { glide: 70 }); break;
         case 'retrigger': [5, 7, 9].forEach((n, j) => mallet(PENTA[n], now + j * 0.08, 0.1)); drum(now, 330, 0.15); break;
+        case 'sizzle': // a spicy banana landing
+          noise(now, 0.4, 0.06, 'highpass', 4000); crackle(now, 0.35, 8, 0.05); tone(880, now, 'triangle', 0.03, 0.12, { glide: 1320 }); break;
+        case 'slash': // Man Strudel's knife arm
+          noise(now, 0.25, 0.16, 'bandpass', 5000, 900, 3); tone(1760, now, 'sawtooth', 0.025, 0.2, { glide: 440, lp: 4000 }); break;
         case 'shape': // a wall or a square lighting up: one bright mallet note, higher for each in the spin
           mallet(PENTA[Math.min(PENTA.length - 1, 3 + k)], now, 0.09); tone(PENTA[Math.min(PENTA.length - 1, 3 + k)] * 2, now + 0.05, 'sine', 0.03, 0.2); break;
         case 'beep': // the planted spike's beep
@@ -292,6 +296,8 @@ window.FiveStampede = (() => {
     }
     // The Golden Onkey, the secret symbol: only ever drawn where a spin landed one.
     if (k === 'golden') return '<img class="st-img st-golden" src="/assets/onkey-logo.png" alt="" draggable="false"><b class="st-tag st-tag-gold">WILD ×3</b>';
+    // The spicy banana bunch: a banana bunch on fire, wild, with its pepper (`m`) once it has landed.
+    if (k === 'spicy') return `<svg class="st-svg st-spicy-svg" viewBox="0 0 100 100"><use href="#st-banana"/></svg><span class="st-chili" aria-hidden="true">🌶️</span><b class="st-tag st-tag-hot">WILD</b>${m ? `<b class="st-mult">×${m}</b>` : ''}`;
     if (k === 'wild') return `<img class="st-img st-wild-img" src="/assets/stampede/wild.png" alt="" draggable="false"><b class="st-tag">WILD</b>${m ? `<b class="st-mult">×${m}</b>` : ''}`;
     if (k === 'spike') return '<img class="st-img st-spike-img" src="/assets/stampede/spike.png" alt="" draggable="false">';
     if (k === 'fire') return `<svg class="st-svg st-fireball" viewBox="0 0 100 100"><use href="#st-fire"/></svg>${v ? `<b class="st-val">${valueText(v, stake)}</b>` : ''}`;
@@ -438,9 +444,9 @@ window.FiveStampede = (() => {
       <div class="st-feature"><span class="st-mini">${cellHtml(idx('spike'))}</span><div><b>3+ spikes: free spins</b><span>${Object.entries(fs).map(([n, s]) => `${n} give ${s}`).join(', ')}, and pay ${Object.entries(sc).map(([n, m]) => `${money(m * st)}`).join(' / ')}. Wilds carry ×2 or ×3 and multiply each other. ${chance(M().fs_chance)} spins.</span></div></div>
       <div class="st-feature"><span class="st-mini">${cellHtml(idx('fire'), 2)}</span><div><b>6+ fireballs: hold and spin</b><span>They stick, showing the credits they pay, and you get ${M().hs_respins} respins; every new fireball resets them to ${M().hs_respins}. Fill all 20 for a ${M().full_grid_bonus}× bonus. ${chance(M().hs_chance)} spins.</span></div></div>
       <div class="st-feature"><span class="st-mini st-mini-emb">${emblem('grand', false)}</span><div><b>Fire meter: pick for a jackpot</b><span>Every fireball you land adds your bet to your own meter, so bigger bets fill it faster. At ${M().meter_full.toLocaleString()} you pick fireballs: three of one jackpot wins it, three smokes and it's gone. At ${money(st)} a spin, about ${chance(M().pick_per_credit * st)} spins.</span></div></div>
-      ${how('The jackpots, events and the Inferno', `<p><b>Jackpot pick:</b> ${M().pick_kinds.map((k) => `${EMBLEM[k].name} ${Math.round(M().pick_chances[k] * 1000) / 10}%`).join(', ')}. The jackpots are shared, the same credits for everyone, and grow with every spin anyone makes (by a share of the bet); one goes back to its starting size when it's won. A bigger bet doesn't make them bigger, it gets you to the pick sooner: the chance per credit you bet is the same at every stake.</p>
-        <p><b>Stampede:</b> Onkey charges across and leaves wilds on reels 2 to 5, always enough for a win. <b>Banana rain:</b> bananas fall and turn into fireballs. Together about ${chance(M().event_chance)} spins.</p>
-        <p><b>Inferno:</b> on a win, Onkey sometimes breathes fire on it: ×${M().inferno_mults.join(', ×')}.</p>
+      <div class="st-feature"><span class="st-mini">${cellHtml(idx('spicy'), null, 2)}</span><div><b>Spicy bananas: wild and hot</b><span>Wild on reels 3 to 5. When one lands on a spin that wins, Onkey eats it and every win that spin is multiplied by its pepper (×${M().spicy_mults.join(' or ×')}); two or more multiply together. ${chance(M().spicy_chance)} spins.</span></div></div>
+      ${how('The jackpots and the events', `<p><b>Jackpot pick:</b> ${M().pick_kinds.map((k) => `${EMBLEM[k].name} ${Math.round(M().pick_chances[k] * 1000) / 10}%`).join(', ')}. The jackpots are shared, the same credits for everyone, and grow with every spin anyone makes (by a share of the bet); one goes back to its starting size when it's won. A bigger bet doesn't make them bigger, it gets you to the pick sooner: the chance per credit you bet is the same at every stake.</p>
+        <p><b>Stampede:</b> Onkey charges across and leaves wilds on reels 2 to 5, always enough for a win. <b>Banana rain:</b> bananas fall and turn into fireballs. <b>Greg's takeover:</b> Greg walks in and puts his face on reels 1 to 3 (always a win) and sometimes on 4 and 5. <b>Strudel's slice:</b> Man Strudel slices a reel, and every win through it pays double. Each about 1 in ${Math.round(4 / M().event_chance)} spins.</p>
         <p>A spin is a win when it pays more than the bet; smaller payouts give part of the bet back. Returns ${M().rtp}% of stakes over time, jackpots included. The edge feeds the daily wheel's jackpot; nothing here comes out of it.</p>`)}
       ${data.jackpot_log.length ? `<h3>Latest jackpots</h3><ul class="st-jplog">${data.jackpot_log.slice(0, 5).map((j) => `<li><span class="st-jp-name st-pot-${j.key}">${esc(j.key[0].toUpperCase() + j.key.slice(1))}</span>${plain(j.bettor)}<b>${money(j.amount)}</b></li>`).join('')}</ul>` : ''}
     </aside>`;
@@ -450,12 +456,12 @@ window.FiveStampede = (() => {
     const TIERS_SHOWN = [['low', '9–A'], ['mid', 'Coco, drum'], ['high', 'Banana, Val, Greg'], ['top', 'Onkey']];
     const SHOWN = [['three', '3 in a row'], ['four', 'Four'], ['square', 'Square'], ['wall', 'Wall'], ['five', 'Five'], ['block', 'Block (6–7)'], ['mega', 'Mega (8+)']];
     const n = (m) => { const v = m * st; return Number.isInteger(v) ? String(v) : v.toFixed(v < 1 ? 2 : 1); };
-    return `<div class="st-feature st-shapes-feature"><span class="st-shape-ico" aria-hidden="true"><i></i><i></i><i></i><i></i></span><div><b>Shapes pay too</b><span>Anywhere on the reels, on top of the ways. Touching symbols of one kind (wilds join in) make a group, which pays once for its shape: a straight line of 3, four, a 2×2 square, a whole reel (a wall), five, a block of 6–7 or a mega block of 8+. Fireballs make shapes too and pay ${Math.round(M().fire_share * 100)}% of the credits on them. Onkey's Inferno multiplies shapes, and so does the biggest multiplying wild in one.</span>
+    return `<div class="st-feature st-shapes-feature"><span class="st-shape-ico" aria-hidden="true"><i></i><i></i><i></i><i></i></span><div><b>Shapes pay too</b><span>Anywhere on the reels, on top of the ways. Touching symbols of one kind (wilds join in) make a group, which pays once for its shape: a straight line of 3, four, a 2×2 square, a whole reel (a wall), five, a block of 6–7 or a mega block of 8+. Fireballs make shapes too and pay ${Math.round(M().fire_share * 100)}% of the credits on them. A spicy banana multiplies shapes, and so does the biggest multiplying wild in one.</span>
       <table class="st-pays st-shape-pays"><thead><tr><th></th>${TIERS_SHOWN.map(([, label]) => `<th class="num">${label}</th>`).join('')}</tr></thead><tbody>${SHOWN.map(([k, label]) => `<tr><th scope="row">${label}</th>${TIERS_SHOWN.map(([t]) => `<td class="num">${n(M().shape_base[t] * M().shape_factor[k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
   }
   const plain = (name) => plainName(name);
   const featureTags = (s) => [s.free_spins && 'Free spins', s.hold && 'Hold & spin', s.plant && 'Spike planted', s.event === 'stampede' && 'Stampede', s.event === 'rain' && 'Banana rain',
-    s.inferno && `Inferno ×${s.inferno}`, s.pick && !(s.jackpots || []).length && 'Jackpot pick', ...(s.jackpots || []).map((k) => `${k[0].toUpperCase()}${k.slice(1)} jackpot`)].filter(Boolean);
+    s.event === 'greg' && "Greg's takeover", s.event === 'slice' && "Strudel's slice", s.heat && `Spicy ×${s.heat}`, s.inferno && `Inferno ×${s.inferno}`, s.pick && !(s.jackpots || []).length && 'Jackpot pick', ...(s.jackpots || []).map((k) => `${k[0].toUpperCase()}${k.slice(1)} jackpot`)].filter(Boolean);
   function history() {
     const rows = (data.history || []).map((s) => `<tr><td>${new Date(s.created_ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td><td class="num">${money(s.stake)}</td><td>${featureTags(s).map((t) => `<span class="st-chip">${esc(t)}</span>`).join('') || '<span class="muted">–</span>'}</td><td class="num ${s.net > 0 ? 'up' : ''}">${s.payout ? money(s.payout) : '–'}</td></tr>`).join('');
     return `<section class="card"><h2>Your recent spins</h2>${rows ? `<table class="st-history"><thead><tr><th>Time</th><th class="num">Bet</th><th>Features</th><th class="num">Won</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="muted">${state.me ? 'No spins yet this season.' : '<a href="#" data-signin>Sign in</a> to spin.'}</p>`}</section>`;
@@ -550,6 +556,7 @@ window.FiveStampede = (() => {
             const keys = grid[m.c].map((s) => SYM(s).key);
             if (keys.includes('spike')) { SFX.play('scatter', m.c); m.reel.querySelectorAll('.st-k-spike').forEach((el) => el.classList.add('st-pop')); }
             if (keys.includes('fire')) { SFX.play('fireball', m.c); m.reel.querySelectorAll('.st-k-fire').forEach((el) => el.classList.add('st-pop')); }
+            if (keys.includes('spicy')) { SFX.play('sizzle', m.c); m.reel.querySelectorAll('.st-k-spicy').forEach((el) => el.classList.add('st-pop')); }
           } else left += 1;
         }
         if (left) requestAnimationFrame(frame);
@@ -647,6 +654,46 @@ window.FiveStampede = (() => {
     }
     await sleep(T(400));
   }
+  // Greg's takeover: Greg strolls across the reels, then his face pops in, cell by cell.
+  function gregRun() {
+    const layer = fxLayer();
+    if (!layer) return;
+    const img = document.createElement('img');
+    img.src = '/assets/greg-logo.png'; img.className = 'st-runner st-greg-walk'; img.alt = '';
+    layer.appendChild(img);
+    const w = layer.clientWidth;
+    img.animate([{ transform: 'translate(-220px, 40px) rotate(-4deg)' }, { transform: `translate(${w * 0.33}px, 30px) rotate(4deg)`, offset: 0.33 },
+      { transform: `translate(${w * 0.66}px, 40px) rotate(-4deg)`, offset: 0.66 }, { transform: `translate(${w + 40}px, 30px) rotate(4deg)` }],
+    { duration: T(1700), easing: 'linear' }).onfinish = () => img.remove();
+  }
+  async function stampGreg(cells) {
+    banner("Greg's takeover!", 'Greg put his face on it', 'st-b-greg', 900);
+    for (const [c, r] of cells) {
+      const el = setCell(c, r, idx('greg'), null, null, 'st-stamp');
+      if (el) SFX.play('stamp', c);
+      await sleep(T(140));
+    }
+    await sleep(T(400));
+  }
+  // Strudel's slice: Man Strudel leans in and slices one reel; every win through it pays double.
+  async function strudelSlice(c) {
+    const layer = fxLayer(), reel = $$('.st-reel')[c];
+    if (layer) {
+      const img = document.createElement('img');
+      img.src = '/assets/man_strudel.png'; img.className = 'st-strudel'; img.alt = '';
+      layer.appendChild(img);
+      img.animate([{ transform: 'translateX(120%)' }, { transform: 'translateX(0)', offset: 0.25 }, { transform: 'translateX(0)', offset: 0.8 }, { transform: 'translateX(120%)' }],
+        { duration: T(2200), easing: 'ease-in-out' }).onfinish = () => img.remove();
+    }
+    await sleep(T(600));
+    if (reel) {
+      SFX.play('slash');
+      reel.classList.add('st-sliced');
+      reel.insertAdjacentHTML('beforeend', '<span class="st-slash" aria-hidden="true"></span><b class="st-slice-tag">×2</b>');
+      shake();
+    }
+    await banner("Strudel's slice!", `Reel ${c + 1} pays double`, 'st-b-slice', 1200);
+  }
   async function rainDown(cells, values) {
     banner('Banana rain!', 'Fireballs falling', 'st-b-rain', 900);
     particles(data.october ? 'candy' : 'banana', 26);
@@ -658,8 +705,10 @@ window.FiveStampede = (() => {
     }
     await sleep(T(400));
   }
-  function inferno(mult) {
+  // Onkey eats the spicy banana and breathes fire on the wins (the same show for the Inferno of older spins).
+  function inferno(mult, spicy) {
     SFX.play('inferno');
+    if (spicy) $$('.st-cell.st-k-spicy').forEach((el) => el.classList.add('st-pulse'));
     const layer = fxLayer();
     if (layer) {
       layer.insertAdjacentHTML('beforeend', '<div class="st-flames"></div>');
@@ -667,7 +716,7 @@ window.FiveStampede = (() => {
     }
     particles('fire', 20);
     shake();
-    return banner(`Inferno ×${mult}`, 'Onkey breathed on your win', 'st-b-inferno', 1300);
+    return banner(spicy ? `Spicy! ×${mult}` : `Inferno ×${mult}`, spicy ? 'Onkey ate a spicy banana' : 'Onkey breathed on your win', 'st-b-inferno', 1300);
   }
 
   // ---- wins -----------------------------------------------------------------------------------------------------------
@@ -783,7 +832,7 @@ window.FiveStampede = (() => {
   }
   // The spike plant: the two spikes arm, the other reels spin again while it beeps faster, and it either goes off (a
   // third spike: free spins) or gets defused.
-  async function plantShow(plant, values) {
+  async function plantShow(plant, values, peppers = {}) {
     plant.spikes.forEach(([c, r]) => cellAt(c, r)?.classList.add('st-planted'));
     SFX.play('beep');
     await banner('Spike planted', 'Looking for the third…', 'st-b-plant', 1000);
@@ -794,7 +843,7 @@ window.FiveStampede = (() => {
     plant.reels.forEach((c, k) => { grid[c] = plant.landed[k]; });
     const stops = Array(5).fill(0);
     plant.reels.forEach((c, k) => { stops[c] = plant.stops[k]; });
-    await roll({ strips: M().strips, stops, grid, values, lead: 500, gap: 200, only: plant.reels });
+    await roll({ strips: M().strips, stops, grid, values, wilds: peppers, lead: 500, gap: 200, only: plant.reels });
     beeping = false;
     $$('.st-planted').forEach((el) => el.classList.remove('st-planted'));
     if (plant.found) {
@@ -1063,28 +1112,35 @@ window.FiveStampede = (() => {
     $('#st-win') && ($('#st-win').textContent = '0');
     $('#st-winline').innerHTML = '<b>Good luck</b>';
     const ev = r.event?.kind;
+    $$('.st-reel.st-sliced').forEach((el) => { el.classList.remove('st-sliced'); el.querySelectorAll('.st-slash, .st-slice-tag').forEach((x) => x.remove()); });
     if (ev === 'stampede') setTimeout(stampedeRun, T(250));
+    if (ev === 'greg') setTimeout(gregRun, T(250));
+    // The spicy bananas' peppers, shown on them as they land.
+    const peppers = Object.fromEntries((r.spicy || []).map(([c, rr, m]) => [keyOf(c, rr), m]));
     // The landed cells carry their fireball values (a fireball a Stampede is about to cover, or on a reel the spike
     // plant respins, has none). The Golden Onkey is swapped into the cell he lands in.
     const first = r.landed.map((col) => col.slice()), firstValues = { ...values };
     if (r.golden) first[r.golden[0]][r.golden[1]] = idx('golden');
-    (r.plant?.reels || []).forEach((c) => { for (let k = 0; k < 4; k++) delete firstValues[keyOf(c, k)]; });
-    await roll({ strips: M().strips, stops: r.stops, grid: first, values: firstValues, extra: ev === 'stampede' ? 1300 : 0 });
-    shown = { grid: first, values: firstValues, wilds: {}, wins: [] };
+    const firstPeppers = { ...peppers };
+    (r.plant?.reels || []).forEach((c) => { for (let k = 0; k < 4; k++) { delete firstValues[keyOf(c, k)]; delete firstPeppers[keyOf(c, k)]; } });
+    await roll({ strips: M().strips, stops: r.stops, grid: first, values: firstValues, wilds: firstPeppers, extra: ev === 'stampede' || ev === 'greg' ? 1300 : 0 });
+    shown = { grid: first, values: firstValues, wilds: firstPeppers, wins: [] };
     if (ev === 'stampede') await stampWilds(r.event.cells);
+    if (ev === 'greg') await stampGreg(r.event.cells);
+    if (ev === 'slice') await strudelSlice(r.event.reel);
     if (ev === 'rain') await rainDown(r.event.cells, values);
     if (r.golden) await goldenShow(r.golden, st, r.spot);
-    if (r.plant) await plantShow(r.plant, values);
-    shown = { grid: r.grid, values, wilds: {}, wins: r.wins };
+    if (r.plant) await plantShow(r.plant, values, peppers);
+    shown = { grid: r.grid, values, wilds: peppers, wins: r.wins };
     if (r.meter && $('#st-meter')) await feedMeter(r.values.map(([c, rr]) => [c, rr]), r.meter.before, st);
-    const inf = r.inferno || 1, shapes = r.shapes || [];
+    const inf = r.heat || r.inferno || 1, shapes = r.shapes || [];
     if (r.wins.length) await showWins(r.wins, inf, st);
     if (shapes.length) await showShapes(shapes, st, inf);
-    // Onkey's Inferno multiplies the ways and the shapes together.
-    if (r.inferno) {
+    // A spicy banana (the Inferno, on older spins) multiplies the ways and the shapes together.
+    if (inf > 1) {
       const base = [...r.wins, ...shapes].reduce((a, w) => a + w.mult, 0) / inf;
       light([...r.wins, ...shapes].flatMap((w) => w.cells));
-      await inferno(inf);
+      await inferno(inf, !!r.heat);
       await addWin(base * (inf - 1) * st, 900);
     }
     if (r.scatter) {
@@ -1198,7 +1254,7 @@ window.FiveStampede = (() => {
     const r = s.result;
     window.FiveOnkey?.note('stampede', {
       stake: s.stake, payout: s.payout, multiplier: r.mult, free_spins: !!r.free_spins, hold: !!r.hold,
-      jackpot: r.jackpots?.length ? r.jackpots[r.jackpots.length - 1].name : null, event: r.event?.kind || null, inferno: r.inferno,
+      jackpot: r.jackpots?.length ? r.jackpots[r.jackpots.length - 1].name : null, event: r.event?.kind || null, inferno: r.heat || r.inferno,
       golden: !!r.golden, plant: r.plant ? (r.plant.found ? 'detonated' : 'defused') : null,
     });
   }

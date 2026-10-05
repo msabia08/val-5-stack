@@ -298,7 +298,9 @@ window.FiveOnkey = (() => {
     st_jackpot: ['The {jackpot} jackpot! +{net}! Onkey saw the whole thing!', '{jackpot} jackpot! Onkey is screaming into a banana!'],
     st_grand: ['THE GRAND!!! Onkey needs to sit down.', 'The Grand. Onkey will tell this story forever.', 'GRAND JACKPOT. Onkey is crying. Happy crying.'],
     st_stampede: ['That was Onkey running through. Sorry. You\'re welcome.', 'Stampede! Onkey left some wilds behind.'],
-    st_inferno: ['Onkey breathed on it. Times {inferno}.', 'Inferno! Onkey had spicy bananas.'],
+    st_inferno: ['Onkey breathed on it. Times {inferno}.', 'Spicy banana! Onkey is breathing fire. Times {inferno}.', 'Too spicy. Worth it. Times {inferno}.'],
+    st_greg: ['Greg again. Onkey did not invite him.', 'Greg put his face on everything. Onkey will clean it later.'],
+    st_slice: ['Man Strudel helped. He is very good with knives. Onkey stands back.', 'A slice from Man Strudel. He says hello.'],
     st_lose: ['The herd went the other way.', 'Not this time. The reels are still warm.'],
     st_golden: ['The Golden Onkey! Onkey has never looked better.', 'Did you see him? Golden. Shining. Onkey, basically.', 'Golden Onkey spotted. Onkey says keep it quiet. +{net}.'],
     st_detonated: ['Spike planted, spike detonated. Onkey covered his ears.', 'BOOM. Third spike. Onkey knew it was coming.'],
@@ -563,6 +565,8 @@ window.FiveOnkey = (() => {
         else if (d.inferno) chime('st_inferno', vars, 0.7);
         else if (d.plant === 'defused') chime('st_defused', vars, 0.5);
         else if (d.event === 'stampede') chime('st_stampede', vars, 0.5);
+        else if (d.event === 'greg') chime('st_greg', vars, 0.5);
+        else if (d.event === 'slice') chime('st_slice', vars, 0.5);
         else if (d.payout > d.stake) chime('st_win', vars, 0.3);
         else if (!d.payout) chime('st_lose', vars, 0.06);
       } else if (kind === 'slots_tease') {

@@ -1130,6 +1130,20 @@ def stampede(shared):
     # A group of wilds alone is no shape; a fireball group never takes in wilds.
     assert shape_wins([[SPIKE, FIRE, SPIKE, FIRE], [WILD] * 4, [FIRE, SPIKE, FIRE, SPIKE], [SPIKE, FIRE, SPIKE, FIRE],
                        [FIRE, SPIKE, FIRE, SPIKE]], values={(c, r): 1 for c in range(5) for r in range(4)}) == []
+    # A spicy banana is wild for every symbol (here it finishes three tens on reels 1-3), and a sliced reel doubles
+    # every way and shape through it.
+    SPICY = st.SPICY
+    grid3 = [[TEN, ACE, KING, QUEEN], [TEN, KING, ACE, QUEEN], [SPICY, QUEEN, KING, ACE], [ACE, KING, QUEEN, JACK],
+             [KING, ACE, JACK, QUEEN]]
+    tens = {w["symbol"]: w for w in ways_wins(grid3)}[TEN]
+    assert tens["ways"] == 1 and tens["reels"] == 3 and tens["cells"] == [[0, 0], [1, 0], [2, 0]]
+    assert [(x["kind"], x["symbol"]) for x in shape_wins(grid3)] == [("three", TEN)]
+    assert {w["symbol"]: w for w in ways_wins(grid3, sliced=1)}[TEN]["ways"] == 2
+    assert shape_wins(grid3, sliced=1)[0]["x"] == st.SLICE_MULT and shape_wins(grid3, sliced=4)[0]["x"] == 1
+    # The four events come equally often; spicy bananas are only on reels 3-5, and never in free spins.
+    assert len(set(st.EVENTS.values())) == 1 and set(st.EVENTS) == {"stampede", "rain", "greg", "slice"}
+    assert all((SPICY in strip) == (c >= 2) for c, strip in enumerate(BASE_STRIPS))
+    assert all(SPICY not in strip for strip in FS_STRIPS) and 5 < 1 / b["spicy_p"] < 10
     # The shapes themselves: a straight line of three (not a bent one), a wall, a square, a four, five and up by size.
     assert shape_kind(3, [(0, 0), (0, 1), (0, 2)]) == shape_kind(3, [(0, 1), (1, 1), (2, 1)]) == "three"
     assert shape_kind(3, [(0, 0), (0, 1), (1, 1)]) is None and shape_kind(2, [(0, 0), (0, 1)]) is None
@@ -1154,9 +1168,21 @@ def stampede(shared):
         fires += len(r["values"])
         paid += st.cash_mult(r) > 0
         # Onkey's Inferno multiplies the shapes with the ways, and only comes on a spin that won one or the other.
-        fresh = shape_wins(r["grid"], values={(c, row): v for c, row, v in r["values"]})
-        assert [x["mult"] for x in r["shapes"]] == [round(x["mult"] * (r["inferno"] or 1), 4) for x in fresh]
-        assert not r["inferno"] or r["wins"] or r["shapes"]
+        # A spicy banana's pepper multiplies every ways and shape win, all of them together, only on a spin that won.
+        ev = r["event"] or {}
+        sliced = ev.get("reel") if ev.get("kind") == "slice" else None
+        fresh = shape_wins(r["grid"], values={(c, row): v for c, row, v in r["values"]}, sliced=sliced)
+        assert [x["mult"] for x in r["shapes"]] == [round(x["mult"] * (r["heat"] or 1), 4) for x in fresh]
+        assert [[c, row] for c, row, _ in r["spicy"]] == [[c, row] for c in range(5) for row in range(4)
+                                                         if r["grid"][c][row] == SPICY]
+        if r["spicy"] and (r["wins"] or r["shapes"]):
+            assert r["heat"] == st._prod(m for _, _, m in r["spicy"])
+        else:
+            assert r["heat"] is None
+        # Greg's takeover: a Greg on each of reels 1-3, so a Greg win; the slice picks one reel.
+        if ev.get("kind") == "greg":
+            assert all(r["grid"][c][row] == st.GREG for c, row in ev["cells"]) and {c for c, _ in ev["cells"]} >= {0, 1, 2}
+            assert any(w["symbol"] == st.GREG for w in r["wins"])
         # Free spins pay their shapes too.
         for spin in (r["free_spins"] or {}).get("spins", []):
             assert spin["mult"] == round(sum(w["mult"] for w in spin["wins"]) + sum(x["mult"] for x in spin["shapes"])
