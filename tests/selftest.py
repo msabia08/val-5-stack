@@ -2502,6 +2502,8 @@ def banana_hunt(shared):
     tgt, before = r["target"], hx.status(who, now=now)
     assert r["hit"] and tgt["kind"] == "boss" and tgt["boss"]["wave"] == 0 and tgt["boss"]["waves"] == 5, r
     assert [c["hit"] for c in tgt["boss"]["claws"]] == [False] * 3 and tgt["boss"]["secs"] == H.BOSS_WAVES[0][1]
+    assert all(c["x"] in (0, H.FIELD_W) or c["y"] in (0, H.FIELD_H) for c in tgt["boss"]["claws"])  # each starts on the border
+    assert {(e["x"] in (0, H.FIELD_W), e["y"] in (0, H.FIELD_H)) for e in (hx._edge() for _ in range(200))} == {(True, False), (False, True)}
     assert hx.click(who, 0, 0, now=now + 0.5, claw=0)["reason"] == "boss"  # he's still talking: the claws haven't started
     t = now + H.BOSS_INTRO_S + 0.2
     assert hx.click(who, 0, 0, now=t)["reason"] == "boss" and hx.click(who, 0, 0, now=t, claw="0")["reason"] == "boss"

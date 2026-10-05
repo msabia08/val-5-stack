@@ -23,8 +23,8 @@ prize is paid on top of the cap.
   lore (docs/onkey-lore.md): Man Strudel, the scientist's friendly henchman, sometimes walks up to ask to pet Onkey
   and takes nothing.
 - The boss fight, also from the lore: BOSS_CHANCE of throws aren't a banana but the scientist coming for Onkey himself
-  (a target of kind "boss"). His claws come down for Onkey in BOSS_WAVES waves, each (how many claws, how many seconds
-  they take to reach him); a click names a claw (`claw`, its id) and stops it. Stop a whole wave in time and the next
+  (a target of kind "boss"). Onkey goes to the middle of the field and the claws come in for him from every side, in BOSS_WAVES waves, each
+  (how many claws, how many seconds they take to reach him); a click names a claw (`claw`, its id) and stops it. Stop a whole wave in time and the next
   comes BOSS_GAP_S later; stop all of them and the bettor is paid BOSS_PRIZE credits on top of the day's cap
   (`db.hunt_bonus`, the day row's `bonus`, which the cap doesn't count). One claw reaching Onkey ends it
   (`_lapse()`: 'boss_lost'): the combo is gone, and on the page Man Strudel sets Onkey free. There's no limit on how
@@ -177,11 +177,19 @@ class HuntManager:
         return t
 
     def _wave(self, n, now, wait):
-        """Wave `n` of the boss fight: its claws ({"id", "x": where along the top each comes down, "hit"}), how long the
-        page waits before they move (`wait`) and how long they take (`secs`), and the server's own deadline."""
+        """Wave `n` of the boss fight: its claws ({"id", "x", "y": where on the field's border each comes in from, on any
+        of the four sides, "hit"}), how long the page waits before they move (`wait`) and how long they take to reach
+        Onkey in the middle (`secs`), and the server's own deadline."""
         count, secs = BOSS_WAVES[n]
         return {"wave": n, "wait": wait, "secs": secs, "begins": now + wait, "deadline": now + wait + secs + SLACK_S,
-                "claws": [{"id": i, "x": self.rng.randint(MARGIN, FIELD_W - MARGIN), "hit": False} for i in range(count)]}
+                "claws": [{"id": i, **self._edge(), "hit": False} for i in range(count)]}
+
+    def _edge(self):
+        """A point on the field's border: a side picked at random, then somewhere along it."""
+        side = self.rng.randint(0, 3)
+        if side in (0, 2):  # top, bottom
+            return {"x": self.rng.randint(MARGIN, FIELD_W - MARGIN), "y": 0 if side == 0 else FIELD_H}
+        return {"x": FIELD_W if side == 1 else 0, "y": self.rng.randint(MARGIN, FIELD_H - MARGIN)}
 
     def _combo(self, key, now):
         c = self.combos.setdefault(key, {"n": 0, "ts": 0.0, "frozen": 0.0})

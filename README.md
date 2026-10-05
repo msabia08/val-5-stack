@@ -918,8 +918,9 @@ one you click is **1 credit**.
 - **Greg** sometimes walks in to take a banana, and he's quick: pick it first,
   or click Greg to send him off.
 - Now and then **the scientist** comes for Onkey himself (about 1 throw in 60,
-  as often as it comes up). His claws come down in five waves, each faster than
-  the last: click every claw before it reaches Onkey. Stop them all and you
+  as often as it comes up). Onkey goes to the middle of the field and arcade claws on long arms come in
+  for him from every side, in five waves, each faster than the last: click
+  every claw before it reaches him. Stop them all and you
   get **100 credits on top of the day's cap**. Let one through and Man
   Strudel has to set Onkey free, and your combo is gone.
 - Picks in a row build a **combo**: every banana pays double from 10 in a row
@@ -1136,8 +1137,8 @@ He's kept rare, but he's around:
 - **His offer.** With fewer than 100 credits you get a call on Standings: $25,000 for Onkey. The only answer is
   "Onkey is not for sale", which earns the **Not For Sale** title for free.
 - **On the house card.** Sometimes he has a word about what the house takes.
-- **In the Banana Hunt.** The one place he comes on stage: now and then his claws come down for Onkey, wave after
-  wave, and you have to stop every one. Man Strudel sets Onkey free if you can't, and sometimes just walks up to ask
+- **In the Banana Hunt.** The one place he comes on stage: now and then his claws come in for Onkey from every side, wave
+  after wave, and you have to stop every one. Man Strudel sets Onkey free if you can't, and sometimes just walks up to ask
   to pet him.
 - **At the daily wheel.** On some slow finishes his hand reaches over the rim, and the leaf slaps it away.
 - **At the casino tables.** Rarely he's sitting in the dealer's chair when you arrive, until Onkey throws him out.

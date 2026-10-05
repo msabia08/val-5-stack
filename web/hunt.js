@@ -203,7 +203,8 @@ window.FiveHunt = (() => {
     timers.forEach((t) => { if (typeof t === 'number') clearTimeout(t); else { t.oncancel = null; t.onfinish = null; t.cancel(); } });
     timers = [];
     flight = null;
-    $$('.hunt-banana, .hunt-fly, .hunt-greg, .hunt-clock, .hunt-msg, .hunt-claw, .hunt-boss, .hunt-strudel', fieldEl).forEach((el) => el.remove());
+    $$('.hunt-banana, .hunt-fly, .hunt-greg, .hunt-clock, .hunt-msg, .hunt-claw, .hunt-arm, .hunt-boss, .hunt-strudel', fieldEl).forEach((el) => el.remove());
+    fieldEl.classList.remove('hunt-fight');
   }
 
   // Everything has landed: the things to pick, then whatever clock belongs to this target.
@@ -224,8 +225,8 @@ window.FiveHunt = (() => {
   }
 
   // ---- the scientist's boss fight (hunt.py BOSS_*) -----------------------------------------------------------------
-  // Now and then no banana comes: the scientist does, for Onkey. His face and his line (in his accent) go up, then his
-  // claws come down from the top toward Onkey's corner, a wave at a time. Each claw is a button: a click stops it (the
+  // Now and then no banana comes: the scientist does, for Onkey. His face and his line (in his accent) go up, then Onkey
+  // goes to the middle of the field and the claws come in for him from every side on their arms, a wave at a time. Each claw is a button: a click stops it (the
   // server keeps score). Stop a whole wave and the next comes; stop them all and Onkey is safe and the prize is paid.
   // If one gets there, the fight is lost: Man Strudel walks in and sets Onkey free.
   const BOSS_LINES = ['Give me ze monkey. Zis is not a request.', 'Ze claws are coming for him. Stand aside.',
@@ -233,42 +234,59 @@ window.FiveHunt = (() => {
   let bossShown = ''; // the fight and wave on the field: `${target id}:${wave}`
   function bossWave(fieldEl, t) {
     clearField(fieldEl);
-    const b = t.boss, lay = layout(), [hx, hy] = data.hunt.air.hand, to = lay.at({ x: hx, y: hy });
+    const b = t.boss, lay = layout(), f = data.hunt.field, to = lay.at({ x: f.w / 2, y: f.h / 2 });
+    fieldEl.classList.add('hunt-fight'); // Onkey stands in the middle, and they come for him from every side
     bossShown = `${t.id}:${b.wave}`;
     const line = b.wave ? `Wave ${b.wave + 1} of ${b.waves}` : esc(BOSS_LINES[Math.floor(Math.random() * BOSS_LINES.length)]);
     fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-boss" role="status"><img src="/assets/scientist-face.png" alt="The scientist">` +
       `<div><b>${line}</b><span>Click every claw before it reaches Onkey${b.wave ? '' : `. ${b.waves} waves`}.</span></div></div>`);
     if (!b.wave) window.FiveOnkey?.note('hunt_boss');
-    const at = (p) => `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
-    timers.push(setTimeout(() => { // after his line (or the breath between waves), the claws start down
+    timers.push(setTimeout(() => { // after his line (or the breath between waves), the claws start in
       fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-clock boss" aria-hidden="true"><i style="animation-duration:${b.secs}s"></i></div>`);
       b.claws.forEach((c) => {
         if (c.hit) return;
+        // An arcade claw on an arm: the arm is fixed at the border where it comes in and grows toward Onkey, with the
+        // claw (the button) on its end, turned to face him.
+        const from = lay.at({ x: c.x, y: c.y }), dx = to.x - from.x, dy = to.y - from.y;
+        const dist = Math.hypot(dx, dy), deg = Math.atan2(dy, dx) * 180 / Math.PI, run = { duration: b.secs * 1000, easing: 'linear', fill: 'both' };
+        const arm = document.createElement('div');
+        arm.className = 'hunt-arm';
+        arm.dataset.claw = c.id;
+        arm.setAttribute('aria-hidden', 'true');
+        arm.style.cssText = `left:${from.x}px;top:${from.y}px;width:${dist}px;transform:rotate(${deg}deg) scaleX(0)`;
         const el = document.createElement('button');
         el.type = 'button';
         el.className = 'hunt-claw';
         el.dataset.claw = c.id;
         el.setAttribute('aria-label', 'Stop the claw');
-        el.innerHTML = '<i></i><b>🪝</b>';
-        fieldEl.appendChild(el);
-        const from = lay.at({ x: c.x, y: -50 });
+        el.innerHTML = CLAW_SVG;
+        const at = (p) => `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) rotate(${deg - 90}deg)`; // drawn pointing down
         el.style.transform = at(from);
-        if (el.animate) timers.push(el.animate([{ transform: at(from) }, { transform: at(to) }], { duration: b.secs * 1000, easing: 'linear', fill: 'both' }));
+        fieldEl.append(arm, el);
+        if (el.animate) {
+          timers.push(arm.animate([{ transform: `rotate(${deg}deg) scaleX(0)` }, { transform: `rotate(${deg}deg) scaleX(1)` }], run));
+          timers.push(el.animate([{ transform: at(from) }, { transform: at(to) }], run));
+        }
       });
       timers.push(setTimeout(() => bossTimeout(fieldEl, t.id, b.wave), b.secs * 1000));
     }, b.wait * 1000));
   }
+  // The claw: a hub on the arm's end and three prongs, as on an arcade crane.
+  const CLAW_SVG = '<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect class="hub" x="22" y="1" width="20" height="15" rx="4"/>' +
+    '<path class="prong" d="M25 13 C7 19 4 39 15 59 L22 54 C15 41 18 29 31 22 Z"/><path class="prong" d="M39 13 C57 19 60 39 49 59 L42 54 C49 41 46 29 33 22 Z"/>' +
+    '<path class="prong mid" d="M28 14 h8 v32 l-4 10 l-4 -10 Z"/><circle class="bolt" cx="32" cy="9" r="3"/></svg>';
   // The server's answer to a click during the fight: the stopped claws go, or the next wave comes.
   function bossSync(fieldEl, t) {
     if (`${t.id}:${t.boss.wave}` !== bossShown) { pop(fieldEl, fieldEl.clientWidth / 2, fieldEl.clientHeight / 2, 'Wave cleared!', 'air'); bossWave(fieldEl, t); return; }
-    t.boss.claws.forEach((c) => { if (c.hit) $(`.hunt-claw[data-claw="${c.id}"]`, fieldEl)?.remove(); });
+    t.boss.claws.forEach((c) => { if (c.hit) $$(`[data-claw="${c.id}"]`, fieldEl).forEach((el) => el.remove()); });
   }
   function hitClaw(el, fieldEl) {
     if (el.classList.contains('hit')) return;
     el.classList.add('hit'); // it stops at once; the server confirms
+    $(`.hunt-arm[data-claw="${el.dataset.claw}"]`, fieldEl)?.classList.add('hit');
     api('/api/hunt/click', { method: 'POST', body: JSON.stringify({ x: 0, y: 0, claw: Number(el.dataset.claw) }) })
       .then((r) => { if (document.body.contains(fieldEl)) apply(r, fieldEl); })
-      .catch(() => el.classList.remove('hit'));
+      .catch(() => $$(`[data-claw="${el.dataset.claw}"]`, fieldEl).forEach((x) => x.classList.remove('hit')));
   }
   // A wave's time is up on the page: ask the server whether a claw got there (it allows a little slack).
   async function bossTimeout(fieldEl, id, wave, tries = 0) {
@@ -284,7 +302,8 @@ window.FiveHunt = (() => {
   // Lost: a claw has Onkey. Man Strudel (friendly, no accent) walks in and sets him free, then the hunt carries on.
   function rescue(fieldEl) {
     clearField(fieldEl);
-    const lay = layout(), [hx, hy] = data.hunt.air.hand, to = lay.at({ x: hx - 150, y: hy + 30 }), from = lay.at({ x: -160, y: hy + 30 });
+    const lay = layout(), f = data.hunt.field, to = lay.at({ x: f.w / 2 - 170, y: f.h / 2 + 60 }), from = lay.at({ x: -160, y: f.h / 2 + 60 });
+    fieldEl.classList.add('hunt-fight'); // Onkey is still in the middle, where the claw got him
     fieldEl.insertAdjacentHTML('beforeend', '<div class="hunt-boss lost" role="status"><img src="/assets/scientist-face.png" alt="The scientist"><div><b>Ze monkey is mine!</b><span>A claw got to Onkey.</span></div></div>');
     const el = document.createElement('div');
     el.className = 'hunt-strudel asking';
