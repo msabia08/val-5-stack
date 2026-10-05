@@ -379,12 +379,12 @@ window.FiveBlackjack = (() => {
       const chips = C.style(s.bettor, 'chips');
       const seat = d.seats.indexOf(s), key = `bj:${d.table}:${d.round}:${s.bettor}`;
       // A split puts the new hand next to its pair, moving the ones after it along, so a hand's cards are keyed by
-      // its first card (and how many earlier hands began with the same one), not its place.
-      const firsts = {};
-      const handKey = (h) => { const c = h.cards[0] || ''; firsts[c] = (firsts[c] || 0) + 1; return `${key}:${c}${firsts[c]}`; };
+      // the hand's own id (the order the round's hands were made in), not its place: a hand that only moved along
+      // isn't dealt again.
+      const handKey = (h, hi) => `${key}:h${h.id ?? hi}`;
       const size = which === 'solo' && s.hands.length <= 2 ? 'xl' : s.hands.length > 3 || (which === 'shared' && s.hands.length > 1) ? 'md' : 'lg';
       const bet = s.stake && !s.hands.length ? motion(`${key}:bet`, 'chip-in', 450) : null;
-      const hands = s.hands.length ? s.hands.map((h, hi) => handHtml(h, chips, handKey(h), seat, hi, size)).join('')
+      const hands = s.hands.length ? s.hands.map((h, hi) => handHtml(h, chips, handKey(h, hi), seat, hi, size)).join('')
         : s.stake ? `<div class="bj-hand waiting">${C.chip(s.stake, { cls: `big ${chips}${bet.cls}`, style: bet.style })}<span class="muted small">Bet placed</span></div>`
           : `<div class="bj-hand waiting"><span class="muted small">${d.phase === 'betting' ? 'No bet yet' : 'Sitting this one out'}</span></div>`;
       // A run of wins glows hot, a run of losses goes cold (blackjack.py's streaks).
@@ -463,8 +463,16 @@ window.FiveBlackjack = (() => {
       const hand = d.seats.find((s) => s.bettor === me.name)?.hands[d.turn.hand];
       const pick = hintShown && hintShown === decision(d) ? me.hint.move : '';
       const KEY = { hit: 'H', stand: 'S', double: 'D', split: 'P' };
-      const btn = (a, label, sub = '') => `<button class="bj-act act-${a}${a === pick ? ' hinted' : ''}" data-bj-act="${a}" ${busy || !acts.includes(a) ? 'disabled' : ''} title="${a === pick ? 'Onkey’s pick' : `${label} (${KEY[a]})`}">
-        <b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</button>`;
+      // A double or split the hand allows but your credits don't cover (`me.short`) says so, on the button and in its
+      // tooltip, instead of just going grey.
+      const short = me.short || [];
+      const btn = (a, label, sub = '') => {
+        const broke = short.includes(a);
+        const title = broke ? `Not enough credits: ${a === 'double' ? 'doubling' : 'splitting'} takes another ${hand ? fmt.credits(hand.stake) : 'stake'}`
+          : a === pick ? 'Onkey’s pick' : `${label} (${KEY[a]})`;
+        return `<button class="bj-act act-${a}${a === pick ? ' hinted' : ''}${broke ? ' short' : ''}" data-bj-act="${a}" ${busy || !acts.includes(a) ? 'disabled' : ''} title="${title}">
+        <b>${label}</b>${broke ? '<small>Not enough credits</small>' : sub ? `<small>${sub}</small>` : ''}</button>`;
+      };
       const mine = d.seats.find((s) => s.bettor === me.name);
       const bet = (mine?.hands || []).reduce((a, h) => a + h.stake, 0);
       const w = motion(`bj:${d.table}:${d.round}:wager:${bet}`, 'chip-in', 450, C.landing());

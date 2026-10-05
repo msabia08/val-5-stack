@@ -455,7 +455,9 @@ The table is the page's personality, like the slots cabinet; the side cards are 
   and the players' spots, so each spot, the result line under it (12px) and the controls stay together at the bottom.
 - **Blackjack's action buttons** (`.bj-act`): one size for all four (136 × 60), each filled with its move's colour
   (Hit green, Stand red, Double gold with dark lettering, Split blue) over a darker base it sinks into when pressed; the
-  extra stake on a second line for Double and Split; the shortcut key in the tooltip. The four are centred on the
+  extra stake on a second line for Double and Split; the shortcut key in the tooltip. A Double or Split you can't pay
+  for (`.short`) says "Not enough credits" on that second line and in its tooltip, a little less faded than the other
+  greyed-out moves: a button that's off for a reason the cards don't show says the reason. The four are centred on the
   table as a group (`.bj-act-group`), and the extras hang outside it: your bet is a chip to their left
   and, at the solo table, your streak (🔥 / 🧊) to their right. Poker keeps `.casino-act`.
 - **Tipping Onkey** (`tipRow()` / `tipHtml()`): after a round you won, a pill to Onkey's left: "Tip Onkey" and 5 / 10 / 25 chips

@@ -16,6 +16,13 @@ keep the value of playing the pair as it is. `_split_hand` finds that fixed poin
 
 Onkey's save: SAVE_CHANCE of the busts a hit or a double would cause, Onkey changes the card to make 21 instead
 (blackjack.py). That's part of the game, so a bust is worth `busted()`, a little better than -1, everywhere here.
+
+Short of credits: all of the above takes it that every double and split to come can be paid for. `values()` / `best()`
+also take `spare`, how many more stakes the player's balance covers, and `later`, the split hands still waiting behind
+this one. With fewer than ROOMY spare stakes, a split is worth what its hands can really do with what's left
+(`_queue()`: each double or re-split spends one), and a double or split is charged for what it takes from the hands
+behind it. So eights still split on the last stake, but fours against a 5, which only pay if you can double after,
+don't.
 """
 from functools import lru_cache
 
@@ -24,6 +31,7 @@ RANKS = (2, 3, 4, 5, 6, 7, 8, 9, 10, ACE)
 P = {r: (4 / 13 if r == 10 else 1 / 13) for r in RANKS}
 MOVES = ("hit", "stand", "double", "split")
 SAVE_CHANCE = 0.01  # 1 bust in 100 Onkey fixes to 21; blackjack.py uses this one
+ROOMY = 8  # spare stakes: with this many or more, doubles and splits are valued as if the credits never run out
 
 
 def add(total, soft, card):
@@ -115,6 +123,34 @@ def split(rank, up):
     return 2 * _split_hand(rank, up)
 
 
+@lru_cache(maxsize=None)
+def _queue(rank, up, waiting, known, spare):
+    """What the hands still to play are worth together, per credit of one stake, when the balance covers `spare` more
+    stakes: `waiting` hands just split from a pair of `rank`, each about to get its second card, then `known`, the split
+    hands already holding one (their second cards, 2-11), played in that order. Every double or re-split spends a stake.
+    (At the table a split's two hands get their cards at once; here the second isn't looked at until the first is
+    played, which a player could do too, so this never promises more than can be had.)"""
+    if waiting:
+        return sum(P[c] * _play(rank, up, c, waiting - 1, known, spare) for c in RANKS)
+    if not known:
+        return 0.0
+    return _play(rank, up, known[0], 0, known[1:], spare)
+
+
+def _play(rank, up, c, waiting, known, spare):
+    """The split hand `rank` + `c` played as well as `spare` stakes allow, plus what the hands behind it are worth."""
+    after = lambda n: _queue(rank, up, waiting, known, n)  # noqa: E731
+    again = _queue(rank, up, waiting + 2, known, spare - 1) if c == rank and spare >= 1 else None
+    if rank == ACE:  # one card only; a new ace splits again if there's a stake for it
+        keep = stand(add(ACE, True, c)[0], up) + after(spare)
+        return keep if again is None else max(keep, again)
+    total, soft = add(rank, False, c)
+    best = max(stand(total, up), hit(total, soft, up)) + after(spare)
+    if spare >= 1:
+        best = max(best, double(total, soft, up) + after(spare - 1))
+    return best if again is None else max(best, again)
+
+
 def rank_of(card):
     """A card string ("As", "Td") as 2-10, or 11 for an ace."""
     r = card[0]
@@ -128,18 +164,27 @@ def hand_state(cards):
     return total, soft
 
 
-def values(cards, upcard, moves):
-    """{move: expected value per credit of the hand's stake} for each of `moves` the hand can make now."""
+def values(cards, upcard, moves, spare=None, later=()):
+    """{move: expected value per credit of the hand's stake} for each of `moves` the hand can make now. `spare`: how
+    many more stakes the player can pay for (None: no limit); `later`: the second cards of their split hands still to
+    play after this one. With fewer than ROOMY spare stakes, a split is valued by what its hands can afford to do, and
+    a double or a split by what it also costs the hands behind it."""
     up = rank_of(upcard)
     total, soft = hand_state(cards)
     calc = {"stand": lambda: stand(total, up), "hit": lambda: hit(total, soft, up),
             "double": lambda: double(total, soft, up), "split": lambda: split(rank_of(cards[0]), up)}
+    if spare is not None and spare < ROOMY and len(cards) == 2:
+        rank, known = rank_of(cards[0]), tuple(rank_of(c) for c in later)
+        behind = lambda n: _queue(rank, up, 0, known, n)  # noqa: E731
+        calc["double"] = lambda: double(total, soft, up) + behind(spare - 1) - behind(spare)
+        calc["split"] = lambda: _queue(rank, up, 2, known, spare - 1) - behind(spare)
     return {m: round(calc[m](), 4) for m in MOVES if m in moves}
 
 
-def best(cards, upcard, moves):
-    """The move worth most, and every move's value: {"move", "ev": {move: value}}; None when there's nothing to do."""
-    ev = values(cards, upcard, moves)
+def best(cards, upcard, moves, spare=None, later=()):
+    """The move worth most, and every move's value: {"move", "ev": {move: value}}; None when there's nothing to do.
+    `spare` and `later` as in values()."""
+    ev = values(cards, upcard, moves, spare, later)
     if not ev:
         return None
     return {"move": max(ev, key=lambda m: (ev[m], -MOVES.index(m))), "ev": ev}
