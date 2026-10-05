@@ -311,7 +311,9 @@ window.FiveOnkey = (() => {
     hunt_found: ['You found {label}! Onkey hid that one himself.', 'Ook! {label}. Onkey forgot he buried it there.'],
     sci_back: ['Onkey is back. Ignore the man with the glasses.', 'Don\'t listen to him. Onkey is staying.', 'Ook. He does that. Hang up next time.', 'Onkey is not for sale.'],
     sci_refused: ['Onkey heard that. Thank you.', 'Not for sale. Onkey knew you\'d say it.'],
-    hunt_claw: ['That was his claw. Onkey knows that claw.', 'He took a banana. He wants more than bananas.'],
+    hunt_boss: ['Those are his claws. Onkey knows those claws. Stop them!', 'The man with the glasses is here. Don\'t let them reach Onkey.'],
+    hunt_boss_won: ['The claws went home empty. {amount} credits. Onkey is not for sale.', 'Onkey is still here. Thank you. {amount} credits, on Onkey.'],
+    hunt_boss_lost: ['Strudel let Onkey go. Strudel is nice.', 'That was close. The man with the glasses doesn\'t give up.'],
     hunt_done: ['{today} credits of bananas! Onkey is full. Come back tomorrow.', 'That\'s the lot for today. Onkey needs a nap.'],
     view_bettors: ['The standings. Find yourself. Onkey will wait.', 'Who\'s on top? Onkey already knows.',
       'Leaderboard time. Onkey loves a rivalry.'],
@@ -535,8 +537,10 @@ window.FiveOnkey = (() => {
         scientist(d.kind);
       } else if (kind === 'sci_refused') {
         react('sci_refused', {}, { excited: true });
-      } else if (kind === 'hunt_claw') {
-        chime('hunt_claw', {}, 0.6);
+      } else if (kind === 'hunt_boss' || kind === 'hunt_boss_lost') {
+        react(kind, {});
+      } else if (kind === 'hunt_boss_won') {
+        react('hunt_boss_won', { amount: d.amount }, { excited: true });
       } else if (kind === 'hunt_found') {
         react('hunt_found', { label: d.label }, { excited: true });
       } else if (kind === 'hunt_done') {

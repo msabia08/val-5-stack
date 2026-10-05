@@ -15,7 +15,7 @@
  *   for sweeping them; a rotten decoy next to the real one freezes you; Greg walks in to take a banana unless you pick
  *   it first or click him away. When one of those timers runs out the page asks /api/hunt/next what happened;
  * - picks in a row build a combo (x2, x3) shown in the corner of the field; a miss breaks it;
- * - from Onkey's lore: the scientist's claw comes down for a banana (`dropClaw()`), and Man Strudel visits
+ * - from Onkey's lore: the scientist's boss fight (`bossWave()`: his claws come for Onkey in waves), and Man Strudel visits
  *   (`visitStrudel()`), who takes nothing;
  * - one pick a day hides an item, and the field's scenery changes by the day (`hunt.theme`).
  *
@@ -180,11 +180,11 @@ window.FiveHunt = (() => {
       ${how(`Onkey throws bananas into the field. Pick one for ${plural(h.per_banana, 'credit')}, or catch it in the air for double, up to ${h.daily_max} credits a day.`,
         `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
         `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
-        `The scientist's <b>claw</b> sometimes comes down for one: it can't be sent off, so pick the banana before it gets there. Man Strudel only wants to say hello. ` +
-        `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg or the claw, or stop for ${h.combo.idle_s} seconds. ` +
+        `Now and then <b>the scientist</b> comes for Onkey himself: his claws come down in ${h.boss.waves.length} waves, each faster than the last, and you click every claw before it reaches Onkey. Stop them all for ${h.boss.prize} credits on top of the day's ${h.daily_max}; let one through and Man Strudel has to set Onkey free, and your combo is gone. Man Strudel himself only wants to say hello. ` +
+        `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg, lose to the scientist, or stop for ${h.combo.idle_s} seconds. ` +
         `One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
         `The server places every banana and judges every click, and picks less than ${Math.round(h.min_interval_s * 1000)} ms apart on the ground aren't paid. The day's ${h.daily_max} credits turn over at midnight Pacific, like the daily wheel; ` +
-        `the extras only get you there sooner, and nothing pays past it. Once you've had the day's ${h.daily_max} the hunt closes, with one exception, a top-up: if you have fewer than ${fmt.credits(h.floor)} credits you can pick until you have ${fmt.credits(h.floor)}, so nobody is stuck with nothing. ` +
+        `the extras only get you there sooner, and only beating the scientist pays past it. Once you've had the day's ${h.daily_max} the hunt closes, with one exception, a top-up: if you have fewer than ${fmt.credits(h.floor)} credits you can pick until you have ${fmt.credits(h.floor)}, so nobody is stuck with nothing. ` +
         'Credits from the hunt show in their own column on Standings and stay out of betting profit, like game rewards.')}</section>`;
     const card = `<section class="card hunt-card">
       <div class="hunt-stage"><div class="hunt-fit" style="${fitStyle(layout())}"><div class="hunt-zoom" style="${zoomStyle(layout())}">${field()}</div></div></div></section>`;
@@ -203,7 +203,7 @@ window.FiveHunt = (() => {
     timers.forEach((t) => { if (typeof t === 'number') clearTimeout(t); else { t.oncancel = null; t.onfinish = null; t.cancel(); } });
     timers = [];
     flight = null;
-    $$('.hunt-banana, .hunt-fly, .hunt-greg, .hunt-clock, .hunt-msg, .hunt-claw, .hunt-strudel', fieldEl).forEach((el) => el.remove());
+    $$('.hunt-banana, .hunt-fly, .hunt-greg, .hunt-clock, .hunt-msg, .hunt-claw, .hunt-boss, .hunt-strudel', fieldEl).forEach((el) => el.remove());
   }
 
   // Everything has landed: the things to pick, then whatever clock belongs to this target.
@@ -220,24 +220,87 @@ window.FiveHunt = (() => {
       timers.push(setTimeout(() => nudge(fieldEl, t), ttl * 1000));
     }
     if (t.greg) walkGreg(fieldEl, t);
-    if (t.claw) dropClaw(fieldEl, t);
     if (t.strudel) visitStrudel(fieldEl, t);
   }
 
-  // The scientist's claw comes down on a cable from the top of the field, his face at the top of it; when it
-  // reaches the banana, it has it. It can't be shooed: pick the banana first.
-  function dropClaw(fieldEl, t) {
-    const to = layout().at(t);
-    const claw = document.createElement('div');
-    claw.className = 'hunt-claw';
-    claw.setAttribute('aria-hidden', 'true');
-    claw.style.left = `${to.x}px`;
-    claw.innerHTML = '<img src="/assets/scientist-face.png" alt=""><i></i><b>🪝</b>';
-    fieldEl.appendChild(claw);
-    if (!claw.animate) return;
-    const drop = claw.animate([{ height: '34px' }, { height: `${Math.max(40, to.y + 6)}px` }], { duration: data.hunt.claw_s * 1000, easing: 'ease-in', fill: 'both' });
-    drop.onfinish = () => nudge(fieldEl, t);
-    timers.push(drop);
+  // ---- the scientist's boss fight (hunt.py BOSS_*) -----------------------------------------------------------------
+  // Now and then no banana comes: the scientist does, for Onkey. His face and his line (in his accent) go up, then his
+  // claws come down from the top toward Onkey's corner, a wave at a time. Each claw is a button: a click stops it (the
+  // server keeps score). Stop a whole wave and the next comes; stop them all and Onkey is safe and the prize is paid.
+  // If one gets there, the fight is lost: Man Strudel walks in and sets Onkey free.
+  const BOSS_LINES = ['Give me ze monkey. Zis is not a request.', 'Ze claws are coming for him. Stand aside.',
+    'You cannot guard him forever. Zis time he comes wiz me.', 'Zat monkey belongs in my laboratory. Step away from him.'];
+  let bossShown = ''; // the fight and wave on the field: `${target id}:${wave}`
+  function bossWave(fieldEl, t) {
+    clearField(fieldEl);
+    const b = t.boss, lay = layout(), [hx, hy] = data.hunt.air.hand, to = lay.at({ x: hx, y: hy });
+    bossShown = `${t.id}:${b.wave}`;
+    const line = b.wave ? `Wave ${b.wave + 1} of ${b.waves}` : esc(BOSS_LINES[Math.floor(Math.random() * BOSS_LINES.length)]);
+    fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-boss" role="status"><img src="/assets/scientist-face.png" alt="The scientist">` +
+      `<div><b>${line}</b><span>Click every claw before it reaches Onkey${b.wave ? '' : `. ${b.waves} waves`}.</span></div></div>`);
+    if (!b.wave) window.FiveOnkey?.note('hunt_boss');
+    const at = (p) => `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
+    timers.push(setTimeout(() => { // after his line (or the breath between waves), the claws start down
+      fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-clock boss" aria-hidden="true"><i style="animation-duration:${b.secs}s"></i></div>`);
+      b.claws.forEach((c) => {
+        if (c.hit) return;
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'hunt-claw';
+        el.dataset.claw = c.id;
+        el.setAttribute('aria-label', 'Stop the claw');
+        el.innerHTML = '<i></i><b>🪝</b>';
+        fieldEl.appendChild(el);
+        const from = lay.at({ x: c.x, y: -50 });
+        el.style.transform = at(from);
+        if (el.animate) timers.push(el.animate([{ transform: at(from) }, { transform: at(to) }], { duration: b.secs * 1000, easing: 'linear', fill: 'both' }));
+      });
+      timers.push(setTimeout(() => bossTimeout(fieldEl, t.id, b.wave), b.secs * 1000));
+    }, b.wait * 1000));
+  }
+  // The server's answer to a click during the fight: the stopped claws go, or the next wave comes.
+  function bossSync(fieldEl, t) {
+    if (`${t.id}:${t.boss.wave}` !== bossShown) { pop(fieldEl, fieldEl.clientWidth / 2, fieldEl.clientHeight / 2, 'Wave cleared!', 'air'); bossWave(fieldEl, t); return; }
+    t.boss.claws.forEach((c) => { if (c.hit) $(`.hunt-claw[data-claw="${c.id}"]`, fieldEl)?.remove(); });
+  }
+  function hitClaw(el, fieldEl) {
+    if (el.classList.contains('hit')) return;
+    el.classList.add('hit'); // it stops at once; the server confirms
+    api('/api/hunt/click', { method: 'POST', body: JSON.stringify({ x: 0, y: 0, claw: Number(el.dataset.claw) }) })
+      .then((r) => { if (document.body.contains(fieldEl)) apply(r, fieldEl); })
+      .catch(() => el.classList.remove('hit'));
+  }
+  // A wave's time is up on the page: ask the server whether a claw got there (it allows a little slack).
+  async function bossTimeout(fieldEl, id, wave, tries = 0) {
+    const mine = () => target && target.kind === 'boss' && target.id === id && target.boss.wave === wave && document.body.contains(fieldEl);
+    if (!mine()) return;
+    try {
+      const r = await api('/api/hunt/next', { method: 'POST', body: '{}' });
+      if (!mine()) return;
+      if (r.target && r.target.kind === 'boss' && r.target.id === id && r.target.boss.wave === wave && tries < 6) { timers.push(setTimeout(() => bossTimeout(fieldEl, id, wave, tries + 1), 350)); return; }
+      apply(r, fieldEl);
+    } catch (err) { /* the next click sorts it out */ }
+  }
+  // Lost: a claw has Onkey. Man Strudel (friendly, no accent) walks in and sets him free, then the hunt carries on.
+  function rescue(fieldEl) {
+    clearField(fieldEl);
+    const lay = layout(), [hx, hy] = data.hunt.air.hand, to = lay.at({ x: hx - 150, y: hy + 30 }), from = lay.at({ x: -160, y: hy + 30 });
+    fieldEl.insertAdjacentHTML('beforeend', '<div class="hunt-boss lost" role="status"><img src="/assets/scientist-face.png" alt="The scientist"><div><b>Ze monkey is mine!</b><span>A claw got to Onkey.</span></div></div>');
+    const el = document.createElement('div');
+    el.className = 'hunt-strudel asking';
+    el.innerHTML = '<span class="hunt-strudel-say">Strudel will let Onkey go.</span><img src="/assets/man-strudel-small.png" alt="Man Strudel"><small>Man Strudel</small>';
+    fieldEl.appendChild(el);
+    const at = (p) => `translate(${p.x}px, ${p.y}px) translate(-50%, -72%)`;
+    if (el.animate) timers.push(el.animate([{ transform: at(from), offset: 0 }, { transform: at(to), offset: 0.45 }, { transform: at(to), offset: 0.8 }, { transform: at(from), offset: 1 }], { duration: 3200, easing: 'linear', fill: 'both' }));
+    window.FiveOnkey?.note('hunt_boss_lost');
+    timers.push(setTimeout(() => restart(fieldEl), 3200));
+  }
+  // The server puts a banana down (or starts the timers of the one that's there again), and Onkey throws it in.
+  function restart(fieldEl) {
+    return api('/api/hunt/start', { method: 'POST', body: '{}' }).then((r) => {
+      if (!document.body.contains(fieldEl)) return;
+      data.me = r.me; target = r.me.target; throwTo(fieldEl, target);
+    }).catch(() => {});
   }
 
   // Man Strudel, the scientist's henchman (enormous, his head in the brainbot's dome, and friendly): he walks up, asks
@@ -291,6 +354,7 @@ window.FiveHunt = (() => {
   // Onkey winds up in his corner and each banana flies along an arc to where the server put it, spinning, and lands
   // with a squash. A plain or golden one can be caught on the way.
   function throwTo(fieldEl, t) {
+    if (t && t.kind === 'boss') { bossWave(fieldEl, t); return; } // no banana this time: the scientist
     clearField(fieldEl);
     if (!t) return;
     if (!('animate' in Element.prototype)) { land(fieldEl, t); return; }
@@ -376,22 +440,36 @@ window.FiveHunt = (() => {
     const here = shown || (was ? layout().at(was) : { x: fieldEl.clientWidth / 2, y: fieldEl.clientHeight / 2 });
     if (r.hit) {
       session += 1;
-      me.season += r.paid; me.all_time += r.paid; me.bananas += 1; me.picks += 1;
+      me.season += r.paid; me.all_time += r.paid;
       if (state.me && r.balance !== undefined) { state.me.balance = r.balance; renderMe(); }
-      pop(fieldEl, here.x, here.y, `${r.air ? 'Caught! ' : ''}+${r.paid}`, r.kind === 'golden' ? 'gold' : r.air ? 'air' : '');
+      if (r.kind === 'boss') { // every wave stopped: the prize, on top of the day's cap
+        pop(fieldEl, fieldEl.clientWidth / 2, fieldEl.clientHeight / 2, `Onkey is safe! +${r.paid}`, 'gold');
+        toast(`You beat the scientist: +${r.paid} credits, on top of today's cap.`, 'good');
+        window.FiveOnkey?.note('hunt_boss_won', { amount: r.paid });
+      } else {
+        me.bananas += 1; me.picks += 1;
+        pop(fieldEl, here.x, here.y, `${r.air ? 'Caught! ' : ''}+${r.paid}`, r.kind === 'golden' ? 'gold' : r.air ? 'air' : '');
+      }
       if (r.swept) pop(fieldEl, here.x, here.y - 34, `Whole bunch! +${r.bunch_bonus}`, 'air');
       if (r.found) { toast(`You found the hidden item: ${r.found.label}!`, 'good'); pop(fieldEl, here.x, here.y - 34, 'Hidden item!', 'gold'); window.FiveOnkey?.note('hunt_found', { label: r.found.label }); }
       if (session % 25 === 0) window.FiveOnkey?.note('hunt', { n: session, today: r.today });
     } else if (r.reason === 'rotten') { pop(fieldEl, here.x, here.y, 'Rotten!', 'bad'); freeze(fieldEl, r.frozen_s || data.hunt.freeze_s); }
     else if (r.reason === 'rotted') pop(fieldEl, here.x, here.y, 'It rotted', 'bad');
     else if (r.reason === 'stolen') pop(fieldEl, here.x, here.y, 'Greg took it!', 'bad');
-    else if (r.reason === 'clawed') { pop(fieldEl, here.x, here.y, 'Ze claw has it!', 'bad'); window.FiveOnkey?.note('hunt_claw'); }
     else if (r.reason === 'shooed') { shooGreg(fieldEl); pop(fieldEl, here.x, here.y, 'Shoo!', 'air'); }
     if (lost) { const c = $('#hunt-combo', fieldEl); if (c) { c.classList.remove('broke'); void c.offsetWidth; c.classList.add('broke'); } }
+    // Answers to clicks on several claws can come back out of order: within a fight a wave never goes back, and a
+    // claw that was stopped stays stopped.
+    if (r.target && was && r.target.kind === 'boss' && was.kind === 'boss' && r.target.id === was.id) {
+      if (r.target.boss.wave < was.boss.wave) r.target = was;
+      else if (r.target.boss.wave === was.boss.wave) r.target.boss.claws.forEach((c) => { if (was.boss.claws.some((o) => o.id === c.id && o.hit)) c.hit = true; });
+    }
     target = r.target;
     if (r.done) { window.FiveOnkey?.note('hunt_done', { today: r.today }); clearField(fieldEl); draw(); return; }
     refreshNumbers();
+    if (r.reason === 'boss_lost') { rescue(fieldEl); return; } // Man Strudel first, then the next banana
     if (!target) return;
+    if (target.kind === 'boss' && was && target.id === was.id) { bossSync(fieldEl, target); return; }
     if (!was || target.id !== was.id) throwTo(fieldEl, target); // Onkey throws the next one in
     else if (r.hit && target.kind === 'bunch') target.items.forEach((it, i) => { if (it.picked) $(`.hunt-banana[data-i="${i}"]`, fieldEl)?.remove(); });
   }
@@ -456,10 +534,17 @@ window.FiveHunt = (() => {
     frozenUntil = 0;
     fieldEl.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (target && target.kind === 'boss') { // the fight: only the claws take a click
+        const claw = e.target.closest ? e.target.closest('.hunt-claw') : null;
+        if (claw) hitClaw(claw, fieldEl);
+        return;
+      }
       const r = fieldEl.getBoundingClientRect(), k = layout().k; // the field's own pixels, whatever size it's drawn at
       clicked({ x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }, fieldEl);
     });
     fieldEl.addEventListener('keydown', (e) => { // each banana is a button: Enter or Space picks it
+      const claw = e.target.closest ? e.target.closest('.hunt-claw') : null;
+      if ((e.key === 'Enter' || e.key === ' ') && claw) { e.preventDefault(); hitClaw(claw, fieldEl); return; }
       const b = e.target.closest ? e.target.closest('button.hunt-banana') : null;
       if ((e.key === 'Enter' || e.key === ' ') && b && target && !flight && !busy && performance.now() >= frozenUntil) {
         e.preventDefault();
@@ -468,11 +553,7 @@ window.FiveHunt = (() => {
         send({ x: p.x, y: p.y }, fieldEl, layout().at(p));
       }
     });
-    // The server puts a banana down (or starts the timers of the one that's there again), and Onkey throws it in.
-    const begin = () => api('/api/hunt/start', { method: 'POST', body: '{}' }).then((r) => {
-      if (!document.body.contains(fieldEl)) return;
-      data.me = r.me; target = r.me.target; throwTo(fieldEl, target);
-    }).catch(() => {});
+    const begin = () => restart(fieldEl);
     if (document.documentElement.classList.contains('onkey-walking')) {
       // Onkey is still walking over from the logo (onkey.js): the first banana waits until he's in his corner.
       let begun = false;

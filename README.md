@@ -915,11 +915,16 @@ one you click is **1 credit**.
 - A **bunch** is five at once: sweep them all inside 2 seconds for 3 more.
 - A brown **rotten banana** sometimes lands beside the real one. Pick it and
   you can't pick anything for 2 seconds.
-- **Greg** sometimes walks in to take a banana. Pick it first, or click Greg to
-  send him off.
+- **Greg** sometimes walks in to take a banana, and he's quick: pick it first,
+  or click Greg to send him off.
+- Now and then **the scientist** comes for Onkey himself (about 1 throw in 60,
+  as often as it comes up). His claws come down in five waves, each faster than
+  the last: click every claw before it reaches Onkey. Stop them all and you
+  get **100 credits on top of the day's cap**. Let one through and Man
+  Strudel has to set Onkey free, and your combo is gone.
 - Picks in a row build a **combo**: every banana pays double from 10 in a row
-  and triple from 25, until you miss, pick a rotten one, lose one to Greg or
-  the claw, or stop for 8 seconds.
+  and triple from 25, until you miss, pick a rotten one, lose one to Greg,
+  lose to the scientist, or stop for 8 seconds.
 - One of your picks each day turns up a **hidden item**: 25 shop bananas, a
   boost token or an insurance token.
 - The **field of the day** changes its scenery: jungle, night, rain, beach or
@@ -931,7 +936,7 @@ The rules underneath:
   count: a miss pays nothing and leaves the banana where it is, and picks off
   the ground less than about half a second apart aren't paid.
 - Each bettor can pick **`hunt_daily_max`** (default 250) credits a day. The
-  extras only get you there sooner; nothing pays past the cap. The day turns
+  extras only get you there sooner; only beating the scientist pays past the cap. The day turns
   over at midnight Pacific, like the daily wheel.
 - Once you've had the day's 250 the hunt is closed, with one exception: a
   top-up. With fewer than **`hunt_floor`** (default 50) credits, you can pick
@@ -1131,8 +1136,9 @@ He's kept rare, but he's around:
 - **His offer.** With fewer than 100 credits you get a call on Standings: $25,000 for Onkey. The only answer is
   "Onkey is not for sale", which earns the **Not For Sale** title for free.
 - **On the house card.** Sometimes he has a word about what the house takes.
-- **In the Banana Hunt.** His claw sometimes comes down for a banana and can't be sent off, so pick it before the
-  claw gets there. Man Strudel sometimes walks up to ask to pet Onkey, and takes nothing.
+- **In the Banana Hunt.** The one place he comes on stage: now and then his claws come down for Onkey, wave after
+  wave, and you have to stop every one. Man Strudel sets Onkey free if you can't, and sometimes just walks up to ask
+  to pet him.
 - **At the daily wheel.** On some slow finishes his hand reaches over the rim, and the leaf slaps it away.
 - **At the casino tables.** Rarely he's sitting in the dealer's chair when you arrive, until Onkey throws him out.
 - **In the arcade.** **Lab Escape**: he chases Onkey round his lab, faster all the time. Grab bananas, dodge the

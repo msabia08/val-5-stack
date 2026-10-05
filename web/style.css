@@ -2470,12 +2470,22 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .hunt-clock.golden i { background: #ffd54a; }
 @keyframes hunt-clock { to { transform: scaleX(0); } }
 /* Greg walks in to take the banana; a click sends him off. */
-/* From Onkey's lore: the scientist's claw comes down a cable from the top of the field (his face at the top, a hook at
-   the bottom), and Man Strudel, his enormous, friendly henchman (man-strudel-small.png), walks up to ask to pet Onkey. */
-.hunt-claw { position: absolute; top: 0; width: 44px; margin-left: -22px; height: 34px; pointer-events: none; z-index: 2; display: flex; flex-direction: column; align-items: center; }
-.hunt-claw img { width: 40px; height: 40px; border-radius: 50%; background: #16241a; border: 2px solid #6f9f58; flex: none; margin-top: -8px; }
-.hunt-claw i { flex: 1; width: 3px; background: #9aa39a; }
-.hunt-claw b { font-size: 34px; line-height: .7; font-weight: 400; transform: rotate(180deg); filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .5)); }
+/* From Onkey's lore: the scientist's boss fight. .hunt-boss is his face and line across the top; each .hunt-claw is a
+   button coming down from the top toward Onkey's corner (hunt.js bossWave() moves it), stopped by a click. Man Strudel,
+   his enormous, friendly henchman (man-strudel-small.png), walks up to ask to pet Onkey, or to set him free. */
+.hunt-boss { position: absolute; left: 50%; top: 26px; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 12px; max-width: 80%;
+  padding: 8px 16px 8px 8px; border-radius: 14px; background: rgba(10, 18, 12, .88); border: 2px solid #6f9f58; color: #fff; pointer-events: none; animation: hunt-boss-in .3s ease-out; }
+.hunt-boss img { width: 56px; height: 56px; border-radius: 50%; background: #16241a; border: 2px solid #6f9f58; flex: none; }
+.hunt-boss b { display: block; font-size: 17px; line-height: 1.2; }
+.hunt-boss span { font-size: 13px; opacity: .8; }
+.hunt-boss.lost { border-color: #e05252; }
+@keyframes hunt-boss-in { from { opacity: 0; transform: translateX(-50%) translateY(-12px); } }
+.hunt-clock.boss i { background: #e05252; }
+.hunt-claw { position: absolute; left: 0; top: 0; z-index: 5; width: 76px; height: 76px; padding: 0; border: 0; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; will-change: transform; }
+.hunt-claw i { width: 4px; height: 26px; background: #9aa39a; border-radius: 2px; }
+.hunt-claw b { font-size: 46px; line-height: 1; font-weight: 400; transform: rotate(180deg); filter: drop-shadow(0 0 8px #8fe36a) drop-shadow(0 3px 4px rgba(0, 0, 0, .5)); }
+.hunt-claw:focus-visible { outline: 3px solid var(--turn); border-radius: 12px; }
+.hunt-claw.hit { opacity: .2; pointer-events: none; }
 .hunt-strudel { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; pointer-events: none; z-index: 2; will-change: transform; }
 .hunt-strudel img { height: 132px; width: auto; filter: drop-shadow(0 6px 9px rgba(0, 0, 0, .55)); }
 .hunt-strudel small { font-size: 11px; font-weight: 700; color: #fff; background: rgba(0, 0, 0, .5); border-radius: 6px; padding: 1px 6px; }
@@ -3287,7 +3297,12 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .hunt-banana.bunch, .hunt-fly.bunch { font-size: 40px; }
   .hunt-greg { width: 58px; }
   .hunt-strudel img { height: 96px; }
-  .hunt-claw b { font-size: 28px; }
+  .hunt-claw { width: 60px; height: 60px; }
+  .hunt-claw i { height: 16px; }
+  .hunt-claw b { font-size: 36px; }
+  .hunt-boss { top: 20px; max-width: 94%; }
+  .hunt-boss img { width: 40px; height: 40px; }
+  .hunt-boss b { font-size: 14px; }
   .hunt-combo { top: 22px; padding: 4px 10px 6px; }
   .hunt-combo b { font-size: 20px; }
   .hunt-deco { font-size: 30px; }

@@ -13,14 +13,22 @@ the leaderboard in their own column (`hunt`) and left out of betting profit, lik
 the day rows with the season and the cap carries on by the day.
 
 The extras (all on unless the manager is built with `extras=False`) make it a game. None of them raises the day's cap,
-which counts credits: they only get a bettor there sooner.
+which counts credits: they only get a bettor there sooner. The one exception is the scientist's boss fight, whose
+prize is paid on top of the cap.
 
 - What Onkey throws (`_new_target()`): mostly a plain banana; sometimes a golden one (GOLD_VALUE credits, but it rots
   GOLD_TTL_S after landing), a bunch (BUNCH_SIZE at once, BUNCH_TTL_S to sweep them, BUNCH_BONUS for all of them), a
   banana with a rotten decoy beside it (picking the decoy freezes the bettor FREEZE_S and breaks the combo), or a
   banana Greg is walking to (he takes it GREG_S after it lands unless it's picked or he's shooed first). From Onkey's
-  lore (docs/onkey-lore.md): the scientist's claw comes down for a banana (it takes it CLAW_S after it lands, and
-  can't be shooed), and Man Strudel, his friendly henchman, sometimes walks up to ask to pet Onkey and takes nothing.
+  lore (docs/onkey-lore.md): Man Strudel, the scientist's friendly henchman, sometimes walks up to ask to pet Onkey
+  and takes nothing.
+- The boss fight, also from the lore: BOSS_CHANCE of throws aren't a banana but the scientist coming for Onkey himself
+  (a target of kind "boss"). His claws come down for Onkey in BOSS_WAVES waves, each (how many claws, how many seconds
+  they take to reach him); a click names a claw (`claw`, its id) and stops it. Stop a whole wave in time and the next
+  comes BOSS_GAP_S later; stop all of them and the bettor is paid BOSS_PRIZE credits on top of the day's cap
+  (`db.hunt_bonus`, the day row's `bonus`, which the cap doesn't count). One claw reaching Onkey ends it
+  (`_lapse()`: 'boss_lost'): the combo is gone, and on the page Man Strudel sets Onkey free. There's no limit on how
+  many fights a day brings.
 - Catching it in the air: a click on the banana while it flies (`air`, the page's progress along the arc, which
   `arc_at()` turns into a spot to judge the click against) pays double.
 - The combo: picks in a row without a miss (`_mult()`: x2 from COMBO_STEPS[0] in a row, x3 from COMBO_STEPS[1]); a
@@ -64,9 +72,15 @@ GOLD_VALUE, GOLD_TTL_S = 5, 2.5
 BUNCH_SIZE, BUNCH_TTL_S, BUNCH_BONUS, BUNCH_INTERVAL_S, BUNCH_GAP = 5, 2.0, 3, 0.1, 90
 FREEZE_S = 2.0  # how long a rotten banana stops a bettor picking
 DECOY_GAP = 110  # the rotten decoy lands at least this far from the real banana
-CLAW_CHANCE, STRUDEL_CHANCE = 0.06, 0.04
-CLAW_S = 1.8  # how long the scientist's claw takes to reach the banana once it has landed
-GREG_S = 1.5  # how long Greg takes to walk to the banana once it has landed
+STRUDEL_CHANCE = 0.04
+GREG_S = 1.0  # how long Greg takes to walk to the banana once it has landed
+# The scientist's boss fight: this share of throws, his claws come for Onkey instead. Each wave is (claws, the seconds
+# they take to reach Onkey); they start BOSS_INTRO_S after he turns up (he says his line first), and each later wave
+# BOSS_GAP_S after the one before was cleared.
+BOSS_CHANCE = 1 / 60
+BOSS_WAVES = ((3, 3.0), (4, 2.8), (5, 2.6), (6, 2.4), (7, 2.2))
+BOSS_INTRO_S, BOSS_GAP_S = 2.2, 1.0
+BOSS_PRIZE = 100  # credits for clearing every wave, on top of the day's cap
 COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
 COMBO_IDLE_S = 8.0
 HIDDEN_FROM, HIDDEN_TO = 5, 50  # the hidden item is one of the day's picks in this range
@@ -107,7 +121,8 @@ class HuntManager:
                 "field": {"w": FIELD_W, "h": FIELD_H, "r": TARGET_R}, "min_interval_s": MIN_INTERVAL_S,
                 "extras": self.extras, "theme": theme(wheel_day(now or time.time())) if self.extras else THEMES[0],
                 "air": {"s": AIR_S, "r": AIR_R, "from": AIR_FROM, "to": AIR_TO, "mult": AIR_MULT, "hand": list(HAND)},
-                "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S, "claw_s": CLAW_S,
+                "gold": {"value": GOLD_VALUE, "ttl_s": GOLD_TTL_S}, "freeze_s": FREEZE_S, "greg_s": GREG_S,
+                "boss": {"waves": [list(w) for w in BOSS_WAVES], "prize": BOSS_PRIZE},
                 "bunch": {"size": BUNCH_SIZE, "ttl_s": BUNCH_TTL_S, "bonus": BUNCH_BONUS},
                 "combo": {"steps": list(COMBO_STEPS), "idle_s": COMBO_IDLE_S}}
 
@@ -155,11 +170,18 @@ class HuntManager:
             gx = 0 if spot["x"] > FIELD_W / 2 else FIELD_W
             gy = min(FIELD_H - MARGIN, max(MARGIN, spot["y"] + self.rng.randint(-120, 120)))
             t["greg"] = {"x": gx, "y": gy, "arrives": now + AIR_S + GREG_S + SLACK_S}
-        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + CLAW_CHANCE:
-            t["claw"] = {"arrives": now + AIR_S + CLAW_S + SLACK_S}
-        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + CLAW_CHANCE + STRUDEL_CHANCE:
+        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + BOSS_CHANCE:
+            t.update(kind="boss", boss=self._wave(0, now, BOSS_INTRO_S))  # no banana: the scientist comes for Onkey
+        elif roll < GOLD_CHANCE + BUNCH_CHANCE + ROTTEN_CHANCE + GREG_CHANCE + BOSS_CHANCE + STRUDEL_CHANCE:
             t["strudel"] = {"x": 0 if spot["x"] > FIELD_W / 2 else FIELD_W, "y": spot["y"]}  # a visit: he takes nothing
         return t
+
+    def _wave(self, n, now, wait):
+        """Wave `n` of the boss fight: its claws ({"id", "x": where along the top each comes down, "hit"}), how long the
+        page waits before they move (`wait`) and how long they take (`secs`), and the server's own deadline."""
+        count, secs = BOSS_WAVES[n]
+        return {"wave": n, "wait": wait, "secs": secs, "begins": now + wait, "deadline": now + wait + secs + SLACK_S,
+                "claws": [{"id": i, "x": self.rng.randint(MARGIN, FIELD_W - MARGIN), "hit": False} for i in range(count)]}
 
     def _combo(self, key, now):
         c = self.combos.setdefault(key, {"n": 0, "ts": 0.0, "frozen": 0.0})
@@ -173,15 +195,16 @@ class HuntManager:
 
     def _lapse(self, key, t, now):
         """What became of a target left too long: 'rotted' (a golden banana), 'bunch_over', 'stolen' (Greg got there),
-        'clawed' (the scientist's claw did), or None while it's still good. A lapsed target is replaced."""
+        'boss_lost' (a claw of the boss fight reached Onkey), or None while it's still good. A lapsed target is
+        replaced."""
         why = None
         if t.get("expires") and now > t["expires"]:
             why = "rotted" if t["kind"] == "golden" else "bunch_over"
         elif t.get("greg") and now > t["greg"]["arrives"]:
             why = "stolen"
             self._combo(key, now)["n"] = 0
-        elif t.get("claw") and now > t["claw"]["arrives"]:
-            why = "clawed"
+        elif t["kind"] == "boss" and now > t["boss"]["deadline"]:
+            why = "boss_lost"
             self._combo(key, now)["n"] = 0
         if why:
             self.targets[key] = self._new_target(t, now, t["paid_ts"])
@@ -212,8 +235,10 @@ class HuntManager:
             out["decoy"] = dict(t["decoy"])
         if t.get("greg"):
             out["greg"] = {"x": t["greg"]["x"], "y": t["greg"]["y"]}
-        if t.get("claw"):
-            out["claw"] = True
+        if t["kind"] == "boss":
+            b = t["boss"]
+            out["boss"] = {"wave": b["wave"], "waves": len(BOSS_WAVES), "wait": b["wait"], "secs": b["secs"],
+                           "claws": [dict(c) for c in b["claws"]]}
         if t.get("strudel"):
             out["strudel"] = dict(t["strudel"])
         return out
@@ -296,8 +321,8 @@ class HuntManager:
                     t["expires"] += shift
                 if t.get("greg"):
                     t["greg"]["arrives"] += shift
-                if t.get("claw"):
-                    t["claw"]["arrives"] += shift
+                if t["kind"] == "boss":  # the page shows the wave from its start again
+                    t["boss"]["begins"], t["boss"]["deadline"] = now + t["boss"]["wait"], now + t["boss"]["wait"] + t["boss"]["secs"] + SLACK_S
         return self.status(name, now)
 
     def summary(self, me=None, now=None):
@@ -307,8 +332,8 @@ class HuntManager:
         """Who has picked the most: this season's credits, with today's and all-time counts."""
         today = wheel_day(time.time())
         rows = self.db.query(
-            """SELECT bettor, SUM(CASE WHEN season_id IS NULL THEN credits ELSE 0 END) AS season,
-                      SUM(credits) AS all_time, SUM(bananas) AS bananas,
+            """SELECT bettor, SUM(CASE WHEN season_id IS NULL THEN credits + COALESCE(bonus, 0) ELSE 0 END) AS season,
+                      SUM(credits + COALESCE(bonus, 0)) AS all_time, SUM(bananas) AS bananas,
                       SUM(CASE WHEN day=? THEN bananas ELSE 0 END) AS today
                FROM hunt_days GROUP BY lower(bettor) ORDER BY season DESC, all_time DESC, lower(bettor) LIMIT ?""",
             (today, int(limit)))
@@ -316,10 +341,11 @@ class HuntManager:
                  "bananas": int(r["bananas"] or 0), "today": int(r["today"] or 0)} for r in rows]
 
     # ---- clicking ---------------------------------------------------------------------
-    def click(self, name, x, y, now=None, air=None, shoo=False):
+    def click(self, name, x, y, now=None, air=None, shoo=False, claw=None):
         """Judge a click at (x, y) in field pixels. A hit pays and moves the banana; the reply carries the banana to
         draw next (None once the day's cap is reached), today's credits and what's left, and the combo. `air`: the
-        click was on the banana in flight, this far along its arc (0-1). `shoo`: the click was on Greg."""
+        click was on the banana in flight, this far along its arc (0-1). `shoo`: the click was on Greg. `claw`: the
+        click was on that claw of the boss fight (its id)."""
         bettor = self.db.get_bettor(name)
         if not bettor:
             raise BetError("Sign in as a bettor first.")
@@ -352,6 +378,22 @@ class HuntManager:
 
         if lapsed:  # it rotted, the bunch's time ran out or Greg took it before this click: here's the next one
             return reply(False, lapsed)
+        if t["kind"] == "boss":  # the fight: only a click on a claw that's coming counts, and nothing else costs anything
+            b = t["boss"]
+            hit = next((c for c in b["claws"] if type(claw) is int and c["id"] == claw and not c["hit"]), None)
+            if hit is None or now < b["begins"]:
+                return reply(False, "boss")
+            hit["hit"] = True
+            if not all(c["hit"] for c in b["claws"]):
+                return reply(False, "claw_hit")
+            if b["wave"] + 1 < len(BOSS_WAVES):
+                with self.lock:
+                    t["boss"] = self._wave(b["wave"] + 1, now, BOSS_GAP_S)
+                return reply(False, "wave_cleared")
+            self.db.hunt_bonus(name, wheel_day(now), BOSS_PRIZE, now)  # every wave stopped: paid on top of the cap
+            with self.lock:
+                self.targets[key] = self._new_target(t, now, now)
+            return reply(True, paid=BOSS_PRIZE, kind="boss", air=False, swept=False, bunch_bonus=0, found=None)
         if now < combo["frozen"]:
             return reply(False, "frozen", frozen_s=round(combo["frozen"] - now, 2))
         if shoo:

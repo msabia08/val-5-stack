@@ -2491,19 +2491,51 @@ def banana_hunt(shared):
     r = hx.nudge(who, now=gone)
     assert r["reason"] == "stolen" and r["combo"] == 0 and r["target"]["id"] != tgt["id"], r
     now = gone + 1
-    # From the lore: the scientist's claw takes a banana that's left (it can't be shooed), and Man Strudel only visits.
-    rig.rolls = [0.33]
+    # From the lore, the boss fight: now and then the scientist comes for Onkey instead of a banana being thrown. His
+    # claws come down in waves; a click names a claw and stops it. Stop every wave in time and BOSS_PRIZE is paid on
+    # top of the day's cap; let one reach Onkey and the fight is lost, with the combo.
+    assert H.GREG_S == 1.0 and len(H.BOSS_WAVES) == 5 and H.BOSS_PRIZE == 100 and "claw_s" not in hx.terms(now)
+    assert hx.terms(now)["boss"] == {"waves": [list(w) for w in H.BOSS_WAVES], "prize": 100}
+    BOSS = 0.32
+    rig.rolls = [BOSS]
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    tgt, before = r["target"], hx.status(who, now=now)
+    assert r["hit"] and tgt["kind"] == "boss" and tgt["boss"]["wave"] == 0 and tgt["boss"]["waves"] == 5, r
+    assert [c["hit"] for c in tgt["boss"]["claws"]] == [False] * 3 and tgt["boss"]["secs"] == H.BOSS_WAVES[0][1]
+    assert hx.click(who, 0, 0, now=now + 0.5, claw=0)["reason"] == "boss"  # he's still talking: the claws haven't started
+    t = now + H.BOSS_INTRO_S + 0.2
+    assert hx.click(who, 0, 0, now=t)["reason"] == "boss" and hx.click(who, 0, 0, now=t, claw="0")["reason"] == "boss"
+    assert hx.click(who, 0, 0, now=t, claw=0)["reason"] == "claw_hit" and hx.click(who, 0, 0, now=t, claw=0)["reason"] == "boss"
+    assert hx.click(who, 0, 0, now=t, claw=1)["reason"] == "claw_hit"
+    r = hx.click(who, 0, 0, now=t, claw=2)
+    assert r["reason"] == "wave_cleared" and r["target"]["id"] == tgt["id"] and r["target"]["boss"]["wave"] == 1, r
+    assert len(r["target"]["boss"]["claws"]) == H.BOSS_WAVES[1][0] and r["combo"] == before["combo"]  # nothing lost so far
+    for wave in range(1, 5):
+        t += H.BOSS_GAP_S + 0.1
+        for c in range(H.BOSS_WAVES[wave][0]):
+            r = hx.click(who, 0, 0, now=t, claw=c)
+    after = hx.status(who, now=t)
+    assert r["hit"] and r["paid"] == H.BOSS_PRIZE and r["kind"] == "boss" and r["target"]["kind"] == "banana", r
+    assert db.get_bettor(who)["balance"] == before["balance"] + 100 and after["today"] == before["today"]  # the cap doesn't count it
+    assert after["left"] == before["left"] and after["season"] == before["season"] + 100 and after["picks"] == before["picks"]
+    start_balance += H.BOSS_PRIZE  # what follows adds up the day's credits, which the prize isn't part of
+    # Lost: a claw is still coming when the wave's time is up.
+    now = t + 1
+    rig.rolls = [BOSS]
     r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
     tgt = r["target"]
-    assert r["hit"] and tgt["claw"] is True and "greg" not in tgt, r
-    assert hx.click(who, 0, 0, now=now + 0.5, shoo=True)["reason"] == "miss"  # nobody to shoo: the claw stays
-    taken = hx.nudge(who, now=now + H.AIR_S + H.CLAW_S + 0.1)
-    assert taken["reason"] == "clawed" and taken["combo"] == 0 and taken["target"]["id"] != tgt["id"], taken
-    now += H.AIR_S + H.CLAW_S + 1
-    rig.rolls = [0.39]
+    assert tgt["kind"] == "boss" and r["combo"] >= 1
+    assert hx.click(who, 0, 0, now=now + H.BOSS_INTRO_S + 0.1, claw=0)["reason"] == "claw_hit"
+    assert hx.nudge(who, now=now + H.BOSS_INTRO_S + 1)["reason"] is None  # still time
+    taken = hx.nudge(who, now=now + H.BOSS_INTRO_S + H.BOSS_WAVES[0][1] + 0.1)
+    assert taken["reason"] == "boss_lost" and taken["combo"] == 0 and taken["target"]["kind"] == "banana", taken
+    assert db.get_bettor(who)["balance"] == before["balance"] + 100 + 1  # the banana that came before it, and no prize
+    now += H.BOSS_INTRO_S + H.BOSS_WAVES[0][1] + 1
+    # Man Strudel only visits.
+    rig.rolls = [0.34]
     r = hx.click(who, taken["target"]["x"], taken["target"]["y"], now=now)
     tgt = r["target"]
-    assert r["hit"] and tgt["strudel"] and "claw" not in tgt, r
+    assert r["hit"] and tgt["strudel"] and "boss" not in tgt, r
     r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
     assert r["hit"] and r["paid"] == 1 and hx.nudge(who, now=now + 1.5)["reason"] is None, r  # he takes nothing
     now += 2

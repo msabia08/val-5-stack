@@ -813,7 +813,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"me": app.hunt.start(me["name"])})
                 if path.endswith("/next"):  # the page's timer ran out on a golden banana, a bunch or Greg
                     return self._json(app.hunt.nudge(me["name"]))
-                out = app.hunt.click(me["name"], body.get("x"), body.get("y"), air=body.get("air"), shoo=bool(body.get("shoo")))
+                out = app.hunt.click(me["name"], body.get("x"), body.get("y"), air=body.get("air"), shoo=bool(body.get("shoo")),
+                                     claw=body.get("claw"))
                 return self._json({**out, "balance": round(app.db.get_bettor(me["name"])["balance"], 2)})
             if path in ("/api/bank/borrow", "/api/bank/repay"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
