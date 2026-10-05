@@ -46,7 +46,10 @@ window.FiveHunt = (() => {
   };
   const THEME_NAME = { jungle: 'the jungle', night: 'the jungle at night', rain: 'the rains', beach: 'the beach', ruins: 'the old ruins' };
 
-  function init(ctx) { ({ state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName } = ctx); }
+  function init(ctx) {
+    ({ state, $, $$, api, draw, esc, fmt, kpi, renderMe, toast, plainName } = ctx);
+    window.addEventListener('resize', refit);
+  }
 
   // On a phone the server's field (1200 wide, 600 tall) doesn't fit, so the page draws it upright: the server's x
   // runs down the screen and its y across, each scaled to a field as wide as the screen and about a screen tall.
@@ -56,13 +59,34 @@ window.FiveHunt = (() => {
   const TAP_R = 30;
   const SHOW_BOARD = false; // the Top pickers card under the field: set to true to bring it back
   const onPhone = () => matchMedia('(max-width: 640px)').matches;
+  // On a desktop the field is drawn as big as the window allows: the server's 1200 x 600 scaled as a whole by `k` (a
+  // CSS transform on .hunt-zoom, so everything inside is still placed and sized in the server's pixels, and a click is
+  // scaled back before it's judged). What the page takes up around the field, in CSS pixels:
+  const FIT = { page: 32, side: 296, card: 38, above: 150, below: 86, min: 0.6, max: 1.6 };
+  function fit(f) {
+    const w = document.documentElement.clientWidth - FIT.page - (state.me ? FIT.side : 0) - FIT.card;
+    const k = Math.max(FIT.min, Math.min(FIT.max, w / f.w, (window.innerHeight - FIT.above - FIT.below) / f.h));
+    return Math.floor(k * f.w) / f.w; // a whole number of pixels wide
+  }
   function layout() {
     const f = data.hunt.field;
-    if (!onPhone()) return { phone: false, w: f.w, h: f.h, at: (t) => ({ x: t.x, y: t.y }), toField: (x, y) => ({ x, y }) };
+    if (!onPhone()) return { phone: false, w: f.w, h: f.h, k: fit(f), at: (t) => ({ x: t.x, y: t.y }), toField: (x, y) => ({ x, y }) };
     const w = Math.min(f.h, document.documentElement.clientWidth - 42); // the page's and the card's padding either side
     const h = Math.min(f.w, Math.max(320, window.innerHeight - 130)); // under the top bar, with the live line below
     const kx = w / f.h, ky = h / f.w;
-    return { phone: true, w, h, at: (t) => ({ x: t.y * kx, y: t.x * ky }), toField: (x, y) => ({ x: y / ky, y: x / kx }) };
+    return { phone: true, w, h, k: 1, at: (t) => ({ x: t.y * kx, y: t.x * ky }), toField: (x, y) => ({ x: y / ky, y: x / kx }) };
+  }
+  // The field in its frame: .hunt-fit takes the room the scaled field needs, .hunt-zoom scales it.
+  const fitStyle = (lay) => `width:${Math.round(lay.w * lay.k)}px;height:${Math.round(lay.h * lay.k)}px`;
+  const zoomStyle = (lay) => `width:${lay.w}px;height:${lay.h}px${lay.k !== 1 ? `;transform:scale(${lay.k})` : ''}`;
+  function refit() { // the window changed size: the field follows, without being drawn again
+    const frame = $('.hunt-fit'), zoom = $('.hunt-zoom');
+    if (!data || state.view !== 'hunt' || !frame || !zoom) return;
+    const lay = layout();
+    frame.style.cssText = fitStyle(lay);
+    zoom.style.cssText = zoomStyle(lay);
+    const fieldEl = $('.hunt-field', zoom);
+    if (fieldEl) { fieldEl.style.width = `${lay.w}px`; fieldEl.style.height = `${lay.h}px`; }
   }
 
   async function load() {
@@ -164,7 +188,7 @@ window.FiveHunt = (() => {
         `The server places every banana and judges every click, and picks less than ${Math.round(h.min_interval_s * 1000)} ms apart on the ground aren't paid. The day's ${h.daily_max} credits turn over at midnight Pacific, like the daily wheel; ` +
         `the extras only get you there sooner, and nothing pays past it. Once you've had the day's ${h.daily_max} the hunt closes, with one exception, a top-up: if you have fewer than ${fmt.credits(h.floor)} credits you can pick until you have ${fmt.credits(h.floor)}, so nobody is stuck with nothing. ` +
         'Credits from the hunt show in their own column on Standings and stay out of betting profit, like game rewards.')}
-      <div class="hunt-stage">${field()}</div>
+      <div class="hunt-stage"><div class="hunt-fit" style="${fitStyle(layout())}"><div class="hunt-zoom" style="${zoomStyle(layout())}">${field()}</div></div></div>
       <p class="muted small" id="hunt-live" aria-live="polite">${liveLine()}</p></section>`;
     // Your four tiles stand in a column to the right of the field. Signed out there are none, and the card has the page.
     return `${tiles ? `<div class="hunt-layout">${card}<aside class="hunt-side">${tiles}</aside></div>` : card}${SHOW_BOARD ? boardCard() : ''}`;
@@ -258,11 +282,11 @@ window.FiveHunt = (() => {
   function shooGreg(fieldEl) {
     const greg = $('.hunt-greg', fieldEl);
     if (!greg) return;
-    const box = greg.getBoundingClientRect(), f = fieldEl.getBoundingClientRect();
-    const x = box.left + box.width / 2 - f.left, y = box.top + box.height / 2 - f.top, away = x < f.width / 2 ? -140 : f.width + 140;
+    const box = greg.getBoundingClientRect(), f = fieldEl.getBoundingClientRect(), k = layout().k, wide = fieldEl.clientWidth;
+    const x = (box.left + box.width / 2 - f.left) / k, y = (box.top + box.height / 2 - f.top) / k, away = x < wide / 2 ? -140 : wide + 140;
     timers = timers.filter((t) => { if (typeof t === 'number') return true; t.onfinish = null; t.cancel(); return false; });
     greg.classList.add('shooed');
-    if (greg.animate) greg.animate([{ transform: `translate(${x}px, ${y}px) translate(-50%, -50%)` }, { transform: `translate(${away}px, ${y - 30}px) translate(-50%, -50%) rotate(${x < f.width / 2 ? -40 : 40}deg)` }],
+    if (greg.animate) greg.animate([{ transform: `translate(${x}px, ${y}px) translate(-50%, -50%)` }, { transform: `translate(${away}px, ${y - 30}px) translate(-50%, -50%) rotate(${x < wide / 2 ? -40 : 40}deg)` }],
       { duration: 450, easing: 'ease-in', fill: 'both' }).onfinish = () => greg.remove();
     else greg.remove();
   }
@@ -406,7 +430,7 @@ window.FiveHunt = (() => {
     const greg = $('.hunt-greg:not(.shooed)', fieldEl);
     if (greg) {
       const box = greg.getBoundingClientRect(), f = fieldEl.getBoundingClientRect();
-      if (near({ x: box.left + box.width / 2 - f.left, y: box.top + box.height / 2 - f.top }, 38)) { send({ x: 0, y: 0, shoo: true }, fieldEl, shown); return; }
+      if (near({ x: (box.left + box.width / 2 - f.left) / lay.k, y: (box.top + box.height / 2 - f.top) / lay.k }, 38)) { send({ x: 0, y: 0, shoo: true }, fieldEl, shown); return; }
     }
     if (flight) { // in the air: a click on it is a catch, anywhere else waits for it to land
       const k = airK();
@@ -433,8 +457,8 @@ window.FiveHunt = (() => {
     frozenUntil = 0;
     fieldEl.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      const r = fieldEl.getBoundingClientRect();
-      clicked({ x: e.clientX - r.left, y: e.clientY - r.top }, fieldEl);
+      const r = fieldEl.getBoundingClientRect(), k = layout().k; // the field's own pixels, whatever size it's drawn at
+      clicked({ x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }, fieldEl);
     });
     fieldEl.addEventListener('keydown', (e) => { // each banana is a button: Enter or Space picks it
       const b = e.target.closest ? e.target.closest('button.hunt-banana') : null;
