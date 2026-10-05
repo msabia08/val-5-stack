@@ -472,6 +472,11 @@ The table is the page's personality, like the slots cabinet; the side cards are 
   greyed-out moves: a button that's off for a reason the cards don't show says the reason. The four are centred on the
   table as a group (`.bj-act-group`), and the extras hang outside it: your bet is a chip to their left
   and, at the solo table, your streak (🔥 / 🧊) to their right. Poker keeps `.casino-act`.
+- **Blackjack's Seats picker** (`seatsKeys()`, `.seg.bj-seats-pick`): at the shared table only, a segmented picker
+  labelled "Seats" (1 / 2 / 3) between the stake chips and the Bet button, for how many of the table's five seats you
+  hold. Each seat you hold is its own spot on the felt, side by side with your name under each, and gets its own
+  hand for your stake. A count the table has no free seat for is disabled, and so is the whole picker while your bet
+  is down. On a phone the shared table's seats wrap three to a row, with smaller cards and short empty seats.
 - **Tipping Onkey** (`tipRow()` / `tipHtml()`): after a round you won, a pill to Onkey's left: "Tip Onkey" and 5 / 10 / 25 chips
   (dimmed above what you won); tipping turns it into "🍌 You tipped Onkey 5." and Onkey thanks you (`tip`, bigger
   thanks at 25).
