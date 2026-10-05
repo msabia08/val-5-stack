@@ -2418,10 +2418,12 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 
 /* ---- the Banana Hunt (web/hunt.js): the field Onkey dropped his bananas in. The jungle is always dark green,
    whatever the theme, like the arcade's machines; the banana is a button so it can be picked from the keyboard. ---- */
-/* The field's card with your four tiles in a column to its right: the 1200px field and the column fit the 1600px page. */
+/* The field's card, and to its right a column with the title and description, your tiles and your season. */
 .hunt-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
-.hunt-side .kpis { grid-template-columns: 1fr; margin-bottom: 0; }
-.hunt-stage { display: flex; justify-content: center; margin-top: 12px; }
+.hunt-side > .kpis { grid-template-columns: 1fr; }
+.hunt-side .card h2 { margin-top: 0; }
+.hunt-side .kpis.small { grid-template-columns: 1fr 1fr; margin-bottom: 0; }
+.hunt-stage { display: flex; justify-content: center; }
 /* The field scaled to the window: .hunt-fit holds the room it takes, .hunt-zoom scales the server's 1200 x 600 (hunt.js fit()). */
 .hunt-fit { flex: none; }
 .hunt-zoom { transform-origin: 0 0; }
@@ -3279,11 +3281,8 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
      hunt.js has that card switched on). */
   #view:has(.hunt-card) { display: flex; flex-direction: column; }
   .hunt-layout, .hunt-side { display: contents; }
-  .hunt-side .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
+  .hunt-side > .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hunt-card { order: -1; padding: 8px; }
-  .hunt-card > h2, .hunt-card > .how { display: none; }
-  .hunt-stage { margin-top: 0; }
-  .hunt-card > #hunt-live { margin: 8px 4px 2px; }
   .hunt-banana, .hunt-fly { font-size: 46px; }
   .hunt-banana.bunch, .hunt-fly.bunch { font-size: 40px; }
   .hunt-greg { width: 58px; }

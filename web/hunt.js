@@ -62,9 +62,9 @@ window.FiveHunt = (() => {
   // On a desktop the field is drawn as big as the window allows: the server's 1200 x 600 scaled as a whole by `k` (a
   // CSS transform on .hunt-zoom, so everything inside is still placed and sized in the server's pixels, and a click is
   // scaled back before it's judged). What the page takes up around the field, in CSS pixels:
-  const FIT = { page: 32, side: 296, card: 38, above: 150, below: 86, min: 0.6, max: 1.6 };
+  const FIT = { page: 32, side: 296, card: 34, above: 92, below: 52, min: 0.6, max: 1.6 };
   function fit(f) {
-    const w = document.documentElement.clientWidth - FIT.page - (state.me ? FIT.side : 0) - FIT.card;
+    const w = document.documentElement.clientWidth - FIT.page - FIT.side - FIT.card;
     const k = Math.max(FIT.min, Math.min(FIT.max, w / f.w, (window.innerHeight - FIT.above - FIT.below) / f.h));
     return Math.floor(k * f.w) / f.w; // a whole number of pixels wide
   }
@@ -119,13 +119,6 @@ window.FiveHunt = (() => {
     return `<button type="button" class="hunt-banana ${kind} land"${i === undefined ? ' id="hunt-banana"' : ` data-i="${i}"`} style="${style}" aria-label="${label}">🍌</button>`;
   }
 
-  function liveLine() {
-    const me = data && data.me, h = data && data.hunt;
-    if (!me) return '';
-    if (me.done) return `That's today's ${h.daily_max} credits. The hunt reopens at ${resetAt(me)}. Drop under ${fmt.credits(h.floor)} credits before then and you can pick back up to ${fmt.credits(h.floor)}.`;
-    if (me.under_floor) return `You've had today's ${h.daily_max} credits. This is a top-up: ${plural(me.left, 'more credit')}, until you have ${fmt.credits(h.floor)}.`;
-    return `${plural(me.left, 'credit')} left of today's ${h.daily_max}.`;
-  }
   const todaySub = (me, h) => (me.done ? 'done for today' : me.under_floor ? `past the cap: topping up to ${fmt.credits(h.floor)} credits` : 'credits picked');
   const comboSub = (me, h) => {
     const next = h.combo.steps.find((s) => me.combo < s);
@@ -175,10 +168,15 @@ window.FiveHunt = (() => {
     const tiles = me ? `<section class="kpis">
         ${kpi('Today', `<span id="hunt-today">${me.today}</span> <span class="ov-unit">/ ${h.daily_max}</span>`, `<span id="hunt-today-sub">${todaySub(me, h)}</span>`)}
         ${kpi('Combo', `<span id="hunt-combo-n">${me.combo}</span> <span class="ov-unit">in a row</span>`, `<span id="hunt-combo-sub">${comboSub(me, h)}</span>`)}
-        ${kpi('This season', `<span id="hunt-season">${fmt.credits(me.season)}</span>`, `${fmt.credits(me.all_time)} credits all time`)}
         ${kpi('Hunt reopens', resetAt(me), `today's field: ${THEME_NAME[themeOf()]}`)}
       </section>` : '';
-    const card = `<section class="card hunt-card"><h2>Banana Hunt</h2>
+    // The right-hand column: what the game is, your tiles for today, and your season (as the casino tables have it).
+    const tile = (label, id, value) => `<div class="tile"><div class="tile-label">${label}</div><div class="tile-value" id="${id}">${value}</div></div>`;
+    const season = `<section class="card hunt-season"><h2>Your season</h2>${me ? `<div class="kpis small">
+        ${tile('Credits', 'hunt-season', fmt.credits(me.season))}${tile('Picks today', 'hunt-picks', fmt.n0(me.picks))}
+        ${tile('All time', 'hunt-all-time', fmt.credits(me.all_time))}${tile('Bananas picked', 'hunt-bananas', fmt.n0(me.bananas))}</div>`
+      : '<p class="muted"><a href="#" data-signin>Sign in</a> to hunt and see your season.</p>'}</section>`;
+    const about = `<section class="card hunt-about"><h2>Banana Hunt</h2>
       ${how(`Onkey throws bananas into the field. Pick one for ${plural(h.per_banana, 'credit')}, or catch it in the air for double, up to ${h.daily_max} credits a day.`,
         `<b>Golden bananas</b> pay ${h.gold.value} but rot ${h.gold.ttl_s} seconds after they land. A <b>bunch</b> is ${h.bunch.size} at once: sweep them all inside ${h.bunch.ttl_s} seconds for ${h.bunch.bonus} more. ` +
         `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
@@ -187,11 +185,10 @@ window.FiveHunt = (() => {
         `One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
         `The server places every banana and judges every click, and picks less than ${Math.round(h.min_interval_s * 1000)} ms apart on the ground aren't paid. The day's ${h.daily_max} credits turn over at midnight Pacific, like the daily wheel; ` +
         `the extras only get you there sooner, and nothing pays past it. Once you've had the day's ${h.daily_max} the hunt closes, with one exception, a top-up: if you have fewer than ${fmt.credits(h.floor)} credits you can pick until you have ${fmt.credits(h.floor)}, so nobody is stuck with nothing. ` +
-        'Credits from the hunt show in their own column on Standings and stay out of betting profit, like game rewards.')}
-      <div class="hunt-stage"><div class="hunt-fit" style="${fitStyle(layout())}"><div class="hunt-zoom" style="${zoomStyle(layout())}">${field()}</div></div></div>
-      <p class="muted small" id="hunt-live" aria-live="polite">${liveLine()}</p></section>`;
-    // Your four tiles stand in a column to the right of the field. Signed out there are none, and the card has the page.
-    return `${tiles ? `<div class="hunt-layout">${card}<aside class="hunt-side">${tiles}</aside></div>` : card}${SHOW_BOARD ? boardCard() : ''}`;
+        'Credits from the hunt show in their own column on Standings and stay out of betting profit, like game rewards.')}</section>`;
+    const card = `<section class="card hunt-card">
+      <div class="hunt-stage"><div class="hunt-fit" style="${fitStyle(layout())}"><div class="hunt-zoom" style="${zoomStyle(layout())}">${field()}</div></div></div></section>`;
+    return `<div class="hunt-layout">${card}<aside class="hunt-side">${about}${tiles}${season}</aside></div>${SHOW_BOARD ? boardCard() : ''}`;
   }
 
   // ---- the throw --------------------------------------------------------------------------------------------------
@@ -356,7 +353,9 @@ window.FiveHunt = (() => {
     set('#hunt-combo-n', me.combo);
     set('#hunt-combo-sub', comboSub(me, h));
     set('#hunt-season', fmt.credits(me.season));
-    set('#hunt-live', liveLine());
+    set('#hunt-all-time', fmt.credits(me.all_time));
+    set('#hunt-picks', fmt.n0(me.picks));
+    set('#hunt-bananas', fmt.n0(me.bananas));
     const combo = $('#hunt-combo');
     if (combo) { combo.innerHTML = comboHtml(); combo.dataset.mult = me.mult; }
     clearTimeout(comboTimer);
