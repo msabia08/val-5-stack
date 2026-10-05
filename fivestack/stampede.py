@@ -7,13 +7,22 @@ in for every symbol that pays ways. Spikes (SPIKE) are scatters: 3 or more anywh
 spins. Golden fireballs (FIRE) carry credits (VALUES, a multiple of the stake); 6 or more start hold and spin. Every
 fireball that lands also fills the spinner's own fire meter, and a full meter starts the jackpot pick.
 
-Base spins also pay shapes, anywhere on the reels and on top of the ways: a wall (a reel of four of one symbol,
-WALL_PAYS) and a square (2 x 2 of one symbol on neighbouring reels, SQUARE_PAYS), wilds filling in. Most pay less than
-the stake; they're there to be seen.
+Every spin also pays shapes, anywhere on the reels and on top of the ways: touching cells of one symbol (wilds joining
+in) make a group, and a group pays once, for the biggest shape it makes (shape_kind(): three in a straight line, four,
+a 2 x 2 square, a wall (a whole reel), five, a block of 6-7, a mega block of 8+), SHAPE_BASE by the symbol's tier x
+SHAPE_FACTOR by the shape. Fireballs make shapes too, paying FIRE_SHARE of the credits printed on them. Most shapes pay
+less than the stake; they're there to be seen. A spicy banana multiplies them with the ways, and a multiplying wild in
+one (the Golden Onkey, a free spin's wild) multiplies it, the biggest one if there are several.
+
+Spicy banana bunches (SPICY) are on the base reels: each is wild (it stands in for every paying symbol, in ways and in
+shapes) and carries a pepper (SPICY_MULTS, drawn as it lands). When one lands on a spin that wins anything (ways or
+shapes), Onkey eats it and breathes fire: every win on the spin is multiplied by its pepper, and two or more multiply
+together.
 
 Base spins have events (EVENTS, more below): before the reels stop, a Stampede drops wilds on reels 2-5 (always enough
-for a win) or Banana rain turns some symbols into fireballs; after a ways win, Onkey's Inferno can multiply it. A spin
-with no event may instead plant the spike (two spikes showing: the reels without one respin once, looking for the third,
+for a win), Banana rain turns some symbols into fireballs, Greg's takeover puts Greg's face on reels 1-5 (always enough
+for a win) or Man Strudel slices a reel (every ways win and shape through it pays SLICE_MULT times). A spin with no
+event may instead plant the spike (two spikes showing: the reels without one respin once, looking for the third,
 PLANT_CHANCE) or show the Golden Onkey, the secret symbol: never on the strips or in the pay table, a wild worth
 GOLDEN_MULT that pays GOLDEN_SPOT just for being seen.
 
@@ -69,18 +78,19 @@ SYMBOLS = [
     {"key": "spike", "name": "Spike", "tier": "scatter"},
     {"key": "fire", "name": "Golden fireball", "tier": "fire"},
     {"key": "golden", "name": "Golden Onkey", "tier": "secret"},
+    {"key": "spicy", "name": "Spicy banana bunch", "tier": "wild"},
 ]
 (NINE, TEN, JACK, QUEEN, KING, ACE, COCONUT, DRUM, BANANA, VALORANT, GREG, ONKEY, WILD, SPIKE,
- FIRE, GOLDEN) = range(len(SYMBOLS))
+ FIRE, GOLDEN, SPICY) = range(len(SYMBOLS))
 PAYING = range(WILD)  # the symbols that pay ways
-WILDS = (WILD, GOLDEN)  # stand in for every paying symbol, in ways and in shapes
+WILDS = (WILD, GOLDEN, SPICY)  # stand in for every paying symbol, in ways and in shapes
 
 # Ways pays, in multiples of the stake for one way of 3, 4 or 5 reels. Flat on purpose: the reels stack their symbols
 # (two or three in a row), so a win usually makes several ways and pays more than the stake.
 PAYS = {
-    NINE: (0.15, 0.30, 0.60), TEN: (0.15, 0.30, 0.60), JACK: (0.15, 0.30, 0.65), QUEEN: (0.15, 0.30, 0.65),
-    KING: (0.20, 0.35, 0.80), ACE: (0.20, 0.35, 0.80), COCONUT: (0.20, 0.50, 1.20), DRUM: (0.30, 0.60, 1.30),
-    BANANA: (0.35, 0.75, 1.80), VALORANT: (0.40, 0.90, 2.20), GREG: (0.50, 1.20, 3.00), ONKEY: (0.60, 1.80, 6.00),
+    NINE: (0.07, 0.17, 0.32), TEN: (0.07, 0.17, 0.32), JACK: (0.07, 0.17, 0.35), QUEEN: (0.07, 0.17, 0.35),
+    KING: (0.10, 0.17, 0.42), ACE: (0.10, 0.17, 0.42), COCONUT: (0.10, 0.28, 0.63), DRUM: (0.17, 0.32, 0.70),
+    BANANA: (0.17, 0.38, 0.95), VALORANT: (0.21, 0.49, 1.15), GREG: (0.28, 0.63, 1.60), ONKEY: (0.32, 0.95, 3.15),
 }
 SCATTER_PAYS = {3: 1, 4: 5, 5: 25}  # spikes anywhere, in multiples of the stake
 FS_AWARD = {3: 7, 4: 10, 5: 15}
@@ -94,9 +104,9 @@ HS_RESPINS = 3
 VALUES = ((0.5, 300), (1, 300), (2, 170), (3, 100), (5, 70), (10, 35), (15, 15), (25, 10))
 FULL_GRID_BONUS = 100  # x the stake, on top of the fireballs, for filling all 20 cells in hold and spin
 # Each empty cell's chance (per HS_TICKETS) of landing a fireball on a respin, by how many cells are already filled:
-# a bonus ends with about 12 fireballs, and about 1 in 785 fills the grid.
+# a bonus ends with about 11 fireballs, and about 1 in 1,200 fills the grid.
 HS_TICKETS = 10_000
-HS_LAND = tuple(600 if n < 16 else 450 for n in range(CELLS))
+HS_LAND = tuple(560 if n < 16 else 420 for n in range(CELLS))
 # The fire meter: every fireball that lands in a base spin adds the spin's stake to the spinner's own meter (kept
 # between visits and seasons), so it fills faster the more you bet. At METER_FULL credits it empties into the jackpot
 # pick: fifteen fireballs, cracked open one at a time until one jackpot shows three times, or three smokes end it with
@@ -113,21 +123,33 @@ JACKPOTS = {  # the size a jackpot starts at (credits), and what it grows by per
 }
 # Events on base spins. Before the reels stop (tickets out of EVENT_TICKETS): a Stampede puts wilds on reels 2 and 3
 # (STAMPEDE_SURE: how many, so the spin always wins) and on reels 4 and 5 (each cell, STAMPEDE_Q per 1,000); Banana
-# rain turns each cell that isn't a fireball into one (RAIN_Q per 1,000). After a spin with a ways win, Onkey's
-# Inferno multiplies its ways wins (INFERNO_CHANCE per 1,000 winning spins, INFERNO_MULTS by weight).
+# rain turns each cell that isn't a fireball into one (RAIN_Q per 1,000). Greg's takeover is the Stampede with Greg's
+# face for the wilds (GREG_SURE on each of reels 1-3, so Greg always wins, and each cell of reels 4 and 5 GREG_Q per
+# 1,000). Strudel's slice: Man Strudel slices one reel, picked at random, and every ways win and shape that goes
+# through it pays SLICE_MULT times. All four come equally often.
 EVENT_TICKETS = 1000
-EVENTS = {"stampede": 12, "rain": 12}
+EVENTS = {"stampede": 12, "rain": 12, "greg": 12, "slice": 12}
+GREG_SURE = ((1, 1),)  # (Gregs on each of reels 1, 2 and 3, weight)
+GREG_Q = 120
+SLICE_MULT = 2
 STAMPEDE_SURE = ((1, 1),)  # (wilds on each of reels 2 and 3, weight)
 STAMPEDE_Q = 80
 RAIN_Q = 150
-INFERNO_CHANCE = 134
-INFERNO_MULTS = ((2, 6), (3, 3), (5, 1))
-# Shapes, paid on base spins on top of the ways, wherever they are on the reels: a wall (one reel showing four of one
-# symbol) and a square (2 x 2 of one symbol on neighbouring reels; a bigger block makes several). Wilds fill in, but a
-# shape needs at least one real symbol. Pays by the symbol's tier, in multiples of the stake; most are small, and they
-# stack with each other and with the ways.
-WALL_PAYS = {"low": 0.5, "mid": 1, "high": 3, "top": 5}
-SQUARE_PAYS = {"low": 0.15, "mid": 0.4, "high": 1.5, "top": 2.5}
+# Spicy banana bunches: on the base strips of reels 3-5 (SPICY_STACKS a reel, in place of a plain banana bunch), each wild (in WILDS)
+# and carrying a pepper, drawn as it lands from SPICY_MULTS (multiplier, weight). A spin with a win and a spicy banana
+# multiplies every ways and shape win by its pepper (by all of them multiplied together, for several).
+SPICY_STACKS = 1
+SPICY_MULTS = ((2, 9), (3, 1))
+# Shapes, paid on every spin on top of the ways, wherever they are on the reels. Touching cells (side by side or one
+# above the other) of one paying symbol, wilds joining in, make a group; a group needs one real symbol, and pays once,
+# for the shape it makes (shape_kind()), so shapes never overlap: three in a straight line, four (in a line or bent), a
+# square (2 x 2), a wall (a whole reel), five, a block (6 or 7) and a mega block (8 or more). It pays SHAPE_BASE for the
+# symbol's tier x SHAPE_FACTOR for the shape, x the biggest multiplying wild in it (the Golden Onkey, a free spin's
+# wilds; unlike ways, a shape's wilds don't multiply each other).
+# Fireballs make shapes the same way and pay FIRE_SHARE of the credits printed on them (they still fill the meter).
+SHAPE_BASE = {"low": 0.04, "mid": 0.07, "high": 0.18, "top": 0.35}
+SHAPE_FACTOR = {"three": 1, "four": 2, "square": 2.5, "wall": 3, "five": 4, "block": 6, "mega": 10}
+FIRE_SHARE = 0.15
 # Spike planted: a base spin without an event that shows exactly two spikes, PLANT_CHANCE times in 1,000, respins every
 # reel without a spike once, looking for the third. The spin is judged on what the reels show after it.
 PLANT_CHANCE = 250
@@ -135,7 +157,7 @@ PLANT_CHANCE = 250
 # GOLDEN_CHANCE in GOLDEN_TICKETS picks one of the 20 cells, and a paying symbol there turns into it. It's wild worth
 # GOLDEN_MULT ways on its reel, and pays GOLDEN_SPOT x the stake just for being seen. A spin it lands on can't plant.
 GOLDEN_TICKETS = 10_000
-GOLDEN_CHANCE = 50
+GOLDEN_CHANCE = 51
 GOLDEN_MULT = 3
 GOLDEN_SPOT = 5
 
@@ -145,16 +167,17 @@ _LOW = [(s, 2, 4) for s in (NINE, TEN, JACK, QUEEN, KING, ACE)] + [(COCONUT, 2, 
 _FS_LOW = [(s, 2, 3) for s in (NINE, TEN, JACK, QUEEN, KING, ACE)] + [(COCONUT, 2, 3), (DRUM, 2, 3)]
 
 
-def _high(banana, valorant, greg, onkey):
-    return [(BANANA, 1, banana), (VALORANT, 1, valorant), (GREG, 1, greg), (ONKEY, 2, onkey)]
+def _high(banana, valorant, greg, onkey, spicy=0):
+    return [(BANANA, 1, banana - spicy), (VALORANT, 1, valorant), (GREG, 1, greg), (ONKEY, 2, onkey)] + (
+        [(SPICY, 1, spicy)] if spicy else [])
 
 
 BASE_REELS = [
     _LOW + _high(4, 4, 4, 2) + [(SPIKE, 1, 1), (FIRE, 1, 3), (FIRE, 2, 1)],
     _LOW + _high(4, 4, 4, 2) + [(WILD, 1, 2), (SPIKE, 1, 2), (FIRE, 1, 3), (FIRE, 2, 1)],
-    _LOW + _high(4, 4, 4, 2) + [(WILD, 1, 2), (SPIKE, 1, 2), (FIRE, 1, 2), (FIRE, 3, 1)],
-    _LOW + _high(4, 4, 4, 2) + [(WILD, 1, 2), (SPIKE, 1, 2), (FIRE, 1, 3), (FIRE, 2, 1)],
-    _LOW + _high(4, 4, 4, 2) + [(WILD, 1, 2), (SPIKE, 1, 2), (FIRE, 1, 3), (FIRE, 2, 1)],
+    _LOW + _high(4, 4, 4, 2, SPICY_STACKS) + [(WILD, 1, 2), (SPIKE, 1, 2), (FIRE, 1, 2), (FIRE, 3, 1)],
+    _LOW + _high(4, 4, 4, 2, SPICY_STACKS) + [(WILD, 1, 2), (SPIKE, 1, 2), (FIRE, 1, 3), (FIRE, 2, 1)],
+    _LOW + _high(4, 4, 4, 2, SPICY_STACKS) + [(WILD, 1, 2), (SPIKE, 1, 2), (FIRE, 1, 3), (FIRE, 2, 1)],
 ]
 FS_REELS = [
     _FS_LOW + _high(4, 4, 4, 2) + [(SPIKE, 1, 1)],
@@ -204,19 +227,20 @@ def pick(rb, weights):
 
 # ---- evaluating a grid ------------------------------------------------------------------------------------------
 
-def ways_wins(grid, wild_mults=None):
+def ways_wins(grid, wild_mults=None, sliced=None):
     """Every ways win on a grid (a list of five columns of four symbols). `wild_mults` maps (reel, row) to a wild's
-    multiplier (free spins); a Golden Onkey counts GOLDEN_MULT. Each win:
-    {"symbol", "reels", "ways", "mult" (what it pays, x stake), "cells": [[reel, row], ...]}."""
+    multiplier (free spins); a Golden Onkey counts GOLDEN_MULT; every cell of the `sliced` reel counts SLICE_MULT.
+    Each win: {"symbol", "reels", "ways", "mult" (what it pays, x stake), "cells": [[reel, row], ...]}."""
     wild_mults = wild_mults or {}
 
     def weight(c, r):
-        return GOLDEN_MULT if grid[c][r] == GOLDEN else wild_mults.get((c, r), 1) if grid[c][r] == WILD else 1
+        w = GOLDEN_MULT if grid[c][r] == GOLDEN else wild_mults.get((c, r), 1) if grid[c][r] == WILD else 1
+        return w * SLICE_MULT if c == sliced else w
     out = []
     for s in PAYING:
         sums, cells = [], []
         for c in range(REELS):
-            hit = [(r, weight(c, r)) for r in range(ROWS) if grid[c][r] == s or grid[c][r] in WILDS]
+            hit = [(r, weight(c, r)) for r in range(ROWS) if _is(grid[c][r], s) or grid[c][r] in WILDS]
             if not hit:
                 break
             sums.append(sum(m for _, m in hit))
@@ -232,34 +256,80 @@ def ways_wins(grid, wild_mults=None):
     return out
 
 
-def _one(cells):
-    """The paying symbol a set of cells all show (wilds filling in), or None."""
-    real = {x for x in cells if x not in WILDS}
-    if len(real) != 1:
+def _is(x, s):
+    """Whether a cell showing x is the paying symbol s itself (not a wild standing in)."""
+    return x == s
+
+
+def shape_kind(n, cells=None):
+    """The shape a group of n touching cells makes (cells: (reel, row) pairs, needed for 3 or 4), or None."""
+    if n >= 8:
+        return "mega"
+    if n >= 6:
+        return "block"
+    if n == 5:
+        return "five"
+    if n < 3:
         return None
-    s = real.pop()
-    return s if s in PAYING else None
+    reels, rows = {c for c, _ in cells}, {r for _, r in cells}
+    if n == 3:
+        return "three" if len(reels) == 1 or len(rows) == 1 else None
+    if len(reels) == 1:
+        return "wall"
+    return "square" if len(reels) == 2 and len(rows) == 2 else "four"
 
 
-def wall_pay(col):
-    s = _one(col)
-    return 0 if s is None else WALL_PAYS[SYMBOLS[s]["tier"]]
+def shape_pay(symbol, kind):
+    return SHAPE_BASE[SYMBOLS[symbol]["tier"]] * SHAPE_FACTOR[kind]
 
 
-def shape_wins(grid):
-    """Every wall and square on a grid: {"kind", "symbol", "mult", "cells"}."""
-    out = []
+def _groups(member):
+    """The groups of touching cells for which member(c, r) is true: lists of (reel, row), in reading order."""
+    seen, out = set(), []
     for c in range(REELS):
-        s = _one(grid[c])
-        if s is not None:
-            out.append({"kind": "wall", "symbol": s, "mult": WALL_PAYS[SYMBOLS[s]["tier"]],
-                        "cells": [[c, r] for r in range(ROWS)]})
-    for c in range(REELS - 1):
-        for r in range(ROWS - 1):
-            s = _one((grid[c][r], grid[c][r + 1], grid[c + 1][r], grid[c + 1][r + 1]))
-            if s is not None:
-                out.append({"kind": "square", "symbol": s, "mult": SQUARE_PAYS[SYMBOLS[s]["tier"]],
-                            "cells": [[c, r], [c, r + 1], [c + 1, r], [c + 1, r + 1]]})
+        for r in range(ROWS):
+            if (c, r) in seen or not member(c, r):
+                continue
+            group, todo = [], [(c, r)]
+            seen.add((c, r))
+            while todo:
+                x, y = todo.pop()
+                group.append((x, y))
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                    if 0 <= nx < REELS and 0 <= ny < ROWS and (nx, ny) not in seen and member(nx, ny):
+                        seen.add((nx, ny))
+                        todo.append((nx, ny))
+            out.append(sorted(group))
+    return out
+
+
+def shape_wins(grid, wild_mults=None, values=None, sliced=None):
+    """Every shape on a grid: {"kind", "symbol", "mult" (x stake), "cells", "x" (its biggest multiplier)}.
+    `wild_mults` maps (reel, row) to a free spin's wild multiplier; `values` ({(reel, row): multiple of the stake})
+    are the fireballs' values, which fireball shapes pay a share of; a shape through the `sliced` reel pays
+    SLICE_MULT times (no Golden Onkey shares a spin with a slice)."""
+    wild_mults = wild_mults or {}
+
+    def weight(c, r):
+        if c == sliced:
+            return SLICE_MULT
+        return GOLDEN_MULT if grid[c][r] == GOLDEN else wild_mults.get((c, r), 1) if grid[c][r] == WILD else 1
+    out = []
+    for s in PAYING:
+        for group in _groups(lambda c, r: _is(grid[c][r], s) or grid[c][r] in WILDS):
+            kind = shape_kind(len(group), group)
+            if not kind or not any(_is(grid[c][r], s) for c, r in group):
+                continue
+            x = max(weight(c, r) for c, r in group)
+            out.append({"kind": kind, "symbol": s, "mult": round(shape_pay(s, kind) * x, 4),
+                        "cells": [list(cell) for cell in group], "x": x})
+    if values is not None:
+        for group in _groups(lambda c, r: grid[c][r] == FIRE):
+            kind = shape_kind(len(group), group)
+            if kind:
+                x = SLICE_MULT if any(c == sliced for c, _ in group) else 1
+                out.append({"kind": kind, "symbol": FIRE, "x": x, "cells": [list(cell) for cell in group],
+                            "mult": round(FIRE_SHARE * sum(values[cell] for cell in group) * x, 4)})
     return out
 
 
@@ -311,6 +381,17 @@ def base_spin(rb):
         for c, r in cells:
             grid[c][r] = FIRE
         event = {"kind": "rain", "cells": cells}
+    elif kind == "greg":
+        cells = []
+        for c in (0, 1, 2):
+            k = GREG_SURE[pick(rb, [w for _, w in GREG_SURE])][0]
+            cells += [[c, r] for r in sorted(_sample(rb, range(ROWS), k))]
+        cells += [[c, r] for c in (3, 4) for r in range(ROWS) if rb(1000) < GREG_Q]
+        for c, r in cells:
+            grid[c][r] = GREG
+        event = {"kind": "greg", "cells": cells}
+    elif kind == "slice":
+        event = {"kind": "slice", "reel": rb(REELS)}
     elif rb(GOLDEN_TICKETS) < GOLDEN_CHANCE:
         c, r = divmod(rb(CELLS), ROWS)
         if grid[c][r] in PAYING:
@@ -343,14 +424,15 @@ def free_spins(rb, awarded):
         mults = {(c, r): FS_WILD_MULTS[pick(rb, [w for _, w in FS_WILD_MULTS])][0]
                  for c in range(REELS) for r in range(ROWS) if grid[c][r] == WILD}
         wins = ways_wins(grid, mults)
+        shapes = shape_wins(grid, mults)
         sc = scatter_win(grid)
         extra = min(FS_RETRIGGER, FS_CAP - awarded) if sc else 0
         awarded += extra
-        mult = sum(w["mult"] for w in wins) + (sc["mult"] if sc else 0)
+        mult = sum(w["mult"] for w in wins) + sum(x["mult"] for x in shapes) + (sc["mult"] if sc else 0)
         total += mult
         played += 1
         spins.append({"stops": stops, "grid": grid, "wilds": [[c, r, m] for (c, r), m in sorted(mults.items())],
-                      "wins": wins, "scatter": sc, "retrigger": extra, "mult": round(mult, 4)})
+                      "wins": wins, "shapes": shapes, "scatter": sc, "retrigger": extra, "mult": round(mult, 4)})
     return {"awarded": awarded, "spins": spins, "mult": round(total, 4)}
 
 
@@ -377,17 +459,19 @@ def play(rb=secrets.randbelow):
     """One whole spin, every feature it starts played out, in multiples of the stake. The fire meter and its jackpot
     pick belong to the spinner, so StampedeManager.spin() adds them (pick_game())."""
     event, stops, landed, grid, golden, plant = base_spin(rb)
-    wins = ways_wins(grid)
-    inferno = None
-    if wins and rb(1000) < INFERNO_CHANCE:
-        inferno = INFERNO_MULTS[pick(rb, [w for _, w in INFERNO_MULTS])][0]
-        for w in wins:
-            w["mult"] = round(w["mult"] * inferno, 4)
-    sc = scatter_win(grid)
+    sliced = event["reel"] if event and event["kind"] == "slice" else None
+    wins = ways_wins(grid, sliced=sliced)
     fires = fire_cells(grid)
     values = [[c, r, draw_value(rb)] for c, r in fires]
-    shapes = shape_wins(grid)
-    out = {"event": event, "inferno": inferno, "stops": stops, "landed": landed, "grid": grid, "wins": wins, "scatter": sc,
+    shapes = shape_wins(grid, values={(c, r): v for c, r, v in values}, sliced=sliced)
+    spicy = [[c, r, SPICY_MULTS[pick(rb, [w for _, w in SPICY_MULTS])][0]]
+             for c in range(REELS) for r in range(ROWS) if grid[c][r] == SPICY]
+    heat = _prod(m for _, _, m in spicy) if spicy and (wins or shapes) else None
+    if heat:
+        for w in wins + shapes:
+            w["mult"] = round(w["mult"] * heat, 4)
+    sc = scatter_win(grid)
+    out = {"event": event, "spicy": spicy, "heat": heat, "stops": stops, "landed": landed, "grid": grid, "wins": wins, "scatter": sc,
            "values": values, "free_spins": None, "hold": None, "shapes": shapes, "golden": golden, "plant": plant}
     out["line_mult"] = round(sum(w["mult"] for w in wins), 4)
     out["shape_mult"] = round(sum(x["mult"] for x in shapes), 4)
@@ -507,13 +591,13 @@ def _prod(xs):
     return out
 
 
-def _line_ev(dists, wild_mean=1.0):
+def _line_ev(dists, wild_mean=1.0, sliced=None):
     masses = [_mass(d) for d in dists]
     ev = 0.0
     for s in PAYING:
-        es = [sum(p * (w.count(s) + wild_mean * w.count(WILD) + GOLDEN_MULT * w.count(GOLDEN)) for w, p in d)
-              for d in dists]
-        none = [sum(p for w, p in d if s not in w and WILD not in w and GOLDEN not in w) for d in dists]
+        es = [sum(p * (w.count(s) + wild_mean * w.count(WILD) + GOLDEN_MULT * w.count(GOLDEN) + w.count(SPICY))
+                  for w, p in d) * (SLICE_MULT if c == sliced else 1) for c, d in enumerate(dists)]
+        none = [sum(p for w, p in d if not any(_is(x, s) or x in WILDS for x in w)) for d in dists]
         prod = es[0] * es[1]
         for k in (3, 4, 5):
             prod *= es[k - 1]
@@ -521,41 +605,152 @@ def _line_ev(dists, wild_mean=1.0):
     return ev
 
 
-def _shape_ev(dists):
-    """What walls and squares pay, x stake."""
-    masses = [_mass(d) for d in dists]
-    ev = 0.0
-    for c, d in enumerate(dists):
-        ev += sum(p * wall_pay(w) for w, p in d) * _prod(masses[:c] + masses[c + 1:])
-    for c in range(REELS - 1):
-        rest = _prod(masses[:c] + masses[c + 2:])
-        for r in range(ROWS - 1):
-            sides = []
-            for d in (dists[c], dists[c + 1]):
-                sig = {}
-                for w, p in d:
-                    k = frozenset(x for x in (w[r], w[r + 1]) if x not in WILDS)
-                    sig[k] = sig.get(k, 0) + p
-                sides.append(sig)
-            for a, pa in sides[0].items():
-                for b, pb in sides[1].items():
-                    s = _one(a | b)
-                    if s is not None:
-                        ev += pa * pb * rest * SQUARE_PAYS[SYMBOLS[s]["tier"]]
-    return ev
+# Shapes span the reels, so their exact value comes from a pass over the reels left to right (_group_ev()). Its state is
+# the groups touching the last reel: which row belongs to which group, and each group's size, whether it has a real
+# symbol, how many multiplying wilds it holds and, while it's small enough for its shape to matter, its cells. A group
+# no longer touching the newest reel is finished and pays. Cells are coded 0 (not in), 1 (the symbol), 2 (a plain wild),
+# 3 (a multiplying wild), 4 (the symbol, multiplying: on a sliced reel).
+_EMPTY = ((-1,) * ROWS, ())
+_NONE = (0,) * ROWS
+_STEP = {}
+
+
+def _step(state, pat, cap):
+    """The next reel's cells (`pat`) added to `state`: (the new state, the finished groups as (kind, size, wilds x))."""
+    key = (state, pat, cap)
+    if key in _STEP:
+        return _STEP[key]
+    labels, comps = state
+    parent = list(range(len(comps) + ROWS))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    base = len(comps)
+    for r in range(ROWS):
+        if not pat[r]:
+            continue
+        if labels[r] >= 0:
+            parent[find(base + r)] = find(labels[r])
+        if r and pat[r - 1]:
+            parent[find(base + r)] = find(base + r - 1)
+    merged = {}
+    for i, (n, real, k, cells) in enumerate(comps):
+        root = find(i)
+        cells = None if cells is None else frozenset((dc - 1, rr) for dc, rr in cells)
+        merged.setdefault(root, []).append((n, real, k, cells, False))
+    for r in range(ROWS):
+        if pat[r]:
+            merged.setdefault(find(base + r), []).append((1, pat[r] in (1, 4), pat[r] in (3, 4), frozenset({(0, r)}), True))
+    closed, new_comps, label_of = [], [], {}
+    for root, parts in merged.items():
+        n = sum(x[0] for x in parts)
+        real, k = any(x[1] for x in parts), sum(x[2] for x in parts)
+        cells = frozenset().union(*(x[3] for x in parts)) if n <= 4 and all(x[3] is not None for x in parts) else None
+        if not any(x[4] for x in parts):  # touches no cell of the new reel: finished
+            kind = shape_kind(n, cells)
+            if kind and real:
+                closed.append((kind, n, k))
+            continue
+        label_of[root] = (min(n, cap), real, k, cells)
+    labels2, order = [], {}
+    for r in range(ROWS):
+        if not pat[r]:
+            labels2.append(-1)
+            continue
+        root = find(base + r)
+        if root not in order:
+            order[root] = len(new_comps)
+            new_comps.append(label_of[root])
+        labels2.append(order[root])
+    out = ((tuple(labels2), tuple(new_comps)), tuple(closed))
+    _STEP[key] = out
+    return out
+
+
+def _patterns(dist, code):
+    """A reel's windows as patterns of cell codes, with their chances."""
+    out = {}
+    for w, p in dist:
+        pat = tuple(code(x) for x in w)
+        out[pat] = out.get(pat, 0) + p
+    return out
+
+
+def _group_ev(options, need, pay, factor, cap):
+    # factor(k): what a group holding k multiplying cells is multiplied by, on average (its biggest multiplier).
+    """What the groups of one symbol pay: options[c] lists (pattern chances, tag) for reel c, and only reel choices
+    whose tags add up to `need` count (how breakdown() sums over the spike plant's reels or the Golden Onkey's cell in
+    one pass). pay(kind, size) is what a group pays, x factor(k) for k multiplying wilds in it."""
+    states = {(0, _EMPTY): (1.0, 0.0)}
+
+    def gain(closed):
+        return sum(pay(kind, n) * factor(k) for kind, n, k in closed)
+    for c in range(REELS):
+        nxt = {}
+        for (tag, st), (p, ev) in states.items():
+            for dist, inc in options[c]:
+                t = tag + inc
+                if t > need:
+                    continue
+                for pat, q in dist.items():
+                    st2, closed = _step(st, pat, cap)
+                    old = nxt.get((t, st2), (0.0, 0.0))
+                    nxt[(t, st2)] = (old[0] + p * q, old[1] + ev * q + (p * q * gain(closed) if closed else 0.0))
+        states = nxt
+    total = 0.0
+    for (tag, st), (p, ev) in states.items():
+        if tag == need:
+            total += ev + p * gain(_step(st, _NONE, cap)[1])
+    return total
+
+
+def _fs_max(k):
+    """What the biggest of k free-spin wild multipliers is worth on average (1 with none)."""
+    if not k:
+        return 1.0
+    total = sum(w for _, w in FS_WILD_MULTS)
+    cdf = lambda m: sum(w for v, w in FS_WILD_MULTS if v <= m) / total  # noqa: E731
+    ms = sorted({v for v, _ in FS_WILD_MULTS})
+    return sum(m * (cdf(m) ** k - (cdf(prev) ** k if prev else 0)) for prev, m in zip([None] + ms, ms))
+
+
+def _shapes_ev(options, need, free=False, sliced=False):
+    """Every symbol's shapes, and (on the base reels) the fireballs', for one kind of spin: a group's multiplier is the
+    Golden Onkey's (there's only ever one) on the base reels, its biggest wild's on the free-spin reels, and SLICE_MULT
+    for touching the sliced reel (`sliced`: an option's tag of 1 marks that reel's choice as the sliced one)."""
+    if sliced:
+        multiplier = lambda k: SLICE_MULT if k else 1  # noqa: E731
+    else:
+        multiplier = _fs_max if free else (lambda k: GOLDEN_MULT if k else 1)
+    up = {1: 4, 2: 3}  # on the sliced reel every cell in a group multiplies it
+    if not free:
+        options = [[(_hot(d), inc) for d, inc in reel] for reel in options]
+    total = 0.0
+    for s in PAYING:
+        def code(x, s=s):
+            return 1 if x == s else 3 if x == GOLDEN or (free and x == WILD) else 2 if x in WILDS else 0
+        opts = [[({tuple(up.get(v, v) for v in pat): p for pat, p in _patterns(d, code).items()} if sliced and inc
+                  else _patterns(d, code), inc) for d, inc in reel] for reel in options]
+        total += _group_ev(opts, need, lambda kind, n, s=s: shape_pay(s, kind), multiplier, 8)
+    if not free:
+        mean = value_mean()
+
+        def fire(x):
+            return 1 if x == FIRE else 0
+        opts = [[({tuple(up.get(v, v) for v in pat): p for pat, p in _patterns(d, fire).items()} if sliced and inc
+                  else _patterns(d, fire), inc) for d, inc in reel] for reel in options]
+        total += _group_ev(opts, need, lambda kind, n: FIRE_SHARE * mean * n, multiplier if sliced else (lambda k: 1),
+                           CELLS)
+    return total
 
 
 def _spot_ev(dists):
     masses = [_mass(d) for d in dists]
     return GOLDEN_SPOT * sum(sum(p * w.count(GOLDEN) for w, p in d) * _prod(masses[:c] + masses[c + 1:])
                              for c, d in enumerate(dists))
-
-
-def inferno_factor():
-    """What Onkey's Inferno multiplies a base spin's ways wins by, on average (it only ever lands on a win)."""
-    total = sum(w for _, w in INFERNO_MULTS)
-    mean = sum(m * w for m, w in INFERNO_MULTS) / total
-    return 1 + INFERNO_CHANCE / 1000 * (mean - 1)
 
 
 def _scatter_ev(dists):
@@ -569,7 +764,7 @@ def _fs_math():
     d = _dists(FS_STRIPS)
     wm = sum(m * w for m, w in FS_WILD_MULTS) / sum(w for _, w in FS_WILD_MULTS)
     sc_ev, cd = _scatter_ev(d)
-    per_spin = _line_ev(d, wm) + sc_ev
+    per_spin = _line_ev(d, wm) + sc_ev + _shapes_ev([[(x, 0)] for x in d], 0, free=True)
     q = sum(p for n, p in cd.items() if n >= 3)
     spins = {}
     for n, award in FS_AWARD.items():
@@ -608,13 +803,25 @@ def _hs_math():
     return {n: go(n, HS_RESPINS) for n in range(HS_TRIGGER, CELLS + 1)}
 
 
+def spicy_mean():
+    return sum(m * w for m, w in SPICY_MULTS) / sum(w for _, w in SPICY_MULTS)
+
+
+def _hot(dist):
+    """A reel's windows weighted by what their spicy bananas multiply a win by, on average: wins (and nothing else) are
+    worked out on these, so they come out multiplied by every reel's peppers. A pepper is drawn on its own for each
+    spicy banana, so a window's weight is the mean pepper to the power of how many it shows."""
+    mean = spicy_mean()
+    return [(w, p * mean ** w.count(SPICY)) for w, p in dist]
+
+
 def value_mean():
     return sum(m * w for m, w in VALUES) / sum(w for _, w in VALUES)
 
 
-def _mode_math(dists):
+def _mode_math(dists, sliced=None):
     """One kind of base spin: line and scatter pay, the features, and how many fireballs it adds to the meter."""
-    line = _line_ev(dists) * inferno_factor()
+    line = _line_ev([_hot(d) for d in dists], sliced=sliced)
     sc_ev, scd = _scatter_ev(dists)
     fs = _fs_math()
     fs_ev = sum(p * fs["spins"][min(n, 5)] * fs["per_spin"] for n, p in scd.items() if n >= 3)
@@ -629,7 +836,7 @@ def _mode_math(dists):
         hs_p += p
         full_p += p * full
         hs_cash += p * (final * mean + full * FULL_GRID_BONUS)
-    return {"line": line, "shapes": _shape_ev(dists), "spot": _spot_ev(dists), "scatter": sc_ev, "free_spins": fs_ev,
+    return {"line": line, "spot": _spot_ev(dists), "scatter": sc_ev, "free_spins": fs_ev,
             "hold": hs_cash, "fs_p": fs_p, "hs_p": hs_p, "full_p": full_p, "fires": sum(n * p for n, p in fcd.items())}
 
 
@@ -643,8 +850,10 @@ def breakdown():
     g, q = GOLDEN_CHANCE / GOLDEN_TICKETS, PLANT_CHANCE / 1000
     stampede = [_force(d, WILD, STAMPEDE_SURE) if c in (1, 2) else _convert(d, WILD, STAMPEDE_Q / 1000) if c > 2 else d
                 for c, d in enumerate(base)]
+    greg = [_force(d, GREG, GREG_SURE) if c < 3 else _convert(d, GREG, GREG_Q / 1000) for c, d in enumerate(base)]
     terms = [(calm * (1 - g), base), (pe["stampede"], stampede),
-             (pe["rain"], [_convert(d, FIRE, RAIN_Q / 1000) for d in base])]
+             (pe["rain"], [_convert(d, FIRE, RAIN_Q / 1000) for d in base]), (pe["greg"], greg)]
+    terms += [(pe["slice"] / REELS, base, c) for c in range(REELS)]  # Strudel's slice: each reel as likely
     # The spike plant: for each pair of reels showing the two spikes, the spin as it landed is replaced by the spin
     # after the other reels respin (those reels' windows from scratch).
     plant_p = 0.0
@@ -660,13 +869,31 @@ def breakdown():
             turned = [(w[:r] + (GOLDEN,) + w[r + 1:] if w[r] in PAYING else w, p) for w, p in base[c]]
             golden_p += calm * g / CELLS * sum(p for w, p in base[c] if w[r] in PAYING)
             terms.append((calm * g / CELLS, [turned if i == c else d for i, d in enumerate(base)]))
-    keys = ("line", "shapes", "spot", "scatter", "free_spins", "hold", "fs_p", "hs_p", "full_p", "fires")
+    keys = ("line", "spot", "scatter", "free_spins", "hold", "fs_p", "hs_p", "full_p", "fires")
     out = {k: 0.0 for k in keys}
-    for p, dists in terms:
-        m = _mode_math(dists)
+    for p, dists, *sliced in terms:
+        m = _mode_math(dists, *sliced)
         for k in keys:
             out[k] += p * m[k]
     out["plant_p"], out["golden_p"] = plant_p, golden_p
+    # Shapes, in one pass a kind of spin: the spike plant's reels (two showing a spike) and the Golden Onkey's reel are
+    # picked along the way, by tag.
+    one = lambda d: [(d, 0)]  # noqa: E731
+    spiked = [([(w, p) for w, p in d if SPIKE in w], [(w, p) for w, p in d if SPIKE not in w]) for d in base]
+    turned = [[(w[:r] + (GOLDEN,) + w[r + 1:] if w[r] in PAYING else w, p) for r in range(ROWS) for w, p in d]
+              for d in base]
+    shapes = (calm * (1 - g) * _shapes_ev([one(d) for d in base], 0)
+              + pe["stampede"] * _shapes_ev([one(d) for d in stampede], 0)
+              + pe["rain"] * _shapes_ev([one(_convert(d, FIRE, RAIN_Q / 1000)) for d in base], 0)
+              + pe["greg"] * _shapes_ev([one(d) for d in greg], 0)
+              + pe["slice"] / REELS * _shapes_ev([[(d, 0), (d, 1)] for d in base], 1, sliced=True)
+              + calm * (1 - g) * q * _shapes_ev([[(sp, 1), ([(w, p * _mass(no)) for w, p in d], 0)]
+                                                 for d, (sp, no) in zip(base, spiked)], 2)
+              - calm * (1 - g) * q * _shapes_ev([[(sp, 1), (no, 0)] for sp, no in spiked], 2)
+              + calm * g / CELLS * _shapes_ev([[(d, 0), (t, 1)] for d, t in zip(base, turned)], 1))
+    out["shapes"] = shapes
+    # How often a spicy banana lands (on a spin without an event: the events can cover one).
+    out["spicy_p"] = 1 - _prod(sum(p for w, p in d if SPICY not in w) for d in base)
     # Each fireball adds the stake to the meter, so picks come once every METER_FULL / fires credits staked, at any
     # stake: per credit staked a jackpot pays its seed x how often it's won, plus its growth. pick_p and jackpot_hits
     # are per credit staked (per spin, multiply by the stake).
@@ -696,8 +923,8 @@ def october(ts=None):
 
 # Demo mode can ask for a spin that shows something (StampedeManager.spin(force=...)), to try the animations: "pick"
 # fills the meter so the jackpot pick comes up, and a jackpot's name (or "smoke") also decides how the pick ends.
-FORCES = ("win", "big", "wall", "golden", "planted", "detonated", "stampede", "rain", "inferno", "free_spins", "hold",
-          "full", "pick", "smoke", "mini", "minor", "major", "grand")
+FORCES = ("win", "big", "wall", "block", "fire_shape", "spicy", "golden", "planted", "detonated", "stampede", "rain",
+          "greg", "slice", "free_spins", "hold", "full", "pick", "smoke", "mini", "minor", "major", "grand")
 
 
 def _forced(force, rb=secrets.randbelow):
@@ -707,9 +934,13 @@ def _forced(force, rb=secrets.randbelow):
         "win": lambda r: r["line_mult"] > 0,
         "big": lambda r: cash_mult(r) >= 15,
         "stampede": lambda r: r["event"] and r["event"]["kind"] == "stampede",
+        "greg": lambda r: r["event"] and r["event"]["kind"] == "greg",
+        "slice": lambda r: r["event"] and r["event"]["kind"] == "slice" and (r["wins"] or r["shapes"]),
         "rain": lambda r: r["event"] and r["event"]["kind"] == "rain",
-        "inferno": lambda r: r["inferno"],
+        "spicy": lambda r: r["heat"],
         "wall": lambda r: any(x["kind"] == "wall" for x in r["shapes"]),
+        "block": lambda r: any(x["kind"] in ("block", "mega") and x["symbol"] != FIRE for x in r["shapes"]),
+        "fire_shape": lambda r: any(x["symbol"] == FIRE for x in r["shapes"]),
         "golden": lambda r: r["golden"],
         "planted": lambda r: r["plant"],
         "detonated": lambda r: r["plant"] and r["plant"]["found"],
@@ -734,14 +965,14 @@ def machine():
     return {
         "symbols": SYMBOLS, "reels": REELS, "rows": ROWS, "stakes": STAKES,
         "pays": {str(k): v for k, v in PAYS.items()}, "scatter_pays": SCATTER_PAYS, "fs_award": FS_AWARD,
-        "wall_pays": WALL_PAYS, "square_pays": SQUARE_PAYS, "plant_chance": b["plant_p"],
+        "shape_base": SHAPE_BASE, "shape_factor": SHAPE_FACTOR, "fire_share": FIRE_SHARE, "plant_chance": b["plant_p"],
         "fs_retrigger": FS_RETRIGGER, "fs_cap": FS_CAP, "fs_wild_mults": [m for m, _ in FS_WILD_MULTS],
         "hs_trigger": HS_TRIGGER, "hs_respins": HS_RESPINS, "full_grid_bonus": FULL_GRID_BONUS,
         "values": [{"mult": m, "chance": w / total} for m, w in VALUES],
         "jackpots": [{"key": k, "name": j["name"], "seed": j["seed"]} for k, j in JACKPOTS.items()],
         "meter_full": METER_FULL, "fires_per_spin": b["fires"], "pick_kinds": PICK_KINDS,
         "pick_chances": {(o or "smoke"): w / picks for o, w in PICK_OUTCOMES},
-        "inferno_mults": [m for m, _ in INFERNO_MULTS],
+        "spicy_mults": [m for m, _ in SPICY_MULTS], "spicy_chance": b["spicy_p"],
         "strips": BASE_STRIPS, "fs_strips": FS_STRIPS,
         "rtp": round(b["rtp"] * 100, 2), "fs_chance": b["fs_p"], "hs_chance": b["hs_p"],
         "pick_per_credit": b["pick_p"], "event_chance": b["event_p"], "jackpots_per_credit": b["jackpot_hits"],
@@ -749,10 +980,10 @@ def machine():
 
 
 def _features(result):
-    """The features a stored spin showed: free spins, hold and spin, its event, the Inferno, the spike plant, the pick,
-    its jackpot."""
+    """The features a stored spin showed: free spins, hold and spin, its event, its spicy bananas' heat (the Inferno's
+    multiplier on spins from before them), the spike plant, the pick, its jackpot."""
     return {"free_spins": bool(result.get("free_spins")), "hold": bool(result.get("hold")), "plant": bool(result.get("plant")),
-            "event": (result.get("event") or {}).get("kind"), "inferno": result.get("inferno"),
+            "event": (result.get("event") or {}).get("kind"), "inferno": result.get("inferno"), "heat": result.get("heat"),
             "pick": bool(result.get("pick")), "jackpots": [j["key"] for j in result.get("jackpots") or []]}
 
 

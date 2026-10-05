@@ -2583,6 +2583,25 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .st-b-golden { box-shadow: 0 0 0 3px #fff3b0, 0 0 70px #ffd23f; }
 .st-b-golden b { background-image: linear-gradient(180deg, #ffffff, #fff1a0 40%, #ffb800); }
 .st-pumpkin { filter: drop-shadow(0 0 8px rgba(255, 122, 0, .8)); }
+/* The spicy banana bunch: a banana bunch on fire, wild, with its pepper. */
+.st-k-spicy { --halo: #ff3d1f; }
+.st-spicy-svg { filter: hue-rotate(-28deg) saturate(1.7) drop-shadow(0 0 6px #ff5a1f) drop-shadow(0 0 14px rgba(255, 60, 0, .7)); animation: st-flicker 1.2s ease-in-out infinite alternate; }
+.st-chili { position: absolute; top: 6px; left: 10px; font-size: 26px; filter: drop-shadow(0 2px 2px #000); }
+.st-tag-hot { background: linear-gradient(180deg, #ffd0a0, #ff6a2a 50%, #c4200f); color: #2a0600; }
+.st-mini .st-chili { font-size: 13px; top: 1px; left: 3px; }
+/* Strudel's slice: a knife slash down the reel and its x2. */
+.st-reel.st-sliced { box-shadow: inset 0 0 0 2px #c9f2ff, 0 0 22px rgba(160, 230, 255, .7); }
+.st-slash { position: absolute; z-index: 3; left: 50%; top: -10%; width: 6px; height: 120%; transform: translateX(-50%) rotate(14deg); pointer-events: none;
+  background: linear-gradient(180deg, transparent, #fff 20%, #b8ecff 50%, #fff 80%, transparent); box-shadow: 0 0 14px #9fe6ff; animation: st-slash .35s ease-out both; }
+@keyframes st-slash { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+.st-slice-tag { position: absolute; z-index: 4; top: 6px; right: 6px; padding: 2px 8px; border-radius: 8px; font: 900 18px/1.2 system-ui, sans-serif; color: #062634;
+  background: linear-gradient(180deg, #ffffff, #9fe6ff); box-shadow: 0 2px 0 #000, 0 0 12px #9fe6ff; animation: st-pop .45s cubic-bezier(.3, 1.6, .5, 1); }
+.st-strudel { position: absolute; right: 0; bottom: 0; height: 92%; z-index: 4; pointer-events: none; filter: drop-shadow(-8px 8px 10px rgba(0, 0, 0, .6)); }
+.st-greg-walk { height: 170px; top: 22%; border-radius: 20px; }
+.st-b-greg { box-shadow: 0 0 0 3px #9fd4ff, 0 0 50px #4a9fff; }
+.st-b-greg b { background-image: linear-gradient(180deg, #ffffff, #bfe3ff 45%, #4a9fff); }
+.st-b-slice { box-shadow: 0 0 0 3px #c9f2ff, 0 0 50px #6fd3ff; }
+.st-b-slice b { background-image: linear-gradient(180deg, #ffffff, #c9f2ff 45%, #3fb6e8); }
 .st-greg { max-height: 86px; border-radius: 12px; }
 .st-wild-img { max-height: 92px; margin-top: -10px; }
 .st-tag { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); padding: 1px 10px; border-radius: 6px; font: 900 15px/1.2 system-ui, sans-serif; letter-spacing: .12em;
@@ -2612,12 +2631,13 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--st-gold) 85%, transparent), 0 0 18px color-mix(in srgb, var(--st-fire) 55%, transparent); }
 @keyframes st-hit { to { transform: scale(1.06); filter: brightness(1.15); } }
 /* Walls and squares: a frame round the shape's cells, labelled, with what it paid. */
-.st-shape { position: absolute; z-index: 1; border-radius: 14px; pointer-events: none; box-shadow: inset 0 0 0 3px var(--shape), 0 0 22px var(--shape), inset 0 0 26px color-mix(in srgb, var(--shape) 35%, transparent);
+.st-shape { position: absolute; z-index: 1; pointer-events: none; filter: drop-shadow(0 0 8px var(--shape));
   --shape: #7fe7ff; animation: st-shape-in .35s cubic-bezier(.3, 1.6, .5, 1); transition: opacity .25s; }
-.st-shape.st-t-mid { --shape: #9dff7a; } .st-shape.st-t-high { --shape: #ff7ad9; } .st-shape.st-t-top { --shape: #ffd23f; }
-.st-shape b { position: absolute; top: -2px; left: 50%; transform: translate(-50%, -40%); padding: 1px 10px; border-radius: 8px; white-space: nowrap;
+.st-shape i { position: absolute; box-sizing: border-box; border: 0 solid var(--shape); background: color-mix(in srgb, var(--shape) 14%, transparent); }
+.st-shape.st-t-mid { --shape: #9dff7a; } .st-shape.st-t-high { --shape: #ff7ad9; } .st-shape.st-t-top { --shape: #ffd23f; } .st-shape.st-t-fire { --shape: #ff8a1f; }
+.st-shape b { position: absolute; z-index: 1; top: -2px; left: 50%; transform: translate(-50%, -40%); padding: 1px 10px; border-radius: 8px; white-space: nowrap;
   font: 900 14px/1.3 system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #0a0a0a; background: var(--shape); box-shadow: 0 2px 0 #000; }
-.st-shape em { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 900 30px/1 system-ui, sans-serif; font-style: normal; color: #fff; white-space: nowrap;
+.st-shape em { position: absolute; z-index: 1; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 900 30px/1 system-ui, sans-serif; font-style: normal; color: #fff; white-space: nowrap;
   -webkit-text-stroke: 1px #000; text-shadow: 0 3px 0 #000, 0 0 14px var(--shape); animation: st-shape-pay .9s ease-out forwards; }
 .st-shape.out { opacity: 0; }
 .st-shape.st-shape-still { animation: none; }
@@ -2626,7 +2646,8 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .st-shape-ico { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 46px; height: 46px; padding: 4px; border-radius: 10px; box-shadow: inset 0 0 0 2px #7fe7ff, 0 0 10px rgba(127, 231, 255, .5); flex: none; }
 .st-shape-ico i { border-radius: 4px; background: linear-gradient(180deg, #b6fff1, #2fd8bc); }
 .st-shape-pays { margin-top: 6px; }
-.st-shape-pays th[scope="row"] { font-weight: 600; text-align: left; }
+.st-shape-pays th[scope="row"] { font-weight: 600; text-align: left; white-space: nowrap; }
+.st-shape-pays th, .st-shape-pays td { font-size: 12px; padding: 3px 4px; }
 /* The spike plant: the two spikes arm and blink red while the other reels spin again. */
 .st-cell.st-planted { z-index: 1; animation: st-armed .5s ease-in-out infinite alternate; }
 .st-cell.st-planted::after { content: ''; position: absolute; inset: 6px; border-radius: 14px; pointer-events: none; box-shadow: inset 0 0 0 3px #ff4655, 0 0 24px #ff4655; }
