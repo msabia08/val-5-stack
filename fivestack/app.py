@@ -363,7 +363,7 @@ class Handler(BaseHTTPRequestHandler):
         bj, pk, rl = app.blackjack, app.poker, app.roulette
         which = body.get("table") or "solo"
         routes = {
-            "/api/blackjack/sit": lambda: bj.sit(name),
+            "/api/blackjack/sit": lambda: bj.sit(name, body.get("seats")),
             "/api/blackjack/leave": lambda: bj.leave(name),
             "/api/blackjack/bet": lambda: bj.bet(name, which, body.get("stake"), body.get("request_id"), body.get("side")),
             "/api/blackjack/emote": lambda: bj.emote(name, which, body.get("emote")),

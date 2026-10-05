@@ -169,7 +169,8 @@ Open **Casino → Blackjack**, sign in, and pick a table:
   round and plays against the same dealer hand. Betting closes 15 seconds after the first bet, or as soon as
   everyone seated has bet. Players act in seat order with 30 seconds each (time out and Onkey stands for you), and
   the results stay up for 5 seconds before the next round opens. Leave between rounds; a bet placed but not dealt
-  yet comes back.
+  yet comes back. You can hold **up to three seats** here while they're free: pick 1, 2 or 3 under **Seats**. Your
+  bet goes on every seat you hold, each seat is dealt its own hand, and you play them left to right on your turn.
 
 The rules are fixed: six decks, reshuffled when less than a quarter is left; the dealer stands on every 17;
 blackjack pays 3 to 2; double down on any first two cards (after a split too, except split aces); split any pair,

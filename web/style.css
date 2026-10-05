@@ -2001,6 +2001,9 @@ html.wheel-dim body::after { content: ""; position: fixed; inset: 0; background:
 /* Chips and buttons on the felt. */
 .casino-deck, .casino-actions { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
 .casino-stakes { display: flex; gap: 8px; }
+.bj-seats-pick { flex-wrap: nowrap; align-items: center; }  /* how many seats you hold at the shared blackjack table */
+.bj-seats-pick .seg-label { padding: 0 6px 0 8px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.bj-seats-pick .seg-btn { min-width: 30px; justify-content: center; }
 .stake-key { width: 58px; height: 58px; border-radius: 50%; border: 3px dashed rgba(255, 255, 255, 0.75); background: var(--chip); color: var(--chip-ink);
   font: 700 16px var(--font); cursor: pointer; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); font-variant-numeric: tabular-nums; }
 .stake-key[aria-pressed="true"] { outline: 3px solid var(--turn); outline-offset: 2px; transform: translateY(-2px); }
@@ -3167,6 +3170,14 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .bj-spot, .bj-spots.solo .bj-spot { min-width: 0; padding: 8px 6px 6px; }
   .bj-spots.solo .bj-spot { width: 100%; }
   .bj-spot.open { min-height: 150px; }
+  /* The shared table's five seats don't fit across: they wrap three to a row, with smaller cards and short empty seats. */
+  .bj-spots.shared { flex-wrap: wrap; }
+  .bj-spots.shared .bj-spot { min-width: 0; flex: 1 1 30%; }
+  .bj-spots.shared .bj-spot.open { min-height: 64px; }
+  .bj-spots.shared .pcard.md, .bj-spots.shared .pcard.lg { --w: 44px; }
+  .bj-spots.shared .bj-hand.waiting { min-height: 64px; }
+  .bj-spots.shared .bj-cards:has(.pcard:nth-child(3)) .pcard + .pcard { margin-left: calc(var(--w) * -0.55); }
+  .bj-spots.shared .bj-cards:has(.pcard:nth-child(4)) .pcard + .pcard { margin-left: calc(var(--w) * -0.64); }
   .bj-hands { gap: 6px; }
   .bj-hand { gap: 6px; padding: 4px 4px 2px; }
   .bj-hand.waiting { min-height: 120px; }

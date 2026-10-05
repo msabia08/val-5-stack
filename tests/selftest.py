@@ -1331,7 +1331,7 @@ def blackjack(shared):
     from contextlib import contextmanager
     from unittest.mock import patch
     from fivestack import bjstrategy, cards
-    from fivestack.blackjack import EDGE, BlackjackManager, is_blackjack, outcome, total
+    from fivestack.blackjack import EDGE, SEATS_EACH, BlackjackManager, is_blackjack, outcome, total
     from fivestack.house import HouseManager, casino_nets
 
     assert total(["As", "Kd"]) == (21, True) and is_blackjack(["As", "Kd"]) and not is_blackjack(["As", "Kd"], split=True)
@@ -1653,6 +1653,59 @@ def blackjack(shared):
     clock[0] += 2
     _expect_error(bj.emote, "Streaky", "solo", "🤡", contains="doesn't know")
     _expect_error(bj.emote, "Streaky", "shared", "👏", contains="Take a seat")
+    # Several seats at the shared table: one bettor can hold up to SEATS_EACH of them while they're free, and a bet
+    # puts the stake on each. Every seat is dealt a hand of its own, like so many players (a card each, then the dealer,
+    # twice), and the bettor plays them left to right. Here 10 + 9 stands, the eights split (their 11 doubles into 21,
+    # their 10 stands) and ace-king is a blackjack; the dealer's 16 busts. One row for the round; a hand keeps its seat
+    # (`spot`) through a split, and the view lists each seat as its own entry.
+    for _ in range(12):  # whatever the shared table was in the middle of: time it out and clear the seats
+        clock[0] += 40
+        bj.tick()
+    for n in list(bj.tables["shared"].seats):
+        bj.leave(n)
+    for n, credits in (("Trio", 1000), ("Duo", 1000), ("Solo1", 40)):
+        db.create_bettor(n, credits)
+    _expect_error(bj.sit, "Trio", SEATS_EACH + 1, contains="Hold 1 to 3 seats")
+    _expect_error(bj.sit, "Trio", "2", contains="Hold 1 to 3 seats")
+    v = bj.sit("Trio", 3)
+    assert v["me"]["seats"] == 3 and v["seats_each"] == SEATS_EACH == 3 and v["shared_seats"]["taken"] == 3
+    assert [(s["bettor"], s["seat"]) for s in v["seats"]] == [("Trio", 0), ("Trio", 1), ("Trio", 2)]
+    assert bj.view("Trio", "solo")["seats_each"] == 1 and bj.view("Trio", "solo")["me"]["seats"] == 1
+    assert bj.sit("Duo", 2)["shared_seats"]["taken"] == 5
+    _expect_error(bj.sit, "Solo1", contains="full")  # all five seats are held, by two bettors
+    _expect_error(bj.sit, "Duo", 3, contains="Only 2 of the table's seats are free")
+    assert bj.sit("Duo", 1)["shared_seats"]["taken"] == 4 and bj.sit("Duo")["me"]["seats"] == 1  # sitting again changes nothing
+    bj.sit("Solo1")
+    _expect_error(bj.sit, "Solo1", 2, contains="Only 1 of the table's seats is free")
+    bj.leave("Solo1")
+    bj.leave("Duo")
+    _expect_error(bj.bet, "Trio", "shared", 500, next(ref), contains="for 3 seats at 500 each")
+    with stack("Th", "8s", "Ah", "6d", "9c", "8d", "Kh", "Tc", "3d", "2h", "Ts", "9h"):
+        v = bj.bet("Trio", "shared", 10, next(ref))
+        seats = v["seats"]
+        hands = [h for s in seats for h in s["hands"]]
+        assert bal("Trio") == 970 and [s["stake"] for s in seats] == [10, 10, 10] and [len(s["hands"]) for s in seats] == [1, 1, 1]
+        assert [h["cards"] for h in hands] == [["Th", "9c"], ["8s", "8d"], ["Ah", "Kh"]] and v["dealer"]["cards"] == ["6d", None]
+        assert [(h["id"], h["spot"], h["stake"]) for h in hands] == [(0, 0, 10), (1, 1, 10), (2, 2, 10)]
+        assert hands[2]["blackjack"] and hands[2]["done"] and v["turn"] == {"bettor": "Trio", "hand": 0}
+        assert v["me"]["hint"]["move"] == "stand"
+        _expect_error(bj.sit, "Trio", 1, contains="Your bet is down")
+        v = bj.action("Trio", "shared", "stand", 0)
+        assert v["turn"]["hand"] == 1 and "split" in v["me"]["actions"] and v["seats"][1]["hands"][0]["turn"]
+        v = bj.action("Trio", "shared", "split", 1)
+        seats = v["seats"]
+        assert [[h["cards"] for h in s["hands"]] for s in seats] == [[["Th", "9c"]], [["8s", "3d"], ["8d", "2h"]], [["Ah", "Kh"]]]
+        assert [[(h["id"], h["spot"]) for h in s["hands"]] for s in seats] == [[(0, 0)], [(1, 1), (3, 1)], [(2, 2)]]
+        assert v["me"]["hint"]["move"] == "double"
+        v = bj.action("Trio", "shared", "double", 2)
+        assert v["turn"]["hand"] == 2
+        v = bj.action("Trio", "shared", "stand", 3)
+    assert v["phase"] == "done" and [[h["result"] for h in s["hands"]] for s in v["seats"]] == [["win"], ["win", "win"], ["blackjack"]]
+    assert bal("Trio") == 1055 and v["seats"][0]["streak"] == 1 and v["me"]["seats"] == 3
+    assert db.query_one("SELECT stake, payout FROM blackjack_hands ORDER BY id DESC LIMIT 1") == {"stake": 50, "payout": 105}
+    assert bj.sit("Trio", 1)["me"]["seats"] == 1  # the round is over: seats can change again (the finished hands stay up)
+    bj.leave("Trio")
+    assert bj.view(None, "shared")["shared_seats"] == {"taken": 0, "max": 5, "names": []}
     shared.casino_db = db
 
 
