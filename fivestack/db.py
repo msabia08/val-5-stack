@@ -538,7 +538,8 @@ CREATE TABLE IF NOT EXISTS hunt_days (
     bananas INTEGER NOT NULL DEFAULT 0,
     credits REAL NOT NULL DEFAULT 0,
     updated_ts REAL,
-    season_id INTEGER REFERENCES seasons(id)
+    season_id INTEGER REFERENCES seasons(id),
+    bonus REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_hunt_days ON hunt_days(bettor, day, season_id);
 """
@@ -564,6 +565,7 @@ MIGRATIONS = {
     "member_games": (("team", "TEXT"),),
     "slot_spins": (("rtp", "REAL"),),
     "blackjack_hands": (("side", "TEXT"), ("tip", "REAL")),
+    "hunt_days": (("bonus", "REAL NOT NULL DEFAULT 0"),),
 }
 ARCHIVED_BET_COLUMNS = [
     "id", "bettor", "market_id", "market_type", "description", "selection", "selection_label", "line", "odds_decimal",
@@ -1306,8 +1308,26 @@ class DB:
     def hunt_totals(self):
         """Per bettor (lower-cased name): credits from the hunt this season and all time, and bananas picked."""
         return {r["k"]: r for r in self.query(
-            """SELECT lower(bettor) AS k, SUM(CASE WHEN season_id IS NULL THEN credits ELSE 0 END) AS season,
-                      SUM(credits) AS all_time, SUM(bananas) AS bananas FROM hunt_days GROUP BY lower(bettor)""")}
+            """SELECT lower(bettor) AS k, SUM(CASE WHEN season_id IS NULL THEN credits + COALESCE(bonus, 0) ELSE 0 END) AS season,
+                      SUM(credits + COALESCE(bonus, 0)) AS all_time, SUM(bananas) AS bananas FROM hunt_days GROUP BY lower(bettor)""")}
+
+    def hunt_bonus(self, name, day, credits, now=None):
+        """Pay a bettor a hunt prize the day's cap doesn't count (the boss fight's): their balance and the day row's
+        `bonus`, in one transaction."""
+        now = now or time.time()
+        with self.lock:
+            try:
+                cur = self.conn.execute(
+                    "UPDATE hunt_days SET bonus = COALESCE(bonus, 0) + ?, updated_ts = ? "
+                    "WHERE lower(bettor)=lower(?) AND day=? AND season_id IS NULL", (credits, now, name, day))
+                if not cur.rowcount:
+                    self.conn.execute("INSERT INTO hunt_days(bettor, day, bananas, credits, bonus, updated_ts) VALUES(?,?,0,0,?,?)",
+                                      (name, day, credits, now))
+                self.conn.execute("UPDATE bettors SET balance = balance + ? WHERE lower(name)=lower(?)", (credits, name))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
 
     def taxes_collected(self, sender, limit=20):
         """Generosity taxes a bettor collected, newest first, with the bet they came from."""

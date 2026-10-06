@@ -1442,7 +1442,7 @@ def blackjack(shared):
     from contextlib import contextmanager
     from unittest.mock import patch
     from fivestack import bjstrategy, cards
-    from fivestack.blackjack import EDGE, BlackjackManager, is_blackjack, outcome, total
+    from fivestack.blackjack import EDGE, SEATS_EACH, BlackjackManager, is_blackjack, outcome, total
     from fivestack.house import HouseManager, casino_nets
 
     assert total(["As", "Kd"]) == (21, True) and is_blackjack(["As", "Kd"]) and not is_blackjack(["As", "Kd"], split=True)
@@ -1466,6 +1466,22 @@ def blackjack(shared):
     assert best(["Ah", "Ac"], "Ts", ("stand", "split")) == "split" and bjstrategy.best(["Th", "Kc"], "6s", ()) is None
     ev = bjstrategy.values(["Th", "6c"], "Ks", ("hit", "stand"))
     assert -0.56 < ev["stand"] < -0.52 and ev["hit"] > ev["stand"]  # 16 against a ten: hitting loses a hair less
+    # The hint knows what the balance covers (`spare` stakes). Fours against a 5 only pay as a split if you can double
+    # after, so on the last stake they're hit; eights split whatever's left. A split is worth more the more its hands
+    # can afford, up to what it's worth with no limit, and ROOMY spare stakes is as good as that.
+    four = ("hit", "stand", "double", "split")
+    assert bjstrategy.best(["4h", "4c"], "5s", four)["move"] == "split" and bjstrategy.best(["4h", "4c"], "5s", four, 1)["move"] == "hit"
+    assert bjstrategy.best(["8h", "8c"], "6s", four, 1)["move"] == "split" and bjstrategy.best(["Ah", "Ac"], "6s", four, 1)["move"] == "split"
+    by_spare = [bjstrategy.values(["8h", "8c"], "6s", four, n)["split"] for n in range(1, bjstrategy.ROOMY)]
+    free = bjstrategy.values(["8h", "8c"], "6s", four)["split"]
+    assert by_spare == sorted(by_spare) and by_spare[0] < free - 0.1 and 0 <= free - by_spare[-1] < 0.001, (by_spare, free)
+    assert bjstrategy.values(["8h", "8c"], "6s", four, bjstrategy.ROOMY) == bjstrategy.values(["8h", "8c"], "6s", four)
+    # A double is charged for the stake it takes from the split hands behind it: 11 against a 6 doubles on the last
+    # stake, unless a pair of eights is waiting to be split with it.
+    three = ("hit", "stand", "double")
+    assert bjstrategy.best(["8h", "3c"], "6s", three, 1)["move"] == "double" and bjstrategy.best(["8h", "3c"], "6s", three, 1, ["2d"])["move"] == "double"
+    assert bjstrategy.best(["8h", "3c"], "6s", three, 1, ["8d"])["move"] == "hit"
+    assert bjstrategy.values(["8h", "3c", "2d"], "6s", ("hit", "stand"), 0) == bjstrategy.values(["8h", "3c", "2d"], "6s", ("hit", "stand"))
     assert abs(bjstrategy.house_edge() - EDGE) < 0.00005
 
     db = DB(os.path.join(shared.tmp, "casino.db"))
@@ -1610,6 +1626,7 @@ def blackjack(shared):
         assert [h["cards"] for h in v["seats"][0]["hands"]] == [["8h", "8c"], ["8d", "Kd"]] and "split" in v["me"]["actions"]
         v = bj.action("Splitz", "solo", "split", 1)
         assert [h["total"] for h in v["seats"][0]["hands"]] == [18, 10, 18] and bal("Splitz") == 970
+        assert [h["id"] for h in v["seats"][0]["hands"]] == [0, 2, 1]  # ids go by when a hand was made, not where it sits
         assert v["log"][-1] == {**v["log"][-1], "kind": "split", "hands": 3}
         v = bj.action("Splitz", "solo", "stand", 2)
         assert v["turn"]["hand"] == 1 and v["me"]["hint"]["move"] == "double"
@@ -1627,6 +1644,30 @@ def blackjack(shared):
         v = bj.action("Splitz", "solo", "split", 1)
     assert [h["total"] for h in v["seats"][0]["hands"]] == [21, 21, 16] and v["phase"] == "done"
     assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "win", "win"] and bal("Splitz") == 1070
+    # Short of credits. A double or split the hand allows but the balance doesn't cover is left out of `actions` and
+    # listed in `short`, and the hint counts what's affordable: with one stake left, fours against a 5 are a hit. Split
+    # them anyway and the 11 that comes can't be doubled, nor the new pair split.
+    db.create_bettor("Skint", 20)
+    with stack("4h", "5s", "4d", "Tc", "7d", "4c", "9h", "2s"):
+        v = bj.bet("Skint", "solo", 10, next(ref))
+        assert v["me"]["actions"] == ["hit", "stand", "double", "split"] and v["me"]["short"] == [] and v["me"]["hint"]["move"] == "hit"
+        v = bj.action("Skint", "solo", "split", 0)
+        assert [h["cards"] for h in v["seats"][0]["hands"]] == [["4h", "7d"], ["4d", "4c"]] and bal("Skint") == 0
+        assert v["me"]["actions"] == ["hit", "stand"] and v["me"]["short"] == ["double"] and v["me"]["hint"]["move"] == "hit"
+        _expect_error(bj.action, "Skint", "solo", "double", 1, contains="can't do that")
+        bj.action("Skint", "solo", "hit", 1)
+        v = bj.action("Skint", "solo", "stand", 2)
+        assert v["turn"]["hand"] == 1 and v["me"]["actions"] == ["hit", "stand"] and v["me"]["short"] == ["double", "split"]
+        v = bj.action("Skint", "solo", "stand", 3)
+    assert [h["result"] for h in v["seats"][0]["hands"]] == ["win", "lose"] and bal("Skint") == 20 and v["me"]["short"] == []
+    # A split ace that draws another ace can only be split again. With no stake left for that there's nothing to
+    # decide: it stands by itself (12), and here that ends the round.
+    with stack("Ah", "6s", "Ad", "Tc", "As", "Kh", "5d"):
+        bj.bet("Skint", "solo", 10, next(ref))
+        v = bj.action("Skint", "solo", "split", 0)
+    assert v["phase"] == "done" and [h["cards"] for h in v["seats"][0]["hands"]] == [["Ah", "As"], ["Ad", "Kh"]]
+    assert [h["result"] for h in v["seats"][0]["hands"]] == ["lose", "push"] and bal("Skint") == 10
+    assert [e["kind"] for e in v["log"] if e["kind"] in ("split", "stand")][-2:] == ["split", "stand"]
     # Onkey's peek: he names a card he shouldn't (only the claim reaches the page, decided once per decision), and the
     # truth comes out when the card shows. 16 against a 9: an honest look at the next card, a 4, which the hit draws.
     from fivestack import blackjack as bjmod
@@ -1723,6 +1764,59 @@ def blackjack(shared):
     clock[0] += 2
     _expect_error(bj.emote, "Streaky", "solo", "🤡", contains="doesn't know")
     _expect_error(bj.emote, "Streaky", "shared", "👏", contains="Take a seat")
+    # Several seats at the shared table: one bettor can hold up to SEATS_EACH of them while they're free, and a bet
+    # puts the stake on each. Every seat is dealt a hand of its own, like so many players (a card each, then the dealer,
+    # twice), and the bettor plays them left to right. Here 10 + 9 stands, the eights split (their 11 doubles into 21,
+    # their 10 stands) and ace-king is a blackjack; the dealer's 16 busts. One row for the round; a hand keeps its seat
+    # (`spot`) through a split, and the view lists each seat as its own entry.
+    for _ in range(12):  # whatever the shared table was in the middle of: time it out and clear the seats
+        clock[0] += 40
+        bj.tick()
+    for n in list(bj.tables["shared"].seats):
+        bj.leave(n)
+    for n, credits in (("Trio", 1000), ("Duo", 1000), ("Solo1", 40)):
+        db.create_bettor(n, credits)
+    _expect_error(bj.sit, "Trio", SEATS_EACH + 1, contains="Hold 1 to 3 seats")
+    _expect_error(bj.sit, "Trio", "2", contains="Hold 1 to 3 seats")
+    v = bj.sit("Trio", 3)
+    assert v["me"]["seats"] == 3 and v["seats_each"] == SEATS_EACH == 3 and v["shared_seats"]["taken"] == 3
+    assert [(s["bettor"], s["seat"]) for s in v["seats"]] == [("Trio", 0), ("Trio", 1), ("Trio", 2)]
+    assert bj.view("Trio", "solo")["seats_each"] == 1 and bj.view("Trio", "solo")["me"]["seats"] == 1
+    assert bj.sit("Duo", 2)["shared_seats"]["taken"] == 5
+    _expect_error(bj.sit, "Solo1", contains="full")  # all five seats are held, by two bettors
+    _expect_error(bj.sit, "Duo", 3, contains="Only 2 of the table's seats are free")
+    assert bj.sit("Duo", 1)["shared_seats"]["taken"] == 4 and bj.sit("Duo")["me"]["seats"] == 1  # sitting again changes nothing
+    bj.sit("Solo1")
+    _expect_error(bj.sit, "Solo1", 2, contains="Only 1 of the table's seats is free")
+    bj.leave("Solo1")
+    bj.leave("Duo")
+    _expect_error(bj.bet, "Trio", "shared", 500, next(ref), contains="for 3 seats at 500 each")
+    with stack("Th", "8s", "Ah", "6d", "9c", "8d", "Kh", "Tc", "3d", "2h", "Ts", "9h"):
+        v = bj.bet("Trio", "shared", 10, next(ref))
+        seats = v["seats"]
+        hands = [h for s in seats for h in s["hands"]]
+        assert bal("Trio") == 970 and [s["stake"] for s in seats] == [10, 10, 10] and [len(s["hands"]) for s in seats] == [1, 1, 1]
+        assert [h["cards"] for h in hands] == [["Th", "9c"], ["8s", "8d"], ["Ah", "Kh"]] and v["dealer"]["cards"] == ["6d", None]
+        assert [(h["id"], h["spot"], h["stake"]) for h in hands] == [(0, 0, 10), (1, 1, 10), (2, 2, 10)]
+        assert hands[2]["blackjack"] and hands[2]["done"] and v["turn"] == {"bettor": "Trio", "hand": 0}
+        assert v["me"]["hint"]["move"] == "stand"
+        _expect_error(bj.sit, "Trio", 1, contains="Your bet is down")
+        v = bj.action("Trio", "shared", "stand", 0)
+        assert v["turn"]["hand"] == 1 and "split" in v["me"]["actions"] and v["seats"][1]["hands"][0]["turn"]
+        v = bj.action("Trio", "shared", "split", 1)
+        seats = v["seats"]
+        assert [[h["cards"] for h in s["hands"]] for s in seats] == [[["Th", "9c"]], [["8s", "3d"], ["8d", "2h"]], [["Ah", "Kh"]]]
+        assert [[(h["id"], h["spot"]) for h in s["hands"]] for s in seats] == [[(0, 0)], [(1, 1), (3, 1)], [(2, 2)]]
+        assert v["me"]["hint"]["move"] == "double"
+        v = bj.action("Trio", "shared", "double", 2)
+        assert v["turn"]["hand"] == 2
+        v = bj.action("Trio", "shared", "stand", 3)
+    assert v["phase"] == "done" and [[h["result"] for h in s["hands"]] for s in v["seats"]] == [["win"], ["win", "win"], ["blackjack"]]
+    assert bal("Trio") == 1055 and v["seats"][0]["streak"] == 1 and v["me"]["seats"] == 3
+    assert db.query_one("SELECT stake, payout FROM blackjack_hands ORDER BY id DESC LIMIT 1") == {"stake": 50, "payout": 105}
+    assert bj.sit("Trio", 1)["me"]["seats"] == 1  # the round is over: seats can change again (the finished hands stay up)
+    bj.leave("Trio")
+    assert bj.view(None, "shared")["shared_seats"] == {"taken": 0, "max": 5, "names": []}
     shared.casino_db = db
 
 
@@ -2508,22 +2602,137 @@ def banana_hunt(shared):
     r = hx.nudge(who, now=gone)
     assert r["reason"] == "stolen" and r["combo"] == 0 and r["target"]["id"] != tgt["id"], r
     now = gone + 1
-    # From the lore: the scientist's claw takes a banana that's left (it can't be shooed), and Man Strudel only visits.
-    rig.rolls = [0.33]
+    # From the lore, the boss fight: now and then the scientist comes for Onkey instead of a banana being thrown. His
+    # claws come down in waves; a click names a claw and stops it. Stop every wave in time and BOSS_PRIZE is paid on
+    # top of the day's cap; let one reach Onkey and the fight is lost, with the combo.
+    assert H.GREG_S == 1.0 and len(H.BOSS_WAVES) == 5 and H.BOSS_PRIZE == 100 and "claw_s" not in hx.terms(now)
+    assert hx.terms(now)["boss"] == {"waves": [list(w) for w in H.BOSS_WAVES], "prize": 100}
+    BOSS = 0.32
+    rig.rolls = [BOSS]
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    tgt, before = r["target"], hx.status(who, now=now)
+    assert r["hit"] and tgt["kind"] == "boss" and tgt["boss"]["wave"] == 0 and tgt["boss"]["waves"] == 5, r
+    assert [c["hit"] for c in tgt["boss"]["claws"]] == [False] * 3 and tgt["boss"]["secs"] == H.BOSS_WAVES[0][1]
+    assert all(c["x"] in (0, H.FIELD_W) or c["y"] in (0, H.FIELD_H) for c in tgt["boss"]["claws"])  # each starts on the border
+    assert {(e["x"] in (0, H.FIELD_W), e["y"] in (0, H.FIELD_H)) for e in (hx._edge() for _ in range(200))} == {(True, False), (False, True)}
+    assert hx.click(who, 0, 0, now=now + 0.5, claw=0)["reason"] == "boss"  # he's still talking: the claws haven't started
+    t = now + H.BOSS_INTRO_S + 0.2
+    assert hx.click(who, 0, 0, now=t)["reason"] == "boss" and hx.click(who, 0, 0, now=t, claw="0")["reason"] == "boss"
+    assert hx.click(who, 0, 0, now=t, claw=0)["reason"] == "claw_hit" and hx.click(who, 0, 0, now=t, claw=0)["reason"] == "boss"
+    assert hx.click(who, 0, 0, now=t, claw=1)["reason"] == "claw_hit"
+    r = hx.click(who, 0, 0, now=t, claw=2)
+    assert r["reason"] == "wave_cleared" and r["target"]["id"] == tgt["id"] and r["target"]["boss"]["wave"] == 1, r
+    assert len(r["target"]["boss"]["claws"]) == H.BOSS_WAVES[1][0] and r["combo"] == before["combo"]  # nothing lost so far
+    for wave in range(1, 5):
+        t += H.BOSS_GAP_S + 0.1
+        for c in range(H.BOSS_WAVES[wave][0]):
+            r = hx.click(who, 0, 0, now=t, claw=c)
+    after = hx.status(who, now=t)
+    assert r["hit"] and r["paid"] == H.BOSS_PRIZE and r["kind"] == "boss" and r["target"]["kind"] == "banana", r
+    assert db.get_bettor(who)["balance"] == before["balance"] + 100 and after["today"] == before["today"]  # the cap doesn't count it
+    assert after["left"] == before["left"] and after["season"] == before["season"] + 100 and after["picks"] == before["picks"]
+    start_balance += H.BOSS_PRIZE  # what follows adds up the day's credits, which the prize isn't part of
+    # Lost: a claw is still coming when the wave's time is up.
+    now = t + 1
+    rig.rolls = [BOSS]
     r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
     tgt = r["target"]
-    assert r["hit"] and tgt["claw"] is True and "greg" not in tgt, r
-    assert hx.click(who, 0, 0, now=now + 0.5, shoo=True)["reason"] == "miss"  # nobody to shoo: the claw stays
-    taken = hx.nudge(who, now=now + H.AIR_S + H.CLAW_S + 0.1)
-    assert taken["reason"] == "clawed" and taken["combo"] == 0 and taken["target"]["id"] != tgt["id"], taken
-    now += H.AIR_S + H.CLAW_S + 1
-    rig.rolls = [0.39]
+    assert tgt["kind"] == "boss" and r["combo"] >= 1
+    assert hx.click(who, 0, 0, now=now + H.BOSS_INTRO_S + 0.1, claw=0)["reason"] == "claw_hit"
+    assert hx.nudge(who, now=now + H.BOSS_INTRO_S + 1)["reason"] is None  # still time
+    taken = hx.nudge(who, now=now + H.BOSS_INTRO_S + H.BOSS_WAVES[0][1] + 0.1)
+    assert taken["reason"] == "boss_lost" and taken["combo"] == 0 and taken["target"]["kind"] == "banana", taken
+    assert db.get_bettor(who)["balance"] == before["balance"] + 100 + 1  # the banana that came before it, and no prize
+    now += H.BOSS_INTRO_S + H.BOSS_WAVES[0][1] + 1
+    # Man Strudel only visits.
+    rig.rolls = [0.34]
     r = hx.click(who, taken["target"]["x"], taken["target"]["y"], now=now)
     tgt = r["target"]
-    assert r["hit"] and tgt["strudel"] and "claw" not in tgt, r
+    assert r["hit"] and tgt["strudel"] and "boss" not in tgt, r
     r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
     assert r["hit"] and r["paid"] == 1 and hx.nudge(who, now=now + 1.5)["reason"] is None, r  # he takes nothing
     now += 2
+    # More kinds of banana. Corn is thrown alone: picking it costs credits and the combo, and left alone it goes.
+    CORN, FROZEN, BOUNCY, SPLIT, VOLLEY = 0.40, 0.48, 0.53, 0.58, 0.63
+    throw = lambda roll: (rig.rolls.append(roll), hx.click(who, r["target"]["x"], r["target"]["y"], now=now))[1]  # noqa: E731
+    r = throw(CORN)
+    tgt, had = r["target"], db.get_bettor(who)["balance"]
+    assert r["hit"] and tgt["kind"] == "corn" and "decoy" not in tgt and r["combo"] >= 1, r
+    assert hx.nudge(who, now=now + H.AIR_S + 1)["reason"] is None  # still lying there
+    gone = hx.nudge(who, now=now + H.AIR_S + H.CORN_TTL_S + 0.1)
+    assert gone["reason"] == "corn_gone" and gone["target"]["id"] != tgt["id"] and gone["combo"] == r["combo"], gone  # no harm done
+    assert db.get_bettor(who)["balance"] == had and H.CORN_TTL_S == 2.0
+    now += 5
+    r = hx.click(who, gone["target"]["x"], gone["target"]["y"], now=now)
+    assert r["hit"], r
+    rig.rolls.append(CORN)
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now + 1)
+    tgt, had = r["target"], db.get_bettor(who)["balance"]
+    now += 1
+    assert r["hit"] and tgt["kind"] == "corn", r
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
+    assert r["reason"] == "corn" and r["lost"] == H.CORN_COST == 3 and r["combo"] == 0 and r["target"]["id"] != tgt["id"], r
+    assert db.get_bettor(who)["balance"] == had - 3 and hx.status(who, now=now + 1)["today"] == r["today"]  # not off the day's count
+    start_balance -= H.CORN_COST
+    now += 2
+    # A frozen banana takes two clicks: the first cracks the ice (nothing paid, nothing lost), the second pays double.
+    r = throw(FROZEN)
+    tgt = r["target"]
+    assert tgt["kind"] == "frozen" and tgt["cracked"] is False, tgt
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
+    assert not r["hit"] and r["reason"] == "cracked" and r["target"]["cracked"] and r["target"]["id"] == tgt["id"] and r["combo"] == 1, r
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1.2)
+    assert r["hit"] and r["kind"] == "frozen" and r["paid"] == H.FROZEN_VALUE and r["combo"] == 2, r
+    now += 2
+    # A bouncing banana hops to a new spot every BOUNCE_S: a click where it used to be misses, one where it is pays.
+    r = throw(BOUNCY)
+    tgt = r["target"]
+    assert tgt["kind"] == "bouncy" and len(tgt["hops"]) == H.BOUNCE_HOPS + 1 and tgt["hops"][0] == {"x": tgt["x"], "y": tgt["y"]}, tgt
+    late = now + H.AIR_S + H.BOUNCE_S * 2 + 0.3  # on its third spot by now
+    assert hx.click(who, tgt["hops"][0]["x"], tgt["hops"][0]["y"], now=late)["reason"] == "miss"
+    r = hx.click(who, tgt["hops"][2]["x"], tgt["hops"][2]["y"], now=late + 0.7)
+    assert r["hit"] and r["kind"] == "bouncy" and r["paid"] == H.BOUNCE_VALUE and r["combo"] == 1, r
+    now = late + 2
+    # A split banana breaks into pieces where it is: a small bunch, with its own bonus for all of them.
+    r = throw(SPLIT)
+    tgt = r["target"]
+    assert tgt["kind"] == "split", tgt
+    r = hx.click(who, tgt["x"], tgt["y"], now=now + 1)
+    pieces = r["target"]
+    assert not r["hit"] and r["reason"] == "split" and pieces["id"] == tgt["id"] and pieces["kind"] == "bunch" and pieces["pieces"], r
+    assert len(pieces["items"]) == H.SPLIT_SIZE and all(H.MARGIN <= i["x"] <= H.FIELD_W - H.MARGIN for i in pieces["items"])
+    paid = [hx.click(who, i["x"], i["y"], now=now + 1.3 + n * 0.2) for n, i in enumerate(pieces["items"])]
+    assert [p["paid"] for p in paid] == [1, 1, 1 + H.SPLIT_BONUS] and paid[-1]["swept"] and paid[-1]["bunch_bonus"] == H.SPLIT_BONUS, paid
+    r = paid[-1]
+    now += 3
+    # A volley: five thrown one after another along a line or an arc. Every one caught in the air: the volley's bonus.
+    r = throw(VOLLEY)
+    tgt = r["target"]
+    assert tgt["kind"] == "volley" and len(tgt["items"]) == H.VOLLEY_SIZE and (tgt["x"], tgt["y"]) == (tgt["items"][0]["x"], tgt["items"][0]["y"])
+    assert all(H.MARGIN <= i["x"] <= H.FIELD_W - H.MARGIN and H.MARGIN <= i["y"] <= H.FIELD_H - H.MARGIN for i in tgt["items"])
+    for n, i in enumerate(tgt["items"]):
+        ax, ay = H.arc_at(i["x"], i["y"], 0.5)
+        r = hx.click(who, ax, ay, now=now + n * H.VOLLEY_GAP_S + 0.45, air=0.5)
+        assert r["hit"] and r["air"] and r["kind"] == "volley", (n, r)
+        assert r["paid"] == H.AIR_MULT * r["mult"] + (H.VOLLEY_BONUS if n == H.VOLLEY_SIZE - 1 else 0), (n, r)
+    assert r["swept"] and r["bunch_bonus"] == H.VOLLEY_BONUS and r["target"]["id"] != tgt["id"]
+    now += 4
+    # Picked off the ground instead, it pays the bananas and no bonus; left too long, what's left is gone.
+    r = throw(VOLLEY)
+    tgt = r["target"]
+    for n, i in enumerate(tgt["items"]):
+        r = hx.click(who, i["x"], i["y"], now=now + 3 + n * 0.2)
+        assert r["hit"] and not r["air"] and r["paid"] == r["mult"], (n, r)
+    assert r["swept"] and r["bunch_bonus"] == 0
+    now += 5
+    r = throw(VOLLEY)
+    gone = hx.nudge(who, now=now + (H.VOLLEY_SIZE - 1) * H.VOLLEY_GAP_S + H.AIR_S + H.VOLLEY_TTL_S + 0.1)
+    assert gone["reason"] == "bunch_over" and gone["target"]["id"] != r["target"]["id"], gone
+    now += 6
+    r = hx.click(who, 0, 0, now=now)  # a miss, so the checks below start from no combo
+    assert r["reason"] == "miss" and r["combo"] == 0
+    now += 1
+    assert {"corn", "frozen", "bounce", "split", "volley"} <= set(hx.terms(now))
     # A bunch: five at once, a credit each, and a bonus for sweeping them all in time.
     rig.rolls = [BUNCH]
     r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)

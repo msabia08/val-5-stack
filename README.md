@@ -226,17 +226,20 @@ Open **Casino → Blackjack**, sign in, and pick a table:
   round and plays against the same dealer hand. Betting closes 15 seconds after the first bet, or as soon as
   everyone seated has bet. Players act in seat order with 30 seconds each (time out and Onkey stands for you), and
   the results stay up for 5 seconds before the next round opens. Leave between rounds; a bet placed but not dealt
-  yet comes back.
+  yet comes back. You can hold **up to three seats** here while they're free: pick 1, 2 or 3 under **Seats**. Your
+  bet goes on every seat you hold, each seat is dealt its own hand, and you play them left to right on your turn.
 
 The rules are fixed: six decks, reshuffled when less than a quarter is left; the dealer stands on every 17;
 blackjack pays 3 to 2; double down on any first two cards (after a split too, except split aces); split any pair,
 and split again as often as a new pair comes; split aces take one card each, though a new ace can be split again;
+doubling and splitting each take another stake, and a button you can't pay for says so;
 the dealer checks for blackjack under an ace or a ten, so a dealer blackjack only takes your original stake; no
 insurance or surrender; and once in a while (1 bust in 100) Onkey takes his pen to the card that busted you,
 crosses out its number and writes in the one that makes 21. That leaves the house about 0.11% over time, which is its
 cut. Take more than 3 seconds over
 a move and Onkey may tip you off (about one pause in three, at most once a round; basic strategy: the move that
-loses least, or wins most, on average), in his own words, and lights that button up. Now and then he peeks instead and tells you the next card, or his own hole card.
+loses least, or wins most, on average, counting what your credits still cover: he won't tell you to split a pair
+that only pays if you can double afterwards), in his own words, and lights that button up. Now and then he peeks instead and tells you the next card, or his own hole card.
 He's the house, so he lies about it fairly often, and he'll let you know once the card shows.
 
 Side bets (switched off for now; `SIDE_BETS_OPEN` in `fivestack/blackjack.py` brings them back) sit either side of
@@ -969,11 +972,26 @@ one you click is **1 credit**.
 - A **bunch** is five at once: sweep them all inside 2 seconds for 3 more.
 - A brown **rotten banana** sometimes lands beside the real one. Pick it and
   you can't pick anything for 2 seconds.
-- **Greg** sometimes walks in to take a banana. Pick it first, or click Greg to
-  send him off.
+- **Greg** sometimes walks in to take a banana, and he's quick: pick it first,
+  or click Greg to send him off.
+- Now and then what Onkey throws is an ear of **corn**, and it looks a lot
+  like a banana. Pick it and it costs you 3 credits and your combo, and Onkey
+  has something to say about it. Leave it and it's gone in 2 seconds.
+- A **frozen banana** takes two clicks (the first cracks the ice) and pays 2.
+  A **bouncing banana** pays 3 but hops to a new spot every 1.2 seconds. Now
+  and then a plain-looking banana **splits** into 3 pieces when you click it.
+- A **volley** is 5 bananas thrown one after another along a line or an arc,
+  with little time to pick them once they're down. Catch every one in the air
+  for 5 more.
+- Now and then **the scientist** comes for Onkey himself (about 1 throw in 60,
+  as often as it comes up). Onkey goes to the middle of the field and arcade claws on long arms come in
+  for him from every side, in five waves, each faster than the last: click
+  every claw before it reaches him. Stop them all and you
+  get **100 credits on top of the day's cap**. Let one through and Man
+  Strudel has to set Onkey free, and your combo is gone.
 - Picks in a row build a **combo**: every banana pays double from 10 in a row
-  and triple from 25, until you miss, pick a rotten one, lose one to Greg or
-  the claw, or stop for 8 seconds.
+  and triple from 25, until you miss, pick a rotten one, lose one to Greg,
+  lose to the scientist, or stop for 8 seconds.
 - One of your picks each day turns up a **hidden item**: 25 shop bananas, a
   boost token or an insurance token.
 - The **field of the day** changes its scenery: jungle, night, rain, beach or
@@ -985,15 +1003,16 @@ The rules underneath:
   count: a miss pays nothing and leaves the banana where it is, and picks off
   the ground less than about half a second apart aren't paid.
 - Each bettor can pick **`hunt_daily_max`** (default 250) credits a day. The
-  extras only get you there sooner; nothing pays past the cap. The day turns
+  extras only get you there sooner; only beating the scientist pays past the cap. The day turns
   over at midnight Pacific, like the daily wheel.
 - Once you've had the day's 250 the hunt is closed, with one exception: a
   top-up. With fewer than **`hunt_floor`** (default 50) credits, you can pick
   until you have that many, and no further, so nobody is ever stuck with
   nothing.
 - Credits from the hunt show in their own **Hunt** column on Standings and stay
-  out of betting profit, ROI and record, like game rewards. The page's Top
-  pickers table ranks everyone by what they picked this season.
+  out of betting profit, ROI and record, like game rewards. (The page's Top
+  pickers table, which ranks everyone by what they picked this season, is
+  switched off for now: `SHOW_BOARD` in `web/hunt.js` brings it back.)
 - A season reset keeps the day rows (tagged with the season), and the daily cap
   carries on by the day.
 
@@ -1148,7 +1167,8 @@ prizes, credits you send, things you buy, wear or prank people with, and new squ
 then he chimes in on smaller things too: a pick added to your slip, a theme change, your arcade score when you leave
 the machine, a sync, coming back to the tab after a few minutes, or hovering over him. He
 walks over to deal at the blackjack and poker tables (leaving the logo empty) and walks back when you leave; he
-keeps quiet there, where the dealer does the talking, and clicking his bubble hushes him
+keeps quiet there, where the dealer does the talking. He walks to his corner of the Banana Hunt's field the same
+way, and throws the first banana once he's there, and clicking his bubble hushes him
 for 15 minutes. His lines are in `web/onkey.js`.
 
 ### Onkey's story
@@ -1183,8 +1203,9 @@ He's kept rare, but he's around:
 - **His offer.** With fewer than 100 credits you get a call on Standings: $25,000 for Onkey. The only answer is
   "Onkey is not for sale", which earns the **Not For Sale** title for free.
 - **On the house card.** Sometimes he has a word about what the house takes.
-- **In the Banana Hunt.** His claw sometimes comes down for a banana and can't be sent off, so pick it before the
-  claw gets there. Man Strudel sometimes walks up to ask to pet Onkey, and takes nothing.
+- **In the Banana Hunt.** The one place he comes on stage: now and then his claws come in for Onkey from every side, wave
+  after wave, and you have to stop every one. Man Strudel sets Onkey free if you can't, and sometimes just walks up to ask
+  to pet him.
 - **At the daily wheel.** On some slow finishes his hand reaches over the rim, and the leaf slaps it away.
 - **At the casino tables.** Rarely he's sitting in the dealer's chair when you arrive, until Onkey throws him out.
 - **In the arcade.** **Lab Escape**: he chases Onkey round his lab, faster all the time. Grab bananas, dodge the

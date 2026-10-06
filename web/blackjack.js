@@ -9,6 +9,11 @@ window.FiveBlackjack = (() => {
   const data = { solo: null, shared: null };
   const seen = { solo: null, shared: null };   // the last log entry Onkey reacted to, per table
   let stake = +(localStorage.getItem('fs.bjStake') || 10), busy = false, error = '', loop = null, owner;
+  // At the shared table one bettor can hold several seats; the table lists each as its own entry (`seats[]`, the
+  // bettor's next to each other, in the order they're played). All of a bettor's hands, in that order (what
+  // `turn.hand` counts through), and whether a seat entry is the one on turn:
+  const handsOf = (d, name) => d.seats.filter((s) => s.bettor === name).flatMap((s) => s.hands);
+  const onTurn = (d, s) => !!(d.turn && d.turn.bettor === s.bettor && s.hands.some((h) => h.turn));
   // Side bets on the next deal ({pairs, plus3}: 0 or a stake no bigger than the main one), remembered like the stake.
   let side = (() => { try { return { pairs: 0, plus3: 0, ...JSON.parse(localStorage.getItem('fs.bjSide') || '{}') }; } catch (_) { return { pairs: 0, plus3: 0 }; } })();
   const SIDE_LABEL = { pairs: 'Pairs', plus3: '21+3' };
@@ -163,7 +168,7 @@ window.FiveBlackjack = (() => {
     const card = cardName(pk.card);
     let list;
     if (pk.kind === 'next') {
-      const hand = d.seats.find((s) => s.bettor === d.me.name)?.hands[d.turn.hand];
+      const hand = handsOf(d, d.me.name)[d.turn.hand];
       list = hand && !hand.soft && hand.total + value(pk.card) > 21 ? PEEK.next_bust : PEEK.next_safe;
     } else {
       const up = (d.dealer.cards[0] || '2')[0];
@@ -183,7 +188,7 @@ window.FiveBlackjack = (() => {
     const h = d.me.hint;
     const ranked = Object.entries(h.ev).sort((a, b) => b[1] - a[1]);
     const [[move, ev], next] = ranked;
-    const hand = d.seats.find((s) => s.bettor === d.me.name)?.hands[d.turn.hand];
+    const hand = handsOf(d, d.me.name)[d.turn.hand];
     const r = (d.dealer.cards[0] || '?')[0], first = (hand?.cards[0] || '?')[0];
     const vars = { move: MOVE[move], Move: MOVE[move][0].toUpperCase() + MOVE[move].slice(1),
       total: hand ? `${hand.soft ? 'soft ' : ''}${hand.total}` : 'that',
@@ -285,10 +290,10 @@ window.FiveBlackjack = (() => {
   // arrives (a bust ends your turn, a loss can start a cold run), which is before the card that decides it has landed,
   // so while cards are still being dealt a seat keeps the border it had when they were last all down (seatLook).
   const seatLook = new Map();
-  const lookKey = (d, s) => `${d.table}:${s.bettor}`;
+  const lookKey = (d, s) => `${d.table}:${s.bettor}:${s.seat || 0}`;
   function dealFelt(d) {
     const felt = C.deal(() => ({ dealer: dealerHtml(d), spots: spotsHtml(d), status: statusHtml(d) }));
-    if (C.landing() === 0) d.seats.forEach((s) => seatLook.set(lookKey(d, s), { turn: !!(d.turn && d.turn.bettor === s.bettor), streak: s.streak }));
+    if (C.landing() === 0) d.seats.forEach((s) => seatLook.set(lookKey(d, s), { turn: onTurn(d, s), streak: s.streak }));
     return felt;
   }
   function refresh() {
@@ -374,17 +379,17 @@ window.FiveBlackjack = (() => {
     const meName = d.me?.name;
     const spots = d.seats.map((s) => {
       const held = C.landing() > 0 ? seatLook.get(lookKey(d, s)) : null; // cards in the air: the border waits (dealFelt())
-      const turn = held ? held.turn : d.turn && d.turn.bettor === s.bettor;
+      const turn = held ? held.turn : onTurn(d, s);
       const streak = held ? held.streak : s.streak;
       const chips = C.style(s.bettor, 'chips');
-      const seat = d.seats.indexOf(s), key = `bj:${d.table}:${d.round}:${s.bettor}`;
+      const seat = d.seats.indexOf(s), key = `bj:${d.table}:${d.round}:${s.bettor}`; // hand ids are the bettor's, across their seats
       // A split puts the new hand next to its pair, moving the ones after it along, so a hand's cards are keyed by
-      // its first card (and how many earlier hands began with the same one), not its place.
-      const firsts = {};
-      const handKey = (h) => { const c = h.cards[0] || ''; firsts[c] = (firsts[c] || 0) + 1; return `${key}:${c}${firsts[c]}`; };
+      // the hand's own id (the order the round's hands were made in), not its place: a hand that only moved along
+      // isn't dealt again.
+      const handKey = (h, hi) => `${key}:h${h.id ?? hi}`;
       const size = which === 'solo' && s.hands.length <= 2 ? 'xl' : s.hands.length > 3 || (which === 'shared' && s.hands.length > 1) ? 'md' : 'lg';
-      const bet = s.stake && !s.hands.length ? motion(`${key}:bet`, 'chip-in', 450) : null;
-      const hands = s.hands.length ? s.hands.map((h, hi) => handHtml(h, chips, handKey(h), seat, hi, size)).join('')
+      const bet = s.stake && !s.hands.length ? motion(`${key}:${s.seat || 0}:bet`, 'chip-in', 450) : null;
+      const hands = s.hands.length ? s.hands.map((h, hi) => handHtml(h, chips, handKey(h, hi), seat, hi, size)).join('')
         : s.stake ? `<div class="bj-hand waiting">${C.chip(s.stake, { cls: `big ${chips}${bet.cls}`, style: bet.style })}<span class="muted small">Bet placed</span></div>`
           : `<div class="bj-hand waiting"><span class="muted small">${d.phase === 'betting' ? 'No bet yet' : 'Sitting this one out'}</span></div>`;
       // A run of wins glows hot, a run of losses goes cold (blackjack.py's streaks).
@@ -410,17 +415,18 @@ window.FiveBlackjack = (() => {
     if (error) return `<span class="casino-error">${esc(error)}</span>`;
     if (d.phase === 'playing' && d.turn) {
       const mine = d.turn.bettor === d.me?.name;
-      const hands = (d.seats.find((s) => s.bettor === d.turn.bettor)?.hands || []).length;
+      const hands = handsOf(d, d.turn.bettor).length;
       const label = hands > 1 ? ` (hand ${d.turn.hand + 1})` : '';
       return mine ? `<b>Your move${label}.</b>${which === 'shared' ? ` ${C.countdown(d.deadline)} left, then Onkey stands for you.` : ''}`
         : `${plainName(d.turn.bettor)} is playing${label}. ${C.countdown(d.deadline)}`;
     }
     if (d.phase === 'done') {
-      const mine = d.seats.find((s) => s.bettor === d.me?.name && s.hands.length);
-      const line = mine ? (() => {
-        // Each hand's result (Win, Lose, Push, Blackjack, Bust; a split lists them all), then the round's net.
-        const net = mine.hands.reduce((a, h) => a + h.payout - h.stake, 0) + Object.values(mine.side_results || {}).reduce((a, r) => a + r.payout - r.stake, 0);
-        const words = mine.hands.map((h) => RESULT_WORD[h.result] || '').filter(Boolean).join(' · ');
+      const mine = d.me ? handsOf(d, d.me.name) : [];
+      const line = mine.length ? (() => {
+        // Each hand's result (Win, Lose, Push, Blackjack, Bust; every seat and split is listed), then the round's net.
+        const sides = d.seats.filter((s) => s.bettor === d.me.name).flatMap((s) => Object.values(s.side_results || {}));
+        const net = mine.reduce((a, h) => a + h.payout - h.stake, 0) + sides.reduce((a, r) => a + r.payout - r.stake, 0);
+        const words = mine.map((h) => RESULT_WORD[h.result] || '').filter(Boolean).join(' · ');
         const amount = net > 0 ? `+${fmt.credits(net)}` : net < 0 ? `−${fmt.credits(-net)}` : 'stake back';
         return `<b class="${net > 0 ? 'up' : net < 0 ? 'down' : ''}">${words} ${amount}.</b>`;
       })() : 'Round over.';
@@ -433,6 +439,15 @@ window.FiveBlackjack = (() => {
         : 'Place your bets. Betting closes 15 seconds after the first one.';
     }
     return state.me ? 'Pick a stake and deal.' : 'Sign in to play blackjack with your credits.';
+  }
+  // How many of the shared table's seats you hold (1 to `seats_each`): a hand is dealt to each, for your stake. A count
+  // the table has no free seats for is off, and they can't be changed while your bet is down.
+  function seatsKeys(d, disabled) {
+    const max = d.seats_each || 1, n = d.me.seats || 1;
+    if (max < 2) return '';
+    const free = d.shared_seats.max - d.shared_seats.taken + n; // what this bettor could hold
+    return `<div class="seg bj-seats-pick" role="group" aria-label="Seats you hold"><span class="seg-label">Seats</span>${Array.from({ length: max }, (_, i) => i + 1).map((k) =>
+      `<button type="button" class="seg-btn ${k === n ? 'on' : ''}" data-bj-seats="${k}" aria-pressed="${k === n}" ${disabled || k > free ? 'disabled' : ''} title="${k > free ? 'No free seat for that' : k === 1 ? 'One seat' : `${k} seats: a hand on each, ${fmt.credits(stake)} a seat`}">${k}</button>`).join('')}</div>`;
   }
   function stakeKeys(d, disabled) {
     return `<div class="casino-stakes" role="group" aria-label="Stake">${d.stakes.map((s) => { const bought = d.me ? C.style(d.me.name, 'chips') : ''; return `<button type="button" class="stake-key ${C.denom(s)} len-${String(s).length}${bought ? ` ${bought}` : ' drawn'}" data-bj-stake="${s}" aria-pressed="${s === stake}" aria-label="Stake ${s}" ${disabled || (d.me && d.me.balance < s) ? 'disabled' : ''}>${bought ? s : C.chipFace(s)}</button>`; }).join('')}</div>`;
@@ -460,13 +475,20 @@ window.FiveBlackjack = (() => {
     if (!me) return '<button class="btn primary casino-cta" data-signin>Sign in to play</button>';
     const acts = me.actions || [];
     if (acts.length) {
-      const hand = d.seats.find((s) => s.bettor === me.name)?.hands[d.turn.hand];
+      const hand = handsOf(d, me.name)[d.turn.hand];
       const pick = hintShown && hintShown === decision(d) ? me.hint.move : '';
       const KEY = { hit: 'H', stand: 'S', double: 'D', split: 'P' };
-      const btn = (a, label, sub = '') => `<button class="bj-act act-${a}${a === pick ? ' hinted' : ''}" data-bj-act="${a}" ${busy || !acts.includes(a) ? 'disabled' : ''} title="${a === pick ? 'Onkey’s pick' : `${label} (${KEY[a]})`}">
-        <b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</button>`;
-      const mine = d.seats.find((s) => s.bettor === me.name);
-      const bet = (mine?.hands || []).reduce((a, h) => a + h.stake, 0);
+      // A double or split the hand allows but your credits don't cover (`me.short`) says so, on the button and in its
+      // tooltip, instead of just going grey.
+      const short = me.short || [];
+      const btn = (a, label, sub = '') => {
+        const broke = short.includes(a);
+        const title = broke ? `Not enough credits: ${a === 'double' ? 'doubling' : 'splitting'} takes another ${hand ? fmt.credits(hand.stake) : 'stake'}`
+          : a === pick ? 'Onkey’s pick' : `${label} (${KEY[a]})`;
+        return `<button class="bj-act act-${a}${a === pick ? ' hinted' : ''}${broke ? ' short' : ''}" data-bj-act="${a}" ${busy || !acts.includes(a) ? 'disabled' : ''} title="${title}">
+        <b>${label}</b>${broke ? '<small>Not enough credits</small>' : sub ? `<small>${sub}</small>` : ''}</button>`;
+      };
+      const bet = handsOf(d, me.name).reduce((a, h) => a + h.stake, 0);
       const w = motion(`bj:${d.table}:${d.round}:wager:${bet}`, 'chip-in', 450, C.landing());
       const wager = `<div class="wager" title="Your bet on this round">${C.chip(bet, { cls: `big ${C.style(me.name, 'chips')}${w.cls}`, style: w.style })}<span class="wager-label">Your bet</span></div>`;
       // The four buttons are centred on the table; your bet hangs off their left and your streak off their right.
@@ -478,8 +500,9 @@ window.FiveBlackjack = (() => {
         return `<button class="btn primary casino-cta" data-bj-sit ${full || busy ? 'disabled' : ''}>${full ? 'The table is full' : 'Sit down'}</button>`;
       }
       const canBet = d.phase === 'betting' && !me.bet;
-      return `<div class="casino-deck">${stakeKeys(d, !canBet || busy)}${sideSpot(d, 'pairs', !canBet || busy)}
-        ${dealBtn(me.bet ? 'Bet in' : 'Bet', !canBet || busy || me.balance < stake + sideTotal())}${sideSpot(d, 'plus3', !canBet || busy)}
+      const fixed = me.bet && d.phase !== 'done'; // your bet is down: the seats it's on stay yours until the round is over
+      return `<div class="casino-deck">${stakeKeys(d, !canBet || busy)}${seatsKeys(d, fixed || busy)}${sideSpot(d, 'pairs', !canBet || busy)}
+        ${dealBtn(me.bet ? 'Bet in' : 'Bet', !canBet || busy || me.balance < stake * (me.seats || 1) + sideTotal())}${sideSpot(d, 'plus3', !canBet || busy)}
         <button class="btn ghost" data-bj-leave ${busy || (d.phase === 'playing' && d.seats.some((s) => s.bettor === me.name && s.hands.some((h) => !h.done))) ? 'disabled' : ''}>Leave table</button></div>`;
     }
     const playing = d.phase === 'playing';
@@ -557,6 +580,8 @@ window.FiveBlackjack = (() => {
         try { localStorage.setItem('fs.bjTable', which); } catch (_) { /* unavailable */ }
         loop?.stop(); loop = null;
         draw();
+      } else if (t.dataset.bjSeats) {
+        post('/api/blackjack/sit', { seats: +t.dataset.bjSeats });
       } else if (t.dataset.bjStake) {
         stake = +t.dataset.bjStake;
         try { localStorage.setItem('fs.bjStake', String(stake)); } catch (_) { /* unavailable */ }
