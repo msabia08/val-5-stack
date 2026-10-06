@@ -134,7 +134,7 @@ GRIP_SLACK_S = 0.15
 # taps on it (a full one stays full). Taps closer together than BONGO_MIN_GAP_MS aren't a hand's; they land with their
 # middle at least BONGO_EDGE inside the field, so both drums fit however the page lays them out.
 BONGO_CHANCE = 0.05
-BONGO_VALUE, BONGO_GAIN, BONGO_DRAIN, BONGO_MIN_GAP_MS, BONGO_MAX_TAPS, BONGO_EDGE, BONGO_R = 6, 0.125, 0.3, 20, 400, 110, 110
+BONGO_VALUE, BONGO_GAIN, BONGO_DRAIN, BONGO_MIN_GAP_MS, BONGO_MAX_TAPS, BONGO_EDGE, BONGO_R = 6, 0.25, 0.6, 20, 400, 110, 110
 VOLLEY_VINE_CHANCE = 0.5  # this share of volleys end with a vine banana, thrown straight after the steel ones...
 VINE_NEAR = (60, 110)  # ...which lands this far (px, from and to) from the volley's last banana...
 VOLLEY_VINE_TTL_S = 2.0  # ...and gives the volley this much longer on its clock

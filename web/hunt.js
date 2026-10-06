@@ -131,11 +131,11 @@ window.FiveHunt = (() => {
     } catch (e) { audio = null; }
     return audio;
   }
-  function tone(freq, start, dur, { type = 'sine', vol = 0.12, to = null, attack = 0.005 } = {}) {
+  function tone(freq, start, dur, { type = 'sine', vol = 0.12, to = null, attack = 0.005, glide = null } = {}) { // glide: how long the pitch takes to reach `to` (default: all of dur)
     const a = ctx(); if (!a) return;
     const t = a.currentTime + start, o = a.createOscillator(), g = a.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
-    if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+    if (to) o.frequency.exponentialRampToValueAtTime(to, t + (glide || dur));
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.05);
@@ -187,9 +187,14 @@ window.FiveHunt = (() => {
     waveClear: () => notes([523, 659, 784], 0.07, 0.15, { type: 'triangle', vol: 0.1 }),
     bossWon: () => notes([523, 659, 784, 1047, 1319], 0.1, 0.32, { type: 'triangle', vol: 0.11 }),
     bossLost: () => { tone(220, 0, 0.5, { type: 'sawtooth', vol: 0.07, to: 70 }); tone(110, 0.1, 0.7, { vol: 0.11, to: 50 }); },
-    bongo: (d) => { tone(d ? 185 : 330, 0, 0.17, { vol: 0.24, to: d ? 115 : 215 }); noise(0, 0.03, { freq: d ? 900 : 1700, vol: 0.09 }); }, // the big drum is the low one
+    bongo: (d) => { // a bongo: a slap of the hand on the skin, then a short round knock that drops a little in pitch; the big drum is the low one
+      const f = d ? 215 : 320;
+      tone(f * 1.45, 0, 0.2, { vol: 0.34, to: f, glide: 0.035, attack: 0.002 });
+      tone(f * 2.4, 0, 0.07, { type: 'triangle', vol: 0.07, to: f * 2.05, glide: 0.03, attack: 0.002 });
+      noise(0, 0.022, { freq: d ? 1500 : 2300, q: 1.4, vol: 0.24 });
+    },
     drumFull: () => notes([784, 1175], 0.06, 0.15, { type: 'triangle', vol: 0.1 }),
-    bongos: () => [[0, 0], [0.09, 0], [0.18, 1], [0.3, 0], [0.42, 1]].forEach(([at, d]) => tone(d ? 185 : 330, at, 0.17, { vol: 0.2, to: d ? 115 : 215 })), // both full: a little fill
+    bongos: () => [[0, 0], [90, 0], [180, 1], [300, 0], [420, 1]].forEach(([ms, d]) => setTimeout(() => sfx.bongo(d), ms)), // both full: a little fill
     strudel: () => [0, 0.3, 0.6].forEach((at) => tone(82, at, 0.16, { vol: 0.16, to: 50 })), // heavy feet
     found: () => notes([1319, 1568, 2093, 2637], 0.06, 0.26, { vol: 0.08 }),
     done: () => notes([784, 659, 523, 392], 0.14, 0.32, { type: 'triangle', vol: 0.09 }),
