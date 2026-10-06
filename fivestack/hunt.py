@@ -27,8 +27,9 @@ prize is paid on top of the cap.
   into SPLIT_SIZE pieces where it is when picked (a small bunch, SPLIT_BONUS for all of them). And corn: now and
   then Onkey's throw is an ear of corn and nothing else. It looks the part, costs CORN_COST credits and the combo if
   it's picked, and is gone by itself CORN_TTL_S after it lands (reason corn_gone, nothing lost).
-- Throw patterns: a volley is VOLLEY_SIZE bananas thrown one after another (VOLLEY_GAP_S apart) along a line or an
-  arc. Each can be caught in the air or picked off the ground; catching every one in the air pays VOLLEY_BONUS on top.
+- Throw patterns: a volley is VOLLEY_SIZE steel bananas thrown one after another (VOLLEY_GAP_S apart) along a line or
+  an arc. Steel can't be caught: each can only be picked once it has landed (a click sooner isn't paid and costs
+  nothing), and picking every one before the time runs out pays VOLLEY_BONUS on top.
 - The boss fight, also from the lore: BOSS_CHANCE of throws aren't a banana but the scientist coming for Onkey himself
   (a target of kind "boss"). Onkey goes to the middle of the field and the claws come in for him from every side, in BOSS_WAVES waves, each
   (how many claws, how many seconds they take to reach him); a click names a claw (`claw`, its id) and stops it. Stop a whole wave in time and the next
@@ -96,6 +97,9 @@ FROZEN_VALUE = 2  # a frozen banana: the first click cracks the ice, the second 
 BOUNCE_VALUE, BOUNCE_S, BOUNCE_HOPS, BOUNCE_GAP = 3, 1.2, 3, 150  # it hops BOUNCE_HOPS times, BOUNCE_S apart, then stays
 SPLIT_SIZE, SPLIT_BONUS, SPLIT_R = 3, 1, 110  # the pieces land about SPLIT_R from where it was
 VOLLEY_SIZE, VOLLEY_GAP_S, VOLLEY_TTL_S, VOLLEY_BONUS, VOLLEY_STEP = 5, 0.35, 1.25, 5, 120
+VOLLEY_EARLY_S = 0.1  # a volley's steel bananas can't be picked in the air: this much before one lands is the soonest
+# Onkey's corner: nothing lands on him (within ONKEY_R of ONKEY_AT, about the middle of his picture), where it's hard to see.
+ONKEY_AT, ONKEY_R = (FIELD_W - 76, FIELD_H - 70), 110
 COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
 COMBO_IDLE_S = 8.0
 HIDDEN_FROM, HIDDEN_TO = 5, 50  # the hidden item is one of the day's picks in this range
@@ -156,12 +160,17 @@ class HuntManager:
         return 0, False
 
     # ---- the banana ------------------------------------------------------------------
+    @staticmethod
+    def _on_onkey(x, y):
+        return (x - ONKEY_AT[0]) ** 2 + (y - ONKEY_AT[1]) ** 2 < ONKEY_R ** 2
+
     def _spot(self, away=(), gap=MIN_HOP):
-        """Somewhere in the field, at least `gap` from every point in `away` when there's room to be."""
+        """Somewhere in the field, off Onkey's corner and at least `gap` from every point in `away` when there's room
+        to be."""
         for _ in range(40):
             x = self.rng.randint(MARGIN, FIELD_W - MARGIN)
             y = self.rng.randint(MARGIN, FIELD_H - MARGIN)
-            if all((x - p["x"]) ** 2 + (y - p["y"]) ** 2 >= gap ** 2 for p in away):
+            if not self._on_onkey(x, y) and all((x - p["x"]) ** 2 + (y - p["y"]) ** 2 >= gap ** 2 for p in away):
                 break
         return {"x": x, "y": y}
 
@@ -210,7 +219,7 @@ class HuntManager:
                 t["kind"] = "split"
             elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE + SPLIT_CHANCE + VOLLEY_CHANCE:
                 items = self._row(spot)
-                t.update(kind="volley", x=items[0]["x"], y=items[0]["y"], items=[{**i, "picked": False, "air": False} for i in items],
+                t.update(kind="volley", x=items[0]["x"], y=items[0]["y"], items=[{**i, "picked": False} for i in items],
                          expires=now + (VOLLEY_SIZE - 1) * VOLLEY_GAP_S + AIR_S + VOLLEY_TTL_S + SLACK_S)
         return t
 
@@ -225,7 +234,7 @@ class HuntManager:
             for _i in range(VOLLEY_SIZE):
                 pts.append({"x": round(x), "y": round(y)})
                 x, y, heading = x + VOLLEY_STEP * math.cos(heading), y + VOLLEY_STEP * math.sin(heading), heading + bend
-            if all(low_x <= p["x"] <= high_x and low_y <= p["y"] <= high_y for p in pts):
+            if all(low_x <= p["x"] <= high_x and low_y <= p["y"] <= high_y and not self._on_onkey(p["x"], p["y"]) for p in pts):
                 return pts
         y = min(high_y, max(low_y, start["y"]))  # no room from there: straight across the middle
         return [{"x": FIELD_W // 2 + (i - VOLLEY_SIZE // 2) * VOLLEY_STEP, "y": y} for i in range(VOLLEY_SIZE)]
@@ -511,28 +520,15 @@ class HuntManager:
                 return reply(False, "miss")
             if now - t["paid_ts"] < BUNCH_INTERVAL_S:
                 return reply(False, "too_fast")
-        elif t["kind"] == "volley":  # each is thrown VOLLEY_GAP_S after the one before: in the air, or down
-            for n, i in enumerate(t["items"]):
-                if i["picked"]:
-                    continue
-                thrown = t["born"] + n * VOLLEY_GAP_S
-                if air is None:
-                    if near(i):
-                        item = i
-                        break
-                elif AIR_FROM <= air <= AIR_TO and -0.2 <= now - thrown <= AIR_S + SLACK_S * 2:
-                    ax, ay = arc_at(i["x"], i["y"], air)
-                    if near({"x": ax, "y": ay}, AIR_R):
-                        item = i
-                        break
+        elif t["kind"] == "volley":  # steel bananas, each thrown VOLLEY_GAP_S after the one before: only once it's down
+            if air is not None:
+                return reply(False, "too_fast")  # nothing to catch: a click on one in the air costs nothing
+            n, item = next(((n, i) for n, i in enumerate(t["items"]) if not i["picked"] and near(i)), (0, None))
             if item is None:
                 combo["n"] = 0
                 return reply(False, "miss")
-            if now - t["paid_ts"] < BUNCH_INTERVAL_S:
+            if now - (t["born"] + n * VOLLEY_GAP_S) < AIR_S - VOLLEY_EARLY_S or now - t["paid_ts"] < BUNCH_INTERVAL_S:
                 return reply(False, "too_fast")
-            if air is not None:
-                value *= AIR_MULT
-            item["air"] = air is not None
         elif air is not None:
             ax, ay = arc_at(t["x"], t["y"], min(1.0, max(0.0, air)))
             if not (AIR_FROM <= air <= AIR_TO) or now - t["born"] > AIR_S + SLACK_S * 2 or not near({"x": ax, "y": ay}, AIR_R):
@@ -576,8 +572,8 @@ class HuntManager:
             item["picked"] = True
             swept = all(i["picked"] for i in t["items"])
         bonus = 0
-        if swept:  # a bunch's (or a split banana's) bonus; a volley's only when every one was caught in the air
-            bonus = (VOLLEY_BONUS if all(i["air"] for i in t["items"]) else 0) if t["kind"] == "volley" else t.get("bonus", BUNCH_BONUS)
+        if swept:  # a bunch's (or a split banana's) bonus, or a volley's
+            bonus = VOLLEY_BONUS if t["kind"] == "volley" else t.get("bonus", BUNCH_BONUS)
         pay = min(value * mult + bonus, left)
         self.db.hunt_pay(name, wheel_day(now), pay, now)
         picks, credits = picks + 1, credits + pay

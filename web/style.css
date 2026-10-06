@@ -2473,6 +2473,8 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .hunt-banana.bouncy { transition: left .28s cubic-bezier(.3, 1.4, .6, 1), top .28s cubic-bezier(.3, 1.4, .6, 1); filter: drop-shadow(0 8px 4px rgba(0, 0, 0, .45)); }
 .hunt-banana.bouncy.hop { animation: hunt-hop .28s ease-out; }
 @keyframes hunt-hop { 50% { transform: translate(-50%, -95%) scale(1.15); } }
+/* A volley's bananas are steel (a cold blue-grey with a pale edge): they can't be caught in the air, only picked once down. */
+.hunt-banana.volley, .hunt-fly.volley { filter: grayscale(1) sepia(.25) hue-rotate(170deg) brightness(.8) contrast(1.6) drop-shadow(0 0 2px #dfe7ee) drop-shadow(0 5px 6px rgba(0, 0, 0, .6)); }
 
 /* The clock on a golden banana or a bunch: a bar across the top of the field that runs down. */
 .hunt-clock { position: absolute; left: 12px; right: 12px; top: 10px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .35); overflow: hidden; pointer-events: none; }

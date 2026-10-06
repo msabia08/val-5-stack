@@ -10,7 +10,8 @@
  * is updated in place so the hunt stays snappy.
  *
  * What makes it a game (hunt.py decides all of it; the page draws it and runs the timers):
- * - a banana can be caught in the air for double (a click on it mid-flight is sent with `air`, how far along it was);
+ * - a banana can be caught in the air for double (a click on it mid-flight is sent with `air`, how far along it was),
+ *   except a volley's steel bananas, which can only be picked once they're down;
  * - a golden banana pays more but rots a few seconds after it lands; a bunch is five at once with a timer and a bonus
  *   for sweeping them; a rotten decoy next to the real one freezes you; Greg walks in to take a banana unless you pick
  *   it first or click him away. When one of those timers runs out the page asks /api/hunt/next what happened;
@@ -185,7 +186,7 @@ window.FiveHunt = (() => {
         `A brown, <b>rotten banana</b> sometimes lands beside the real one: pick it and you can't pick anything for ${h.freeze_s} seconds. ` +
         `Now and then what Onkey throws is an ear of <b>corn</b>, which is not a banana: pick it and it costs you ${plural(h.corn.cost, 'credit')} and your combo. Leave it and it's gone in ${h.corn.ttl_s} seconds. ` +
         `A <b>frozen banana</b> takes two clicks (the first cracks the ice) and pays ${h.frozen.value}. A <b>bouncing banana</b> pays ${h.bounce.value} but hops to a new spot every ${h.bounce.hop_s} seconds. Any plain-looking banana may turn out to be a <b>split banana</b>: click it and it breaks into ${h.split.size} pieces to sweep up. ` +
-        `A <b>volley</b> is ${h.volley.size} thrown one after another: catch every one in the air for ${h.volley.bonus} more. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
+        `A <b>volley</b> is ${h.volley.size} <b>steel bananas</b> thrown one after another: they can't be caught in the air, only picked once they land. Pick every one in time for ${h.volley.bonus} more. <b>Greg</b> sometimes walks in to take a banana: pick it first, or click Greg to send him off. ` +
         `Now and then <b>the scientist</b> comes for Onkey himself: his claws come down in ${h.boss.waves.length} waves, each faster than the last, and you click every claw before it reaches Onkey. Stop them all for ${h.boss.prize} credits on top of the day's ${h.daily_max}; let one through and Man Strudel has to set Onkey free, and your combo is gone. Man Strudel himself only wants to say hello. ` +
         `Picks in a row build a <b>combo</b>: every banana pays double from ${h.combo.steps[0]} in a row and triple from ${h.combo.steps[1]}, until you miss, pick a rotten one, lose one to Greg, lose to the scientist, or stop for ${h.combo.idle_s} seconds. ` +
         `One of your picks each day also turns up a <b>hidden item</b>: shop bananas or a daily wheel token. ` +
@@ -413,7 +414,9 @@ window.FiveHunt = (() => {
       if (landed) return;
       landed = true;
       $$('.hunt-fly', fieldEl).forEach((el) => el.remove());
-      if (target === t) land(fieldEl, t); else flight = null;
+      // The target may have been answered about while it flew (a frozen one cracked, a click the server didn't count),
+      // which replaces the object but not what's on the field: it lands as the server last described it.
+      if (target && target.id === t.id) land(fieldEl, target); else flight = null;
     };
     timers.push(setTimeout(finish, THROW_DELAY + THROW_MS + 600));
     anim.onfinish = finish;
@@ -454,21 +457,23 @@ window.FiveHunt = (() => {
     el.style.transform = frames[0].transform; // in Onkey's hand during the wind-up, not at the field's corner
     return { el, anim: el.animate(frames, { duration: THROW_MS, delay: THROW_DELAY + wait, easing: 'linear', fill: 'both' }) };
   }
-  // A volley: Onkey throws them one after another (gap_s apart) along a line or an arc. Each can be caught in the air
-  // or picked once it's down; when the last has landed, a clock runs on what's left.
+  // A volley: Onkey throws steel bananas one after another (gap_s apart) along a line or an arc. Steel can't be caught:
+  // each is picked once it's down, and when the last has landed a clock runs on what's left. Each one is made as it's
+  // thrown, so the ones still to come don't sit in his hand.
   function throwVolley(fieldEl, t) {
     const lay = layout(), h = data.hunt, gap = h.volley.gap_s * 1000, onkey = $('#hunt-onkey', fieldEl);
     flight = null;
     t.items.forEach((it, i) => {
       if (it.picked) return;
-      timers.push(setTimeout(() => { if (onkey) { onkey.classList.remove('throw'); void onkey.offsetWidth; onkey.classList.add('throw'); } }, i * gap));
-      const f = fly(fieldEl, it, 'volley', lay, i * gap);
-      f.el.dataset.i = i;
-      f.anim.onfinish = () => {
-        f.el.remove();
-        if (target && target.id === t.id && !target.items[i].picked) fieldEl.insertAdjacentHTML('beforeend', itemHtml(it, 'volley', i));
-      };
-      timers.push(f.anim);
+      timers.push(setTimeout(() => {
+        if (onkey) { onkey.classList.remove('throw'); void onkey.offsetWidth; onkey.classList.add('throw'); }
+        const f = fly(fieldEl, it, 'volley', lay, 0);
+        f.anim.onfinish = () => {
+          f.el.remove();
+          if (target && target.id === t.id && !target.items[i].picked) fieldEl.insertAdjacentHTML('beforeend', itemHtml(it, 'volley', i));
+        };
+        timers.push(f.anim);
+      }, i * gap));
     });
     const down = THROW_DELAY + (t.items.length - 1) * gap + THROW_MS;
     timers.push(setTimeout(() => fieldEl.insertAdjacentHTML('beforeend', `<div class="hunt-clock bunch" aria-hidden="true"><i style="animation-duration:${h.volley.ttl_s}s"></i></div>`), down));
@@ -561,10 +566,15 @@ window.FiveHunt = (() => {
     if (r.reason === 'boss_lost') { rescue(fieldEl); return; } // Man Strudel first, then the next banana
     if (!target) return;
     if (r.reason === 'split') { clearField(fieldEl); land(fieldEl, target); return; } // its pieces, where it was
-    if (r.reason === 'cracked') { const el = $('#hunt-banana', fieldEl); if (el) { el.classList.remove('picked'); el.classList.add('cracked'); } return; }
+    if (r.reason === 'cracked') { // on the ground it shows the crack now; cracked in the air, it flies on and lands cracked
+      $$('.hunt-fly.picked', fieldEl).forEach((el) => el.classList.remove('picked'));
+      const el = $('#hunt-banana', fieldEl); if (el) { el.classList.remove('picked'); el.classList.add('cracked'); }
+      return;
+    }
     if (target.kind === 'boss' && was && target.id === was.id) { bossSync(fieldEl, target); return; }
     if (!was || target.id !== was.id) throwTo(fieldEl, target); // Onkey throws the next one in
     else if (r.hit && (target.kind === 'bunch' || target.kind === 'volley')) target.items.forEach((it, i) => { if (it.picked) $$(`[data-i="${i}"]`, fieldEl).forEach((el) => el.remove()); });
+    else if (!r.hit) $$('.hunt-banana.picked, .hunt-fly.picked', fieldEl).forEach((el) => el.classList.remove('picked')); // the click didn't count: what it hid is still there
   }
 
   // A timer on the field ran out (a golden banana, a bunch, Greg arriving): ask the server what became of it.
@@ -584,7 +594,10 @@ window.FiveHunt = (() => {
     busy = true;
     try {
       const r = await api('/api/hunt/click', { method: 'POST', body: JSON.stringify(body) });
-      apply(r, fieldEl, shown);
+      // The page may have been drawn again while the click was away: the answer belongs to the field that's up now
+      // (clearing the old one would stop the new one's throw and leave its banana in Onkey's hand).
+      const live = document.body.contains(fieldEl) ? fieldEl : $('#hunt-field');
+      if (live) apply(r, live, live === fieldEl ? shown : undefined);
     } catch (err) {
       toast(err.message, 'bad');
       $$('.hunt-banana.picked', fieldEl).forEach((el) => el.classList.remove('picked'));
@@ -603,27 +616,21 @@ window.FiveHunt = (() => {
       const box = greg.getBoundingClientRect(), f = fieldEl.getBoundingClientRect();
       if (near({ x: (box.left + box.width / 2 - f.left) / lay.k, y: (box.top + box.height / 2 - f.top) / lay.k }, 38)) { send({ x: 0, y: 0, shoo: true }, fieldEl, shown); return; }
     }
-    if (target.kind === 'volley') { // each one by itself: down already, or still in the air
+    if (target.kind === 'volley') { // steel bananas: each one by itself, and only once it's down
       for (const [i, it] of target.items.entries()) {
-        if (it.picked) continue;
-        const el = $(`.hunt-banana[data-i="${i}"]:not(.picked)`, fieldEl);
-        if (el) {
-          if (!near(lay.at(it))) continue;
-          el.classList.add('picked');
-          const at = lay.phone ? it : lay.toField(shown.x, shown.y);
-          send({ x: Math.round(at.x), y: Math.round(at.y) }, fieldEl, shown);
-          return;
-        }
-        const up = $(`.hunt-fly[data-i="${i}"]:not(.picked)`, fieldEl), anim = up && up.getAnimations()[0];
-        if (!anim) continue;
-        const timing = anim.effect.getTiming(), k = (Number(anim.currentTime) - timing.delay) / timing.duration;
-        const spot = arcAt(it, k);
-        if (!(k >= h.air.from && k <= h.air.to) || !near(lay.at(spot), lay.phone ? TAP_R + 10 : h.air.r)) continue;
-        up.classList.add('picked');
-        const at = lay.phone ? spot : lay.toField(shown.x, shown.y);
-        send({ x: Math.round(at.x), y: Math.round(at.y), air: Number(k.toFixed(3)) }, fieldEl, shown);
+        const el = it.picked ? null : $(`.hunt-banana[data-i="${i}"]:not(.picked)`, fieldEl);
+        if (!el || !near(lay.at(it))) continue;
+        el.classList.add('picked');
+        const at = lay.phone ? it : lay.toField(shown.x, shown.y);
+        send({ x: Math.round(at.x), y: Math.round(at.y) }, fieldEl, shown);
         return;
       }
+      const f = fieldEl.getBoundingClientRect(); // a click on one in the air only rings off it
+      const up = $$('.hunt-fly.volley', fieldEl).some((el) => {
+        const box = el.getBoundingClientRect();
+        return near({ x: (box.left + box.width / 2 - f.left) / lay.k, y: (box.top + box.height / 2 - f.top) / lay.k }, lay.phone ? TAP_R + 10 : h.air.r);
+      });
+      if (up) pop(fieldEl, shown.x, shown.y, 'Clang!', 'air');
       return;
     }
     if (flight) { // in the air: a click on it is a catch, anywhere else waits for it to land

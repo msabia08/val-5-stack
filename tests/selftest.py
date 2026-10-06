@@ -2594,26 +2594,28 @@ def banana_hunt(shared):
     assert [p["paid"] for p in paid] == [1, 1, 1 + H.SPLIT_BONUS] and paid[-1]["swept"] and paid[-1]["bunch_bonus"] == H.SPLIT_BONUS, paid
     r = paid[-1]
     now += 3
-    # A volley: five thrown one after another along a line or an arc. Every one caught in the air: the volley's bonus.
+    # A volley: five steel bananas thrown one after another along a line or an arc. They can't be caught in the air,
+    # or picked before they're down, and neither try costs the combo; all five picked in time: the volley's bonus.
     r = throw(VOLLEY)
     tgt = r["target"]
     assert tgt["kind"] == "volley" and len(tgt["items"]) == H.VOLLEY_SIZE and (tgt["x"], tgt["y"]) == (tgt["items"][0]["x"], tgt["items"][0]["y"])
     assert all(H.MARGIN <= i["x"] <= H.FIELD_W - H.MARGIN and H.MARGIN <= i["y"] <= H.FIELD_H - H.MARGIN for i in tgt["items"])
-    for n, i in enumerate(tgt["items"]):
-        ax, ay = H.arc_at(i["x"], i["y"], 0.5)
-        r = hx.click(who, ax, ay, now=now + n * H.VOLLEY_GAP_S + 0.45, air=0.5)
-        assert r["hit"] and r["air"] and r["kind"] == "volley", (n, r)
-        assert r["paid"] == H.AIR_MULT * r["mult"] + (H.VOLLEY_BONUS if n == H.VOLLEY_SIZE - 1 else 0), (n, r)
-    assert r["swept"] and r["bunch_bonus"] == H.VOLLEY_BONUS and r["target"]["id"] != tgt["id"]
-    now += 4
-    # Picked off the ground instead, it pays the bananas and no bonus; left too long, what's left is gone.
-    r = throw(VOLLEY)
-    tgt = r["target"]
+    streak = r["combo"]
+    ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
+    r = hx.click(who, ax, ay, now=now + 0.45, air=0.5)
+    assert not r["hit"] and r["reason"] == "too_fast" and r["combo"] == streak and not any(i["picked"] for i in r["target"]["items"]), r
+    last = tgt["items"][-1]
+    r = hx.click(who, last["x"], last["y"], now=now + (H.VOLLEY_SIZE - 1) * H.VOLLEY_GAP_S + 0.4)  # the first are down, not this one
+    assert not r["hit"] and r["reason"] == "too_fast" and r["combo"] == streak, r
     for n, i in enumerate(tgt["items"]):
         r = hx.click(who, i["x"], i["y"], now=now + 3 + n * 0.2)
-        assert r["hit"] and not r["air"] and r["paid"] == r["mult"], (n, r)
-    assert r["swept"] and r["bunch_bonus"] == 0
+        assert r["hit"] and not r["air"] and r["kind"] == "volley", (n, r)
+        assert r["paid"] == r["mult"] + (H.VOLLEY_BONUS if n == H.VOLLEY_SIZE - 1 else 0), (n, r)
+    assert r["swept"] and r["bunch_bonus"] == H.VOLLEY_BONUS and r["target"]["id"] != tgt["id"]
     now += 5
+    # Nothing lands on Onkey, in his corner.
+    assert not any(H.HuntManager._on_onkey(**hx._spot()) for _ in range(400)) and H.HuntManager._on_onkey(*H.ONKEY_AT)
+    # Left too long, what's left of a volley is gone.
     r = throw(VOLLEY)
     gone = hx.nudge(who, now=now + (H.VOLLEY_SIZE - 1) * H.VOLLEY_GAP_S + H.AIR_S + H.VOLLEY_TTL_S + 0.1)
     assert gone["reason"] == "bunch_over" and gone["target"]["id"] != r["target"]["id"], gone
