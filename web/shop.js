@@ -236,8 +236,8 @@ window.FiveShop = (() => {
     const pct = total ? have / total : 0;
     const cardOf = (g) => {
       const n = g.social ? 0 : g.items.filter((i) => owned.has(i.id)).length;
-      const dots = g.items.map((i) => `<i class="cm-dot ${owned.has(i.id) ? 'have' : ''} ${worn.has(i.id) ? 'worn' : ''}" title="${esc(`${i.name}: ${worn.has(i.id) ? 'wearing' : owned.has(i.id) ? 'owned' : `${i.price} bananas`}`)}"></i>`).join('');
-      const low = Math.min(...g.items.map((i) => i.price));
+      const dots = g.items.map((i) => `<i class="cm-dot ${owned.has(i.id) ? 'have' : ''} ${worn.has(i.id) ? 'worn' : ''}" title="${esc(`${i.name}: ${worn.has(i.id) ? 'wearing' : owned.has(i.id) ? 'owned' : i.earn ? 'earned, not sold' : `${i.price} bananas`}`)}"></i>`).join('');
+      const low = Math.min(...g.items.filter((i) => !i.earn).map((i) => i.price));
       const count = g.social ? `<span class="cm-count">${g.items.length} <small>pranks</small></span>`
         : `<span class="cm-count">${n}<small>/${g.items.length}</small></span>`;
       const done = !g.social && n === g.items.length;
@@ -273,7 +273,9 @@ window.FiveShop = (() => {
     else if (worn) action = `<button class="btn ghost small shop-unequip" data-slot="${item.slot}">Take off</button>`;
     else if (have) action = `<button class="btn small shop-wear" data-slot="${item.slot}" data-item="${item.id}">Wear</button>`;
     else action = `<button class="btn small shop-preview" data-item="${item.id}">${social ? 'Use…' : 'Preview'}</button>`;
+    // An earned item (Onkey Stampede's achievements) is never sold: it says so instead of a price.
     const price = have ? `<span class="shop-owned">${worn ? 'Wearing' : 'Owned'}</span>`
+      : item.earn ? '<span class="shop-earned">🏆 Earned, not sold</span>'
       : `<span class="shop-price ${me && !afford ? 'short' : ''}">${bn(item.price)} ${BANANA}</span>`;
     return `<div class="shop-item ${worn ? 'worn' : have ? 'owned' : ''}">
       <button type="button" class="shop-sample shop-preview" data-item="${item.id}" aria-label="Preview ${esc(item.name)}">${sampleHtml(item)}</button>
@@ -369,8 +371,10 @@ window.FiveShop = (() => {
     const have = !social && owns(item.id), afford = me && me.wallet + 1e-9 >= item.price;
     const buy = !me ? '<button type="button" class="btn" data-signin>Sign in to buy</button>'
       : have ? `<button class="btn modal-buy" disabled>You own this</button>`
+      : item.earn ? '<button class="btn modal-buy" disabled>Earned, not sold</button>'
       : `<button class="btn modal-buy" ${afford ? '' : 'disabled'}>${social ? 'Use' : 'Buy'} for ${bn(item.price)} ${BANANA}</button>`;
-    const wallet = me ? `<span class="muted small">You have ${bn(me.wallet)} ${BANANA}${afford || have ? '' : ` · ${bn(item.price - me.wallet)} short`}</span>` : '';
+    const wallet = item.earn && !have ? `<span class="muted small">🏆 ${esc(item.earn)}</span>`
+      : me ? `<span class="muted small">You have ${bn(me.wallet)} ${BANANA}${afford || have ? '' : ` · ${bn(item.price - me.wallet)} short`}</span>` : '';
     return `<div class="modal-head"><div><h2 id="shop-modal-title">${esc(item.name)}</h2><div class="muted small">${esc(item.desc)}</div></div>
         <button class="btn ghost icon modal-close" aria-label="Close">✕</button></div>
       ${body}

@@ -111,9 +111,9 @@ def game_message(match, board=None, highlight=None, settled=None):
     return {"username": NAME, "allowed_mentions": NO_PINGS, "embeds": [embed]}
 
 
-def jackpot_message(name, amount):
+def jackpot_message(name, amount, how="landed the daily wheel's jackpot"):
     return {"username": NAME, "allowed_mentions": NO_PINGS, "embeds": [{"title": "JACKPOT!", "color": GOLD,
-                                          "description": _clip(f"🌟 **{name}** landed the daily wheel's jackpot: **{credits(amount)} credits**.", 2000),
+                                          "description": _clip(f"🌟 **{name}** {how}: **{credits(amount)} credits**.", 2000),
                                           "footer": {"text": "5-Stack Tracker"}}]}
 
 
