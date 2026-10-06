@@ -2824,9 +2824,9 @@ def banana_hunt(shared):
     r = hx.click(who, tgt["x"], tgt["y"], now=down)
     assert not r["hit"] and r["reason"] == "bongo" and r["combo"] == streak, r
     roll = lambda drum, n, gap, start=0: [[drum, start + i * gap] for i in range(n)]  # noqa: E731
-    quick = roll(0, 12, 100) + roll(1, 12, 100, 1200)  # ten taps a second: each meter fills on its 11th tap (drained 0.03 between)
+    quick = roll(0, 12, 100) + roll(1, 12, 100, 1200)  # ten taps a second: each meter fills on its 6th tap (drained 0.06 between)
     assert H.HuntManager._drummed({"born": 0}, quick, 100) and not H.HuntManager._drummed({"born": 0}, roll(0, 12, 100), 100)
-    slow = roll(0, 40, 450) + roll(1, 40, 450, 18000)  # a tap every 0.45 s gains 0.125 and drains 0.135: it never fills
+    slow = roll(0, 40, 450) + roll(1, 40, 450, 18000)  # a tap every 0.45 s gains 0.25 and drains 0.27: it never fills
     wrong = {"too slow": slow, "one drum": roll(0, 30, 100), "no hand": roll(0, 12, 5) + roll(1, 12, 5, 100), "not a list": "taps",
              "a third drum": [[2, 0]] + quick, "no time": [[d, float("nan")] for d, _ in quick], "back in time": quick[::-1],
              "junk": [[0]] * 30, "too many": roll(0, 300, 30) + roll(1, 300, 30, 9000)}
