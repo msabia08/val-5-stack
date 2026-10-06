@@ -1390,6 +1390,10 @@ def stampede(shared):
     assert df["spin"]["result"]["defect"]["stake"] == 10 and df["progress"]["friend"] == []
     assert vaulted.spin("Stomper", 10, "stomp-0000000000000015", force="slice")["progress"]["friend"] == [10]
     jackpot = vaulted.jackpot(fresh=True)
+    # The golden spins above ran real heists (chance: all three locks open one time in eight, and then the door can
+    # too), which may already have unlocked the vault's achievements. Take them back so the forced vault spin below is
+    # the first to show them, whatever those heists rolled.
+    db.execute("DELETE FROM banana_items WHERE lower(bettor)='stomper' AND item_id IN ('tt-vault', 'bd-key')")
     before = db.get_bettor("Stomper")["balance"]
     v = vaulted.spin("Stomper", 2, "stomp-0000000000000009", force="vault")
     h = v["spin"]["result"]["heist"]
