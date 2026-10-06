@@ -2434,6 +2434,9 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .hunt-field.hunt-locked { display: grid; place-items: center; cursor: default; }
 .hunt-msg { position: relative; z-index: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px;
   padding: 14px 18px; font-size: 15px; max-width: 520px; text-align: center; }
+/* Under the closed hunt's message: Keep playing (the same game, for nothing), and a line saying so. */
+.hunt-more { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 12px; color: var(--text-2); }
+.hunt-more .btn { flex: none; width: auto; }
 .hunt-field:not(.hunt-locked) .hunt-msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .hunt-deco { position: absolute; font-size: 40px; opacity: .55; pointer-events: none; transform: translate(-50%, -50%); filter: saturate(.8); }
 .hunt-onkey { position: absolute; right: 16px; bottom: 8px; width: 120px; pointer-events: none; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45));
@@ -2473,8 +2476,85 @@ html.onkey-walking .onkey-dealer.greg .onkey-face { visibility: visible; }
 .hunt-banana.bouncy { transition: left .28s cubic-bezier(.3, 1.4, .6, 1), top .28s cubic-bezier(.3, 1.4, .6, 1); filter: drop-shadow(0 8px 4px rgba(0, 0, 0, .45)); }
 .hunt-banana.bouncy.hop { animation: hunt-hop .28s ease-out; }
 @keyframes hunt-hop { 50% { transform: translate(-50%, -95%) scale(1.15); } }
-/* A volley's bananas are steel (a cold blue-grey with a pale edge): they can't be caught in the air, only picked once down. */
-.hunt-banana.volley, .hunt-fly.volley { filter: grayscale(1) sepia(.25) hue-rotate(170deg) brightness(.8) contrast(1.6) drop-shadow(0 0 2px #dfe7ee) drop-shadow(0 5px 6px rgba(0, 0, 0, .6)); }
+/* Hold and drag. A green banana isn't ripe: hold down on it and its ring (.hunt-ring) fills as it turns yellow
+   (.holding, over --hold), then it's picked. A vine banana hangs on a vine (.hunt-vine: a solid olive stem with brighter
+   leaves down both sides and a tuft at the tip, flat colours as in a cut-paper vine, the part done so far a pale
+   stripe up the stem, and a ring at the far end) and is dragged along it. Both
+   take a press that starts a little outside them (::before) and keep a touch from scrolling the page. */
+/* One list of filters for all three looks, so each fades into the next: turned green, then (browning) washed toward
+   sepia and darkened, which goes by way of olive and never looks ripe; ripening turns the green back to yellow. */
+.hunt-banana.green, .hunt-fly.green { filter: hue-rotate(58deg) sepia(0) hue-rotate(0deg) saturate(1.2) brightness(.8) drop-shadow(0 0 0 rgba(255, 213, 74, 0)) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); }
+/* Left alone it goes brown over --ttl from the moment it lands (--aged, a negative delay, puts the browning back where
+   the clock has it after a hold that was let go); held, it turns yellow instead, from however brown it had gone. */
+.hunt-banana.green { animation: hunt-brown var(--ttl, 4s) linear var(--aged, 0s) forwards; }
+.hunt-banana.green.land { animation: hunt-land .22s ease-out, hunt-brown var(--ttl, 4s) linear var(--aged, 0s) forwards; }
+.hunt-banana.green.holding { animation: hunt-ripen var(--hold, .8s) linear forwards; }
+@keyframes hunt-brown { to { filter: hue-rotate(58deg) sepia(1) hue-rotate(-22deg) saturate(1.8) brightness(.5) drop-shadow(0 0 0 rgba(255, 213, 74, 0)) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); } }
+@keyframes hunt-ripen { to { filter: hue-rotate(0deg) sepia(0) hue-rotate(0deg) saturate(1.3) brightness(1.12) drop-shadow(0 0 12px rgba(255, 213, 74, .95)) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); } }
+.hunt-banana.green, .hunt-banana.vine { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.hunt-banana.green::before, .hunt-banana.vine::before { content: ""; position: absolute; inset: -16px; border-radius: 50%; }
+.hunt-ring { position: absolute; left: 50%; top: 50%; width: 96px; height: 96px; transform: translate(-50%, -50%) rotate(-90deg); overflow: visible; pointer-events: none; }
+.hunt-ring circle { fill: none; stroke-width: 6; }
+.hunt-ring .rail { stroke: rgba(255, 255, 255, .3); animation: hunt-ring-wait 1.1s ease-in-out infinite alternate; }
+.hunt-ring .fill { stroke: #fff; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; opacity: 0; }
+.hunt-banana.holding .hunt-ring .rail { animation: none; }
+.hunt-banana.holding .hunt-ring .fill { opacity: 1; animation: hunt-ring-fill var(--hold, .8s) linear forwards; }
+@keyframes hunt-ring-wait { to { stroke: rgba(255, 255, 255, .6); } }
+@keyframes hunt-ring-fill { to { stroke-dashoffset: 0; } }
+.hunt-vine { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .5)); }
+.hunt-vine .stem, .hunt-vine .done { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.hunt-vine .stem { stroke: #84a243; stroke-width: 15; }
+.hunt-vine .leaf { fill: #9fc83f; }
+.hunt-vine .done { stroke: #e6f29a; stroke-width: 5; stroke-dasharray: 100 300; stroke-dashoffset: 100; }
+.hunt-vine .end { fill: rgba(255, 213, 74, .14); stroke: #ffd54a; stroke-width: 4; stroke-dasharray: 9 7; }
+.hunt-banana.vine { cursor: grab; transition: left .2s ease-out, top .2s ease-out; filter: drop-shadow(0 0 8px rgba(124, 198, 83, .9)) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); }
+.hunt-banana.vine.dragging { transition: none; }
+.hunt-field.hunt-dragging, .hunt-field.hunt-dragging .hunt-banana { cursor: grabbing; }
+/* Onkey's bongos, from above (hunt.js bongosSvg()): cream skins in chrome rims with four lugs each, a wooden block
+   between, and round each drum the ring of its meter (gold as it fills, green once full). A tapped drum dips. */
+.hunt-bongos { position: absolute; transform: translate(-50%, -50%); animation: hunt-land .22s ease-out; }
+.hunt-bongos-art { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .5)); }
+.hunt-fly.bongos .hunt-bongos-art { width: 1.9em; height: 1.06em; filter: none; }
+.hunt-bongos-art .block { fill: #6d4524; stroke: #3a2311; stroke-width: 1.2; }
+.hunt-bongos-art .rim { fill: #8e969d; stroke: #2c3135; stroke-width: 1.4; }
+.hunt-bongos-art .rim-shine { fill: none; stroke: #e3e7ea; stroke-width: 1.6; }
+.hunt-bongos-art .skin { stroke: #7f7257; stroke-width: 1; }
+.hunt-bongos-art .lug { fill: #dfe3e6; stroke: #2c3135; stroke-width: 1.1; }
+.hunt-bongos-art .rail, .hunt-bongos-art .meter { fill: none; stroke-width: 5; }
+.hunt-bongos-art .rail { stroke: rgba(255, 255, 255, .22); }
+.hunt-bongos-art .meter { stroke: #ffd54a; stroke-linecap: round; stroke-dasharray: 100 300; stroke-dashoffset: 100; }
+.hunt-bongos-art .drum { transform-box: fill-box; transform-origin: center; }
+.hunt-bongos-art .drum.full .meter { stroke: #7be36b; }
+.hunt-bongos-art .drum.hit { animation: hunt-drum .1s ease-out; }
+@keyframes hunt-drum { 40% { transform: scale(.93); } }
+.hunt-bongo { position: absolute; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.hunt-bongo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The hunt's sound on / off, in the field's bottom-left corner (always on the dark field, so in its own colours). */
+.hunt-sound { position: absolute; left: 10px; bottom: 10px; z-index: 2; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .28); background: rgba(0, 0, 0, .42); color: #fff; cursor: pointer; }
+.hunt-sound:hover { background: rgba(0, 0, 0, .62); }
+.hunt-sound[aria-pressed="false"] { color: rgba(255, 255, 255, .6); }
+.hunt-sound:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A volley's bananas are steel while they fly (.hunt-steel, drawn in hunt.js: a cartoon banana of riveted steel plate
+   under a heavy black outline) and can't be caught; landed, each is a plain banana again, the grey leaving it as it settles. */
+.hunt-steel { display: block; width: 1em; height: 1em; overflow: visible; }
+.hunt-steel .seam { fill: none; stroke: #1c1c1c; stroke-width: .9; stroke-linecap: round; }
+.hunt-steel .edge { fill: none; stroke: #101010; stroke-width: 1.9; stroke-linejoin: round; }
+.hunt-steel .cap { fill: #cdcdcd; stroke: #101010; stroke-width: 1.4; stroke-linejoin: round; }
+.hunt-steel .nub { stroke: #101010; stroke-width: 1.4; }
+.hunt-steel .rivets circle { stroke: #1c1c1c; stroke-width: .6; }
+.hunt-banana.volley { filter: grayscale(0) brightness(1) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); animation: hunt-land .22s ease-out, hunt-unsteel .5s ease-out; }
+@keyframes hunt-unsteel { from { filter: grayscale(1) brightness(1.3) drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); } }
+/* A frozen banana's ice breaking (hunt.js shatter()): a flash, and shards thrown out from it. */
+.hunt-shard, .hunt-shatter { position: absolute; z-index: 2; pointer-events: none; }
+.hunt-shard { width: calc(14px * var(--size, 1)); height: calc(20px * var(--size, 1)); background: linear-gradient(135deg, #fff 0%, #d2f5ff 40%, #6fcdf2 100%);
+  clip-path: polygon(50% 0, 100% 66%, 16% 100%); animation: hunt-shard .62s cubic-bezier(.12, .72, .3, 1) forwards; }
+@keyframes hunt-shard { from { transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)); opacity: 1; }
+  70% { opacity: 1; }
+  to { transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px) + 16px)) rotate(calc(var(--tilt, 0deg) + var(--turn, 180deg))) scale(.45); opacity: 0; } }
+.hunt-shatter { width: 84px; height: 84px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 255, 255, .95) 0%, rgba(159, 232, 255, .55) 38%, rgba(159, 232, 255, 0) 70%);
+  animation: hunt-shatter .34s ease-out forwards; }
+@keyframes hunt-shatter { from { transform: translate(-50%, -50%) scale(.3); opacity: 1; } to { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } }
 
 /* The clock on a golden banana or a bunch: a bar across the top of the field that runs down. */
 .hunt-clock { position: absolute; left: 12px; right: 12px; top: 10px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .35); overflow: hidden; pointer-events: none; }
@@ -3315,6 +3395,9 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .hunt-card { order: -1; padding: 8px; }
   .hunt-banana, .hunt-fly { font-size: 46px; }
   .hunt-banana.bunch, .hunt-fly.bunch { font-size: 40px; }
+  .hunt-ring { width: 80px; height: 80px; }
+  .hunt-vine .stem { stroke-width: 11; }
+  .hunt-vine .done { stroke-width: 4; }
   .hunt-greg { width: 58px; }
   .hunt-strudel img { height: 96px; }
   .hunt-claw { width: 62px; height: 62px; }
