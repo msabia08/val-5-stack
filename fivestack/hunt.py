@@ -27,8 +27,22 @@ prize is paid on top of the cap.
   into SPLIT_SIZE pieces where it is when picked (a small bunch, SPLIT_BONUS for all of them). And corn: now and
   then Onkey's throw is an ear of corn and nothing else. It looks the part, costs CORN_COST credits and the combo if
   it's picked, and is gone by itself CORN_TTL_S after it lands (reason corn_gone, nothing lost).
-- Throw patterns: a volley is VOLLEY_SIZE bananas thrown one after another (VOLLEY_GAP_S apart) along a line or an
-  arc. Each can be caught in the air or picked off the ground; catching every one in the air pays VOLLEY_BONUS on top.
+- Throw patterns: a volley is VOLLEY_SIZE steel bananas thrown one after another (VOLLEY_GAP_S apart) along a line or
+  an arc. Steel can't be caught: each can only be picked once it has landed (a click sooner isn't paid and costs
+  nothing), and picking every one before the time runs out pays VOLLEY_BONUS on top.
+- Hold and drag (as in a rhythm game): a green banana isn't ripe, so a click doesn't pick it: the bettor holds the
+  button down on it for HOLD_S and it ripens (the click arrives with `held`, the seconds held), paying GREEN_VALUE;
+  left alone it goes brown instead, and GREEN_TTL_S after landing it's rotten and gone (nothing lost). A
+  vine banana hangs on a vine (`path`, VINE_POINTS spots along a curve, `_vine()`): the bettor drags it along the vine
+  to the far end, and the click arrives with `trail`, where the pointer was and when (ms since the press) as the
+  banana passed each spot of the path, which `_slid()` checks; it pays VINE_VALUE. Neither can be caught in the air,
+  and letting go early or slipping off costs nothing. A volley sometimes (VOLLEY_VINE_CHANCE) ends with a vine
+  banana: thrown sixth, straight after the steel ones, it lands close to the last of them (VINE_NEAR) and is on the
+  field with them (the volley's `vine`), to be dragged before the volley's clock, VOLLEY_VINE_TTL_S longer, runs out.
+- Onkey's bongos: now and then he throws his pair of bongos instead of a banana (a target of kind "bongos"). Each drum
+  has a meter of its own that every tap on it fills by BONGO_GAIN and that drains BONGO_DRAIN a second between taps,
+  so only quick tapping fills it; a full drum stays full. The page runs the meters and, when both are full, sends the
+  taps (`taps`: [drum, ms since the first] each), which `_drummed()` plays back the same way; it pays BONGO_VALUE.
 - The boss fight, also from the lore: BOSS_CHANCE of throws aren't a banana but the scientist coming for Onkey himself
   (a target of kind "boss"). Onkey goes to the middle of the field and the claws come in for him from every side, in BOSS_WAVES waves, each
   (how many claws, how many seconds they take to reach him); a click names a claw (`claw`, its id) and stops it. Stop a whole wave in time and the next
@@ -43,6 +57,11 @@ prize is paid on top of the cap.
 - The hidden item (`_hidden()`): one pick a day, a different one for every bettor, also turns up shop bananas or a
   daily wheel token (ledger reason `hunt`, once per bettor per day).
 - The field of the day (`theme()`): the scenery the page draws, one of THEMES by the Pacific day.
+
+Playing on: once nothing more can be earned today, the page can still ask to keep playing (`free` on `start()`,
+`click()` and `nudge()`). The game goes on as before and the combo still counts, but nothing is paid, taken or
+recorded: no credits, no corn cost, no boss prize, no hidden item, nothing in `hunt_days`. `free` means nothing while
+there are still credits to earn, so it can't be used to dodge anything.
 
 Targets and combos live in memory (`self.targets`, `self.combos`, one per bettor); a restart just means starting the
 hunt again.
@@ -96,6 +115,29 @@ FROZEN_VALUE = 2  # a frozen banana: the first click cracks the ice, the second 
 BOUNCE_VALUE, BOUNCE_S, BOUNCE_HOPS, BOUNCE_GAP = 3, 1.2, 3, 150  # it hops BOUNCE_HOPS times, BOUNCE_S apart, then stays
 SPLIT_SIZE, SPLIT_BONUS, SPLIT_R = 3, 1, 110  # the pieces land about SPLIT_R from where it was
 VOLLEY_SIZE, VOLLEY_GAP_S, VOLLEY_TTL_S, VOLLEY_BONUS, VOLLEY_STEP = 5, 0.35, 1.25, 5, 120
+VOLLEY_EARLY_S = 0.1  # a volley's steel bananas can't be picked in the air: this much before one lands is the soonest
+# Onkey's corner: nothing lands on him (within ONKEY_R of ONKEY_AT, about the middle of his picture), where it's hard to see.
+ONKEY_AT, ONKEY_R = (FIELD_W - 76, FIELD_H - 70), 110
+# Hold and drag. A green banana ripens when held for HOLD_S (the page may report HOLD_EARLY_S less), and left alone
+# goes brown and is gone GREEN_TTL_S after it lands. A vine banana is
+# dragged along a curve of VINE_POINTS spots, VINE_MIN_LEN to VINE_MAX_LEN from end to end, bowed by up to VINE_BOW
+# of that and swaying VINE_SWAY to either side of it as a vine does; the pointer has to pass within VINE_R of each
+# spot in turn. Both are checked against the server's own
+# clock too: neither can be done sooner after the throw than the flight and the hold or drag itself (which is counted
+# as VINE_MIN_S at least) take, less GRIP_SLACK_S.
+GREEN_CHANCE, VINE_CHANCE = 0.05, 0.05
+GREEN_VALUE, HOLD_S, HOLD_EARLY_S, GREEN_TTL_S = 3, 0.8, 0.05, 4.0
+VINE_VALUE, VINE_POINTS, VINE_R, VINE_MIN_S = 4, 25, 80, 0.2
+VINE_MIN_LEN, VINE_MAX_LEN, VINE_BOW, VINE_SWAY = 280, 440, 0.35, 14
+GRIP_SLACK_S = 0.15
+# Onkey's bongos: two drums, each with a meter a tap fills by BONGO_GAIN and that drains BONGO_DRAIN a second between
+# taps on it (a full one stays full). Taps closer together than BONGO_MIN_GAP_MS aren't a hand's; they land with their
+# middle at least BONGO_EDGE inside the field, so both drums fit however the page lays them out.
+BONGO_CHANCE = 0.05
+BONGO_VALUE, BONGO_GAIN, BONGO_DRAIN, BONGO_MIN_GAP_MS, BONGO_MAX_TAPS, BONGO_EDGE, BONGO_R = 6, 0.125, 0.3, 20, 400, 110, 110
+VOLLEY_VINE_CHANCE = 0.5  # this share of volleys end with a vine banana, thrown straight after the steel ones...
+VINE_NEAR = (60, 110)  # ...which lands this far (px, from and to) from the volley's last banana...
+VOLLEY_VINE_TTL_S = 2.0  # ...and gives the volley this much longer on its clock
 COMBO_STEPS = (10, 25)  # picks in a row for x2, then x3
 COMBO_IDLE_S = 8.0
 HIDDEN_FROM, HIDDEN_TO = 5, 50  # the hidden item is one of the day's picks in this range
@@ -141,7 +183,10 @@ class HuntManager:
                 "corn": {"cost": CORN_COST, "ttl_s": CORN_TTL_S}, "frozen": {"value": FROZEN_VALUE},
                 "bounce": {"value": BOUNCE_VALUE, "hop_s": BOUNCE_S, "hops": BOUNCE_HOPS},
                 "split": {"size": SPLIT_SIZE, "bonus": SPLIT_BONUS},
-                "volley": {"size": VOLLEY_SIZE, "gap_s": VOLLEY_GAP_S, "ttl_s": VOLLEY_TTL_S, "bonus": VOLLEY_BONUS},
+                "volley": {"size": VOLLEY_SIZE, "gap_s": VOLLEY_GAP_S, "ttl_s": VOLLEY_TTL_S, "bonus": VOLLEY_BONUS,
+                           "vine_ttl_s": VOLLEY_VINE_TTL_S},
+                "bongos": {"value": BONGO_VALUE, "gain": BONGO_GAIN, "drain": BONGO_DRAIN, "min_gap_ms": BONGO_MIN_GAP_MS},
+                "green": {"value": GREEN_VALUE, "hold_s": HOLD_S, "ttl_s": GREEN_TTL_S}, "vine": {"value": VINE_VALUE, "r": VINE_R},
                 "bunch": {"size": BUNCH_SIZE, "ttl_s": BUNCH_TTL_S, "bonus": BUNCH_BONUS},
                 "combo": {"steps": list(COMBO_STEPS), "idle_s": COMBO_IDLE_S}}
 
@@ -156,21 +201,27 @@ class HuntManager:
         return 0, False
 
     # ---- the banana ------------------------------------------------------------------
+    @staticmethod
+    def _on_onkey(x, y):
+        return (x - ONKEY_AT[0]) ** 2 + (y - ONKEY_AT[1]) ** 2 < ONKEY_R ** 2
+
     def _spot(self, away=(), gap=MIN_HOP):
-        """Somewhere in the field, at least `gap` from every point in `away` when there's room to be."""
+        """Somewhere in the field, off Onkey's corner and at least `gap` from every point in `away` when there's room
+        to be."""
         for _ in range(40):
             x = self.rng.randint(MARGIN, FIELD_W - MARGIN)
             y = self.rng.randint(MARGIN, FIELD_H - MARGIN)
-            if all((x - p["x"]) ** 2 + (y - p["y"]) ** 2 >= gap ** 2 for p in away):
+            if not self._on_onkey(x, y) and all((x - p["x"]) ** 2 + (y - p["y"]) ** 2 >= gap ** 2 for p in away):
                 break
         return {"x": x, "y": y}
 
     def _new_target(self, prev=None, now=0.0, paid_ts=0.0):
         """What Onkey throws next. A target is {"id", "kind" (banana / golden / bunch / frozen / bouncy / split / volley /
-        boss), "x", "y", "born" (when it was thrown), "paid_ts" (the last paid pick), and by kind: "expires" (golden,
-        bunch, volley), "items" (bunch, volley: each {"x", "y", "picked"}), "hops" (bouncy: where it goes next),
-        "decoy" (a rotten banana's spot, with its "kind"), "greg" ({"x", "y": where he starts,
-        "arrives"})}."""
+        green / vine / bongos / boss), "x", "y", "born" (when it was thrown), "paid_ts" (the last paid pick), and by kind:
+        "expires" (golden, bunch, volley), "items" (bunch, volley: each {"x", "y", "picked"}), "vine" (volley: {"path", "done"},
+        the vine banana thrown after its steel ones, when there is one), "hops" (bouncy: where it
+        goes next), "path" (vine: the spots to drag it through, the first its own), "decoy" (a rotten banana's spot,
+        with its "kind"), "greg" ({"x", "y": where he starts, "arrives"})}."""
         self._serial += 1
         spot = self._spot([prev] if prev else ())
         t = {"id": self._serial, "kind": "banana", **spot, "born": now, "paid_ts": paid_ts}
@@ -210,9 +261,119 @@ class HuntManager:
                 t["kind"] = "split"
             elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE + SPLIT_CHANCE + VOLLEY_CHANCE:
                 items = self._row(spot)
-                t.update(kind="volley", x=items[0]["x"], y=items[0]["y"], items=[{**i, "picked": False, "air": False} for i in items],
+                t.update(kind="volley", x=items[0]["x"], y=items[0]["y"], items=[{**i, "picked": False} for i in items],
                          expires=now + (VOLLEY_SIZE - 1) * VOLLEY_GAP_S + AIR_S + VOLLEY_TTL_S + SLACK_S)
+                if self.rng.random() < VOLLEY_VINE_CHANCE:  # a vine banana on the end of it, by where the last one lands
+                    t["vine"] = {"path": self._vine(self._near(items[-1])), "done": False}
+                    t["expires"] += VOLLEY_GAP_S + VOLLEY_VINE_TTL_S
+            elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE + SPLIT_CHANCE + VOLLEY_CHANCE + GREEN_CHANCE:
+                t.update(kind="green", expires=now + AIR_S + GREEN_TTL_S + SLACK_S)  # not ripe: held, not clicked, or it goes brown
+            elif roll < CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE + SPLIT_CHANCE + VOLLEY_CHANCE + GREEN_CHANCE + VINE_CHANCE:
+                t.update(kind="vine", path=self._vine(spot))  # on a vine: it's dragged to the far end
+            elif roll < (CORN_CHANCE + FROZEN_CHANCE + BOUNCE_CHANCE + SPLIT_CHANCE + VOLLEY_CHANCE + GREEN_CHANCE + VINE_CHANCE
+                         + BONGO_CHANCE):
+                t.update(kind="bongos", **self._roomy(prev))  # Onkey's bongos: tapped fast, both drums
         return t
+
+    def _roomy(self, prev=None):
+        """A spot for the bongos: BONGO_EDGE or more inside the field, clear of Onkey, and away from where the last
+        target was when there's room."""
+        for _ in range(40):
+            x, y = self.rng.randint(BONGO_EDGE, FIELD_W - BONGO_EDGE), self.rng.randint(BONGO_EDGE, FIELD_H - BONGO_EDGE)
+            if math.hypot(x - ONKEY_AT[0], y - ONKEY_AT[1]) >= ONKEY_R + BONGO_R and (
+                    not prev or math.hypot(x - prev["x"], y - prev["y"]) >= MIN_HOP):
+                return {"x": x, "y": y}
+        return {"x": FIELD_W // 2, "y": FIELD_H // 2}
+
+    @staticmethod
+    def _drummed(t, taps, now):
+        """Whether `taps` ([drum (0 or 1), ms since the first tap] each, in order) fill both of the bongos' meters, played
+        back as the page plays them: a tap adds BONGO_GAIN to its drum's meter, which has drained BONGO_DRAIN a second
+        since that drum's last tap; a full drum stays full. No two taps closer than BONGO_MIN_GAP_MS, and none of it
+        sooner after the throw than the flight and the drumming take."""
+        if not isinstance(taps, list) or not 2 <= len(taps) <= BONGO_MAX_TAPS:
+            return False
+        meter, last, prev = [0.0, 0.0], [None, None], None
+        for tap in taps:
+            if not isinstance(tap, (list, tuple)) or len(tap) != 2 or tap[0] not in (0, 1) or isinstance(tap[0], bool):
+                return False
+            try:
+                drum, ms = int(tap[0]), float(tap[1])
+            except (TypeError, ValueError):
+                return False
+            if not ms >= (0 if prev is None else prev + BONGO_MIN_GAP_MS):  # NaN fails too
+                return False
+            prev = ms
+            if meter[drum] >= 1 - 1e-9:
+                continue  # it's full already
+            if last[drum] is not None:
+                meter[drum] = max(0.0, meter[drum] - BONGO_DRAIN * (ms - last[drum]) / 1000)
+            meter[drum] += BONGO_GAIN
+            last[drum] = ms
+        return min(meter) >= 1 - 1e-9 and prev / 1000 <= now - t["born"] - AIR_S + GRIP_SLACK_S
+
+    def _near(self, p):
+        """Somewhere VINE_NEAR from `p`, in the field and off Onkey (`p`'s own spot when there's no room)."""
+        for _ in range(40):
+            turn, far = math.radians(self.rng.randint(0, 359)), self.rng.randint(*VINE_NEAR)
+            x, y = round(p["x"] + far * math.cos(turn)), round(p["y"] + far * math.sin(turn))
+            if MARGIN <= x <= FIELD_W - MARGIN and MARGIN <= y <= FIELD_H - MARGIN and not self._on_onkey(x, y):
+                return {"x": x, "y": y}
+        return {"x": p["x"], "y": p["y"]}
+
+    def _vine(self, start):
+        """The vine a banana at `start` hangs on: VINE_POINTS spots along a curve (a quadratic Bezier) from it to an end
+        VINE_MIN_LEN to VINE_MAX_LEN away, bowed to one side and swaying from side to side along the way, all of it in
+        the field and none of it on Onkey."""
+        inside = lambda p: MARGIN <= p["x"] <= FIELD_W - MARGIN and MARGIN <= p["y"] <= FIELD_H - MARGIN  # noqa: E731
+        x0, y0 = start["x"], start["y"]
+
+        def curve(x1, y1, x2, y2, sway=0.0, bends=0.0):
+            # From the start, bent toward (x1, y1), to (x2, y2), and `sway` to either side of that `bends` times over
+            # (whole or half bends, so both ends stay where they are).
+            reach = math.hypot(x2 - x0, y2 - y0) or 1.0
+            nx, ny = -(y2 - y0) / reach, (x2 - x0) / reach  # across the straight line between the ends
+            out = []
+            for i in range(VINE_POINTS):
+                k = i / (VINE_POINTS - 1)
+                off = sway * math.sin(2 * math.pi * bends * k)
+                out.append({"x": round((1 - k) ** 2 * x0 + 2 * k * (1 - k) * x1 + k * k * x2 + nx * off),
+                            "y": round((1 - k) ** 2 * y0 + 2 * k * (1 - k) * y1 + k * k * y2 + ny * off)})
+            return out
+
+        for _ in range(60):
+            heading = math.radians(self.rng.randint(0, 359))
+            length = self.rng.randint(VINE_MIN_LEN, VINE_MAX_LEN)
+            bow = length * self.rng.randint(-100, 100) / 100 * VINE_BOW
+            x2, y2 = x0 + length * math.cos(heading), y0 + length * math.sin(heading)
+            # The curve's control point: off the middle of the straight line, to one side.
+            x1, y1 = (x0 + x2) / 2 - bow * math.sin(heading), (y0 + y2) / 2 + bow * math.cos(heading)
+            path = curve(x1, y1, x2, y2, VINE_SWAY * (self.rng.randint(0, 1) * 2 - 1), self.rng.randint(2, 4) / 2)
+            if all(inside(p) for p in path) and not any(self._on_onkey(p["x"], p["y"]) for p in path[1:]):
+                return path
+        x2 = x0 + (300 if x0 < FIELD_W / 2 else -300)  # no room found from there: straight across, toward the middle
+        return curve((x0 + x2) / 2, y0, x2, y0)
+
+    @staticmethod
+    def _slid(t, trail, now):
+        """Whether `trail` is a drag of a vine banana all the way along its vine: one [x, y, ms since the press] per spot
+        of the path, in order, each within VINE_R of its spot, the times never going back, and none of it sooner
+        after the throw than the flight and the drag (VINE_MIN_S at least) take, by the server's own clock."""
+        path = t["path"]
+        if not isinstance(trail, list) or len(trail) != len(path):
+            return False
+        last = 0.0
+        for spot, sample in zip(path, trail):
+            if not isinstance(sample, (list, tuple)) or len(sample) != 3:
+                return False
+            try:
+                x, y, ms = (float(v) for v in sample)
+            except (TypeError, ValueError):
+                return False
+            if not ms >= last or not (x - spot["x"]) ** 2 + (y - spot["y"]) ** 2 <= VINE_R ** 2:  # NaN fails both
+                return False
+            last = ms
+        return max(VINE_MIN_S, last / 1000) <= now - t["born"] - AIR_S + GRIP_SLACK_S
 
     def _row(self, start):
         """VOLLEY_SIZE spots VOLLEY_STEP apart for a volley, from `start`: along a straight line, or bending into an arc,
@@ -225,7 +386,7 @@ class HuntManager:
             for _i in range(VOLLEY_SIZE):
                 pts.append({"x": round(x), "y": round(y)})
                 x, y, heading = x + VOLLEY_STEP * math.cos(heading), y + VOLLEY_STEP * math.sin(heading), heading + bend
-            if all(low_x <= p["x"] <= high_x and low_y <= p["y"] <= high_y for p in pts):
+            if all(low_x <= p["x"] <= high_x and low_y <= p["y"] <= high_y and not self._on_onkey(p["x"], p["y"]) for p in pts):
                 return pts
         y = min(high_y, max(low_y, start["y"]))  # no room from there: straight across the middle
         return [{"x": FIELD_W // 2 + (i - VOLLEY_SIZE // 2) * VOLLEY_STEP, "y": y} for i in range(VOLLEY_SIZE)]
@@ -266,12 +427,12 @@ class HuntManager:
         return 1 + sum(n >= step for step in COMBO_STEPS)
 
     def _lapse(self, key, t, now):
-        """What became of a target left too long: 'rotted' (a golden banana), 'bunch_over', 'stolen' (Greg got there),
+        """What became of a target left too long: 'rotted' (a golden banana, or a green one gone brown), 'bunch_over', 'stolen' (Greg got there),
         'boss_lost' (a claw of the boss fight reached Onkey), or None while it's still good. A lapsed target is
         replaced."""
         why = None
         if t.get("expires") and now > t["expires"]:
-            why = {"golden": "rotted", "corn": "corn_gone"}.get(t["kind"], "bunch_over")
+            why = {"golden": "rotted", "green": "rotted", "corn": "corn_gone"}.get(t["kind"], "bunch_over")
         elif t.get("greg") and now > t["greg"]["arrives"]:
             why = "stolen"
             self._combo(key, now)["n"] = 0
@@ -303,12 +464,16 @@ class HuntManager:
         out = {"id": t["id"], "kind": t["kind"], "x": t["x"], "y": t["y"]}
         if t["kind"] in ("bunch", "volley"):
             out["items"] = [{"x": i["x"], "y": i["y"], "picked": i["picked"]} for i in t["items"]]
+        if t.get("vine"):
+            out["vine"] = {"path": [dict(p) for p in t["vine"]["path"]], "done": t["vine"]["done"]}
         if t["kind"] == "bunch" and "bonus" in t:
             out["pieces"] = True  # a split banana's pieces: they appear where it was, Onkey doesn't throw them
         if t["kind"] == "frozen":
             out["cracked"] = t["cracked"]
         if t["kind"] == "bouncy":
             out["hops"] = [dict(h) for h in t["hops"]]
+        if t["kind"] == "vine":
+            out["path"] = [dict(p) for p in t["path"]]
         if t.get("decoy"):
             out["decoy"] = dict(t["decoy"])
         if t.get("greg"):
@@ -360,26 +525,28 @@ class HuntManager:
                 "label": f"{HIDDEN_BANANAS} bananas" if prize == "bananas" else "a boost token" if prize == "boost" else "an insurance token"}
 
     # ---- reading ---------------------------------------------------------------------
-    def status(self, name, now=None):
+    def status(self, name, now=None, free=False):
         """The bettor's hunt: today's credits and what's left (and whether only the floor allows it), their totals
-        and combo, and the banana (None once they're done)."""
+        and combo, and the banana (None once they're done). `free`: they're playing on past the cap for nothing, so
+        there's still a banana, and `done` (the hunt is closed) is false."""
         now = now or time.time()
         bettor = self.db.get_bettor(name)
         balance = bettor["balance"] if bettor else 0.0
         picks, credits = self._day(name, now)
         left, under = self._room(credits, balance)
         totals = self.db.hunt_totals().get(name.lower()) or {}
-        t = self.targets.get(name.lower()) if left else None
+        free = bool(free) and left == 0
+        t = self.targets.get(name.lower()) if left or free else None
         combo = self._combo(name.lower(), now)
-        return {"name": name, "today": int(round(credits)), "picks": picks, "left": left, "done": left == 0, "under_floor": under,
-                "floor": self.floor,
+        return {"name": name, "today": int(round(credits)), "picks": picks, "left": left, "done": left == 0 and not free, "free": free,
+                "under_floor": under, "floor": self.floor,
                 "balance": round(balance, 2), "day": wheel_day(now),
                 "resets_ts": next_reset(now), "season": round(totals.get("season") or 0, 2),
                 "all_time": round(totals.get("all_time") or 0, 2), "bananas": int(totals.get("bananas") or 0),
                 "combo": combo["n"], "mult": self._mult(combo["n"]),
                 "target": self._public(t)}
 
-    def start(self, name, now=None):
+    def start(self, name, now=None, free=False):
         """Make sure the bettor has a banana to go for and return their status. One already down is thrown again by
         the page, so its timers start over; it's never swapped for another (that would let a page fish for a golden
         one)."""
@@ -390,7 +557,7 @@ class HuntManager:
             raise BetError("The hunt is closed.")
         now = now or time.time()
         name = bettor["name"]
-        if self._room(self._day(name, now)[1], bettor["balance"])[0] > 0:
+        if self._room(self._day(name, now)[1], bettor["balance"])[0] > 0 or free:
             t, _ = self._target(name, now)
             with self.lock:
                 shift = now - t["born"]
@@ -401,7 +568,7 @@ class HuntManager:
                     t["greg"]["arrives"] += shift
                 if t["kind"] == "boss":  # the page shows the wave from its start again
                     t["boss"]["begins"], t["boss"]["deadline"] = now + t["boss"]["wait"], now + t["boss"]["wait"] + t["boss"]["secs"] + SLACK_S
-        return self.status(name, now)
+        return self.status(name, now, free)
 
     def summary(self, me=None, now=None):
         return {"hunt": self.terms(now), "board": self.board(), "me": self.status(me["name"], now) if me else None}
@@ -419,11 +586,14 @@ class HuntManager:
                  "bananas": int(r["bananas"] or 0), "today": int(r["today"] or 0)} for r in rows]
 
     # ---- clicking ---------------------------------------------------------------------
-    def click(self, name, x, y, now=None, air=None, shoo=False, claw=None):
+    def click(self, name, x, y, now=None, air=None, shoo=False, claw=None, held=None, trail=None, free=False, taps=None):
         """Judge a click at (x, y) in field pixels. A hit pays and moves the banana; the reply carries the banana to
         draw next (None once the day's cap is reached), today's credits and what's left, and the combo. `air`: the
         click was on the banana in flight, this far along its arc (0-1). `shoo`: the click was on Greg. `claw`: the
-        click was on that claw of the boss fight (its id)."""
+        click was on that claw of the boss fight (its id). `held`: the button was held down on the spot this many
+        seconds (a green banana). `trail`: the drag that ended at (x, y), for a vine banana (see `_slid()`). `taps`: the taps that filled Onkey's
+        bongos (see `_drummed()`). `free`:
+        past what can be earned today, play on for nothing (the reply says `free`, and `paid` is 0)."""
         bettor = self.db.get_bettor(name)
         if not bettor:
             raise BetError("Sign in as a bettor first.")
@@ -432,24 +602,31 @@ class HuntManager:
         try:
             x, y = float(x), float(y)
             air = None if air is None else float(air)
+            held = None if held is None else float(held)
         except (TypeError, ValueError):
             raise BetError("Where did you click?")
-        if x != x or y != y or (air is not None and air != air):  # NaN
+        if x != x or y != y or (air is not None and air != air) or (held is not None and held != held):  # NaN
             raise BetError("Where did you click?")
         now = now or time.time()
         name = bettor["name"]
         key = name.lower()
         picks, credits = self._day(name, now)
         left, under = self._room(credits, bettor["balance"])
-        if left <= 0:
+        free = bool(free) and left <= 0  # nothing left to earn today, and they're playing on for nothing
+        if left <= 0 and not free:
             return {"hit": False, "reason": "done", "today": int(round(credits)), "left": 0, "done": True, "under_floor": False,
                     "target": None, "combo": 0, "mult": 1}
-        t, lapsed = self._target(name, now)
+        # A hold that began before a green banana went brown still counts: its length is taken off the clock.
+        held_on = self.targets.get(key) if held is not None else None
+        grace = min(HOLD_S + GRIP_SLACK_S, max(0.0, held)) if held_on and held_on["kind"] == "green" else 0.0
+        t, lapsed = self._target(name, now, early=-grace)
         combo = self._combo(key, now)
 
         def reply(hit, reason=None, **more):
-            out = {"hit": hit, "today": int(round(credits)), "left": left, "done": left == 0, "under_floor": under,
+            out = {"hit": hit, "today": int(round(credits)), "left": left, "done": left == 0 and not free, "under_floor": under,
                    "target": self._public(self.targets.get(key)), "combo": combo["n"], "mult": self._mult(combo["n"]), **more}
+            if free:
+                out["free"] = True
             if reason:
                 out["reason"] = reason
             return out
@@ -468,10 +645,11 @@ class HuntManager:
                 with self.lock:
                     t["boss"] = self._wave(b["wave"] + 1, now, BOSS_GAP_S)
                 return reply(False, "wave_cleared")
-            self.db.hunt_bonus(name, wheel_day(now), BOSS_PRIZE, now)  # every wave stopped: paid on top of the cap
+            if not free:
+                self.db.hunt_bonus(name, wheel_day(now), BOSS_PRIZE, now)  # every wave stopped: paid on top of the cap
             with self.lock:
                 self.targets[key] = self._new_target(t, now, now)
-            return reply(True, paid=BOSS_PRIZE, kind="boss", air=False, swept=False, bunch_bonus=0, found=None)
+            return reply(True, paid=0 if free else BOSS_PRIZE, kind="boss", air=False, swept=False, bunch_bonus=0, found=None)
         if now < combo["frozen"]:
             return reply(False, "frozen", frozen_s=round(combo["frozen"] - now, 2))
         if shoo:
@@ -490,7 +668,7 @@ class HuntManager:
             if not on:
                 combo["n"] = 0
                 return reply(False, "miss")
-            cost = min(CORN_COST, max(0, int(bettor["balance"])))
+            cost = 0 if free else min(CORN_COST, max(0, int(bettor["balance"])))
             if cost:
                 self.db.hunt_bonus(name, wheel_day(now), -cost, now)
             with self.lock:
@@ -503,36 +681,50 @@ class HuntManager:
                 self.targets[key] = self._new_target(t, now, t["paid_ts"])
             return reply(False, "rotten", frozen_s=FREEZE_S)
 
-        value, item = CREDIT_PER_BANANA, None
-        if t["kind"] == "bunch":
+        value, item, dragged = CREDIT_PER_BANANA, None, False  # dragged: this was a volley's vine banana
+        if t["kind"] in ("green", "vine", "bongos") and air is not None:
+            return reply(False, "too_fast")  # none can be caught: one has to ripen, one to be dragged, one to be played
+        if t["kind"] == "bongos":  # both meters filled by quick tapping: a click alone does nothing
+            if taps is None:
+                if near(t, BONGO_R):
+                    return reply(False, "bongo")  # on them, but no drumming came with it: nothing lost
+                combo["n"] = 0
+                return reply(False, "miss")
+            if not self._drummed(t, taps, now):
+                return reply(False, "offbeat")
+        elif t["kind"] == "vine":  # dragged along its vine to the far end: a click alone doesn't pick it
+            if trail is None:
+                if near(t):
+                    return reply(False, "vine")  # on it, but not dragged: nothing lost
+                combo["n"] = 0
+                return reply(False, "miss")
+            if not self._slid(t, trail, now) or not near(t["path"][-1], VINE_R):
+                return reply(False, "slipped")
+        elif t["kind"] == "bunch":
             item = next((i for i in t["items"] if not i["picked"] and near(i)), None)
             if item is None:
                 combo["n"] = 0
                 return reply(False, "miss")
             if now - t["paid_ts"] < BUNCH_INTERVAL_S:
                 return reply(False, "too_fast")
-        elif t["kind"] == "volley":  # each is thrown VOLLEY_GAP_S after the one before: in the air, or down
-            for n, i in enumerate(t["items"]):
-                if i["picked"]:
-                    continue
-                thrown = t["born"] + n * VOLLEY_GAP_S
-                if air is None:
-                    if near(i):
-                        item = i
-                        break
-                elif AIR_FROM <= air <= AIR_TO and -0.2 <= now - thrown <= AIR_S + SLACK_S * 2:
-                    ax, ay = arc_at(i["x"], i["y"], air)
-                    if near({"x": ax, "y": ay}, AIR_R):
-                        item = i
-                        break
-            if item is None:
-                combo["n"] = 0
-                return reply(False, "miss")
-            if now - t["paid_ts"] < BUNCH_INTERVAL_S:
-                return reply(False, "too_fast")
+        elif t["kind"] == "volley":  # steel bananas, each thrown VOLLEY_GAP_S after the one before: only once it's down
             if air is not None:
-                value *= AIR_MULT
-            item["air"] = air is not None
+                return reply(False, "too_fast")  # nothing to catch: a click on one in the air costs nothing
+            tail = t.get("vine") if t.get("vine") and not t["vine"]["done"] else None  # the vine banana on the end of it
+            if trail is not None:  # a drag: of that vine banana, thrown after the steel ones
+                thrown = {"path": tail["path"], "born": t["born"] + VOLLEY_SIZE * VOLLEY_GAP_S} if tail else None
+                if not thrown or not self._slid(thrown, trail, now) or not near(tail["path"][-1], VINE_R):
+                    return reply(False, "slipped")
+                tail["done"], dragged, value = True, True, VINE_VALUE
+            else:
+                n, item = next(((n, i) for n, i in enumerate(t["items"]) if not i["picked"] and near(i)), (0, None))
+                if item is None:
+                    if tail and near(tail["path"][0]):
+                        return reply(False, "vine")  # on the vine banana, but not dragged: nothing lost
+                    combo["n"] = 0
+                    return reply(False, "miss")
+                if now - (t["born"] + n * VOLLEY_GAP_S) < AIR_S - VOLLEY_EARLY_S or now - t["paid_ts"] < BUNCH_INTERVAL_S:
+                    return reply(False, "too_fast")
         elif air is not None:
             ax, ay = arc_at(t["x"], t["y"], min(1.0, max(0.0, air)))
             if not (AIR_FROM <= air <= AIR_TO) or now - t["born"] > AIR_S + SLACK_S * 2 or not near({"x": ax, "y": ay}, AIR_R):
@@ -556,6 +748,14 @@ class HuntManager:
             value *= GOLD_VALUE
         elif t["kind"] == "bouncy":
             value *= BOUNCE_VALUE
+        elif t["kind"] == "green":  # held until it ripens: a click, or letting go early, doesn't pick it
+            if held is None or held < HOLD_S - HOLD_EARLY_S or now - t["born"] < AIR_S + HOLD_S - GRIP_SLACK_S:
+                return reply(False, "unripe")
+            value *= GREEN_VALUE
+        elif t["kind"] == "vine":
+            value *= VINE_VALUE
+        elif t["kind"] == "bongos":
+            value *= BONGO_VALUE
         elif t["kind"] == "frozen":
             if not t["cracked"]:  # the ice first: nothing paid, nothing lost
                 with self.lock:
@@ -575,23 +775,28 @@ class HuntManager:
         if item is not None:
             item["picked"] = True
             swept = all(i["picked"] for i in t["items"])
+        # Whether that was the last of it: a volley with a vine banana needs both the bananas and the drag.
+        over = not dragged and (item is None or swept)
+        if t["kind"] == "volley" and t.get("vine"):
+            over = t["vine"]["done"] and all(i["picked"] for i in t["items"])
         bonus = 0
-        if swept:  # a bunch's (or a split banana's) bonus; a volley's only when every one was caught in the air
-            bonus = (VOLLEY_BONUS if all(i["air"] for i in t["items"]) else 0) if t["kind"] == "volley" else t.get("bonus", BUNCH_BONUS)
-        pay = min(value * mult + bonus, left)
-        self.db.hunt_pay(name, wheel_day(now), pay, now)
-        picks, credits = picks + 1, credits + pay
-        found = self._found(name, wheel_day(now), picks, now)
-        left, under = self._room(credits, bettor["balance"] + pay)
+        if swept:  # a bunch's (or a split banana's) bonus, or a volley's
+            bonus = VOLLEY_BONUS if t["kind"] == "volley" else t.get("bonus", BUNCH_BONUS)
+        pay, found = min(value * mult + bonus, left), None
+        if not free:  # playing on for nothing leaves no trace: no credits, no pick counted, no hidden item
+            self.db.hunt_pay(name, wheel_day(now), pay, now)
+            picks, credits = picks + 1, credits + pay
+            found = self._found(name, wheel_day(now), picks, now)
+            left, under = self._room(credits, bettor["balance"] + pay)
         with self.lock:
             t["paid_ts"] = now
-            if left <= 0:
+            if left <= 0 and not free:
                 self.targets.pop(key, None)
-            elif item is None or swept:
+            elif over:
                 self.targets[key] = self._new_target(t, now, now)
-        return reply(True, paid=pay, kind=t["kind"], air=air is not None, swept=swept, bunch_bonus=bonus, found=found)
+        return reply(True, paid=pay, kind="vine" if dragged else t["kind"], air=air is not None, swept=swept, bunch_bonus=bonus, found=found)
 
-    def nudge(self, name, now=None):
+    def nudge(self, name, now=None, free=False):
         """The page's timer ran out (a golden banana rotted, a bunch's time is up, Greg arrived): replace the target
         if the server agrees, and say what happened. Never swaps a target that's still good."""
         bettor = self.db.get_bettor(name)
@@ -601,10 +806,11 @@ class HuntManager:
         name = bettor["name"]
         picks, credits = self._day(name, now)
         left, under = self._room(credits, bettor["balance"])
-        if left <= 0:
+        free = bool(free) and left <= 0
+        if left <= 0 and not free:
             return {"reason": "done", "today": int(round(credits)), "left": 0, "done": True, "under_floor": False, "target": None,
                     "combo": 0, "mult": 1}
         t, lapsed = self._target(name, now, early=SLACK_S + 0.2)
         combo = self._combo(name.lower(), now)
-        return {"reason": lapsed, "today": int(round(credits)), "left": left, "done": False, "under_floor": under,
+        return {"reason": lapsed, "today": int(round(credits)), "left": left, "done": False, "free": free, "under_floor": under,
                 "target": self._public(t), "combo": combo["n"], "mult": self._mult(combo["n"])}

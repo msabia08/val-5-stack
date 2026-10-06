@@ -2705,34 +2705,193 @@ def banana_hunt(shared):
     assert [p["paid"] for p in paid] == [1, 1, 1 + H.SPLIT_BONUS] and paid[-1]["swept"] and paid[-1]["bunch_bonus"] == H.SPLIT_BONUS, paid
     r = paid[-1]
     now += 3
-    # A volley: five thrown one after another along a line or an arc. Every one caught in the air: the volley's bonus.
+    # A volley: five steel bananas thrown one after another along a line or an arc. They can't be caught in the air,
+    # or picked before they're down, and neither try costs the combo; all five picked in time: the volley's bonus.
     r = throw(VOLLEY)
     tgt = r["target"]
     assert tgt["kind"] == "volley" and len(tgt["items"]) == H.VOLLEY_SIZE and (tgt["x"], tgt["y"]) == (tgt["items"][0]["x"], tgt["items"][0]["y"])
     assert all(H.MARGIN <= i["x"] <= H.FIELD_W - H.MARGIN and H.MARGIN <= i["y"] <= H.FIELD_H - H.MARGIN for i in tgt["items"])
-    for n, i in enumerate(tgt["items"]):
-        ax, ay = H.arc_at(i["x"], i["y"], 0.5)
-        r = hx.click(who, ax, ay, now=now + n * H.VOLLEY_GAP_S + 0.45, air=0.5)
-        assert r["hit"] and r["air"] and r["kind"] == "volley", (n, r)
-        assert r["paid"] == H.AIR_MULT * r["mult"] + (H.VOLLEY_BONUS if n == H.VOLLEY_SIZE - 1 else 0), (n, r)
-    assert r["swept"] and r["bunch_bonus"] == H.VOLLEY_BONUS and r["target"]["id"] != tgt["id"]
-    now += 4
-    # Picked off the ground instead, it pays the bananas and no bonus; left too long, what's left is gone.
-    r = throw(VOLLEY)
-    tgt = r["target"]
+    streak = r["combo"]
+    ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
+    r = hx.click(who, ax, ay, now=now + 0.45, air=0.5)
+    assert not r["hit"] and r["reason"] == "too_fast" and r["combo"] == streak and not any(i["picked"] for i in r["target"]["items"]), r
+    last = tgt["items"][-1]
+    r = hx.click(who, last["x"], last["y"], now=now + (H.VOLLEY_SIZE - 1) * H.VOLLEY_GAP_S + 0.4)  # the first are down, not this one
+    assert not r["hit"] and r["reason"] == "too_fast" and r["combo"] == streak, r
     for n, i in enumerate(tgt["items"]):
         r = hx.click(who, i["x"], i["y"], now=now + 3 + n * 0.2)
-        assert r["hit"] and not r["air"] and r["paid"] == r["mult"], (n, r)
-    assert r["swept"] and r["bunch_bonus"] == 0
+        assert r["hit"] and not r["air"] and r["kind"] == "volley", (n, r)
+        assert r["paid"] == r["mult"] + (H.VOLLEY_BONUS if n == H.VOLLEY_SIZE - 1 else 0), (n, r)
+    assert r["swept"] and r["bunch_bonus"] == H.VOLLEY_BONUS and r["target"]["id"] != tgt["id"]
     now += 5
+    # Nothing lands on Onkey, in his corner.
+    assert not any(H.HuntManager._on_onkey(**hx._spot()) for _ in range(400)) and H.HuntManager._on_onkey(*H.ONKEY_AT)
+    # Left too long, what's left of a volley is gone.
     r = throw(VOLLEY)
     gone = hx.nudge(who, now=now + (H.VOLLEY_SIZE - 1) * H.VOLLEY_GAP_S + H.AIR_S + H.VOLLEY_TTL_S + 0.1)
     assert gone["reason"] == "bunch_over" and gone["target"]["id"] != r["target"]["id"], gone
     now += 6
+    # Hold and drag. A green banana isn't ripe: it can't be caught in the air, and a click on it, letting go early or a
+    # hold longer than the server's own clock has room for pays nothing and costs nothing. Held for HOLD_S, it pays.
+    GREEN, VINE = 0.69, 0.74
+    r = gone
+    r = throw(GREEN)
+    tgt, streak = r["target"], r["combo"]
+    assert tgt["kind"] == "green" and "path" not in tgt, tgt
+    ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
+    r = hx.click(who, ax, ay, now=now + 0.45, air=0.5)
+    assert not r["hit"] and r["reason"] == "too_fast" and r["combo"] == streak, r
+    down = now + H.AIR_S + 0.1  # when it has landed on the page
+    for held, at in ((H.HOLD_S, down + 0.2), (None, down + 1), (H.HOLD_S / 2, down + 1.2)):
+        r = hx.click(who, tgt["x"], tgt["y"], now=at, held=held)
+        assert not r["hit"] and r["reason"] == "unripe" and r["combo"] == streak and r["target"]["id"] == tgt["id"], (held, r)
+    try:
+        hx.click(who, tgt["x"], tgt["y"], now=down + 1.3, held="long")
+        raise AssertionError("a hold that isn't a number was judged")
+    except BetError:
+        pass
+    r = hx.click(who, tgt["x"], tgt["y"], now=down + 1.5, held=H.HOLD_S)
+    assert r["hit"] and r["kind"] == "green" and r["paid"] == H.GREEN_VALUE * r["mult"] and r["combo"] == streak + 1, r
+    assert r["target"]["id"] != tgt["id"]
+    # Left alone, a green banana goes brown instead, and GREEN_TTL_S after landing it's gone, with nothing lost. A hold
+    # that began before then still counts, though it ends after.
+    now += 4
+    r = throw(GREEN)
+    tgt = r["target"]
+    brown = now + H.AIR_S + H.GREEN_TTL_S  # when the page has it fully brown
+    assert hx.nudge(who, now=brown - 1)["reason"] is None
+    r = hx.click(who, tgt["x"], tgt["y"], now=brown + H.SLACK_S + 0.5, held=H.HOLD_S)
+    assert r["hit"] and r["kind"] == "green", r
+    now += 8
+    r = throw(GREEN)
+    tgt, streak = r["target"], r["combo"]
+    late = hx.click(who, tgt["x"], tgt["y"], now=now + H.AIR_S + H.GREEN_TTL_S + H.SLACK_S + 0.1)  # a click on it, too late
+    assert not late["hit"] and late["reason"] == "rotted" and late["combo"] == streak and late["target"]["id"] != tgt["id"], late
+    now += 8
+    r = hx.click(who, late["target"]["x"], late["target"]["y"], now=now)
+    assert r["hit"], r
+    now += 1
+    r = throw(GREEN)
+    tgt, streak = r["target"], r["combo"]
+    gone = hx.nudge(who, now=now + H.AIR_S + H.GREEN_TTL_S + 0.1)  # the page's own clock ran out
+    assert gone["reason"] == "rotted" and gone["target"]["id"] != tgt["id"] and gone["combo"] == streak, gone
+    r = gone
+    now += 6
+    # A vine banana is dragged along its vine to the far end. A click on it doesn't pick it; the drag comes as a trail,
+    # one [x, y, ms] per spot of the path, and every spot has to be passed in order, near enough, no faster than the
+    # server's clock allows, ending where the click says. A trail that fails costs nothing.
+    r = throw(VINE)
+    tgt, streak = r["target"], r["combo"]
+    path = tgt["path"]
+    end = path[-1]
+    assert tgt["kind"] == "vine" and len(path) == H.VINE_POINTS and path[0] == {"x": tgt["x"], "y": tgt["y"]}, tgt
+    assert H.VINE_MIN_LEN - 2 <= math.hypot(end["x"] - tgt["x"], end["y"] - tgt["y"]) <= H.VINE_MAX_LEN + 2, tgt
+    ax, ay = H.arc_at(tgt["x"], tgt["y"], 0.5)
+    assert hx.click(who, ax, ay, now=now + 0.45, air=0.5)["reason"] == "too_fast"
+    down = now + H.AIR_S + 0.1
+    r = hx.click(who, tgt["x"], tgt["y"], now=down)
+    assert not r["hit"] and r["reason"] == "vine" and r["combo"] == streak, r
+    trail = [[q["x"] + 10, q["y"] - 10, n * 25] for n, q in enumerate(path)]  # 0.6 s from one end to the other
+    assert hx.click(who, end["x"], end["y"], now=down + 0.2, trail=trail)["reason"] == "slipped"  # 0.6 s of drag in 0.2
+    wrong = {"a spot short": trail[:-1], "not a list": "trail", "off the vine": [[x + H.VINE_R, y + 30, ms] for x, y, ms in trail],
+             "never left the start": [[tgt["x"], tgt["y"], ms] for _, _, ms in trail], "back in time": [[x, y, -ms] for x, y, ms in trail],
+             "not numbers": [[x, y, "soon"] for x, y, _ in trail], "nowhere": [[float("nan"), y, ms] for _, y, ms in trail],
+             "two numbers": [[x, y] for x, y, _ in trail], "no time at all": [[x, y, float("inf")] for x, y, _ in trail]}
+    for what, t in wrong.items():
+        r = hx.click(who, end["x"], end["y"], now=down + 1, trail=t)
+        assert not r["hit"] and r["reason"] == "slipped" and r["combo"] == streak and r["target"]["id"] == tgt["id"], (what, r)
+    assert hx.click(who, tgt["x"], tgt["y"], now=down + 1, trail=trail)["reason"] == "slipped"  # it didn't end at the end
+    r = hx.click(who, end["x"], end["y"], now=down + 1, trail=trail)
+    assert r["hit"] and r["kind"] == "vine" and r["paid"] == H.VINE_VALUE * r["mult"] and r["combo"] == streak + 1, r
+    assert r["target"]["id"] != tgt["id"] and not r["air"]
+    # A drag done in a flick still counts, once the banana has been down a moment.
+    now += 4
+    r = throw(VINE)
+    path = r["target"]["path"]
+    flick = [[q["x"], q["y"], n * 5] for n, q in enumerate(path)]
+    assert hx.click(who, path[-1]["x"], path[-1]["y"], now=now + H.AIR_S - 0.3, trail=flick)["reason"] == "slipped"  # still in the air
+    r = hx.click(who, path[-1]["x"], path[-1]["y"], now=now + H.AIR_S + 0.3, trail=flick)
+    assert r["hit"] and r["kind"] == "vine", r
+    # Onkey's bongos: two drums, each with its own meter. Quick taps fill a meter, slow ones let it drain, and the taps
+    # are played back by the server: both full pays; too slow, one drum only, taps no hand could make, or drumming
+    # that takes longer than there has been time for, pays nothing and costs nothing.
+    now += 4
+    BONGOS = 0.79
+    r = throw(BONGOS)
+    tgt, streak = r["target"], r["combo"]
+    assert tgt["kind"] == "bongos" and H.BONGO_EDGE <= tgt["x"] <= H.FIELD_W - H.BONGO_EDGE and H.BONGO_EDGE <= tgt["y"] <= H.FIELD_H - H.BONGO_EDGE, tgt
+    down = now + H.AIR_S + 0.1
+    r = hx.click(who, tgt["x"], tgt["y"], now=down)
+    assert not r["hit"] and r["reason"] == "bongo" and r["combo"] == streak, r
+    roll = lambda drum, n, gap, start=0: [[drum, start + i * gap] for i in range(n)]  # noqa: E731
+    quick = roll(0, 12, 100) + roll(1, 12, 100, 1200)  # ten taps a second: each meter fills on its 11th tap (drained 0.03 between)
+    assert H.HuntManager._drummed({"born": 0}, quick, 100) and not H.HuntManager._drummed({"born": 0}, roll(0, 12, 100), 100)
+    slow = roll(0, 40, 450) + roll(1, 40, 450, 18000)  # a tap every 0.45 s gains 0.125 and drains 0.135: it never fills
+    wrong = {"too slow": slow, "one drum": roll(0, 30, 100), "no hand": roll(0, 12, 5) + roll(1, 12, 5, 100), "not a list": "taps",
+             "a third drum": [[2, 0]] + quick, "no time": [[d, float("nan")] for d, _ in quick], "back in time": quick[::-1],
+             "junk": [[0]] * 30, "too many": roll(0, 300, 30) + roll(1, 300, 30, 9000)}
+    assert hx.click(who, tgt["x"], tgt["y"], now=down + 1, taps=quick)["reason"] == "offbeat"  # 2.3 s of drumming in 1
+    for what, taps in wrong.items():
+        r = hx.click(who, tgt["x"], tgt["y"], now=down + 4, taps=taps)
+        assert not r["hit"] and r["reason"] == "offbeat" and r["combo"] == streak and r["target"]["id"] == tgt["id"], (what, r)
+    r = hx.click(who, tgt["x"], tgt["y"], now=down + 4, taps=quick)
+    assert r["hit"] and r["kind"] == "bongos" and r["paid"] == H.BONGO_VALUE * r["mult"] and r["combo"] == streak + 1, r
+    assert set(hx.terms(now)["bongos"]) == {"value", "gain", "drain", "min_gap_ms"}
+    now += 6
+    # A volley sometimes ends with a vine banana: thrown sixth, right after the steel ones, it lands by the last of them
+    # and is on the field with them. It's dragged like any vine banana (not before it has been thrown and landed), it
+    # pays as one, and the volley is over once the bananas are picked and it's dragged, in either order.
+    now += 4
+    rig.rolls += [VOLLEY, 0.0]  # a volley, and the roll that puts a vine banana on the end of it
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    tgt, streak = r["target"], r["combo"]
+    path, last = tgt["vine"]["path"], tgt["items"][-1]
+    assert tgt["kind"] == "volley" and not tgt["vine"]["done"] and len(path) == H.VINE_POINTS, tgt
+    assert H.VINE_NEAR[0] - 2 <= math.hypot(path[0]["x"] - last["x"], path[0]["y"] - last["y"]) <= H.VINE_NEAR[1] + 2, (path[0], last)
+    trail = [[q["x"], q["y"], n * 20] for n, q in enumerate(path)]  # 0.48 s from end to end
+    landed = now + H.VOLLEY_SIZE * H.VOLLEY_GAP_S + H.AIR_S  # when the vine banana is down
+    assert hx.click(who, path[-1]["x"], path[-1]["y"], now=landed - 0.5, trail=trail)["reason"] == "slipped"  # still in the air
+    r = hx.click(who, path[0]["x"], path[0]["y"], now=landed + 0.1)
+    assert r["reason"] == "vine" and r["combo"] == streak, r  # clicked, not dragged
+    r = hx.click(who, path[-1]["x"], path[-1]["y"], now=landed + 0.7, trail=trail)
+    assert r["hit"] and r["kind"] == "vine" and r["paid"] == H.VINE_VALUE * r["mult"] and not r["swept"] and r["bunch_bonus"] == 0, r
+    assert r["target"]["id"] == tgt["id"] and r["target"]["vine"]["done"], r  # the bananas are still there
+    assert hx.click(who, path[-1]["x"], path[-1]["y"], now=landed + 0.9, trail=trail)["reason"] == "slipped"  # not twice
+    for n, i in enumerate(tgt["items"]):
+        r = hx.click(who, i["x"], i["y"], now=landed + 1.1 + n * 0.2)
+        assert r["hit"] and r["kind"] == "volley" and r["paid"] == r["mult"] + (H.VOLLEY_BONUS if n == H.VOLLEY_SIZE - 1 else 0), (n, r)
+    assert r["swept"] and r["target"]["id"] != tgt["id"] and r["target"]["kind"] == "banana", r
+    now = landed + 8
+    rig.rolls += [VOLLEY, 0.0]  # the other way round: the bananas first, then the drag ends it
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    tgt = r["target"]
+    path, landed = tgt["vine"]["path"], now + H.VOLLEY_SIZE * H.VOLLEY_GAP_S + H.AIR_S
+    for n, i in enumerate(tgt["items"]):
+        r = hx.click(who, i["x"], i["y"], now=landed + 0.1 + n * 0.2)
+    assert r["hit"] and r["swept"] and r["bunch_bonus"] == H.VOLLEY_BONUS and r["target"]["id"] == tgt["id"], r  # the vine banana is left
+    assert hx.nudge(who, now=landed + H.VOLLEY_TTL_S + 1)["reason"] is None  # and the clock allows for it
+    r = hx.click(who, path[-1]["x"], path[-1]["y"], now=landed + 2, trail=[[q["x"], q["y"], n * 20] for n, q in enumerate(path)])
+    assert r["hit"] and r["kind"] == "vine" and r["target"]["id"] != tgt["id"] and r["target"]["kind"] == "banana", r
+    now = landed + 8
+    rig.rolls += [VOLLEY, 0.0]  # left alone, all of it goes when the longer clock runs out
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    gone = hx.nudge(who, now=now + H.VOLLEY_SIZE * H.VOLLEY_GAP_S + H.AIR_S + H.VOLLEY_TTL_S + H.VOLLEY_VINE_TTL_S + 0.1)
+    assert gone["reason"] == "bunch_over" and gone["target"]["kind"] == "banana" and "vine" not in gone["target"], gone
+    r, now = gone, now + 10
+    r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
+    assert r["hit"] and all("vine" not in hx._new_target(None, now) for _ in range(50)), r  # without that roll, no vine banana
+    # Every vine stays in the field and off Onkey, wherever it starts.
+    for _ in range(300):
+        vine = hx._vine(hx._spot())
+        assert len(vine) == H.VINE_POINTS and not any(H.HuntManager._on_onkey(q["x"], q["y"]) for q in vine[1:]), vine
+        assert all(H.MARGIN <= q["x"] <= H.FIELD_W - H.MARGIN and H.MARGIN <= q["y"] <= H.FIELD_H - H.MARGIN for q in vine[1:]), vine
+        assert max(math.hypot(a["x"] - b["x"], a["y"] - b["y"]) for a, b in zip(vine, vine[1:])) < 40, vine  # no jumps along it
+    now += 4
     r = hx.click(who, 0, 0, now=now)  # a miss, so the checks below start from no combo
     assert r["reason"] == "miss" and r["combo"] == 0
     now += 1
-    assert {"corn", "frozen", "bounce", "split", "volley"} <= set(hx.terms(now))
+    assert {"corn", "frozen", "bounce", "split", "volley", "green", "vine"} <= set(hx.terms(now))
+    assert hx.terms(now)["green"] == {"value": H.GREEN_VALUE, "hold_s": H.HOLD_S, "ttl_s": H.GREEN_TTL_S} and hx.terms(now)["vine"] == {"value": H.VINE_VALUE, "r": H.VINE_R}
     # A bunch: five at once, a credit each, and a bonus for sweeping them all in time.
     rig.rolls = [BUNCH]
     r = hx.click(who, r["target"]["x"], r["target"]["y"], now=now)
@@ -2776,6 +2935,37 @@ def banana_hunt(shared):
     assert st["left"] == 2 and st["target"]["kind"] == "golden", st  # two under the cap
     r = tight.click(who, st["target"]["x"], st["target"]["y"], now=now + 2)
     assert r["hit"] and r["paid"] == 2 and r["done"] and r["target"] is None, r
+    # Keep playing: past the cap the hunt can go on for nothing. The game is the same and the combo counts, but nothing
+    # is paid, taken or recorded (not corn's cost, not the boss's prize, not a pick), and it only means anything once
+    # there's nothing left to earn.
+    assert tight.click(who, 100, 100, now=now + 3)["reason"] == "done" and tight.start(who, now=now + 3)["target"] is None
+    had, rows = db.get_bettor(who)["balance"], db.query("SELECT bananas, credits, bonus FROM hunt_days WHERE bettor=? ORDER BY day", (who,))
+    st = tight.start(who, now=now + 3, free=True)
+    assert st["free"] and not st["done"] and st["left"] == 0 and st["target"]["kind"] == "banana", st
+    r = tight.click(who, st["target"]["x"], st["target"]["y"], now=now + 4, free=True)
+    assert r["hit"] and r["free"] and r["paid"] == 0 and not r["done"] and r["combo"] == 2 and r["target"]["id"] != st["target"]["id"], r
+    assert tight.click(who, 0, 0, now=now + 5, free=True)["reason"] == "miss"
+    tight.rng.rolls = [0.40]  # corn: it costs nothing here
+    r = tight.click(who, r["target"]["x"], r["target"]["y"], now=now + 6, free=True)
+    assert r["hit"] and r["paid"] == 0 and r["target"]["kind"] == "corn", r
+    r = tight.click(who, r["target"]["x"], r["target"]["y"], now=now + 7.5, free=True)
+    assert r["reason"] == "corn" and r["lost"] == 0 and r["free"], r
+    tight.rng.rolls = [BOSS]  # the scientist: beating him pays nothing either
+    r = tight.click(who, r["target"]["x"], r["target"]["y"], now=now + 9, free=True)
+    fight, at = r["target"], now + 9
+    assert fight["kind"] == "boss", r
+    for wave in range(len(H.BOSS_WAVES)):
+        at += H.BOSS_INTRO_S + 0.1
+        for claw in fight["boss"]["claws"]:
+            r = tight.click(who, 0, 0, now=at, claw=claw["id"], free=True)
+        fight = r["target"]
+    assert r["hit"] and r["kind"] == "boss" and r["paid"] == 0 and r["free"], r
+    assert tight.nudge(who, now=at + 1, free=True)["free"] and tight.nudge(who, now=at + 1)["reason"] == "done"
+    assert db.get_bettor(who)["balance"] == had and tight.status(who, now=at + 1)["done"]
+    assert rows == db.query("SELECT bananas, credits, bonus FROM hunt_days WHERE bettor=? ORDER BY day", (who,))
+    assert tight.click(who, 0, 0, now=at + 2)["reason"] == "done"  # without asking, the hunt is still closed
+    r = hx.click(who, 0, 0, now=now + 3, free=True)  # with credits still to earn, it means nothing
+    assert "free" not in r and not hx.status(who, now=now + 3, free=True)["free"], r
     # Past the cap there's only the top-up: by default, back up to 50 credits and no further.
     from fivestack.hunt import FLOOR
     topup = HuntManager(db, {"hunt_daily_max": 1})  # well past this cap already

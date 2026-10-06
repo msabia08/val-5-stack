@@ -811,12 +811,13 @@ class Handler(BaseHTTPRequestHandler):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to hunt bananas."}, 403)
+                free = body.get("free") is True  # "Keep playing": past what can be earned today, for nothing
                 if path.endswith("/start"):
-                    return self._json({"me": app.hunt.start(me["name"])})
+                    return self._json({"me": app.hunt.start(me["name"], free=free)})
                 if path.endswith("/next"):  # the page's timer ran out on a golden banana, a bunch or Greg
-                    return self._json(app.hunt.nudge(me["name"]))
+                    return self._json(app.hunt.nudge(me["name"], free=free))
                 out = app.hunt.click(me["name"], body.get("x"), body.get("y"), air=body.get("air"), shoo=bool(body.get("shoo")),
-                                     claw=body.get("claw"))
+                                     claw=body.get("claw"), held=body.get("held"), trail=body.get("trail"), free=free, taps=body.get("taps"))
                 return self._json({**out, "balance": round(app.db.get_bettor(me["name"])["balance"], 2)})
             if path in ("/api/bank/borrow", "/api/bank/repay"):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)

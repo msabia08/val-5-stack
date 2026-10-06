@@ -977,12 +977,31 @@ one you click is **1 credit**.
 - Now and then what Onkey throws is an ear of **corn**, and it looks a lot
   like a banana. Pick it and it costs you 3 credits and your combo, and Onkey
   has something to say about it. Leave it and it's gone in 2 seconds.
-- A **frozen banana** takes two clicks (the first cracks the ice) and pays 2.
+- A **frozen banana** takes two clicks (the first shatters the ice) and pays 2.
   A **bouncing banana** pays 3 but hops to a new spot every 1.2 seconds. Now
   and then a plain-looking banana **splits** into 3 pieces when you click it.
-- A **volley** is 5 bananas thrown one after another along a line or an arc,
-  with little time to pick them once they're down. Catch every one in the air
-  for 5 more.
+- Two bananas aren't picked with a click, as in a rhythm game. A **green
+  banana** isn't ripe: hold the button down on it for 0.8 seconds, until its
+  ring fills, and it pays 3. Leave it alone and it goes brown instead: 4
+  seconds after it lands it's rotten and gone. A **vine banana** hangs on a vine: press on it
+  and drag it along the vine to the ring at the far end for 4. Let go early or
+  stray off the vine and it's back where it started, with nothing lost. With
+  the keyboard, holding Enter or Space does both.
+- A **volley** is 5 **steel bananas** thrown one after another along a line or
+  an arc, built of riveted steel plate. Steel can't be caught in the air: each
+  is an ordinary banana again once it lands, and you pick it then, with little
+  time to do it. Pick all 5 for 5 more. About half of volleys end with a
+  vine banana, thrown right after the fifth steel one and landing beside it:
+  it's on the field with them, and you get 2 more seconds to drag it too.
+- Now and then Onkey throws his **bongos**. Each drum has its own meter (the
+  ring round it) that fills as you tap the drum and drains when you don't, so
+  tap fast. Fill both for 6.
+- Once the day's credits are picked the hunt closes, but **Keep playing**
+  carries on with the same game for fun: nothing more is paid (or taken), and
+  nothing is counted.
+- Everything in the hunt has a **sound** (throws, picks that climb with your
+  combo, cracking ice, ringing steel, the scientist's alarm). The speaker
+  button in the field's bottom-left corner turns them off.
 - Now and then **the scientist** comes for Onkey himself (about 1 throw in 60,
   as often as it comes up). Onkey goes to the middle of the field and arcade claws on long arms come in
   for him from every side, in five waves, each faster than the last: click
