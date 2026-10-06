@@ -183,7 +183,7 @@ class WheelManager:
             return None, seg["label"], None
         if kind == "item":
             owned = {r["item_id"] for r in self.db.query("SELECT item_id FROM banana_items WHERE lower(bettor)=lower(?)", (name,))}
-            options = [i for i in ITEMS.values() if i["id"] not in owned]
+            options = [i for i in ITEMS.values() if i["id"] not in owned and not i.get("earn")]  # earned items are never given
             if not options:
                 self._bananas(name, ALL_ITEMS_OWNED_BANANAS, ref, "Daily wheel: you own every cosmetic")
                 return ALL_ITEMS_OWNED_BANANAS, f"{ALL_ITEMS_OWNED_BANANAS} bananas (you own every cosmetic)", None

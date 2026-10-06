@@ -299,8 +299,17 @@ window.FiveOnkey = (() => {
     st_grand: ['THE GRAND!!! Onkey needs to sit down.', 'The Grand. Onkey will tell this story forever.', 'GRAND JACKPOT. Onkey is crying. Happy crying.'],
     st_stampede: ['That was Onkey running through. Sorry. You\'re welcome.', 'Stampede! Onkey left some wilds behind.'],
     st_inferno: ['Onkey breathed on it. Times {inferno}.', 'Spicy banana! Onkey is breathing fire. Times {inferno}.', 'Too spicy. Worth it. Times {inferno}.'],
-    st_greg: ['Greg again. Onkey did not invite him.', 'Greg put his face on everything. Onkey will clean it later.'],
-    st_slice: ['Man Strudel helped. He is very good with knives. Onkey stands back.', 'A slice from Man Strudel. He says hello.'],
+    st_vault: ['THE VAULT. Onkey opened THE VAULT. +{vault}!', 'JACKPOT! Onkey had the key the whole time. +{vault}!', 'The vault door is open and Onkey is never closing it again. +{vault}!'],
+    st_heist: ['Onkey got {opened} locks open before Man Strudel showed up. He waved. Onkey waved back.', 'A key! Onkey tried. The vault is very stubborn.',
+      'Man Strudel was only following orders. He looked sorry about it.'],
+    st_experiment: ['The Big Experiment! The man with the glasses copied a reel three times. Onkey kept the winnings.', 'All those photos, for this? Onkey will take it.'],
+    st_defect: ['Man Strudel switched sides! For a while. He says sorry to the man with the glasses.', 'Man Strudel and Onkey, slicing together. Best friends.'],
+    st_music: ['Music break! Onkey has been practising.', 'Bongos! Every drum, double. Onkey keeps the beat.'],
+    st_split: ['Banana split. Onkey cut it in two. It counts twice now.', 'Onkey split it. Fair share for everyone.'],
+    st_clone: ['The man with the glasses copied a reel. Onkey checked: still only one Onkey.', 'He tried to copy Onkey and got a reel instead. Good.',
+      'A copy machine. Onkey unplugged it after. Just in case.'],
+    st_slice: ['Man Strudel helped. He is very good with knives. Onkey stands back.', 'A slice from Man Strudel. He says hello.',
+      'Man Strudel cut a line right through it. Everything he cut is wild now. Onkey would not argue with him either.'],
     st_lose: ['The herd went the other way.', 'Not this time. The reels are still warm.'],
     st_golden: ['The Golden Onkey! Onkey has never looked better.', 'Did you see him? Golden. Shining. Onkey, basically.', 'Golden Onkey spotted. Onkey says keep it quiet. +{net}.'],
     st_detonated: ['Spike planted, spike detonated. Onkey covered his ears.', 'BOOM. Third spike. Onkey knew it was coming.'],
@@ -555,8 +564,12 @@ window.FiveOnkey = (() => {
         chime(`theme_${d.theme}`, {}, d.theme.startsWith('th-') ? 0.9 : 0.5, { excited: d.theme === 'th-greg' });
       } else if (kind === 'stampede') {
         const vars = { net: credits(Math.max(0, d.payout - d.stake)), mult: Math.round(d.multiplier), jackpot: d.jackpot, inferno: d.inferno };
-        if (d.jackpot === 'Grand') react('st_grand', vars, { excited: true });
+        if (d.vault) react('st_vault', { ...vars, vault: credits(d.vault) }, { excited: true });
+        else if (d.jackpot === 'Grand') react('st_grand', vars, { excited: true });
         else if (d.jackpot) react('st_jackpot', vars, { excited: true });
+        else if (d.experiment) react('st_experiment', vars, { excited: true });
+        else if (d.defect) react('st_defect', vars, { excited: true });
+        else if (d.heist != null) react('st_heist', { ...vars, opened: d.heist }, { excited: d.heist >= 2 });
         else if (d.golden) react('st_golden', vars, { excited: true });
         else if (d.plant === 'detonated') react('st_detonated', vars, { excited: true });
         else if (d.free_spins) react('st_free', vars, { excited: true });
@@ -565,7 +578,9 @@ window.FiveOnkey = (() => {
         else if (d.inferno) chime('st_inferno', vars, 0.7);
         else if (d.plant === 'defused') chime('st_defused', vars, 0.5);
         else if (d.event === 'stampede') chime('st_stampede', vars, 0.5);
-        else if (d.event === 'greg') chime('st_greg', vars, 0.5);
+        else if (d.event === 'clone') chime('st_clone', vars, 0.5);
+        else if (d.event === 'music') chime('st_music', vars, 0.6);
+        else if (d.event === 'split') chime('st_split', vars, 0.25);
         else if (d.event === 'slice') chime('st_slice', vars, 0.5);
         else if (d.payout > d.stake) chime('st_win', vars, 0.3);
         else if (!d.payout) chime('st_lose', vars, 0.06);

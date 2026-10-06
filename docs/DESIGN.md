@@ -365,19 +365,57 @@ is a banana bunch on green, Minor a coconut on blue, Major Onkey on purple, Gran
 crown on red; the pick's Smoke is a grey cloud. Use them wherever a jackpot is named.
 
 Being honest about money is a rule here: a spin is only a "Win!" (gold) when it paid more than the bet. A payout
-under the bet reads in muted text, named for what paid ("Wall! +5", "3 shapes! +4") over "5 of your 10 back"; its
-ways cells light without the pulse and get no win sound. Shapes are the exception, there to be seen: each gets one
-outline round its group of cells (`.st-shape`: a box per cell, edged only where it doesn't touch another of the group
-and reaching across the reel gap to its neighbour, so bent shapes read as one piece; coloured by tier: cyan for 9 to
-A, green, pink, gold for Onkey, orange for fireballs) with its name on top ("3 in a row", "Block of 6", "Wall ×3"),
-the amount rising out of it and a mallet note (a crackle for fireballs), one after another, and they join the wins
-that take turns after the spin. A spicy banana's fire ("Spicy! ×2") comes after the ways and the shapes and multiplies
-them together. Celebrations (the spicy fire, Big / Mega / Epic) are still for real wins.
+under the bet reads in muted text, named for what paid ("V! +2", "3 shapes! +4") over "5 of your 10 back", and
+gets no win sound. Small amounts show their decimals ("+0.4", "+6.4"): under 100 credits `money()` keeps the cents, so
+a small shape never reads as "+0". Everything that pays looks the same (`reward()` / `reveal()`, `.st-reward`): one
+gold ring round each of its cells, a line drawn through a shape's cells in its direction (white core, gold glow), a gold
+chip naming it ("Bongo drum · 8 ways", "V", "Big V ×3", "3 in a row of fireballs") and the amount rising out of it,
+one after another, ways wins first and then shapes (a mallet note each, a crackle for fireballs); the same in free
+spins, and the same look in the wins that take turns after the spin. Don't give one kind of reward its own colours or
+frame. The shapes' pay table draws each shape as a small dot grid with its line (`shapeIcon()`). A spicy banana's fire
+("Spicy! ×2") and then the Golden Onkey ("Golden Onkey ×3!", the cabinet going gold) come after the ways and the
+shapes and multiply them together. Celebrations (the spicy fire, Big / Mega / Epic) are still for real wins.
 
 The spicy banana bunch is the banana bunch in fire colours with a chili in its corner, a hot WILD tag and its pepper
-("×2") in the red badge free-spin wilds use. The two newer events each have one clear beat, like the Stampede: Greg
-strolls across while the reels spin and his face stamps in cell by cell; Man Strudel leans in from the right, a knife
-slash runs down one reel and it keeps a pale-blue edge and a "×2" tag (`.st-sliced`) until the next spin.
+("×2") in the red badge free-spin wilds use. The two newer events each have one clear beat, like the Stampede. The
+clone ray: the scientist (`scientist.png`, `.st-sci`) leans in from the bottom-left corner while the reels spin, with
+one line in his accent; when they stop, reel 1 glows green and a green beam (`.st-beam`) copies it onto each reel in
+turn, which flickers and swaps its cells. Strudel's slice: Man Strudel leans in from the right, a white cut (`.st-cut`)
+is drawn through the cells he slashes, and each one splits open into a wild (`.st-split`).
+
+The JACKPOT (the house's progressive jackpot, which the Vault Heist's door pays) sits across the very top of the
+cabinet, above the four jackpots: the same meter style in gold (`.st-vault-pot`: dark-gold fill, gold edge, a shine
+running across it), the key emblem, "JACKPOT" in gold letters and the amount in whole credits. Use the key emblem
+(`emblem('vault')`) and that gold wherever the JACKPOT is named. The heist plays over the reels like the jackpot pick
+(`.st-heist`): the vault door with its key hub and three lock dials under it, Onkey at the door, Man Strudel's brainbot
+stepping in from the right as each lock is tried, the scientist's order (his face and one line in his accent) in the
+corner, the prize ladder on the right lighting the rung reached, and the door's odds at your bet in the footer. A dial
+spins, then opens green or holds red; a lock that holds brings Man Strudel to the door (friendly: he waves). With every
+lock open the door strains, then spins open in gold or, on a miss, turns almost all the way, catches on the last
+notch and swings back (`.st-door-near`, the near miss: only the motion, never the odds); open, the "JACKPOT" show
+takes the window. The player picks each lock (`.st-lock.ready` pulses; Pick for me, or Onkey after 20 seconds), so the
+heist stops Auto, ignores Turbo and Skip, and runs at full speed. Keys: the key square beside the fire meter
+(`.st-keys`, an outline whose four sides light gold one per key) takes each Golden Onkey's key as it flies in from his
+cell.
+
+Ripe bananas (the FIRE symbol) are one banana drawn from the sprite (`#st-ripe`, filled with `currentColor`) whose
+ripeness is its value: green under 2× the bet, yellow to 5×, golden from 10× (`ripeness()`), ripening from green as it
+lands, with its credits on a white sticker. The basket (the old fire meter) and the jackpot pick (peel bananas) use
+them too. Beside the basket, after the key square, two quiet meters appear only once they've started filling
+(`.st-prog`: an icon and a row of pips, 🧪 with a 📷 per clone ray, 🤝 with a ❤️ per slice); keep them that small.
+Their bonuses tint the cabinet (`.st-lab` green for the Big Experiment, `.st-friend` blue while Man Strudel is on your
+side, standing small in the corner, `.st-strudel-stay`) and show a counter over the reels. The Banana split marks its
+cell with a gold "×2" tag; the Music break drops its drums, then after the wins each reel with a drum pulses orange in
+turn before the "Music break ×N!" banner. Its sound is synthesized drum hits (`drumroll`), not Onkey's bongo
+recording.
+
+Small moments, each brief: three or more shapes on one spin get a combo tag over the reels ("Triple shape!", `.st-combo`)
+and a closing run; every event is teased a moment before it comes (a puff of dust, a banana, a green flicker on reel 1,
+a blade's glint, `teaser()`), and `TEASE_FAKE` of plain spins get a tease that leads nowhere. Other bettors' notable
+spins pass as a one-line ticker under the JACKPOT (`.st-tick`, gone after six seconds); the Win feed card under the
+cabinet lists them (Everyone / Yours). The daily spin is a green button beside Spin (`.st-daily`), showing how many are
+left. Achievements: the side panel's card lists each with its emoji, how to earn it and a tick; an unlock gets a
+banner and confetti. In Onkey's Shop an earned item shows "🏆 Earned, not sold" instead of a price.
 
 Skip (the Spin button or Space while a spin plays) only hurries the base spin: hold and spin, free spins and the
 jackpot pick always play at their own pace (Turbo still shortens them). Auto stops for a bonus or a 10× win unless

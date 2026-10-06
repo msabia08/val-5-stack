@@ -1072,16 +1072,18 @@ def stampede(shared):
     from fivestack.house import HouseManager, casino_nets
     from fivestack.stampede import (BASE_STRIPS, FS_STRIPS, GOLDEN, JACKPOTS, METER_FULL, NINE, ONKEY, PICK_KINDS,
                                     SPIKE, TEN, WILD, StampedeManager, breakdown, hold_and_spin, pick_game, play, rtp,
-                                    shape_kind, shape_wins, ways_wins)
+                                    shape_wins, ways_wins)
     from fivestack.stampede import ACE, JACK, KING, QUEEN
 
-    # The exact return is 95% (within a twentieth of a point), every part of it counted: ways wins (with the Inferno),
-    # walls and squares, the Golden Onkey's spot pay, scatter pays, free spins (the spike plant's included), hold and
+    # The exact return is 95% (within a twentieth of a point), every part of it counted: ways wins and shapes (with the
+    # spicy bananas' peppers and the Golden Onkey's x3), the Golden Onkey's spot pay, the Vault Heist's prizes (not
+    # the vault door's jackpot, which is the house's), scatter pays, free spins (the spike plant's included), hold and
     # spin's fireballs and full-grid bonus, and the jackpots (each one's seed x how often the pick gives it, plus what
     # every spin grows it by).
     b = breakdown()
     assert abs(rtp() - 0.95) < 0.0005, rtp()
-    assert abs(b["line"] + b["shapes"] + b["spot"] + b["scatter"] + b["free_spins"] + b["hold"] + b["jackpots"]
+    assert abs(b["line"] + b["shapes"] + b["spot"] + b["heist"] + b["experiment"] + b["defect"] + b["scatter"] + b["free_spins"]
+               + b["hold"] + b["jackpots"]
                - b["rtp"]) < 1e-12
     assert abs(b["jackpots"] - sum(b["jackpot_hits"][k] * j["seed"] + j["grow"] for k, j in JACKPOTS.items())) < 1e-12
     assert abs(b["pick_p"] - b["fires"] / METER_FULL) < 1e-12
@@ -1108,48 +1110,69 @@ def stampede(shared):
     assert wins[NINE]["ways"] == 2 and wins[NINE]["reels"] == 3 and wins[NINE]["mult"] == round(2 * st.PAYS[NINE][0], 4)
     assert wins[TEN]["ways"] == 3 * 1 * 2 and ONKEY not in wins
     assert len(wins[NINE]["cells"]) == 4  # the nine, two nines and the wild
-    # The Golden Onkey is wild worth three ways on his reel.
+    # The Golden Onkey is a plain wild in the ways (he multiplies the whole spin instead, in play()).
     grid[2][0] = GOLDEN
-    assert {w["symbol"]: w for w in ways_wins(grid)}[NINE]["ways"] == 2 * 3
-    # Shapes: touching cells of one symbol (wilds joining in) make one group, which pays once for its shape. The two
-    # Onkey reels and the Golden Onkey beside them are one group of nine (a mega block, not two walls and squares), x3
-    # for him; the nines and he make a bent four, x3 too; the tens on reels 1 and 2 a four. The fireballs make no shape
-    # (three bent ones), and a group of two (the Golden Onkey and the ten under him) pays nothing.
-    shapes = shape_wins(grid, values={(1, 3): 1, (2, 2): 1, (2, 3): 1})
-    assert [(x["kind"], x["symbol"], x["x"], x["mult"]) for x in shapes] == [
-        ("four", NINE, 3, round(st.SHAPE_BASE["low"] * st.SHAPE_FACTOR["four"] * 3, 4)),
-        ("four", TEN, 1, round(st.SHAPE_BASE["low"] * st.SHAPE_FACTOR["four"], 4)),
-        ("mega", ONKEY, 3, round(st.SHAPE_BASE["top"] * st.SHAPE_FACTOR["mega"] * 3, 4))], shapes
-    assert shapes[2]["cells"] == [[2, 0]] + [[c, r] for c in (3, 4) for r in range(4)]
-    # A 2 x 3 block of nines is one block, not squares and rows; three fireballs in a row pay a share of their values.
-    grid2 = [[NINE, NINE, ACE, FIRE], [NINE, NINE, KING, FIRE], [NINE, NINE, ACE, FIRE], [QUEEN, KING, KING, JACK],
-             [ACE, KING, QUEEN, JACK]]
-    shapes = shape_wins(grid2, values={(0, 3): 1, (1, 3): 2, (2, 3): 5})
-    assert [(x["kind"], x["symbol"], x["mult"]) for x in shapes] == [
-        ("block", NINE, round(st.SHAPE_BASE["low"] * st.SHAPE_FACTOR["block"], 4)), ("three", FIRE, round(st.FIRE_SHARE * 8, 4))]
-    # A group of wilds alone is no shape; a fireball group never takes in wilds.
-    assert shape_wins([[SPIKE, FIRE, SPIKE, FIRE], [WILD] * 4, [FIRE, SPIKE, FIRE, SPIKE], [SPIKE, FIRE, SPIKE, FIRE],
-                       [FIRE, SPIKE, FIRE, SPIKE]], values={(c, r): 1 for c in range(5) for r in range(4)}) == []
-    # A spicy banana is wild for every symbol (here it finishes three tens on reels 1-3), and a sliced reel doubles
-    # every way and shape through it.
+    assert {w["symbol"]: w for w in ways_wins(grid)}[NINE]["ways"] == 2
+    # Shapes: patterns anywhere on the reels. Spikes fill the rest of these grids, since they never make shapes.
+    def blank():
+        return [[SPIKE] * 4 for _ in range(5)]
+
+    def put(cells, sym):
+        g = blank()
+        for c, r in cells:
+            g[c][r] = sym
+        return g
+    low = st.SHAPE_BASE["low"]
+    # A V of nines pays the V, with its line drawn through it in order.
+    shapes = shape_wins(put([(0, 0), (1, 1), (2, 0)], NINE))
+    assert [(x["kind"], x["symbol"], x["mult"]) for x in shapes] == [("v", NINE, round(low * st.SHAPES["v"][1], 4))]
+    assert shapes[0]["strokes"] == [[[0, 0], [1, 1], [2, 0]]] and shapes[0]["cells"] == [[0, 0], [1, 1], [2, 0]]
+    # A whole row is one 5 in a row, not its 4s and 3s.
+    assert [x["kind"] for x in shape_wins(put([(c, 2) for c in range(5)], TEN))] == ["row5"]
+    # A shape needs two of the symbol itself: a diagonal of nine, wild, nine pays; wild, wild, nine doesn't.
+    g = put([(0, 0), (2, 2)], NINE)
+    g[1][1] = WILD
+    assert [x["kind"] for x in shape_wins(g)] == ["diag"]
+    g[0][0] = WILD
+    assert shape_wins(g) == []
+    # A free spin's wild multiplies a shape by its multiplier (the biggest one in it): a Big V of Onkeys with a x3 wild.
+    g = put([(0, 0), (1, 1), (2, 2), (3, 1), (4, 0)], ONKEY)
+    g[2][2] = WILD
+    shapes = shape_wins(g, {(2, 2): 3})
+    assert [(x["kind"], x["x"], x["mult"]) for x in shapes] == [
+        ("bigv", 3, round(st.SHAPE_BASE["top"] * st.SHAPES["bigv"][1] * 3, 4))], shapes
+    # Fireballs in a row pay a share of their values; two shapes can share a cell (a row of three and a diagonal).
+    g = put([(0, 3), (1, 3), (2, 3)], FIRE)
+    assert [(x["kind"], x["symbol"], x["mult"]) for x in shape_wins(g, values={(0, 3): 1, (1, 3): 2, (2, 3): 5})] == [
+        ("row3", FIRE, round(st.FIRE_SHARE * 8, 4))]
+    assert shape_wins(g) == []  # without values, fireballs aren't looked at
+    g = put([(0, 0), (1, 0), (2, 0), (3, 1), (4, 2)], NINE)
+    assert [x["kind"] for x in shape_wins(g)] == ["row3", "diag"]
+    # A spicy banana is wild for every symbol: here it finishes three tens on reels 1-3, in the ways and as a row.
     SPICY = st.SPICY
     grid3 = [[TEN, ACE, KING, QUEEN], [TEN, KING, ACE, QUEEN], [SPICY, QUEEN, KING, ACE], [ACE, KING, QUEEN, JACK],
              [KING, ACE, JACK, QUEEN]]
     tens = {w["symbol"]: w for w in ways_wins(grid3)}[TEN]
     assert tens["ways"] == 1 and tens["reels"] == 3 and tens["cells"] == [[0, 0], [1, 0], [2, 0]]
-    assert [(x["kind"], x["symbol"]) for x in shape_wins(grid3)] == [("three", TEN)]
-    assert {w["symbol"]: w for w in ways_wins(grid3, sliced=1)}[TEN]["ways"] == 2
-    assert shape_wins(grid3, sliced=1)[0]["x"] == st.SLICE_MULT and shape_wins(grid3, sliced=4)[0]["x"] == 1
-    # The four events come equally often; spicy bananas are only on reels 3-5, and never in free spins.
-    assert len(set(st.EVENTS.values())) == 1 and set(st.EVENTS) == {"stampede", "rain", "greg", "slice"}
+    assert [x["kind"] for x in shape_wins(grid3) if x["symbol"] == TEN] == ["row3"]
+    # The four events; spicy bananas are only on reels 3-5, and never in free spins.
+    assert set(st.EVENTS) == {"stampede", "rain", "clone", "slice", "split", "music"} and 6 < 1 / b["event_p"] < 9
+    # A Banana split's cell counts twice in the ways (here a nine on reel 2: 2 ways become 4).
+    g = [[NINE, TEN, ACE, KING], [NINE, QUEEN, KING, ACE], [NINE, JACK, ACE, KING], [ACE, KING, QUEEN, JACK], [KING, ACE, JACK, QUEEN]]
+    assert {w["symbol"]: w for w in ways_wins(g)}[NINE]["ways"] == 1 and {w["symbol"]: w for w in ways_wins(g, split=(1, 0))}[NINE]["ways"] == 2
+    # The Big Experiment and Man Strudel's spins pay their ways and shapes at their stake, and match the exact math.
+    exp_n, exp_sum, def_sum, brng = 6000, 0.0, 0.0, random.Random(3)
+    for _ in range(exp_n):
+        e = st.big_experiment(brng.randrange, 4)
+        assert all(e["grid"][c] == e["grid"][0] for c in e["to"]) and e["cash"] == round(e["mult"] * 4, 2)
+        exp_sum += e["mult"]
+        d = st.strudel_spins(brng.randrange, 4)
+        assert len(d["spins"]) == st.DEFECT_SPINS and all(sp["grid"][c][r] == WILD for sp in d["spins"] for cut in sp["cuts"] for c, r in cut)
+        def_sum += d["mult"] / st.DEFECT_SPINS
+    assert abs(exp_sum / exp_n - b["experiment_spin"]) < 0.12 * b["experiment_spin"], (exp_sum / exp_n, b["experiment_spin"])
+    assert abs(def_sum / exp_n - b["defect_spin"]) < 0.08 * b["defect_spin"], (def_sum / exp_n, b["defect_spin"])
     assert all((SPICY in strip) == (c >= 2) for c, strip in enumerate(BASE_STRIPS))
     assert all(SPICY not in strip for strip in FS_STRIPS) and 5 < 1 / b["spicy_p"] < 10
-    # The shapes themselves: a straight line of three (not a bent one), a wall, a square, a four, five and up by size.
-    assert shape_kind(3, [(0, 0), (0, 1), (0, 2)]) == shape_kind(3, [(0, 1), (1, 1), (2, 1)]) == "three"
-    assert shape_kind(3, [(0, 0), (0, 1), (1, 1)]) is None and shape_kind(2, [(0, 0), (0, 1)]) is None
-    assert shape_kind(4, [(1, r) for r in range(4)]) == "wall" and shape_kind(4, [(0, 0), (0, 1), (1, 0), (1, 1)]) == "square"
-    assert shape_kind(4, [(c, 2) for c in range(4)]) == shape_kind(4, [(0, 0), (1, 0), (1, 1), (2, 1)]) == "four"
-    assert [shape_kind(n) for n in (5, 6, 7, 8, 12)] == ["five", "block", "block", "mega", "mega"]
     # Free spins' wilds multiply: x2 on reel 2 and x3 on reel 3 make one way worth six.
     grid = [[NINE, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [WILD, TEN, TEN, TEN], [TEN] * 4, [TEN] * 4]
     fs = {w["symbol"]: w for w in ways_wins(grid, {(1, 0): 2, (2, 0): 3})}
@@ -1169,24 +1192,45 @@ def stampede(shared):
         paid += st.cash_mult(r) > 0
         # Onkey's Inferno multiplies the shapes with the ways, and only comes on a spin that won one or the other.
         # A spicy banana's pepper multiplies every ways and shape win, all of them together, only on a spin that won.
+        # The Golden Onkey multiplies them too, on a spin that won.
         ev = r["event"] or {}
-        sliced = ev.get("reel") if ev.get("kind") == "slice" else None
-        fresh = shape_wins(r["grid"], values={(c, row): v for c, row, v in r["values"]}, sliced=sliced)
-        assert [x["mult"] for x in r["shapes"]] == [round(x["mult"] * (r["heat"] or 1), 4) for x in fresh]
+        boost = (r["heat"] or 1) * (r["golden_x"] or 1) * (r["beat"] or 1)
+        fresh = shape_wins(r["grid"], values={(c, row): v for c, row, v in r["values"]})
+        assert [x["mult"] for x in r["shapes"]] == [round(x["mult"] * boost, 4) for x in fresh]
+        split = tuple(ev["cell"]) if ev.get("kind") == "split" and ev["cell"] else None
+        assert [w["mult"] for w in r["wins"]] == [round(w["mult"] * boost, 4) for w in ways_wins(r["grid"], split=split)]
+        # The split cell holds a paying symbol; the Music break's drums are on one reel, and its beat doubles the wins
+        # for every reel showing a drum, on a spin that won.
+        if split:
+            assert r["grid"][split[0]][split[1]] < WILD
+        if ev.get("kind") == "music":
+            assert all(r["grid"][c][row] == st.DRUM for c, row in ev["cells"]) and len({c for c, _ in ev["cells"]}) == 1
+            assert r["beat"] == (2 ** sum(st.DRUM in col for col in r["grid"]) if r["wins"] or r["shapes"] else None)
+        else:
+            assert r["beat"] is None
+        assert r["golden_x"] == (st.GOLDEN_MULT if r["golden"] and (r["wins"] or r["shapes"]) else None)
         assert [[c, row] for c, row, _ in r["spicy"]] == [[c, row] for c in range(5) for row in range(4)
                                                          if r["grid"][c][row] == SPICY]
         if r["spicy"] and (r["wins"] or r["shapes"]):
             assert r["heat"] == st._prod(m for _, _, m in r["spicy"])
         else:
             assert r["heat"] is None
-        # Greg's takeover: a Greg on each of reels 1-3, so a Greg win; the slice picks one reel.
-        if ev.get("kind") == "greg":
-            assert all(r["grid"][c][row] == st.GREG for c, row in ev["cells"]) and {c for c, _ in ev["cells"]} >= {0, 1, 2}
-            assert any(w["symbol"] == st.GREG for w in r["wins"])
+        # The clone ray copies reel 1, fireballs' values included, onto the next reels; the slice's cuts on reels 2-4
+        # are wild, so every paying symbol on reel 1 wins on four reels or more.
+        if ev.get("kind") == "clone":
+            assert ev["to"] == [1, 2] and all(r["grid"][c] == r["grid"][0] for c in ev["to"])
+            first = {row: v for c, row, v in r["values"] if c == 0}
+            assert all(v == first[row] for c, row, v in r["values"] if c in ev["to"])
+        if ev.get("kind") == "slice":
+            assert [c for c, _ in ev["cells"]] == [1, 2, 3] and all(r["grid"][c][row] == WILD for c, row in ev["cells"])
+            won = {w["symbol"]: w["reels"] for w in r["wins"]}
+            assert all(won.get(sym, 0) >= 4 for sym in r["grid"][0] if sym < WILD)
         # Free spins pay their shapes too.
         for spin in (r["free_spins"] or {}).get("spins", []):
             assert spin["mult"] == round(sum(w["mult"] for w in spin["wins"]) + sum(x["mult"] for x in spin["shapes"])
                                          + (spin["scatter"]["mult"] if spin["scatter"] else 0), 4)
+        # Every Golden Onkey drops a key; the heist itself is the manager's (the keys are the spinner's).
+        assert r["key"] == bool(r["golden"]) and r["heist"] is None
         assert st.cash_mult(r) == round(r["line_mult"] + r["shape_mult"] + r["spot"]
                                         + (r["scatter"]["mult"] if r["scatter"] else 0)
                                         + (r["free_spins"]["mult"] if r["free_spins"] else 0)
@@ -1211,8 +1255,15 @@ def stampede(shared):
     assert abs(shape / n - b["shapes"]) < 0.03, (shape / n, b["shapes"])
     assert within(fs_n, b["fs_p"]) and within(hs_n, b["hs_p"]) and within(plants, b["plant_p"])
     assert within(goldens, b["golden_p"])
-    # Plenty of visual wins: about 2 spins in 3 pay something (mostly the small shapes).
-    assert abs(fires / n - b["fires"]) < 0.03 and 0.6 < paid / n < 0.78
+    # A heist every KEYS_FULL Golden Onkeys, paying its prizes by locks opened (the exact chances of each count).
+    assert abs(b["heist_p"] - b["golden_p"] / st.KEYS_FULL) < 1e-15 and 800 < 1 / b["heist_p"] < 2000
+    assert abs(b["heist"] - b["heist_p"] * st.heist_odds()[1]) < 1e-12 and abs(sum(st.heist_odds()[0]) - 1) < 1e-12
+    for _ in range(200):
+        hs = st.heist(rng.randrange, 7.5)
+        assert hs["opened"] == sum(hs["locks"]) and hs["mult"] == st.HEIST_PAYS[hs["opened"]] and hs["cash"] == round(hs["mult"] * 7.5, 2)
+        assert all(hs["locks"][:-1]) and (len(hs["locks"]) == st.HEIST_LOCKS or not hs["locks"][-1])
+    # Plenty of visual wins: a little under half the spins pay something (often a shape).
+    assert abs(fires / n - b["fires"]) < 0.03 and 0.38 < paid / n < 0.52, paid / n
     # Hold and spin: from six fireballs it ends with about the exact expected count, each new one resets the respins
     # to three, and it pays every fireball's value (plus the bonus on a full grid).
     start = [[c, 0, 1] for c in range(5)] + [[0, 1, 1]]
@@ -1313,6 +1364,66 @@ def stampede(shared):
     assert demo.meter("Stomper") == meter
     # Old retry keys survive the reset.
     assert manager.spin("Stomper", 10, "stomp-0000000000000001")["spin"]["id"] == spin["id"]
+    # The vault door's chance grows with the bet; past every lock it pays the house's JACKPOT (the daily wheel's),
+    # whole, through house_payouts and on top of what the machine pays.
+    assert st.door_chance(100) == st.DOOR_CHANCE and st.door_chance(10) == st.DOOR_CHANCE / 10
+    vaulted = StampedeManager(db, demo=True, house=house_mgr)
+    jackpot = vaulted.jackpot(fresh=True)
+    assert jackpot and jackpot == int(house_mgr.summary_pots()[1]) and manager.jackpot() is None
+    # The key meter: a Golden Onkey's key goes in at the spin's stake, and the fourth starts the heist at the keys'
+    # average stake (so raising the bet for the last key gains little), its prize in the spin's payout.
+    db.execute("INSERT OR REPLACE INTO stampede_keys(bettor, stakes) VALUES('Stomper', '[2, 2, 10]')")
+    g = vaulted.spin("Stomper", 100, "stomp-0000000000000010", force="golden")
+    gr = g["spin"]["result"]
+    assert gr["key"] and gr["keys"] == {"before": 3, "full": st.KEYS_FULL, "after": 0} and g["keys"]["stakes"] == []
+    assert gr["heist"]["stake"] == round((2 + 2 + 10 + 100) / 4, 2) and gr["heist"]["cash"] == round(gr["heist"]["mult"] * 28.5, 2)
+    assert g["spin"]["payout"] == round(100 * gr["cash_mult"] + gr["heist"]["cash"] + sum(j["amount"] for j in gr["jackpots"]), 2)
+    assert vaulted.spin("Stomper", 5, "stomp-0000000000000011", force="golden")["keys"]["stakes"] == [5]
+    # The evidence board and Man Strudel's friendship: a clone ray and a slice each add their stake; full, the bonus
+    # plays at the meter's average stake, in the spin's payout.
+    db.execute("INSERT OR REPLACE INTO stampede_progress(bettor, lab, friend) VALUES('Stomper', '[2, 2, 2, 2, 2]', '[10, 10, 10, 10]')")
+    ex = vaulted.spin("Stomper", 50, "stomp-0000000000000013", force="clone")
+    er = ex["spin"]["result"]
+    assert er["experiment"]["stake"] == round((2 * 5 + 50) / 6, 2) and ex["progress"]["lab"] == []
+    assert ex["spin"]["payout"] == round(50 * er["cash_mult"] + er["experiment"]["cash"] + sum(j["amount"] for j in er["jackpots"]), 2)
+    df = vaulted.spin("Stomper", 10, "stomp-0000000000000014", force="slice")
+    assert df["spin"]["result"]["defect"]["stake"] == 10 and df["progress"]["friend"] == []
+    assert vaulted.spin("Stomper", 10, "stomp-0000000000000015", force="slice")["progress"]["friend"] == [10]
+    jackpot = vaulted.jackpot(fresh=True)
+    before = db.get_bettor("Stomper")["balance"]
+    v = vaulted.spin("Stomper", 2, "stomp-0000000000000009", force="vault")
+    h = v["spin"]["result"]["heist"]
+    assert h["locks"] == [True] * st.HEIST_LOCKS and h["door"] and h["jackpot"] == jackpot
+    assert v["spin"]["payout"] == round(2 * v["spin"]["result"]["cash_mult"] + h["cash"], 2)
+    assert abs(v["balance"] - (before - 2 + v["spin"]["payout"] + jackpot)) < 0.01
+    row = db.query_one("SELECT * FROM house_payouts WHERE ref=?", (f"stampede:{v['spin']['id']}",))
+    assert row["kind"] == "jackpot" and row["amount"] == jackpot and v["jackpot"] < jackpot
+    assert StampedeManager.brief(db.query_one("SELECT * FROM stampede_spins WHERE id=?", (v["spin"]["id"],)))["vault"] == jackpot
+    # Achievements: the vault and every lock unlock their earned-only cosmetics, once; the shop won't sell them and the
+    # daily wheel never gives them.
+    assert {"tt-vault", "bd-key"} <= set(v["spin"]["result"]["unlocked"])
+    mine = {a["id"]: a["have"] for a in vaulted.achievements("Stomper")}
+    assert mine["tt-vault"] and mine["bd-key"] and set(mine) == {i for i, _ in st.ACHIEVEMENTS}
+    again = vaulted.spin("Stomper", 2, "stomp-0000000000000012", force="vault")["spin"]["result"]
+    assert "tt-vault" not in again["unlocked"]
+    from fivestack.bananas import BananaManager, ITEMS
+    assert all(ITEMS[i].get("earn") for i, _ in st.ACHIEVEMENTS)
+    _expect_error(BananaManager({}, db, bets).buy, "Broke", "bd-bigv", contains="can't be bought")
+    # The win feed: notable spins, everyone's and one bettor's.
+    feed = vaulted.feed()
+    assert feed and feed[0]["id"] > v["spin"]["id"] and any("tt-vault" in f["unlocked"] for f in feed)
+    assert all(f["bettor"] == "Stomper" for f in vaulted.feed(name="stomper"))
+    # Daily spins: DAILY_SPINS a day at DAILY_STAKE, the stake given by the house (a free payout, not from the pot);
+    # the balance moves only by what the spin pays.
+    assert vaulted.daily("Broke")["left"] == st.DAILY_SPINS and manager.daily("Broke") is None
+    for k in range(st.DAILY_SPINS):
+        before = db.get_bettor("Broke")["balance"]
+        d = vaulted.spin("Broke", 100, f"broke-daily-00000000{k}", daily=True)
+        assert d["spin"]["stake"] == st.DAILY_STAKE and d["spin"]["result"]["daily"]
+        assert abs(d["balance"] - (before + d["spin"]["payout"])) < 0.01 and d["daily"]["left"] == st.DAILY_SPINS - k - 1
+    assert vaulted.spin("Broke", 10, "broke-daily-000000000", daily=True)["spin"]["id"] == d["spin"]["id"] - 2  # a retry
+    _expect_error(lambda: vaulted.spin("Broke", 10, "broke-daily-000000009", daily=True), contains="No daily spins")
+    assert db.query_one("SELECT COUNT(*) AS n FROM house_payouts WHERE kind='stampede_daily'")["n"] == st.DAILY_SPINS
     db.conn.close()
 
 

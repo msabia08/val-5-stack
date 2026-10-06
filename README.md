@@ -105,52 +105,109 @@ ways, and so on. Stakes are 2, 5, 10, 25, 50 or 100 credits. The Bongo Onkey is
 wild on reels 2 to 5. A spin only counts as a win when it pays more than your
 bet; a smaller payout says how much of your bet came back.
 
-- **Shapes:** anywhere on the reels, on top of the ways, touching symbols of
-  one kind (side by side or one above the other, wilds joining in) make a
-  group, and a group pays once, for its shape: 3 in a straight line, four, a
-  2 × 2 square, a wall (a whole reel), five, a block of 6 or 7, or a mega block
-  of 8 or more. So a 2 × 3 patch is one "Block of 6", never two squares and
-  some rows. What it pays is the symbol's base (9 to A 0.04×, coconut and drum
-  0.08×, banana, Valorant and Greg 0.2×, Onkey 0.4×) times the shape's
-  (3 in a row 1, four 2, square 2.5, wall 3, five 4, block 6, mega 10).
-  Fireballs make shapes too and pay a fifth of the credits printed on them
-  (they still fill the meter). A spicy banana's pepper multiplies shapes along
-  with the ways, and the biggest multiplying wild in a shape (the Golden Onkey, a
-  free spin's ×2 or ×3) multiplies it. Free spins pay shapes too. Most shapes
-  are small, but they come often: something pays on about 2 spins in 3.
+- **Shapes:** anywhere on the reels, on top of the ways, two or more of one
+  symbol (wilds fill in the rest) laid out in a shape pay: 3 in a row, a
+  diagonal, a V, a peak, 4 in a row, a wall (a whole reel), a long diagonal,
+  5 in a row, a cross, a zigzag, a big V, a mountain or an X. A bigger shape
+  pays instead of the smaller ones inside it (a 5 in a row is never also two
+  4s and three 3s), and different shapes can share cells. What it pays is the
+  symbol's base (9 to A, coconut and drum 0.2×, banana, Valorant and Greg 0.3×,
+  Onkey 0.6×) times the shape's (the 3-cell shapes 1, wall 1.5, 4 in a row 2.5,
+  long diagonal 4, cross 6, 5 in a row 12, zigzag 15, big V, mountain and X
+  25), so even the smallest pays 2 credits at a 10 bet. The page's pay table
+  draws each shape. Ripe bananas make shapes too and pay 10% of the credits
+  on their stickers (they still fill the basket). A spicy banana's pepper and the
+  Golden Onkey multiply shapes along with the ways, and the biggest multiplying
+  wild in a shape (a free spin's ×2 or ×3) multiplies it. Free spins pay shapes
+  too. Every ways win and shape is shown the same way: its cells ringed in
+  gold, a line through a shape, its name and what it paid.
 - **Spike planted:** with exactly two spikes showing, about a quarter of the
   time the spike plants: the two arm, and every reel without one spins again,
   looking for the third (about 1 spin in 75). A third detonates it into free
   spins; otherwise it's defused.
-- **Free spins:** three or more spikes anywhere pay and give 7, 10 or 15 free
+- **Free spins:** three or more spikes anywhere pay and give 6, 9 or 13 free
   spins on richer reels, where every wild carries ×2 or ×3 and wilds in a win
   multiply each other. Three more spikes add 5 spins (50 at most).
-- **Hold and spin:** six or more golden fireballs stick, each showing the
-  credits it pays, and you get three respins; every new fireball resets them to
-  three. When they run out every fireball pays, and filling all 20 cells adds a
-  100× bonus.
-- **Fire meter and the jackpot pick:** every fireball you land adds your bet
-  to your own fire meter (it keeps between visits), so bigger bets fill it
-  faster. At 3,000 it opens the jackpot pick: crack fireballs open until one
-  jackpot shows three times and it's yours, or three smokes end it with nothing.
+- **Ripe bananas and hold and spin:** a ripe banana carries credits on its
+  sticker, and its ripeness shows how many: green for half or all of your bet,
+  yellow for 2× to 5×, golden for 10× and up (it lands green and ripens). Six or
+  more stick, and you get three respins; every new one resets them to three.
+  When they run out every banana pays, and filling all 20 cells (very rare)
+  adds a 100× bonus.
+- **Banana basket and the jackpot pick:** every ripe banana you land adds your
+  bet to your own basket (it keeps between visits), so bigger bets fill it
+  faster. At 3,000 it opens the jackpot pick: peel bananas until one jackpot
+  shows three times and it's yours, or three smokes end it with nothing.
   Mini, Minor, Major and Grand are shared credit amounts (starting at 100, 250,
   800 and 5,000), the same for everyone, and grow with every spin anyone makes.
 - **Spicy bananas:** a spicy banana bunch on reels 3 to 5 is wild, and carries
   a pepper (×2, sometimes ×3). When one lands on a spin that wins anything, Onkey
   eats it and breathes fire: every win on the spin is multiplied by its pepper,
   and two or more multiply together. One lands about 1 spin in 7.
-- **Events:** each about 1 spin in 83: Onkey stampedes across the reels and
-  leaves wilds behind (always enough for a win); bananas rain down and turn into
-  fireballs; Greg takes over, putting his face on reels 1 to 3 (always a win) and
-  sometimes on 4 and 5; or Man Strudel slices a reel, and every win through it
-  pays double.
+- **Events:** one about every 7 spins: Onkey stampedes across the reels and
+  leaves wilds behind (always enough for a win); bananas rain down as ripe
+  bananas; the scientist turns up with his clone ray and copies reel 1 onto
+  reels 2 and 3, bananas and spikes included; Man Strudel slashes a line
+  (straight or diagonal) across reels 2 to 4, and every cell he cuts turns
+  wild, so everything on reel 1 wins on four reels or more; a **Banana split**
+  splits one symbol in two, so it counts twice in the ways; or a **Music
+  break** drops a pair of bongo drums on a reel, and every reel showing a drum
+  doubles every win on the spin.
+- **The evidence board and Man Strudel's friendship:** two small meters beside
+  the basket, which only show once they've started. Every clone ray pins a
+  photo to the scientist's board, and the sixth starts **the Big Experiment**:
+  one bonus spin with reel 1 copied onto three reels (about 1 spin in 300).
+  Every slice adds a heart to Man Strudel's friendship, and the fifth makes him
+  **switch sides** for 3 bonus spins, slashing a line of wilds on each (about 1
+  spin in 190). Both pay their ways and shapes at the average bet of the spins
+  that filled them, so raising your bet for the last step gains nothing.
 - **The Golden Onkey:** a secret symbol, on no reel strip and not in the pay
-  table. About 1 spin in 230, a symbol turns into him as his reel lands: he's
-  wild worth three ways on his reel, and pays 5× just for being spotted.
+  table. About 1 spin in 250, a symbol turns into him as his reel lands: he's
+  wild, pays 2× just for being spotted, and once the ways and shapes are counted
+  multiplies every win on the spin by 3.
+- **The Vault Heist and the JACKPOT:** every Golden Onkey drops a key into
+  your own key meter, a square beside the basket whose sides light up one per
+  key (it keeps between visits, and has nothing to do with the basket).
+  Four keys start the heist (about 1 spin in 1,000). It stops Auto (Nonstop
+  too), plays at full speed whatever Turbo says, and Skip can't hurry it: you
+  pick which lock Onkey tries next (or press Pick for me; he picks after 20
+  seconds), while the scientist sends Man Strudel, in the brainbot, after the
+  vault. The first lock that holds ends it (Man Strudel gets there, waves, and
+  lets Onkey keep what he found), paying 5×, 10×, 25× or 50× for 0 to 3 locks
+  open, × the average bet of the spins your four keys came on (so raising your
+  bet for the last key doesn't pay). Past every lock, the vault door opens with
+  a chance that grows with that bet (1 time in 2 at 100, 1 in 20 at 10, 1 in
+  100 at 2); when it doesn't, it turns almost all the way before it catches.
+  An open door pays the
+  whole **JACKPOT**, shown in gold above the four jackpots: the house's
+  progressive jackpot, the same one the daily wheel's rarest slice pays, which
+  every bet and casino round grows. It's paid from the house's money like the
+  wheel's, so it shows in Standings as a giveaway, not in your Stampede net, and
+  it's posted to Discord.
+- **Daily spins:** three free spins a day (the day turns at midnight Pacific,
+  like the daily wheel) at a 10-credit bet: the house pays the bet, and you
+  keep what they win. The green Daily spin button by Spin shows how many are
+  left.
+- **Achievements:** the rarest moments unlock looks that can't be bought, shown
+  next to your name across the site (Standings, tickets, the tables) once you
+  wear them in Onkey's Shop: Vault Cracker (title, open the vault door),
+  Safecracker 🔑 (open every lock), Big V ✌️, Mountain 🏔️ and X Marks the Spot
+  🗺️ (badges, land those shapes), Zigzagger (title, a Zigzag) and Seeing Double
+  (title, 20× your bet on a clone ray spin). The page lists them with yours
+  ticked. The shop shows them as earned, not sold, and the daily wheel never
+  gives them.
+- **Win feed:** the page's Win feed lists the latest notable spins (10× or
+  more, a bonus, a heist, a jackpot, an achievement), everyone's or yours, and
+  while you play a line across the cabinet announces other people's as they
+  happen.
+- **Little moments:** three or more shapes on one spin are a combo ("Triple
+  shape!", "Quad shape!", "Shape storm!"); each event is hinted a moment
+  before it comes (dust, a banana, a green flicker on reel 1, a blade's glint),
+  and now and then a hint comes to nothing.
 
 It pays back about 95% of stakes over time, jackpots included: a paying spin
-about 2 in 3, most of them less than the bet; free spins about 1 spin in 120
-and hold and spin about 1 in 160; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
+a little under half the time, about 1 in 7 more than the bet; free spins about
+1 spin in 115 and hold and spin about 1 in 185; at a 10-credit bet the pick about every 250 spins (25 at 100) and the Grand about 1 in 49,000.
 Space spins, and pressing it again skips ahead through the spin (the bonuses
 always play at their own pace); **Auto** spins 10, 25 or 50 times and stops for
 a bonus or a big win, unless **Nonstop** is on, when it only stops if your

@@ -98,8 +98,9 @@ class App:
         self.hunt = HuntManager(self.db, cfg)
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db, golden_boost=DEMO_GOLDEN_BOOST if demo else 1)  # demo: Golden Onkeys to test
-        self.stampede = StampedeManager(self.db, demo=demo)  # demo: a spin can ask for a feature
         self.house = HouseManager(self.db, self.bets, self.rewards)  # the take (bets and the casino) and what it gives back
+        # demo: a spin can ask for a feature; the house holds the JACKPOT its vault door pays (the daily wheel's)
+        self.stampede = StampedeManager(self.db, demo=demo, house=self.house)
         self.wheel = WheelManager(self.db, self.house, unlimited=demo)  # demo: spin as often as you like
         self.blackjack = BlackjackManager(self.db)
         self.roulette = RouletteManager(self.db)
@@ -605,7 +606,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/stampede":
             return self._json(app.stampede.summary(app.auth.current_bettor(self.headers.get("Cookie"), app.db)))
         if path == "/api/stampede/pots":
-            return self._json({"pots": app.stampede.pots(), "jackpot_log": app.stampede.jackpot_log()})
+            return self._json({"pots": app.stampede.pots(), "jackpot": app.stampede.jackpot(),
+                               "jackpot_log": app.stampede.jackpot_log(), "feed": app.stampede.feed()})
         if path in ("/api/blackjack", "/api/poker"):
             me = app.auth.current_bettor(self.headers.get("Cookie"), app.db)
             name = me["name"] if me else None
@@ -861,8 +863,12 @@ class Handler(BaseHTTPRequestHandler):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to spin."}, 403)
-                return self._json(app.stampede.spin(me["name"], body.get("stake"), body.get("request_id"),
-                                                    force=body.get("force")))  # honoured in demo mode only
+                spun = app.stampede.spin(me["name"], body.get("stake"), body.get("request_id"), force=body.get("force"),
+                                         daily=body.get("daily") is True)  # force: honoured in demo mode only
+                vault = (spun["spin"]["result"].get("heist") or {}).get("jackpot") or 0
+                if vault and spun["spin"]["created_ts"] > time.time() - 60:  # not on a retry of an old spin
+                    app.discord.send(jackpot_message(me["name"], vault, "cracked the vault in Onkey Stampede and took the jackpot"))
+                return self._json(spun)
             if path.startswith(("/api/blackjack/", "/api/poker/", "/api/roulette/", "/api/crash/")):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

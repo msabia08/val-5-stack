@@ -47,6 +47,12 @@ def _item(id_, slot, name, price, desc, **look):
     return {"id": id_, "slot": slot, "name": name, "price": price, "desc": desc, "look": look}
 
 
+def _earned(id_, slot, name, value, earn, **look):
+    """An item that's earned, never sold (`earn` says how; Onkey Stampede's ACHIEVEMENTS give them): `value` only counts
+    towards a collection, and the daily wheel never gives one."""
+    return {**_item(id_, slot, name, value, earn, **look), "earn": earn}
+
+
 CATALOG = [
     _item("nc-peel", "name_color", "Ripe", 120, "Fresh banana yellow.", cls="nc-peel"),
     _item("nc-jungle", "name_color", "Jungle", 120, "Deep canopy green.", cls="nc-jungle"),
@@ -80,6 +86,11 @@ CATALOG = [
     _item("bd-goat", "badge", "GOAT", 300, "Bold. Hope you can back it up.", emoji="🐐"),
     _item("bd-diamond", "badge", "Diamond", 500, "Hands, rank, or both.", emoji="💎"),
 
+    _earned("bd-key", "badge", "Safecracker", 400, "Open every lock in a Vault Heist in Onkey Stampede.", emoji="🔑"),
+    _earned("bd-bigv", "badge", "Big V", 300, "Land a Big V in Onkey Stampede.", emoji="✌️"),
+    _earned("bd-mountain", "badge", "Mountain", 300, "Land a Mountain in Onkey Stampede.", emoji="🏔️"),
+    _earned("bd-xmark", "badge", "X Marks the Spot", 300, "Land an X in Onkey Stampede.", emoji="🗺️"),
+
     _item("tt-cheeky", "title", "Cheeky Monkey", 100, "Always up to something.", text="Cheeky Monkey"),
     _item("tt-barrel", "title", "Barrel of Monkeys", 120, "More fun than one.", text="Barrel of Monkeys"),
     _item("tt-eco", "title", "Eco Monkey", 120, "Saves on everything but bets.", text="Eco Monkey"),
@@ -89,6 +100,9 @@ CATALOG = [
     _item("tt-king", "title", "King of the Jungle", 800, "Technically a lion's title. Took it anyway.", text="King of the Jungle"),
     _item("tt-baiter", "title", "Certified Baiter", 100, "Someone has to go second.", text="Certified Baiter"),
     _item("tt-spike", "title", "Spike Planter", 100, "Carries the bomb, carries the team.", text="Spike Planter"),
+    _earned("tt-vault", "title", "Vault Cracker", 1500, "Open the vault door in Onkey Stampede's Vault Heist.", text="Vault Cracker"),
+    _earned("tt-zigzag", "title", "Zigzagger", 300, "Land a Zigzag in Onkey Stampede.", text="Zigzagger"),
+    _earned("tt-double", "title", "Seeing Double", 250, "Win 20 times your bet on a clone ray spin in Onkey Stampede.", text="Seeing Double"),
     _item("tt-notforsale", "title", "Not For Sale", 500, "Free if you turn the scientist down when he makes his offer.", text="Not For Sale"),
     _item("tt-hoarder", "title", "Ult Hoarder", 120, "Saving it for the right moment. Any day now.", text="Ult Hoarder"),
     _item("tt-ecofrag", "title", "Eco Frag Enjoyer", 150, "Sheriff diffs only.", text="Eco Frag Enjoyer"),
@@ -348,6 +362,8 @@ class BananaManager:
         item = ITEMS.get(item_id)
         if not item:
             raise BetError("That item isn't in the shop.")
+        if item.get("earn"):
+            raise BetError(f"{item['name']} can't be bought: {item['earn']}")
         with self.db.lock:
             if self.db.query_one("SELECT 1 FROM banana_items WHERE bettor=? AND item_id=?", (name, item_id)):
                 raise BetError("You already own that.")

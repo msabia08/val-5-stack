@@ -303,6 +303,17 @@ CREATE TABLE IF NOT EXISTS stampede_pots (
 
 -- Each bettor's Onkey Stampede fire meter: credits of fireballs (each adds its spin's stake) since their last jackpot
 -- pick. Kept through resets.
+CREATE TABLE IF NOT EXISTS stampede_progress (
+    bettor TEXT PRIMARY KEY,
+    lab TEXT NOT NULL DEFAULT '[]',     -- JSON: the stake of each clone ray pinned to the evidence board
+    friend TEXT NOT NULL DEFAULT '[]',  -- JSON: the stake of each Strudel's slice towards his friendship
+    updated_ts REAL
+);
+CREATE TABLE IF NOT EXISTS stampede_keys (
+    bettor TEXT PRIMARY KEY,
+    stakes TEXT NOT NULL DEFAULT '[]',  -- JSON: the stake of each Golden Onkey's key held, oldest first
+    updated_ts REAL
+);
 CREATE TABLE IF NOT EXISTS stampede_meters (
     bettor TEXT PRIMARY KEY,
     heat REAL NOT NULL DEFAULT 0,
@@ -463,7 +474,7 @@ CREATE TABLE IF NOT EXISTS house_payouts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bettor TEXT NOT NULL,
     amount REAL NOT NULL,
-    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot
+    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot / stampede_daily
     ref TEXT NOT NULL UNIQUE,  -- objective:<id>:<bettor>, refund:<bet id>, insurance:<bet id> or wheel:<spin id>: paid once
     match_id TEXT,
     note TEXT,
