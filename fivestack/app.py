@@ -863,6 +863,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "Sign in as a bettor to spin."}, 403)
                 return self._json(app.slots.spin(me["name"], body.get("machine"), body.get("stake"), body.get("request_id"),
                                                   daily=body.get("daily") is True))
+            if path == "/api/slots/hold":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to spin."}, 403)
+                return self._json(app.slots.hold(me["name"], body.get("spin"), body.get("request_id")))
             if path == "/api/stampede/spin":
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:

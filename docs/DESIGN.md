@@ -242,7 +242,11 @@ about half (never the tease). While the day's free spins last, a lit gold tag (`
 sits over the top of the Spin button, which reads "Free", and the readout's Bet shows the free spin's stake. Switching it on spins straight away and again after every spin
 (a longer pause after a win, longer still after one with a celebration) until it's
 switched off, the credits run short, a spin fails or you leave the tab. Chrome is `--slot-chrome` / `--slot-chrome-dark`. There's no footer. Two gold arrows (`.slots-line-arrow`) mark the centre line, with no rule drawn across the symbols (thin lines over the reels were distracting); the reels' shading leaves the middle row brightest;
-adjacent symbols remain partly visible above and below. Six stake buttons show
+adjacent symbols remain partly visible above and below. A hold on offer (`holdBtn()`, `.slots-hold`) is a gold button on the bottom edge of the reel window, on a phone too: "Hold" and the
+pair's two symbols over one small line ("10 to respin · 1 in 8.4 pays 80", or "Not enough credits", greyed);
+H presses it. While its reel spins the two kept reels are ringed in gold (`.slots-reel.held`). A nudge shows a
+"Nudge!" tag (`.slots-nudge-tag`) at the top of the reel that stopped short, where a Golden Onkey's "Spotted!"
+goes, until it bumps onto the line. Six stake buttons show
 the selection. Payouts list largest first, with multipliers and current credits,
 each line's chance ("1 in 20") and how often you've hit it, with a note on when
 your hits started counting. A `secret` symbol (the Golden Onkey) never appears in the pay

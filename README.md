@@ -65,7 +65,22 @@ the moment its reel stops.
 Pull the lever on the side of the machine, press the red Spin button or press
 Space. The Auto key beside the Spin button keeps the machine spinning until you
 switch it off (or run short of credits, or leave the tab), and the Turbo key next
-to it makes every spin faster. The reels clank as they turn and stop one at a time; when the result has
+to it makes every spin faster.
+
+**Hold.** When a spin loses with two matching symbols on the line, the machine now
+and then (about one such spin in three) offers a hold: a gold Hold button under
+the reels, saying what it costs and what it's after. Take it (click it or press
+H) and the pair stays put while the third reel spins again on its own, for the
+same stake as the spin. If it lands the pair's symbol you're paid that line. The
+chance is set so a hold pays back exactly what the machine does (95%) whatever
+the symbol: about 1 in 3 for cherries, 1 in 84 for Onkeys. Spin again instead and
+the offer is gone.
+
+**Nudge.** About one win in four arrives the hard way: the last reel stops one
+symbol short, looking like a loss, then gets a nudge onto the line a moment
+later. It's only how the win is shown; the result was the same all along.
+
+The reels clank as they turn and stop one at a time; when the result has
 a matching pair, those two reels stop first, so the last reel to stop is always
 the one that decides the spin (and with no pair it follows close behind). The
 next reel waits longer the bigger the symbol already showing; the readout under the reels shows

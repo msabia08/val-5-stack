@@ -27,6 +27,13 @@ window.FiveSlots = (() => {
   const TURBO = .4;
   let turbo = localStorage.getItem('fs.slotsTurbo') === '1';
   const quick = (ms) => (turbo ? ms * TURBO : ms);
+  // Hold: a losing spin with a pair is sometimes offered one by the server (spin.hold: the reel that spins again, the
+  // pair's symbol, its line's multiplier and the chance). The Hold button under the reel window takes it for the
+  // spin's stake: the pair stays and the third reel spins alone. Any other spin lets the offer go.
+  const holdOffer = () => (!busy && !pending && state.me && result?.hold) || null;
+  // Nudge: NUDGE_CHANCE of wins (never a teased one) stop the deciding reel one symbol short, looking lost, then bump
+  // it onto the line NUDGE_WAIT seconds later. It's only how a win arrives: the server's result is never changed.
+  const NUDGE_CHANCE = .25, NUDGE_WAIT = .6;
   // Daily spins (data.daily, from the server): while any are left today, a spin is free, at the daily stake.
   const freeLeft = () => (state.me && data?.daily?.left) || 0;
   const betNow = () => (pending ? pending.stake : freeLeft() ? data.daily.stake : stake);
@@ -58,9 +65,9 @@ window.FiveSlots = (() => {
     ({ state, $, $$, api, draw, esc, fmt, loadMe, confetti, plainName, holdBalance, releaseBalance, displayBalance } = ctx);
     // Space spins (or checks the last spin) on this tab, unless you're typing or on another control.
     document.addEventListener('keydown', (e) => {
-      if (state.view !== 'slots' || e.code !== 'Space' || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (state.view !== 'slots' || !['Space', 'KeyH'].includes(e.code) || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
       if (e.target.closest?.('input, textarea, select, button, summary, a, [contenteditable], .modal')) return;
-      const button = $('#slot-spin');
+      const button = $(e.code === 'KeyH' ? '#slot-hold' : '#slot-spin');  // H takes a hold on offer
       if (!button) return;
       e.preventDefault();
       if (!button.disabled) button.click();
@@ -73,7 +80,7 @@ window.FiveSlots = (() => {
     motion?.cancel();
     owner = name; data = null; result = null; error = ''; pending = null; auto = false;
     try { pending = name ? JSON.parse(sessionStorage.getItem(storageKey(name))) : null; } catch (_) { /* unavailable */ }
-    if (pending && !pending.daily) stake = pending.stake;
+    if (pending && !pending.daily && pending.hold == null) stake = pending.stake;
   }
   async function load() {
     syncOwner();
@@ -418,11 +425,13 @@ window.FiveSlots = (() => {
   const hermite = (from, dist, m0, m1) => (t) => from + m0 * (t * t * t - 2 * t * t + t) + dist * (-2 * t * t * t + 3 * t * t) + m1 * (t * t * t - t * t);
   // A snap with a little overshoot before it settles.
   const backOut = (t) => 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
-  function startMotion() {
-    const start = performance.now(), fast = turbo ? TURBO : 1, positions = reelsNow().map((value, i) => cellFor(i, value)), brakes = [], stopped = [false, false, false];
+  // `only` is the one reel that spins on a hold (the other two stay where they are); null spins all three.
+  function startMotion(only = null) {
+    const start = performance.now(), fast = turbo ? TURBO : 1, positions = reelsNow().map((value, i) => cellFor(i, value)), brakes = [];
+    const stopped = [0, 1, 2].map((i) => only !== null && i !== only);
     const origin = [...positions];
     // order[k] is the reel that stops k-th (stopOrder(), set in settle()); last() is the one that decides the spin.
-    let previous = start, frame = 0, targets = null, dues = null, ended = false, resolve, tease = null, order = [0, 1, 2];
+    let previous = start, frame = 0, targets = null, dues = null, ended = false, resolve, tease = null, nudge = false, order = [0, 1, 2];
     const last = () => order[2];
     const clanked = [0, 0, 0];
     let lastClank = 0;
@@ -433,7 +442,8 @@ window.FiveSlots = (() => {
         strip.style.transform = `translate3d(0,${70 - (cells() + wrap(positions[i])) * 140}px,0)`;
         strip.parentElement.classList.toggle('stopped', stopped[i]);
         strip.parentElement.classList.toggle('teasing', !!tease?.on && i === last() && !stopped[i]);
-        if (stopped[i]) strip.parentElement.setAttribute('aria-label', data.symbols[targets[i]].name);
+        strip.parentElement.classList.toggle('held', only !== null && i !== only);
+        if (stopped[i] && targets) strip.parentElement.setAttribute('aria-label', data.symbols[targets[i]].name);
       });
       $('.slots-glass')?.classList.toggle('teasing', !!tease?.on && !stopped[last()]);
       $('.slots-glass')?.classList.toggle('teetering', !!tease?.teeter);
@@ -488,6 +498,16 @@ window.FiveSlots = (() => {
       }
       const dur = (1100 + order.indexOf(i) * 160) * fast / 1000, run = velocity * dur / 2;
       const { cell, secret, dist } = landing(i, from, run);
+      // A nudge: stop one symbol short (on something else, so it looks lost), wait, then bump onto the line.
+      const strip = stripsNow()[i], before = strip[(cell + strip.length - 1) % strip.length];
+      if (nudge && i === last() && before !== targets[i] && dist > 2) {
+        const short = from + dist - 1;
+        return { at: now, end: from + dist, cell, secret, segs: [
+          { dur, at: hermite(from, dist - 1, velocity * dur, 0) },
+          { dur: NUDGE_WAIT, at: () => short, wait: true },
+          { dur: .3, at: (u) => short + backOut(u), bump: true },
+        ] };
+      }
       return { at: now, segs: [{ dur, at: hermite(from, dist, velocity * dur, 0) }], end: from + dist, cell, secret };
     }
     function tick(now) {
@@ -526,6 +546,11 @@ window.FiveSlots = (() => {
           const beat = Math.floor(u * sg.beats);
           if (beat !== b.beat && beat < sg.beats) { b.beat = beat; sound('beat'); }
         }
+        if (sg.wait && !b.waited) {
+          b.waited = true; sound('stop', i);
+          $$('.slots-reel')[i]?.insertAdjacentHTML('beforeend', '<span class="slots-nudge-tag" aria-hidden="true">Nudge!</span>');
+        }
+        if (sg.bump && !b.bumped) { b.bumped = true; sound('snap'); }
         if (sg.snap && !b.snapped) {
           b.snapped = true; tease.teeter = false; sound('snap');
           const cabinet = $('.slots-cabinet');
@@ -558,12 +583,15 @@ window.FiveSlots = (() => {
       // Whether the last spin teased, and if so which reel and whether it won (for the flash after the redraw).
       teased: () => (tease?.on && !tease.spotted ? { reel: last(), won: tease.won } : null),
       settle: (reels) => {
-        targets = reels; order = stopOrder(reels);
+        targets = reels; order = only === null ? stopOrder(reels) : [...[0, 1, 2].filter((i) => i !== only), only];
         const stopAt = Math.max(performance.now(), start + 800 * fast), keyOf = (r) => data.symbols[r]?.key;
         const [a, b] = order.map((i) => reels[i]);
         // Decided from the first two reels to stop only (a Golden Onkey pairs with anything).
         const key = matches(a, b) ? keyOf(pairSymbol(a, b)) : null;
         if (key && Math.random() < (TEASE[key] || 0)) tease = { level: TEASE_LEVEL[key] || 0, on: false };
+        nudge = !tease && lineOf(reels) !== -1 && Math.random() < NUDGE_CHANCE;
+        // A hold: only its reel is turning, so it just needs its own moment to stop.
+        if (only !== null) { dues = []; dues[only] = stopAt + (tease ? 500 : 400 * fast); return done; }
         // When each reel starts braking, in stop order (they take 1.1, 1.26 and 1.42 s): 180 ms apart plus the pauses;
         // a teased last reel starts its run-in once the second has stopped. Two different symbols first means no
         // pair anywhere (stopOrder() puts one first), so the last reel follows close behind instead of making you wait.
@@ -672,6 +700,15 @@ window.FiveSlots = (() => {
   }
   const turboLabel = () => (turbo ? 'Turbo is on: faster spins. Turn it off' : 'Turbo: faster spins');
   const turboKey = () => `<button type="button" class="slots-auto" id="slot-turbo" aria-pressed="${turbo}" aria-label="${turboLabel()}" title="${turboLabel()}"><small>Turbo</small><b>${turbo ? 'on' : 'off'}</b></button>`;
+  // The Hold button on the bottom edge of the reel window while a hold is on offer: what it costs and what it's after.
+  function holdBtn() {
+    const h = holdOffer();
+    if (!h) return '';
+    const short = state.me.balance < result.stake, odds = 1 / h.chance;
+    const line = short ? 'Not enough credits' : `${money(result.stake)} to respin · 1 in ${odds < 10 ? odds.toFixed(1) : Math.round(odds)} pays ${money(result.stake * h.mult)}`;
+    const label = `Hold the two ${data.symbols[h.symbol].name} symbols and respin the last reel for ${result.stake} credits`;
+    return `<button type="button" class="slots-hold" id="slot-hold" aria-keyshortcuts="H" aria-label="${esc(label)}" ${short ? 'disabled' : ''}><b>Hold <span aria-hidden="true">${glyph(h.symbol)}${glyph(h.symbol)}</span></b><small>${line}</small></button>`;
+  }
   // The tag over the Spin button while the day's free spins last. A phone has no Spin button, so there a second copy
   // (`reels`) sits over the top of the reel window, and style.css shows whichever belongs.
   const freeTag = (reels) => (freeLeft() ? `<span class="slots-free${reels ? ' on-reels' : ''}">${freeLeft()} free spin${freeLeft() === 1 ? '' : 's'}</span>` : '');
@@ -688,10 +725,10 @@ window.FiveSlots = (() => {
     const win = !busy && result?.net > 0, tier = busy ? 0 : tierOf(result);
     const message = result ? result.payout ? `${money(result.payout)} credits returned` : 'No winning line' : 'Ready when you are';
     const cashing = !busy && partsOf(result).length;
-    const detail = result ? `${signed(result.net)} credits net` : 'Three matching symbols on the centre line pays. Space spins.';
+    const detail = result ? `${signed(result.net)} credits net${holdOffer() ? '. Hold the pair, or spin on.' : ''}` : 'Three matching symbols on the centre line pays. Space spins.';
     return `<div class="slots-layout"><section class="slots-cabinet ${win ? 'slots-win' : ''} ${tier ? `slots-tier-${tier}` : ''} ${busy ? 'slots-busy' : ''}"><div class="slots-leds" aria-hidden="true">${leds()}</div><div class="slots-body">
         <div class="slots-marquee"><h2>Slots</h2><button class="slots-sound" id="slot-sound" aria-pressed="${!muted}" aria-label="${soundLabel()}" title="${soundLabel()}">${speaker(muted)}</button></div>
-        <div class="slots-stage"><div class="slots-window">${freeTag(true)}<div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span></div>${lever(insufficient)}
+        <div class="slots-stage"><div class="slots-window">${freeTag(true)}<div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span>${holdBtn()}</div>${lever(insufficient)}
 </div>
           <div class="slots-result${cashing && freshId === result.id ? ' fresh' : ''}" role="status" aria-live="polite">${cashing ? cashouts(result) : `<b>${busy ? 'Spinning…' : esc(message)}</b>`}<span>${busy ? 'Let them roll.' : esc(detail)}</span></div>
         </div>
@@ -704,14 +741,16 @@ window.FiveSlots = (() => {
       </div></section>${paytable(m, win)}</div>
       <div class="slots-lower">${history()}${season(m)}${bigWins()}</div>`;
   }
-  async function spin() {
+  // One spin, or with `opts.hold` (the spin on offer) a hold of it: the same flow, with one reel turning.
+  async function spin(opts) {
     if (busy || !state.me) return;
-    const fresh = !pending;
+    const fresh = !pending, held = fresh && opts?.hold ? opts.hold : null;
     if (fresh) {
       const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
       const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
       // One of the day's free spins while any are left: the server gives its stake.
-      remember(freeLeft() ? { stake: data.daily.stake, request_id: id, daily: true } : { stake, request_id: id });
+      remember(held ? { stake: held.stake, request_id: id, hold: held.id, reel: held.hold.reel }
+        : freeLeft() ? { stake: data.daily.stake, request_id: id, daily: true } : { stake, request_id: id });
     }
     const name = owner, request = pending;
     let landed = null;
@@ -721,9 +760,12 @@ window.FiveSlots = (() => {
     holdBalance(fresh && !request.daily ? state.me.balance - request.stake : state.me.balance);
     busy = true; error = ''; sound('start'); draw();
     $('.slots-lever')?.classList.add('pulled');
-    const rolling = motion = startMotion();
+    // A hold turns only its reel, as long as the spin it holds is still the one showing (not after a reload).
+    const rolling = motion = startMotion(request.hold != null && result?.id === request.hold ? request.reel : null);
     try {
-      const out = await api('/api/slots/spin', { method: 'POST', body: JSON.stringify(request) });
+      const out = request.hold != null
+        ? await api('/api/slots/hold', { method: 'POST', body: JSON.stringify({ spin: request.hold, request_id: request.request_id }) })
+        : await api('/api/slots/spin', { method: 'POST', body: JSON.stringify(request) });
       await rolling.settle(out.spin.reels);
       if (owner !== name) return;
       result = landed = out.spin; remember(null);
@@ -767,6 +809,10 @@ window.FiveSlots = (() => {
     }));
     $('#slot-spin', viewEl)?.addEventListener('click', spin);
     $('#slot-lever', viewEl)?.addEventListener('click', spin);
+    $('#slot-hold', viewEl)?.addEventListener('click', (e) => {
+      e.stopPropagation(); // not a tap on the reel window, which spins on a phone
+      if (holdOffer()) spin({ hold: result });
+    });
     // Switching Auto on spins straight away; switching it off lets the spin under way finish.
     $('#slot-auto', viewEl)?.addEventListener('click', () => {
       if (!auto && !busy && $('#slot-spin')?.disabled) return; // nothing to spin with

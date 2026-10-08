@@ -1643,6 +1643,23 @@ body.modal-open { overflow: hidden; }
 .slots-result.fresh .slots-cash, .slots-result.fresh .slots-cash-join { animation: slots-cash-in .34s cubic-bezier(.2, .9, .3, 1.35) backwards; animation-delay: calc(var(--k, 0) * 120ms); }
 @keyframes slots-cash-in { from { opacity: 0; transform: translateY(14px) scale(.6); } }
 /* A Golden Onkey on the line: its reel keeps a gold ring and a "Spotted!" tag (popped in by slots.js's spotPop()). */
+/* A hold: the two reels kept are ringed in gold while the third spins, and the offer itself is a gold button on the
+   bottom edge of the reel window. A nudge's tag sits where a Golden Onkey's "Spotted!" does. */
+.slots-reel.held { box-shadow: inset 0 0 0 3px rgba(255, 210, 60, .85), 0 0 16px rgba(255, 196, 0, .4); }
+.slots-hold { position: absolute; z-index: 3; left: 50%; bottom: -20px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 18px 7px; border: 0; border-radius: 12px; white-space: nowrap; cursor: pointer; color: #3b2400;
+  background: linear-gradient(#fff1b0, #ffc533 60%, #e89200); box-shadow: 0 3px 0 #7a4a00, 0 0 18px rgba(255, 196, 0, .75); animation: slots-hold-in .28s ease-out; }
+.slots-hold b { display: flex; align-items: center; gap: 6px; font: 800 16px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .05em; text-transform: uppercase; }
+.slots-hold b span { display: inline-flex; gap: 2px; font-size: 18px; }
+.slots-hold b .slots-img { width: 20px; height: 20px; }
+.slots-hold small { font: 600 11px var(--font); }
+.slots-hold:hover:not(:disabled) { filter: brightness(1.08); }
+.slots-hold:active:not(:disabled) { transform: translateX(-50%) translateY(2px); box-shadow: 0 1px 0 #7a4a00, 0 0 18px rgba(255, 196, 0, .75); }
+.slots-hold:disabled { cursor: default; filter: saturate(.3) brightness(.8); }
+@keyframes slots-hold-in { from { opacity: 0; transform: translateX(-50%) translateY(10px) scale(.9); } }
+.slots-nudge-tag { position: absolute; z-index: 2; left: 50%; top: 10px; transform: translateX(-50%); padding: 3px 12px; border-radius: 999px; white-space: nowrap;
+  font: 800 13px/1.3 ui-monospace, Consolas, monospace; letter-spacing: .06em; text-transform: uppercase; color: #3b2400;
+  background: linear-gradient(#fff1b0, #ffc533 60%, #e89200); box-shadow: 0 2px 0 #7a4a00, 0 0 14px rgba(255, 196, 0, .7); animation: slots-hold-in .2s ease-out; }
 .slots-reel.spotted { box-shadow: inset 0 0 0 3px rgba(255, 210, 60, .8), 0 0 18px rgba(255, 196, 0, .45); }
 .slots-reel.spotted::before { content: ''; position: absolute; z-index: -1; left: 0; right: 0; top: calc(50% - 70px); height: 140px;
   background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(255, 214, 80, .6), transparent 75%); }
@@ -3446,6 +3463,9 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   /* The free spins' tag sits over the top edge of the reel window, the phone's Spin control. */
   .slots-window { position: relative; }
   .slots-free.on-reels { display: block; top: -10px; }
+  .slots-hold { bottom: -16px; padding: 4px 12px 5px; }
+  .slots-hold b { font-size: 14px; }
+  .slots-hold b span { font-size: 15px; }
   .slots-deck { flex-direction: column; gap: 10px; margin: 0 14px 20px; padding: 0; border-radius: 0; background: none; box-shadow: none; }  /* no panel: the wells sit on the case */
   .slots-screw { display: none; }
   .slots-stakes, .slots-readout { align-self: stretch; }

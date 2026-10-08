@@ -12,6 +12,13 @@ STAKES = (5, 10, 25, 50, 100, 250)
 # the house (house_payouts kind `slots_daily`, free like the wheel's credits), so the machine's return is untouched.
 DAILY_SPINS = 3
 DAILY_STAKE = 100
+# Hold: a losing spin that shows a pair on the line is offered a hold HOLD_OFFER of the time (1 in 3). Taking it costs
+# the spin's stake again, keeps the pair and spins the third reel alone: it lands the pair's symbol, paying its line,
+# with chance HOLD_WIN / the line's multiplier, so a hold returns exactly HOLD_WIN (95%, the machine's own return)
+# whatever the symbol, and the house edge is the same 5% on a hold as on a spin. No Golden Onkey on a hold.
+HOLD_OFFER = (1, 3)
+HOLD_WIN = (19, 20)
+HOLD_RTP = HOLD_WIN[0] / HOLD_WIN[1]
 # Saved spins store these indexes, so keep the order and add new symbols at the end; a symbol's rank comes from its
 # multiplier in "triples". "img" replaces the emoji on the page ("glow" adds a golden glow to it). A "secret" symbol is
 # left out of the pay table and off the page's reel strips (it only shows where a reel stops on it). It is wild (it
@@ -74,6 +81,30 @@ def payouts(machine, reels):
 def multiplier(machine, reels):
     """The whole spin's multiplier: every part payouts() finds."""
     return sum(p["mult"] for p in payouts(machine, reels))
+
+
+def hold_pair(reels):
+    """(the odd reel's index, the pair's symbol) when exactly two of three reels match and none is a Golden Onkey,
+    else None."""
+    if len(reels) != 3 or WILD in reels or len(set(reels)) != 2:
+        return None
+    odd = next(i for i, r in enumerate(reels) if reels.count(r) == 1)
+    return odd, reels[(odd + 1) % 3]
+
+
+def offers_hold():
+    """Whether a losing pair is offered a hold: HOLD_OFFER of the time."""
+    return secrets.randbelow(HOLD_OFFER[1]) < HOLD_OFFER[0]
+
+
+def hold_chance(mult):
+    """The chance a hold lands a line paying `mult`: HOLD_WIN / mult."""
+    return HOLD_WIN[0] / (HOLD_WIN[1] * mult)
+
+
+def hold_wins(mult):
+    """Draw a hold on a line paying `mult`: True with chance hold_chance(mult), exactly."""
+    return secrets.randbelow(HOLD_WIN[1] * mult) < HOLD_WIN[0]
 
 
 def draw_reel(weights):
@@ -176,7 +207,14 @@ class SlotManager:
     @staticmethod
     def public(row):
         reels = json.loads(row["reels"])
-        return {**row, "reels": reels, "net": row["payout"] - row["stake"], "parts": SlotManager.parts(row, reels)}
+        out = {**row, "reels": reels, "net": row["payout"] - row["stake"], "parts": SlotManager.parts(row, reels)}
+        # A spin offered a hold says what it is: the reel that spins again, the pair's symbol, its line and the chance.
+        m, pair = MACHINES.get(row["machine"]), hold_pair(reels)
+        out["hold"] = None
+        if row.get("offer") and m and pair:
+            mult = m["triples"][pair[1]]
+            out["hold"] = {"reel": pair[0], "symbol": pair[1], "mult": mult, "chance": hold_chance(mult)}
+        return out
 
     @staticmethod
     def parts(row, reels):
@@ -201,6 +239,58 @@ class SlotManager:
                                  (f"slots-daily:{name.lower()}:{wheel_day(now or time.time())}:%",))["n"]
         return {"left": max(0, DAILY_SPINS - used), "total": DAILY_SPINS, "stake": DAILY_STAKE}
 
+    @staticmethod
+    def check_ref(request_id):
+        if not isinstance(request_id, str) or not 16 <= len(request_id) <= 80 or not all(
+                c.isascii() and (c.isalnum() or c in "-_") for c in request_id):
+            raise BetError("Invalid spin reference. Reload the page and try again.")
+
+    def hold(self, name, spin_id, request_id):
+        """Hold the pair of a spin that was offered it and spin its third reel again, for the same stake. Only the
+        bettor's latest spin can be held, once. The hold is a slot_spins row of its own (`held` = the spin's id)."""
+        self.check_ref(request_id)
+        if type(spin_id) is not int:
+            raise BetError("That hold has passed. Spin again.")
+        with self.db.lock:
+            bettor = self.db.get_bettor(name)
+            if not bettor:
+                raise BetError("Sign in as a bettor to spin.")
+            name = bettor["name"]
+            old = self.db.query_one("SELECT * FROM slot_spins WHERE bettor=? AND request_id=?", (name, request_id))
+            if old:
+                if old["held"] != spin_id:
+                    raise BetError("That spin reference has already been used.")
+                return {"spin": self.public(old), "balance": round(bettor["balance"], 2), "daily": self.daily(name)}
+            base = self.db.query_one("SELECT * FROM slot_spins WHERE id=? AND bettor=? AND season_id IS NULL", (spin_id, name))
+            pair = hold_pair(json.loads(base["reels"])) if base and base["offer"] and base["machine"] in self.machines else None
+            latest = self.db.query_one("SELECT MAX(id) AS id FROM slot_spins WHERE bettor=?", (name,))["id"]
+            if not pair or latest != spin_id:  # a later spin (or a hold, which is one) closes the offer
+                raise BetError("That hold has passed. Spin again.")
+            stake = base["stake"]
+            if bettor["balance"] < stake:
+                raise BetError("Not enough credits to hold.")
+            m = self.machines[base["machine"]]
+            odd, symbol = pair
+            reels, mult = json.loads(base["reels"]), m["triples"][symbol]
+            if hold_wins(mult):
+                reels[odd] = symbol
+            else:  # anything but the pair's symbol or a Golden Onkey, which would pay
+                reels[odd], mult = draw_reel([0 if i in (symbol, WILD) else w for i, w in enumerate(m["show"])]), 0
+            payout = stake * mult
+            try:
+                self.db.conn.execute("UPDATE bettors SET balance=ROUND(balance + ?, 2) WHERE name=?", (payout - stake, name))
+                cur = self.db.conn.execute(
+                    "INSERT INTO slot_spins(bettor, machine, stake, reels, multiplier, payout, created_ts, request_id, rtp, held) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (name, base["machine"], stake, json.dumps(reels), mult, payout, time.time(), request_id, HOLD_RTP, spin_id))
+                house.record(self.db.conn, "slots", f"spin:{cur.lastrowid}", name, stake, stake - payout, stake * (1 - HOLD_RTP))
+                self.db.conn.commit()
+            except Exception:
+                self.db.conn.rollback()
+                raise
+            row = self.db.query_one("SELECT * FROM slot_spins WHERE id=?", (cur.lastrowid,))
+            return {"spin": self.public(row), "balance": round(self.db.get_bettor(name)["balance"], 2), "daily": self.daily(name)}
+
     def spin(self, name, machine, stake, request_id, daily=False):
         """One spin. `daily` makes it one of the day's free spins: the stake is DAILY_STAKE and the house gives it."""
         if daily:
@@ -210,9 +300,7 @@ class SlotManager:
             raise BetError("This machine is no longer available. Reload the page.")
         if type(stake) not in (int, float) or stake not in STAKES:
             raise BetError(f"Choose a stake of {', '.join(map(str, STAKES[:-1]))} or {STAKES[-1]} credits.")
-        if not isinstance(request_id, str) or not 16 <= len(request_id) <= 80 or not all(
-                c.isascii() and (c.isalnum() or c in "-_") for c in request_id):
-            raise BetError("Invalid spin reference. Reload the page and try again.")
+        self.check_ref(request_id)
         with self.db.lock:
             bettor = self.db.get_bettor(name)
             if not bettor:
@@ -220,7 +308,7 @@ class SlotManager:
             name = bettor["name"]
             old = self.db.query_one("SELECT * FROM slot_spins WHERE bettor=? AND request_id=?", (name, request_id))
             if old:
-                if old["machine"] != machine or old["stake"] != stake:
+                if old["machine"] != machine or old["stake"] != stake or old["held"]:
                     raise BetError("That spin reference has already been used.")
                 return {"spin": self.public(old), "balance": round(bettor["balance"], 2), "daily": self.daily(name)}
             # Old results remain recoverable, but retired machines cannot take new stakes.
@@ -240,14 +328,15 @@ class SlotManager:
             reels = draw_spin(m)
             mult = multiplier(m, reels)
             payout = stake * mult
+            offer = 1 if not mult and hold_pair(reels) and offers_hold() else None  # a losing pair, now and then
             try:
                 self.db.conn.execute("UPDATE bettors SET balance=ROUND(balance + ?, 2) WHERE name=?", (payout - stake, name))
                 # rtp is the return this spin was played at (without the secret jackpot), so the house's expected take
                 # stays right if the odds change.
                 cur = self.db.conn.execute(
-                    "INSERT INTO slot_spins(bettor, machine, stake, reels, multiplier, payout, created_ts, request_id, rtp) "
-                    "VALUES(?,?,?,?,?,?,?,?,?)",
-                    (name, machine, stake, json.dumps(reels), mult, payout, time.time(), request_id, rtp(m)))
+                    "INSERT INTO slot_spins(bettor, machine, stake, reels, multiplier, payout, created_ts, request_id, rtp, offer) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (name, machine, stake, json.dumps(reels), mult, payout, time.time(), request_id, rtp(m), offer))
                 house.record(self.db.conn, "slots", f"spin:{cur.lastrowid}", name, stake, stake - payout, stake * (1 - rtp(m)))
                 self.db.conn.commit()
             except Exception:

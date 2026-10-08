@@ -1075,6 +1075,62 @@ def slots(shared):
     assert [(g["kind"], g["amount"]) for g in gifts] == [("slots_daily", 100)] * 3
     # They come back the next Pacific day, and a paid spin never uses one.
     assert wm.daily("Goldie", time.time() + 2 * 86400)["left"] == 3 and wm.spin("Goldie", "jackpot", 10, "paid-after-daily-1")["daily"]["left"] == 0
+    # Hold: a losing spin with a pair on the line is offered a hold now and then. Taking it costs the stake again and
+    # spins the odd reel alone, landing the pair's symbol with chance 95% / the line's multiplier, so every hold
+    # returns the machine's own 95% whatever the symbol.
+    from fivestack.slots import HOLD_OFFER, HOLD_RTP, hold_chance, hold_pair, hold_wins
+    assert hold_pair([1, 1, 2]) == (2, 1) and hold_pair([3, 0, 3]) == (1, 3) and hold_pair([4, 2, 2]) == (0, 2)
+    assert hold_pair([0, 1, 2]) is None and hold_pair([1, 1, 1]) is None and hold_pair([1, 1, WILD]) is None
+    assert HOLD_OFFER == (1, 3) and HOLD_RTP == 0.95 and abs(rtp(m) - HOLD_RTP) < 1e-12
+    assert all(abs(hold_chance(t) * t - HOLD_RTP) < 1e-12 for t in m["triples"])
+    with patch("fivestack.slots.secrets.randbelow", side_effect=[18, 19]) as draw:
+        assert hold_wins(3) and not hold_wins(3) and draw.call_args.args == (60,)  # 19 tickets in 20 × the multiplier
+
+    def spun(reels, ref, offered, stake=10):
+        with patch("fivestack.slots.draw_spin", return_value=reels), patch("fivestack.slots.offers_hold", return_value=offered):
+            return wm.spin("Goldie", "jackpot", stake, ref)
+    plain = spun([1, 1, 2], "hold-base-00000001", False)  # a pair, but no offer this time
+    assert plain["spin"]["hold"] is None and plain["spin"]["offer"] is None
+    for bad in (plain["spin"]["id"], None, "1", True, 10 ** 9):
+        _expect_error(wm.hold, "Goldie", bad, "hold-take-00000001", contains="has passed")
+    assert spun([0, 1, 2], "hold-base-00000002", True)["spin"]["hold"] is None  # no pair, nothing to hold
+    assert spun([1, 1, 1], "hold-base-00000003", True)["spin"]["hold"] is None  # a win isn't held
+    base = spun([5, 2, 5], "hold-base-00000004", True)
+    assert base["spin"]["hold"] == {"reel": 1, "symbol": 5, "mult": 80, "chance": 19 / 1600}
+    assert wm.spin("Goldie", "jackpot", 10, "hold-base-00000004") == base  # the offer survives a retry
+    wild.create_bettor("Bystander", 100)
+    _expect_error(wm.hold, "Bystander", base["spin"]["id"], "hold-take-00000004", contains="has passed")  # not theirs
+    _expect_error(wm.hold, "Goldie", base["spin"]["id"], "bad", contains="Invalid spin reference")
+    with patch("fivestack.slots.hold_wins", return_value=True) as drawn:
+        held = wm.hold("goldie", base["spin"]["id"], "hold-take-00000004")
+    assert drawn.call_args.args == (80,) and held["spin"]["reels"] == [5, 5, 5] and held["spin"]["payout"] == 800
+    assert held["balance"] == base["balance"] + 790 and held["spin"]["held"] == base["spin"]["id"]
+    assert held["spin"]["hold"] is None and held["spin"]["rtp"] == HOLD_RTP and held["spin"]["parts"] == payouts(m, [5, 5, 5])
+    # The same request again returns the same hold without a second stake; the spin can't be held twice.
+    assert wm.hold("Goldie", base["spin"]["id"], "hold-take-00000004") == held
+    _expect_error(wm.hold, "Goldie", plain["spin"]["id"], "hold-take-00000004", contains="already been used")
+    _expect_error(wm.spin, "Goldie", "jackpot", 10, "hold-take-00000004", contains="already been used")
+    _expect_error(wm.hold, "Goldie", base["spin"]["id"], "hold-take-0000004b", contains="has passed")
+    _expect_error(wm.hold, "Goldie", held["spin"]["id"], "hold-take-0000004c", contains="has passed")  # nor a hold held
+    # A hold that misses shows anything but the pair's symbol or a Golden Onkey, and costs the stake.
+    base = spun([2, 2, 4], "hold-base-00000005", True, 25)
+    with patch("fivestack.slots.hold_wins", return_value=False), patch("fivestack.slots.draw_reel", return_value=0) as reel:
+        lost = wm.hold("Goldie", base["spin"]["id"], "hold-take-00000005")
+    weights = reel.call_args.args[0]
+    assert weights[2] == weights[WILD] == 0 and weights[0] == m["show"][0] and lost["spin"]["reels"] == [2, 2, 0]
+    assert lost["spin"]["stake"] == 25 and lost["spin"]["payout"] == 0 and lost["balance"] == base["balance"] - 25
+    ledger_row = wild.query_one("SELECT * FROM house_ledger WHERE ref=?", (f"spin:{lost['spin']['id']}",))
+    assert ledger_row["staked"] == 25 and ledger_row["take"] == 25 and abs(ledger_row["expected"] - 1.25) < 1e-9
+    # Another spin closes the offer, and a hold needs the credits for it.
+    base = spun([2, 2, 4], "hold-base-00000006", True)
+    spun([0, 1, 2], "hold-base-00000007", True)
+    _expect_error(wm.hold, "Goldie", base["spin"]["id"], "hold-take-00000006", contains="has passed")
+    with patch("fivestack.slots.draw_spin", return_value=[3, 3, 0]), patch("fivestack.slots.offers_hold", return_value=True):
+        broke = wm.spin("Bystander", "jackpot", 100, "hold-base-00000008")
+    assert broke["balance"] == 0 and broke["spin"]["hold"]["symbol"] == 3
+    _expect_error(wm.hold, "Bystander", broke["spin"]["id"], "hold-take-00000008", contains="Not enough credits")
+    # A database from before the hold gets its columns on open (MIGRATIONS).
+    assert {"offer", "held"} <= {r["name"] for r in DB(legacy_path).query("PRAGMA table_info(slot_spins)")}
     wild.conn.close()
     # Demo mode's machine makes every Golden Onkey outcome DEMO_GOLDEN_BOOST times as likely and leaves the regular
     # lines alone; the real machine is untouched.
