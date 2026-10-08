@@ -17,6 +17,11 @@ window.FiveSlots = (() => {
   // (BIG_OPENING) comes with every banana, Onkey or Golden Onkey win and one spin in ten besides, so it's no giveaway.
   const PAUSE = { cherry: 0, bell: 60, spike: 150, diamond: 300, banana: 450, monkey: 650, golden: 900 };
   const BIG_OPENING = ['banana', 'monkey', 'golden'];
+  // Auto: the Auto key beside the Spin button is on or off. On, it spins again after every spin until it's switched
+  // off, the credits run short, a spin fails or you leave the tab. The pause before the next spin is longer when
+  // there's a win to read, and longer still for one with a celebration.
+  const AUTO_GAP_MS = 500, AUTO_WIN_GAP_MS = 1300, AUTO_BIG_GAP_MS = 4500;
+  let auto = false;
   // The Golden Onkey (the secret symbol) is wild: it matches anything, and it pays when spotted (slots.py's payouts()).
   const wildIndex = () => data.symbols.findIndex((s) => s.secret);
   const matches = (a, b) => a === b || a === wildIndex() || b === wildIndex();
@@ -52,12 +57,13 @@ window.FiveSlots = (() => {
       e.preventDefault();
       if (!button.disabled) button.click();
     });
+    document.addEventListener('visibilitychange', () => { if (document.hidden && auto) { auto = false; paintAuto(); } });
   }
   function syncOwner() {
     const name = state.me?.name || null;
     if (owner === name) return;
     motion?.cancel();
-    owner = name; data = null; result = null; error = ''; pending = null;
+    owner = name; data = null; result = null; error = ''; pending = null; auto = false;
     try { pending = name ? JSON.parse(sessionStorage.getItem(storageKey(name))) : null; } catch (_) { /* unavailable */ }
     if (pending) stake = pending.stake;
   }
@@ -125,6 +131,10 @@ window.FiveSlots = (() => {
   // A secret symbol (the Golden Onkey) isn't on the strips at all: when a reel stops on it, it takes over one cell ("swapped"),
   // put in just before it rolls into view and taken out once it has rolled away on the next spin.
   let strips = null, stripsFor = '', rest = [null, null, null], swapped = [null, null, null];
+  // A losing tease teeters between the pair's symbol and the result. When a reel's strip has those two nowhere side by
+  // side, the pair's symbol is drawn in the cell next to the landing cell for that spin (decoy[i]: cell, value) and the
+  // strip's own symbol comes back once it has rolled out of view on the next. Only the neighbour changes, never the result.
+  let decoy = [null, null, null];
   function stripsNow() {
     const show = data.machines.find((g) => g.key === 'jackpot').show, key = show.join();
     if (key !== stripsFor) {
@@ -166,9 +176,9 @@ window.FiveSlots = (() => {
   // Three copies make the wrap invisible: the visible window always sits in the middle copy. A Golden Onkey resting on
   // the line after a spin glows (.spotted).
   const reel = (value, i) => {
-    const strip = stripsNow()[i], at = cellFor(i, value), swap = swapped[i];
+    const strip = stripsNow()[i], at = cellFor(i, value), swap = swapped[i], fake = decoy[i];
     const spotted = !busy && result && value === wildIndex();
-    return `<div class="slots-reel${spotted ? ' spotted' : ''}" role="img" aria-label="${esc(data.symbols[value].name)}"><div class="slots-strip" aria-hidden="true" style="transform:translate3d(0,${70 - (strip.length + at) * 140}px,0)">${[...strip, ...strip, ...strip].map((s, c) => `<span class="slots-symbol">${glyph(swap && c % strip.length === swap.cell ? swap.value : s)}</span>`).join('')}</div>${spotted ? spotTag() : ''}</div>`;
+    return `<div class="slots-reel${spotted ? ' spotted' : ''}" role="img" aria-label="${esc(data.symbols[value].name)}"><div class="slots-strip" aria-hidden="true" style="transform:translate3d(0,${70 - (strip.length + at) * 140}px,0)">${[...strip, ...strip, ...strip].map((s, c) => `<span class="slots-symbol">${glyph(swap && c % strip.length === swap.cell ? swap.value : fake && c % strip.length === fake.cell ? fake.value : s)}</span>`).join('')}</div>${spotted ? spotTag() : ''}</div>`;
   };
 
   // Win fanfares grow with the tier: a short arpeggio, then longer runs with a lower voice under them.
@@ -444,7 +454,14 @@ window.FiveSlots = (() => {
         const strip = stripsNow()[i], n = strip.length;
         const below = (c) => strip[(c + 1) % n] === pair, above = (c) => strip[(c + n - 1) % n] === pair;
         const { cell, secret, dist } = landing(i, from, velocity * hold + slowDist + creep, win ? null : (c) => below(c) || above(c));
-        const back = win ? Math.random() < .5 : below(cell) && (!above(cell) || Math.random() < .5);
+        const near = win || below(cell) || above(cell);
+        const back = win || !near ? Math.random() < .5 : below(cell) && (!above(cell) || Math.random() < .5);
+        // No cell of the result has the pair's symbol beside it on this strip: draw it in the neighbour it teeters on.
+        if (decoy[i]) { setCell(i, decoy[i].cell, strip[decoy[i].cell]); decoy[i] = null; }
+        if (!near) {
+          decoy[i] = { cell: (cell + (back ? 1 : n - 1)) % n, value: pair };
+          setCell(i, decoy[i].cell, pair);
+        }
         const off = back ? .5 : -.5;  // where it teeters, from the landing cell
         const holdDist = dist + off - slowDist - creep, holdDur = holdDist / velocity, edge = from + dist + off;
         // A miss that still lands a Golden Onkey isn't a loss: it ends on its glint, not the trombone.
@@ -476,6 +493,10 @@ window.FiveSlots = (() => {
         if (swapped[i] && !brakes[i]?.secret && position - origin[i] > 2.5) {
           setCell(i, swapped[i].cell, stripsNow()[i][swapped[i].cell]);
           swapped[i] = null;
+        }
+        if (decoy[i] && !brakes[i] && position - origin[i] > 3) {
+          setCell(i, decoy[i].cell, stripsNow()[i][decoy[i].cell]);
+          decoy[i] = null;
         }
         if (targets && now >= dues[i] && !brakes[i]) brakes[i] = brake(i, now, position + velocity * dt, velocity);
         const b = brakes[i];
@@ -631,6 +652,15 @@ window.FiveSlots = (() => {
     const cell = (label, value) => `<div><span>${label}</span><b>${value}</b></div>`;
     return `<div class="slots-well slots-readout">${cell('Credits', state.me ? money(displayBalance()) : '–')}${cell('Bet', money(stake))}${cell('Win', result && !busy ? money(result.payout) : '0')}</div>`;
   }
+  // The Auto key, in a well of its own left of the Spin button: lit while Auto is on.
+  const autoLabel = () => (auto ? 'Auto spin is on. Turn it off' : 'Auto spin: keep spinning until turned off');
+  const autoKey = () => `<button type="button" class="slots-auto" id="slot-auto" aria-pressed="${auto}" aria-label="${autoLabel()}" title="${autoLabel()}"><small>Auto</small><b>${auto ? 'on' : 'off'}</b></button>`;
+  function paintAuto() {
+    const b = $('#slot-auto');
+    if (!b) return;
+    b.setAttribute('aria-pressed', String(auto)); b.setAttribute('aria-label', autoLabel()); b.title = autoLabel();
+    b.querySelector('b').textContent = auto ? 'on' : 'off';
+  }
   function view() {
     syncOwner();
     if (!data || (data.me?.name || null) !== owner) {
@@ -654,7 +684,7 @@ window.FiveSlots = (() => {
         <div class="slots-deck"><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span>
           <div class="slots-well slots-stakes" role="group" aria-label="Credits per spin">${data.stakes.map((s) => `<button type="button" data-slot-stake="${s}" aria-pressed="${s === stake}" aria-label="Bet ${s} credits" ${locked ? 'disabled' : ''}><small>Bet</small><b>${s}</b></button>`).join('')}</div>
           ${readout()}
-          <div class="slots-well slots-spin-well"><div class="slots-spin-ring">${state.me ? `<button class="slots-spin" id="slot-spin" aria-keyshortcuts="Space" ${busy || (insufficient && !pending) ? 'disabled' : ''} aria-label="${busy ? 'Spinning' : pending ? 'Check last spin' : `Spin for ${stake} credits`}"><span>${busy ? '···' : pending ? 'Check' : 'Spin'}</span>${pending && !busy ? '<small>last spin</small>' : ''}</button>` : '<button class="slots-spin" data-signin><span>Sign in</span><small>to spin</small></button>'}</div></div>
+          ${state.me ? `<div class="slots-well slots-auto-well">${autoKey()}</div>` : ''}<div class="slots-well slots-spin-well"><div class="slots-spin-ring">${state.me ? `<button class="slots-spin" id="slot-spin" aria-keyshortcuts="Space" ${busy || (insufficient && !pending) ? 'disabled' : ''} aria-label="${busy ? 'Spinning' : pending ? 'Check last spin' : `Spin for ${stake} credits`}"><span>${busy ? '···' : pending ? 'Check' : 'Spin'}</span>${pending && !busy ? '<small>last spin</small>' : ''}</button>` : '<button class="slots-spin" data-signin><span>Sign in</span><small>to spin</small></button>'}</div></div>
         </div>
         <p class="slots-error" role="alert">${esc(error || (insufficient && !pending ? 'Not enough credits. Choose a smaller stake.' : ''))}</p>
       </div></section>${paytable(m, win)}</div>
@@ -692,6 +722,11 @@ window.FiveSlots = (() => {
       const teased = rolling.teased();
       rolling.cancel(); motion = null; busy = false;
       releaseBalance();
+      // Auto: the next spin after a pause, unless something stops it.
+      if (auto) {
+        if (!landed || owner !== name || state.me?.balance < stake || state.view !== 'slots' || document.hidden) auto = false;
+        else setTimeout(() => { if (auto && !busy && state.view === 'slots') spin(); }, tierOf(landed) ? AUTO_BIG_GAP_MS : landed.payout ? AUTO_WIN_GAP_MS : AUTO_GAP_MS);
+      }
       if (state.view === 'slots') {
         if (landed) freshId = landed.id;
         draw(); $('#slot-spin')?.focus();
@@ -715,6 +750,12 @@ window.FiveSlots = (() => {
     }));
     $('#slot-spin', viewEl)?.addEventListener('click', spin);
     $('#slot-lever', viewEl)?.addEventListener('click', spin);
+    // Switching Auto on spins straight away; switching it off lets the spin under way finish.
+    $('#slot-auto', viewEl)?.addEventListener('click', () => {
+      if (!auto && !busy && $('#slot-spin')?.disabled) return; // nothing to spin with
+      auto = !auto; paintAuto();
+      if (auto && !busy) spin();
+    });
     // On a phone (style.css's phone block) there's no Spin button or lever to see: tapping the reel window spins. It
     // goes through the hidden Spin button, so a spin under way, too few credits and signing in behave the same.
     $('.slots-glass', viewEl)?.addEventListener('click', () => {

@@ -1651,7 +1651,7 @@ body.modal-open { overflow: hidden; }
   background: linear-gradient(#fff1b0, #ffc533 60%, #e89200); box-shadow: 0 2px 0 #7a4a00, 0 0 14px rgba(255, 196, 0, .7); }
 /* The deck: one sloped control panel in a chrome trim with screws at its corners, lit from above, with a lip in front.
    The bet keys, the readout and the Spin button each sit in a recessed well in it and share its amber light. */
-.slots-deck { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 24px; margin: 4px 22px 30px; padding: 22px 32px;
+.slots-deck { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 4px 22px 30px; padding: 22px 24px;
   border-radius: 16px; background: linear-gradient(180deg, #3a2a45 0%, #261a30 50%, #1b1124 100%);
   box-shadow: 0 0 0 2px var(--slot-chrome-dark), 0 0 0 3px rgba(255, 255, 255, .07), inset 0 2px 0 rgba(255, 255, 255, .14), inset 0 -2px 0 rgba(0, 0, 0, .4), 0 9px 0 #0e0814, 0 16px 22px rgba(0, 0, 0, .5); }
 .slots-screw { position: absolute; width: 10px; height: 10px; border-radius: 50%;
@@ -1663,16 +1663,20 @@ body.modal-open { overflow: hidden; }
 .slots-stakes { display: flex; gap: 8px; }
 .slots-spin-well { padding: 8px; border-radius: 50%; }
 /* The bet keys: backlit push buttons in a chrome edge, dim amber at rest and lit up when chosen. */
-.slots-stakes button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 60px; height: 56px; padding: 0 6px; border: 1px solid #000; border-radius: 7px; cursor: pointer;
+.slots-stakes button, .slots-auto { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 60px; height: 56px; padding: 0 6px; border: 1px solid #000; border-radius: 7px; cursor: pointer;
   color: #b08a45; background: linear-gradient(#4a3514, #2a1d0b); text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
   box-shadow: 0 0 0 2px var(--slot-chrome-dark), 0 4px 0 2px #120a18, inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -4px 0 rgba(0, 0, 0, .35); transition: transform .06s; }
-.slots-stakes button small { font: 600 10px var(--font); }
-.slots-stakes button b { font: 800 18px/1 ui-monospace, Consolas, monospace; }
-.slots-stakes button:hover:not(:disabled) { color: #e0b763; }
-.slots-stakes button[aria-pressed=true] { color: #3b2400; text-shadow: 0 1px 0 rgba(255, 255, 255, .35); background: linear-gradient(#fff1b0, #ffc533 55%, #e89200);
+.slots-stakes button small, .slots-auto small { font: 600 10px var(--font); }
+.slots-stakes button b, .slots-auto b { font: 800 18px/1 ui-monospace, Consolas, monospace; }
+.slots-stakes button:hover:not(:disabled), .slots-auto:hover:not(:disabled) { color: #e0b763; }
+.slots-stakes button[aria-pressed=true], .slots-auto[aria-pressed=true] { color: #3b2400; text-shadow: 0 1px 0 rgba(255, 255, 255, .35); background: linear-gradient(#fff1b0, #ffc533 55%, #e89200);
   box-shadow: 0 0 0 2px var(--slot-chrome), 0 4px 0 2px #120a18, 0 0 20px rgba(255, 190, 40, .75), inset 0 1px 0 rgba(255, 255, 255, .7), inset 0 -4px 0 rgba(150, 80, 0, .45); }
-.slots-stakes button:active:not(:disabled) { transform: translateY(3px); }
+.slots-stakes button:active:not(:disabled), .slots-auto:active:not(:disabled) { transform: translateY(3px); }
 .slots-stakes button:disabled { cursor: default; opacity: .55; }
+/* The Auto key: a bet key in a well of its own, between the readout and the Spin button (the deck spaces all four
+   evenly), lit like a chosen bet while Auto is on. */
+.slots-auto-well { flex: 0 0 auto; display: flex; }
+.slots-auto { min-width: 56px; }
 /* The Spin button: a domed arcade button in a chrome ring, pressing in when hit. */
 .slots-spin-ring { flex: 0 0 auto; padding: 11px; border-radius: 50%; background: conic-gradient(from 200deg, #f6f3fb, var(--slot-chrome-dark), var(--slot-chrome), #4f4960, var(--slot-chrome), #f6f3fb);
   box-shadow: 0 0 22px rgba(255, 178, 26, .35), inset 0 0 0 4px #1d1426, inset 0 0 0 5px rgba(255, 190, 40, .55); }
@@ -3439,6 +3443,11 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .slots-stakes { gap: 6px; padding: 8px; }
   .slots-stakes button { flex: 1 1 0; min-width: 0; height: 48px; padding: 0 2px; }
   .slots-stakes button b { font-size: 14px; }
+  .slots-deck { flex-direction: row; flex-wrap: wrap; }  /* the readout and the Auto key share the second row */
+  .slots-stakes { flex: 1 1 100%; }
+  .slots-readout { flex: 1 1 0; min-width: 0; }
+  .slots-auto-well { align-self: stretch; padding: 8px; }
+  .slots-auto { height: auto; min-width: 48px; }
   .slots-readout div { flex: 1 1 0; min-width: 0; }
   .slots-readout b { font-size: 20px; }
   .slots-error { padding: 0 16px; }

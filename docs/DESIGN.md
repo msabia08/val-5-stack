@@ -87,7 +87,7 @@ JS is the menu button's, the bet slip's handle and the Banana Hunt's field. So f
   tapping the reel window spins (`slots.js` clicks the hidden Spin button, so a spin under way, too few credits
   and signing in behave the same), and the readout's Win box says what a spin paid. The reels are drawn at 0.65
   size with `zoom` on `.slots-reels`, so the 140px cells and offsets `slots.js` works in scale together. The deck
-  has no panel or screws, just two rows on the case: the seven bet keys, then the readout. The LED frame is drawn with fewer lights along the top and
+  has no panel or screws, just two rows on the case: the seven bet keys, then the readout with the Auto key to its right. The LED frame is drawn with fewer lights along the top and
   bottom and more in the corners (`ledFrame(true)` in `slots.js`), so they stay about 12px apart all the way round. The whole machine fits one screen under the bar. The pay table, recent
   spins, season and biggest wins follow, one per row.
 - **Blackjack:** the table first, a screen tall (the whole hand and its controls fit under the bar), then the
@@ -228,13 +228,17 @@ on the left, so the reels sit centred under the marquee: a bolted chrome plate w
 a tapered rod on a pivot hub and a red ball; pulling it spins, and on every spin
 the rod folds down through the pivot while the ball swings toward you, drops below
 and springs back), and the deck: one control panel (`.slots-deck`, lit from
-above, a chrome trim with screws at its corners and a lip in front) with three
+above, a chrome trim with screws at its corners and a lip in front) with four
 recessed wells (`.slots-well`) sharing its amber light: the bet keys (backlit push
 buttons reading "Bet 5", dim amber at rest and lit when chosen), the machine's
 readout (`readout()`: Credits, Bet and Win in amber digits) and the Spin button, a
 red domed arcade button reading just "Spin" (its label says the stake), with a
 glossy highlight in a stepped chrome bezel with an amber glow, which sinks a
-little when pressed. Chrome is `--slot-chrome` / `--slot-chrome-dark`. There's no footer. Two gold arrows (`.slots-line-arrow`) mark the centre line, with no rule drawn across the symbols (thin lines over the reels were distracting); the reels' shading leaves the middle row brightest;
+little when pressed. Left of the Spin button, in a well of its own, is the Auto key
+(`.slots-auto` in `.slots-auto-well`, the deck's four wells evenly spaced): a bet key reading "Auto off" / "Auto on", lit like a
+chosen bet while on. Switching it on spins straight away and again after every spin
+(a longer pause after a win, longer still after one with a celebration) until it's
+switched off, the credits run short, a spin fails or you leave the tab. Chrome is `--slot-chrome` / `--slot-chrome-dark`. There's no footer. Two gold arrows (`.slots-line-arrow`) mark the centre line, with no rule drawn across the symbols (thin lines over the reels were distracting); the reels' shading leaves the middle row brightest;
 adjacent symbols remain partly visible above and below. Seven stake buttons show
 the selection. Payouts list largest first, with multipliers and current credits,
 each line's chance ("1 in 20") and how often you've hit it, with a note on when
@@ -289,10 +293,12 @@ the pair's symbol and half on its neighbour, teeters there for a second or so to
 heartbeat while the line's arrows flicker red (`.slots-glass.teetering`), then snaps a
 half cell with a little overshoot, a thump and a nudge of the cabinet. On a win it
 snaps onto the match from either side; on a loss the last reel lands on a cell of
-its real result next to the pair's symbol where the strip has one, and snaps back
+its real result next to the pair's symbol (where the strip has those two nowhere
+side by side, the pair's symbol is drawn in the neighbouring cell for that spin, so
+the teeter is always between the pair's symbol and the result), and snaps back
 when the match was just short (below) or forward when it had crept just past
-(above): a deliberate near miss. It only picks between identical-looking cells,
-never changes a result or the odds. The reel then flashes gold with a crash and a
+(above): a deliberate near miss. It only picks between identical-looking cells
+or changes a neighbour, never a result or the odds. The reel then flashes gold with a crash and a
 rising sting, or red with a sad trombone (`.tease-won` / `.tease-lost`).
 Wins light the cabinet, the winning row (a gold glow behind the symbols,
 `.slots-win .slots-reel::before`) and the matching pay-table row. The marquee glows while

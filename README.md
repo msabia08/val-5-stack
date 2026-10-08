@@ -60,7 +60,8 @@ the total counting up; a Golden Onkey flashes gold and gets a "Spotted!" tag
 the moment its reel stops.
 
 Pull the lever on the side of the machine, press the red Spin button or press
-Space. The reels clank as they turn and stop one at a time; when the result has
+Space. The Auto key beside the Spin button keeps the machine spinning until you
+switch it off (or run short of credits, or leave the tab). The reels clank as they turn and stop one at a time; when the result has
 a matching pair, those two reels stop first, so the last reel to stop is always
 the one that decides the spin (and with no pair it follows close behind). The
 next reel waits longer the bigger the symbol already showing; the readout under the reels shows
