@@ -26,7 +26,7 @@ button shows the page you're on.
 Open **Casino → Slots** and sign in with your betting account. Pick a stake of
 5, 10, 25, 50, 100 or 250 virtual credits, then spin. Your first three spins of
 the day are free (the day turns at midnight Pacific): the house puts up a
-10-credit stake for each, you keep what they win, and a tag over the Spin button
+100-credit stake for each, you keep what they win, and a tag over the Spin button
 counts them down. Three matching
 symbols on the centre line pay, and the bigger the payout the rarer the line:
 

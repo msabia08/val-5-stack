@@ -1058,10 +1058,10 @@ def slots(shared):
     # Daily spins: DAILY_SPINS a day at DAILY_STAKE whatever stake is sent, the stake given by the house (free, like the
     # wheel's credits), once per request; none without a house to give them, and the summary says how many are left.
     from fivestack.slots import DAILY_SPINS, DAILY_STAKE
-    assert (DAILY_SPINS, DAILY_STAKE) == (3, 10) and wm.daily("Goldie") is None and old_spin["daily"] is None
+    assert (DAILY_SPINS, DAILY_STAKE) == (3, 100) and wm.daily("Goldie") is None and old_spin["daily"] is None
     _expect_error(wm.spin, "Goldie", "jackpot", 10, "daily-spin-00000000", True, contains="No free spins")
     wm.giver = HouseManager(wild)
-    assert wm.summary()["daily"] is None and wm.summary(wild.get_bettor("Goldie"))["daily"] == {"left": 3, "total": 3, "stake": 10}
+    assert wm.summary()["daily"] is None and wm.summary(wild.get_bettor("Goldie"))["daily"] == {"left": 3, "total": 3, "stake": 100}
     balance = wild.get_bettor("Goldie")["balance"]
     for k in range(DAILY_SPINS):
         with patch("fivestack.slots.draw_spin", return_value=[0, 1, 2]):
@@ -1072,7 +1072,7 @@ def slots(shared):
         _expect_error(wm.spin, "Goldie", "jackpot", 10, "daily-spin-99999999", True, contains="No free spins")
     assert wild.get_bettor("Goldie")["balance"] == balance
     gifts = wild.query("SELECT kind, amount FROM house_payouts")
-    assert [(g["kind"], g["amount"]) for g in gifts] == [("slots_daily", 10)] * 3
+    assert [(g["kind"], g["amount"]) for g in gifts] == [("slots_daily", 100)] * 3
     # They come back the next Pacific day, and a paid spin never uses one.
     assert wm.daily("Goldie", time.time() + 2 * 86400)["left"] == 3 and wm.spin("Goldie", "jackpot", 10, "paid-after-daily-1")["daily"]["left"] == 0
     wild.conn.close()

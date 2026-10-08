@@ -11,7 +11,7 @@ STAKES = (5, 10, 25, 50, 100, 250)
 # Daily spins: DAILY_SPINS free spins a day (the Pacific day, like the daily wheel) at DAILY_STAKE, the stake given by
 # the house (house_payouts kind `slots_daily`, free like the wheel's credits), so the machine's return is untouched.
 DAILY_SPINS = 3
-DAILY_STAKE = 10
+DAILY_STAKE = 100
 # Saved spins store these indexes, so keep the order and add new symbols at the end; a symbol's rank comes from its
 # multiplier in "triples". "img" replaces the emoji on the page ("glow" adds a golden glow to it). A "secret" symbol is
 # left out of the pay table and off the page's reel strips (it only shows where a reel stops on it). It is wild (it
