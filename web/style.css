@@ -1574,6 +1574,27 @@ body.modal-open { overflow: hidden; }
 .slots-sound { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 1px solid var(--slot-trim); color: var(--slot-paper); background: var(--slot-inset); cursor: pointer; }
 .slots-sound[aria-pressed=false] { color: var(--slot-muted); }
 .slots-sound:hover { border-color: var(--slot-gold); color: var(--slot-gold); }
+/* The settings gear mirrors the speaker at the marquee's left; its menu drops from it over the top of the stage. */
+.slots-gear { right: auto; left: 24px; }
+.slots-gear[aria-expanded=true] { border-color: var(--slot-gold); color: var(--slot-gold); }
+.slots-settings { position: absolute; z-index: 6; left: 24px; top: calc(50% + 28px); width: 300px; padding: 14px; border-radius: 12px; text-align: left;
+  color: var(--slot-paper); border: 1px solid var(--slot-trim); background: var(--slot-inset); box-shadow: 0 10px 24px rgba(0, 0, 0, .55); }
+.slots-settings[hidden] { display: none; }
+.slots-set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.slots-set-row + .slots-set-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--slot-trim); }
+.slots-set-row.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.slots-set-row span { display: flex; flex-direction: column; gap: 2px; }
+.slots-set-row b { font: 700 14px var(--font); }
+.slots-set-row small { font: 400 12px var(--font); color: var(--slot-muted); }
+.slots-switch { flex: 0 0 auto; position: relative; width: 44px; height: 24px; padding: 0; border-radius: 999px; border: 1px solid var(--slot-trim); background: #0b0610; cursor: pointer; }
+.slots-switch i { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--slot-muted); transition: transform .15s, background .15s; }
+.slots-switch[aria-checked=true] { border-color: var(--slot-gold); }
+.slots-switch[aria-checked=true] i { transform: translateX(20px); background: var(--slot-gold); }
+.slots-caps { display: flex; gap: 6px; }
+.slots-caps button { flex: 1 1 0; padding: 6px 0; border-radius: 7px; border: 1px solid var(--slot-trim); background: #0b0610; color: var(--slot-muted); font: 700 12px ui-monospace, Consolas, monospace; white-space: nowrap; cursor: pointer; }
+.slots-caps button:first-child { flex: 1.6 1 0; }
+.slots-caps button:hover { color: var(--slot-paper); }
+.slots-caps button[aria-pressed=true] { border-color: var(--slot-gold); color: #3b2400; background: linear-gradient(#fff1b0, #ffc533 55%, #e89200); }
 /* The lever sits inside on the right (a 26px gap, 58px, then 24px), midway between the reel window's chrome and the
    LEDs; the left side gets the same 108px, so the reel window stays centred in the machine, under the marquee. */
 .slots-stage { padding: 30px 24px 0 108px; background: linear-gradient(90deg, var(--slot-case), color-mix(in srgb, var(--slot-trim) 28%, var(--slot-case)), var(--slot-case)); }
@@ -3453,6 +3474,8 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .slots-marquee { min-height: 64px; }
   .slots-marquee h2 { font-size: 34px; }
   .slots-sound { right: 12px; }
+  .slots-gear { right: auto; left: 12px; }
+  .slots-settings { left: 12px; width: min(300px, calc(100% - 24px)); }
   .slots-stage { padding: 20px 14px 22px; }
   .slots-lever { display: none; }
   .slots-glass { padding: 10px 12px; cursor: pointer; }

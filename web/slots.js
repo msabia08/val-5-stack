@@ -22,6 +22,14 @@ window.FiveSlots = (() => {
   // there's a win to read, and longer still for one with a celebration.
   const AUTO_GAP_MS = 500, AUTO_WIN_GAP_MS = 1300, AUTO_BIG_GAP_MS = 4500;
   let auto = false;
+  // Auto's settings, in the gear menu at the marquee's left (settingsMenu()), both remembered: whether Auto takes a
+  // hold on offer (it does unless switched off; each costs the stake again), after AUTO_HOLD_GAP_MS so the offer is
+  // seen, and how many spins a run lasts (autoCap, one of AUTO_CAPS; 0 is no limit). autoLeft counts a capped run
+  // down; a hold isn't one of its spins.
+  const AUTO_CAPS = [0, 10, 25, 50, 100], AUTO_HOLD_GAP_MS = 900;
+  let autoHold = localStorage.getItem('fs.slotsAutoHold') !== '0';
+  let autoCap = AUTO_CAPS.includes(Number(localStorage.getItem('fs.slotsAutoCap'))) ? Number(localStorage.getItem('fs.slotsAutoCap')) : 0;
+  let autoLeft = 0, settingsOpen = false;
   // Turbo: the Turbo key beside Auto shortens everything about a spin (the run-up, each reel's stop, the pauses between
   // them, Auto's pause) to TURBO of its length. The tease is never shortened: it's the one part worth watching.
   const TURBO = .4;
@@ -34,6 +42,23 @@ window.FiveSlots = (() => {
   // Nudge: NUDGE_CHANCE of wins (never a teased one) stop the deciding reel one symbol short, looking lost, then bump
   // it onto the line NUDGE_WAIT seconds later. It's only how a win arrives: the server's result is never changed.
   const NUDGE_CHANCE = .25, NUDGE_WAIT = .6;
+  // Onkey's walk-in: when a spin's result shows Onkey's own symbol, CAMEO_CHANCE of the time (GOLDEN_CAMEO_CHANCE when
+  // it shows a Golden Onkey), instead of a tease or a nudge, that reel stops on an empty cell and Onkey walks down from
+  // the logo to sit in it (FiveOnkey.visit()), becoming the symbol; for the Golden Onkey he turns gold on the way.
+  // He walks back when the next spin starts. The result is the server's all along: blank[i] is the cell drawn empty
+  // until he's there, cameoAt where he's sitting (reel, cell, golden).
+  const CAMEO_CHANCE = .12, GOLDEN_CAMEO_CHANCE = .5, CAMEO_MAX_MS = 2800;
+  let blank = [null, null, null], cameoAt = null;
+  // Where the symbol in a reel's cell is drawn, as a viewport rect: its picture's own box, so Onkey ends his walk
+  // exactly on it. Without a picture there, the middle of the reel's window.
+  function reelSpot(i, cell) {
+    const img = $$('.slots-strip')[i]?.children[cells() + cell]?.querySelector('img')?.getBoundingClientRect();
+    if (img?.width) return { left: img.left, top: img.top, width: img.width, height: img.height };
+    const r = $$('.slots-reel')[i]?.getBoundingClientRect();
+    if (!r || !r.width) return null;
+    const side = Math.min(r.width, r.height / 2) * .62;
+    return { left: r.left + (r.width - side) / 2, top: r.top + (r.height - side) / 2, width: side, height: side };
+  }
   // Daily spins (data.daily, from the server): while any are left today, a spin is free, at the daily stake.
   const freeLeft = () => (state.me && data?.daily?.left) || 0;
   const betNow = () => (pending ? pending.stake : freeLeft() ? data.daily.stake : stake);
@@ -73,6 +98,9 @@ window.FiveSlots = (() => {
       if (!button.disabled) button.click();
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden && auto) { auto = false; paintAuto(); } });
+    // The settings menu closes on a click outside it or Escape.
+    document.addEventListener('click', (e) => { if (settingsOpen && !e.target.closest?.('#slot-settings, #slot-settings-menu')) showSettings(false); });
+    document.addEventListener('keydown', (e) => { if (settingsOpen && e.key === 'Escape') { showSettings(false); $('#slot-settings')?.focus(); } });
   }
   function syncOwner() {
     const name = state.me?.name || null;
@@ -181,7 +209,7 @@ window.FiveSlots = (() => {
   // Put a symbol in a cell of a reel on the page (all three copies), for a swap in or out.
   function setCell(i, cell, value) {
     const strip = $$('.slots-strip')[i], n = cells();
-    if (strip) [cell, n + cell, 2 * n + cell].forEach((c) => { strip.children[c].innerHTML = glyph(value); });
+    if (strip) [cell, n + cell, 2 * n + cell].forEach((c) => { strip.children[c].innerHTML = value === null ? '' : glyph(value); });  // null: empty
   }
   // A win's celebration tier comes from its line's symbol (a Golden Onkey filling in doesn't change it).
   const lineSymbol = (spin) => partsOf(spin).find((p) => p.kind === 'line')?.symbol;
@@ -193,7 +221,7 @@ window.FiveSlots = (() => {
   const reel = (value, i) => {
     const strip = stripsNow()[i], at = cellFor(i, value), swap = swapped[i], fake = decoy[i];
     const spotted = !busy && result && value === wildIndex();
-    return `<div class="slots-reel${spotted ? ' spotted' : ''}" role="img" aria-label="${esc(data.symbols[value].name)}"><div class="slots-strip" aria-hidden="true" style="transform:translate3d(0,${70 - (strip.length + at) * 140}px,0)">${[...strip, ...strip, ...strip].map((s, c) => `<span class="slots-symbol">${glyph(swap && c % strip.length === swap.cell ? swap.value : fake && c % strip.length === fake.cell ? fake.value : s)}</span>`).join('')}</div>${spotted ? spotTag() : ''}</div>`;
+    return `<div class="slots-reel${spotted ? ' spotted' : ''}" role="img" aria-label="${esc(data.symbols[value].name)}"><div class="slots-strip" aria-hidden="true" style="transform:translate3d(0,${70 - (strip.length + at) * 140}px,0)">${[...strip, ...strip, ...strip].map((s, c) => `<span class="slots-symbol">${blank[i] === c % strip.length ? '' : glyph(swap && c % strip.length === swap.cell ? swap.value : fake && c % strip.length === fake.cell ? fake.value : s)}</span>`).join('')}</div>${spotted ? spotTag() : ''}</div>`;
   };
 
   // Win fanfares grow with the tier: a short arpeggio, then longer runs with a lower voice under them.
@@ -427,16 +455,48 @@ window.FiveSlots = (() => {
   const backOut = (t) => 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
   // `only` is the one reel that spins on a hold (the other two stay where they are); null spins all three.
   function startMotion(only = null) {
+    if (cameoAt) { window.FiveOnkey?.home(reelSpot(cameoAt.reel, cameoAt.cell), cameoAt.golden); cameoAt = null; } // the next spin: Onkey walks back
     const start = performance.now(), fast = turbo ? TURBO : 1, positions = reelsNow().map((value, i) => cellFor(i, value)), brakes = [];
     const stopped = [0, 1, 2].map((i) => only !== null && i !== only);
     const origin = [...positions];
     // order[k] is the reel that stops k-th (stopOrder(), set in settle()); last() is the one that decides the spin.
-    let previous = start, frame = 0, targets = null, dues = null, ended = false, resolve, tease = null, nudge = false, order = [0, 1, 2];
+    let previous = start, frame = 0, targets = null, dues = null, ended = false, resolve, tease = null, nudge = false, cameo = null, walked = false, order = [0, 1, 2];
     const last = () => order[2];
     const clanked = [0, 0, 0];
     let lastClank = 0;
     const done = new Promise((r) => { resolve = r; });
-    const finish = () => { ended = true; cancelAnimationFrame(frame); tease?.quiet?.(); resolve(); };
+    const finish = () => {
+      // Stopped while Onkey was still on his way (the tab was left): his cell gets its symbol and he goes straight back.
+      if (cameo !== null && blank[cameo] !== null) { blank[cameo] = null; window.FiveOnkey?.home(); }
+      ended = true; cancelAnimationFrame(frame); tease?.quiet?.(); resolve();
+    };
+    // The reels are down with Onkey's cell (reel `cameo`) empty: he walks from the logo into it and becomes the
+    // symbol, and only then is the spin over. The symbol is put in its cell unseen first, so he walks to exactly
+    // where it's drawn and it takes his place without a jump. If he can't come (or takes too long) it just appears.
+    function walkIn() {
+      const i = cameo, cell = brakes[i].cell, golden = targets[i] === wildIndex();
+      const hide = (on) => [0, 1, 2].forEach((k) => {
+        const img = $$('.slots-strip')[i]?.children[k * cells() + cell]?.firstElementChild;
+        if (img) img.style.visibility = on ? 'hidden' : '';
+      });
+      let sat = false;
+      const sit = (came) => {
+        if (sat || ended) return;
+        sat = true; blank[i] = null;
+        // A redraw while he walked left the cell empty: fill it again. Otherwise just show what's waiting there.
+        if ($$('.slots-strip')[i]?.children[cells() + cell]?.firstElementChild) hide(false); else setCell(i, cell, targets[i]);
+        if (came) { walked = true; cameoAt = { reel: i, cell, golden }; }
+        if (golden) landSpotted(i, targets.filter((t, k) => k !== i && t === wildIndex()).length);
+        else sound('stop', 2);
+        finish();
+      };
+      if (golden) swapped[i] = { cell, value: targets[i] };
+      setCell(i, cell, targets[i]); hide(true);
+      const to = reelSpot(i, cell);
+      if (!to || !window.FiveOnkey?.visit) { sit(false); return; }
+      window.FiveOnkey.visit(to, sit, golden);
+      setTimeout(() => sit(true), CAMEO_MAX_MS);
+    }
     function paint() {
       $$('.slots-strip').forEach((strip, i) => {
         strip.style.transform = `translate3d(0,${70 - (cells() + wrap(positions[i])) * 140}px,0)`;
@@ -498,6 +558,7 @@ window.FiveSlots = (() => {
       }
       const dur = (1100 + order.indexOf(i) * 160) * fast / 1000, run = velocity * dur / 2;
       const { cell, secret, dist } = landing(i, from, run);
+      if (i === cameo) { blank[i] = cell; setCell(i, cell, null); } // Onkey's cell arrives empty
       // A nudge: stop one symbol short (on something else, so it looks lost), wait, then bump onto the line.
       const strip = stripsNow()[i], before = strip[(cell + strip.length - 1) % strip.length];
       if (nudge && i === last() && before !== targets[i] && dist > 2) {
@@ -557,19 +618,19 @@ window.FiveSlots = (() => {
           if (cabinet) shake(cabinet, 5, 260);
         }
         // Swap the secret symbol in while its cell is still out of view below the window.
-        if (b.secret && !swapped[i] && b.end - positions[i] < 2.5) {
+        if (b.secret && !swapped[i] && i !== cameo && b.end - positions[i] < 2.5) {
           swapped[i] = { cell: b.cell, value: targets[i] };
           setCell(i, b.cell, targets[i]);
         }
         if (k === b.segs.length - 1 && u === 1) {
           positions[i] = b.end;
           stopped[i] = true; rest[i] = b.cell; sound('stop', i);
-          if (targets[i] === wildIndex()) landSpotted(i, stopped.filter((x, k) => x && targets[k] === wildIndex()).length - 1);
+          if (targets[i] === wildIndex() && i !== cameo) landSpotted(i, stopped.filter((x, k) => x && k !== cameo && targets[k] === wildIndex()).length - 1);
           if (tease && i === last()) { tease.quiet?.(); if (!tease.spotted) sound(tease.won ? 'teaseWin' : 'teaseLose'); }
         }
       });
       paint();
-      if (stopped.every(Boolean)) finish();
+      if (stopped.every(Boolean)) { if (cameo !== null) walkIn(); else finish(); }
       else frame = requestAnimationFrame(tick);
     }
     // The ratchet of a symbol passing the line: one stream for the machine, at most every 70 ms across the reels.
@@ -581,6 +642,7 @@ window.FiveSlots = (() => {
     return {
       paint, cancel: finish,
       // Whether the last spin teased, and if so which reel and whether it won (for the flash after the redraw).
+      cameo: () => walked, // whether Onkey walked in for this spin
       teased: () => (tease?.on && !tease.spotted ? { reel: last(), won: tease.won } : null),
       settle: (reels) => {
         targets = reels; order = only === null ? stopOrder(reels) : [...[0, 1, 2].filter((i) => i !== only), only];
@@ -589,7 +651,14 @@ window.FiveSlots = (() => {
         // Decided from the first two reels to stop only (a Golden Onkey pairs with anything).
         const key = matches(a, b) ? keyOf(pairSymbol(a, b)) : null;
         if (key && Math.random() < (TEASE[key] || 0)) tease = { level: TEASE_LEVEL[key] || 0, on: false };
-        nudge = !tease && lineOf(reels) !== -1 && Math.random() < NUDGE_CHANCE;
+        // Onkey's walk-in takes the place of a tease or a nudge: into a Golden Onkey's cell when the result shows
+        // one, else into his own symbol's, the deciding reel's when it's one of them.
+        const spots = (key) => [order[2], order[1], order[0]].filter((i) => keyOf(reels[i]) === key);
+        const gold = spots('golden'), own = spots('monkey');
+        if (gold.length && Math.random() < GOLDEN_CAMEO_CHANCE) [cameo] = gold;
+        else if (!gold.length && own.length && Math.random() < CAMEO_CHANCE) [cameo] = own;
+        if (cameo !== null) tease = null;
+        nudge = !tease && cameo === null && lineOf(reels) !== -1 && Math.random() < NUDGE_CHANCE;
         // A hold: only its reel is turning, so it just needs its own moment to stop.
         if (only !== null) { dues = []; dues[only] = stopAt + (tease ? 500 : 400 * fast); return done; }
         // When each reel starts braking, in stop order (they take 1.1, 1.26 and 1.42 s): 180 ms apart plus the pauses;
@@ -690,13 +759,31 @@ window.FiveSlots = (() => {
     return `<div class="slots-well slots-readout">${cell('Credits', state.me ? money(displayBalance()) : '–')}${cell('Bet', money(betNow()))}${cell('Win', result && !busy ? money(result.payout) : '0')}</div>`;
   }
   // The Auto key, in a well of its own left of the Spin button: lit while Auto is on.
-  const autoLabel = () => (auto ? 'Auto spin is on. Turn it off' : 'Auto spin: keep spinning until turned off');
-  const autoKey = () => `<button type="button" class="slots-auto" id="slot-auto" aria-pressed="${auto}" aria-label="${autoLabel()}" title="${autoLabel()}"><small>Auto</small><b>${auto ? 'on' : 'off'}</b></button>`;
+  const autoLabel = () => (auto ? `Auto spin is on${autoCap ? `, ${autoLeft} left` : ''}. Turn it off`
+    : `Auto spin: ${autoCap ? `${autoCap} spins` : 'keep spinning until turned off'}`);
+  const autoText = () => (auto ? (autoCap ? autoLeft : 'on') : 'off');
+  const autoKey = () => `<button type="button" class="slots-auto" id="slot-auto" aria-pressed="${auto}" aria-label="${autoLabel()}" title="${autoLabel()}"><small>Auto</small><b>${autoText()}</b></button>`;
   function paintAuto() {
     const b = $('#slot-auto');
     if (!b) return;
     b.setAttribute('aria-pressed', String(auto)); b.setAttribute('aria-label', autoLabel()); b.title = autoLabel();
-    b.querySelector('b').textContent = auto ? 'on' : 'off';
+    b.querySelector('b').textContent = autoText();
+  }
+  // The gear at the marquee's left and its menu: Auto's two settings.
+  const GEAR = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.8"/></svg>';
+  const capText = (n) => (n ? String(n) : 'No limit');
+  const settingsMenu = () => `<button class="slots-sound slots-gear" id="slot-settings" aria-haspopup="true" aria-expanded="${settingsOpen}" aria-controls="slot-settings-menu" aria-label="Slots settings" title="Settings">${GEAR}</button>
+    <div class="slots-settings" id="slot-settings-menu" role="group" aria-label="Auto spin settings" ${settingsOpen ? '' : 'hidden'}>
+      <div class="slots-set-row"><span><b>Auto takes holds</b><small>Each hold costs the stake again.</small></span>
+        <button type="button" class="slots-switch" id="slot-auto-hold" role="switch" aria-checked="${autoHold}" aria-label="Auto takes holds"><i></i></button></div>
+      <div class="slots-set-row stack"><span><b>Auto stops after</b><small>How many spins a run of Auto lasts.</small></span>
+        <div class="slots-caps" role="group" aria-label="Auto spin limit">${AUTO_CAPS.map((n) => `<button type="button" data-slot-cap="${n}" aria-pressed="${n === autoCap}">${capText(n)}</button>`).join('')}</div></div>
+    </div>`;
+  function showSettings(open) {
+    settingsOpen = open;
+    const menu = $('#slot-settings-menu');
+    if (menu) menu.hidden = !open;
+    $('#slot-settings')?.setAttribute('aria-expanded', String(open));
   }
   const turboLabel = () => (turbo ? 'Turbo is on: faster spins. Turn it off' : 'Turbo: faster spins');
   const turboKey = () => `<button type="button" class="slots-auto" id="slot-turbo" aria-pressed="${turbo}" aria-label="${turboLabel()}" title="${turboLabel()}"><small>Turbo</small><b>${turbo ? 'on' : 'off'}</b></button>`;
@@ -727,7 +814,7 @@ window.FiveSlots = (() => {
     const cashing = !busy && partsOf(result).length;
     const detail = result ? `${signed(result.net)} credits net${holdOffer() ? '. Hold the pair, or spin on.' : ''}` : 'Three matching symbols on the centre line pays. Space spins.';
     return `<div class="slots-layout"><section class="slots-cabinet ${win ? 'slots-win' : ''} ${tier ? `slots-tier-${tier}` : ''} ${busy ? 'slots-busy' : ''}"><div class="slots-leds" aria-hidden="true">${leds()}</div><div class="slots-body">
-        <div class="slots-marquee"><h2>Slots</h2><button class="slots-sound" id="slot-sound" aria-pressed="${!muted}" aria-label="${soundLabel()}" title="${soundLabel()}">${speaker(muted)}</button></div>
+        <div class="slots-marquee">${settingsMenu()}<h2>Slots</h2><button class="slots-sound" id="slot-sound" aria-pressed="${!muted}" aria-label="${soundLabel()}" title="${soundLabel()}">${speaker(muted)}</button></div>
         <div class="slots-stage"><div class="slots-window">${freeTag(true)}<div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span>${holdBtn()}</div>${lever(insufficient)}
 </div>
           <div class="slots-result${cashing && freshId === result.id ? ' fresh' : ''}" role="status" aria-live="polite">${cashing ? cashouts(result) : `<b>${busy ? 'Spinning…' : esc(message)}</b>`}<span>${busy ? 'Let them roll.' : esc(detail)}</span></div>
@@ -778,13 +865,19 @@ window.FiveSlots = (() => {
         error = pending ? 'The result could not be confirmed. Check last spin to recover it without paying twice.' : e.message;
       }
     } finally {
-      const teased = rolling.teased();
+      const teased = rolling.teased(), walkedIn = rolling.cameo();
       rolling.cancel(); motion = null; busy = false;
       releaseBalance();
-      // Auto: the next spin after a pause, unless something stops it.
+      // Auto: after a pause, the hold on offer if Auto takes them and the credits are there, else the next spin,
+      // unless something stops it: an error, leaving, a capped run's last spin, or too few credits.
       if (auto) {
-        if (!landed || owner !== name || (!freeLeft() && state.me?.balance < stake) || state.view !== 'slots' || document.hidden) auto = false;
-        else setTimeout(() => { if (auto && !busy && state.view === 'slots') spin(); }, tierOf(landed) ? AUTO_BIG_GAP_MS : quick(landed.payout ? AUTO_WIN_GAP_MS : AUTO_GAP_MS));
+        if (autoCap && request.hold == null) autoLeft -= 1;
+        const takes = autoHold && landed?.hold && state.me?.balance >= landed.stake;
+        const again = () => auto && !busy && state.view === 'slots';
+        if (!landed || owner !== name || state.view !== 'slots' || document.hidden) auto = false;
+        else if (takes) setTimeout(() => { if (again()) spin(holdOffer() && result === landed ? { hold: landed } : null); }, quick(AUTO_HOLD_GAP_MS));
+        else if ((autoCap && autoLeft <= 0) || (!freeLeft() && state.me?.balance < stake)) auto = false;
+        else setTimeout(() => { if (again()) spin(); }, tierOf(landed) ? AUTO_BIG_GAP_MS : quick(landed.payout ? AUTO_WIN_GAP_MS : AUTO_GAP_MS));
       }
       if (state.view === 'slots') {
         if (landed) freshId = landed.id;
@@ -794,7 +887,9 @@ window.FiveSlots = (() => {
         if (landed) {
           celebrate(landed);
           const line = lineSymbol(landed), sym = data.symbols[line ?? landed.reels[0]] || {};
-          window.FiveOnkey?.note('slots', { stake: landed.stake, payout: landed.payout, multiplier: landed.multiplier,
+          // He walked in and the line still lost: he says so himself instead of the usual word on a losing spin.
+          if (walkedIn && !landed.payout) window.FiveOnkey?.note('slots_cameo');
+          else window.FiveOnkey?.note('slots', { stake: landed.stake, payout: landed.payout, multiplier: landed.multiplier,
             symbol: sym.name, golden: !!sym.secret && landed.payout > 0,
             spotted: partsOf(landed).some((p) => p.kind === 'spotted'), wild: partsOf(landed).find((p) => p.kind === 'wild')?.factor });
         }
@@ -816,9 +911,21 @@ window.FiveSlots = (() => {
     // Switching Auto on spins straight away; switching it off lets the spin under way finish.
     $('#slot-auto', viewEl)?.addEventListener('click', () => {
       if (!auto && !busy && $('#slot-spin')?.disabled) return; // nothing to spin with
-      auto = !auto; paintAuto();
+      auto = !auto; autoLeft = auto ? autoCap : 0; paintAuto();
       if (auto && !busy) spin();
     });
+    $('#slot-settings', viewEl)?.addEventListener('click', () => showSettings(!settingsOpen));
+    $('#slot-auto-hold', viewEl)?.addEventListener('click', (e) => {
+      autoHold = !autoHold; localStorage.setItem('fs.slotsAutoHold', autoHold ? '1' : '0');
+      e.currentTarget.setAttribute('aria-checked', String(autoHold));
+    });
+    // A new limit starts counting from now, on a run under way too.
+    $$('[data-slot-cap]', viewEl).forEach((button) => button.addEventListener('click', () => {
+      autoCap = Number(button.dataset.slotCap); localStorage.setItem('fs.slotsAutoCap', String(autoCap));
+      autoLeft = auto ? autoCap : 0;
+      $$('[data-slot-cap]').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
+      paintAuto();
+    }));
     $('#slot-turbo', viewEl)?.addEventListener('click', (e) => {
       turbo = !turbo; localStorage.setItem('fs.slotsTurbo', turbo ? '1' : '0');
       const b = e.currentTarget;

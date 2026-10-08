@@ -76,9 +76,20 @@ chance is set so a hold pays back exactly what the machine does (95%) whatever
 the symbol: about 1 in 3 for cherries, 1 in 84 for Onkeys. Spin again instead and
 the offer is gone.
 
+**Settings.** The gear at the top left of the machine has Auto's two settings,
+both remembered: **Auto takes holds** (on unless you switch it off: Auto takes
+every hold it's offered, each costing the stake again) and **Auto stops after**
+(no limit, or 10, 25, 50 or 100 spins; the Auto key counts them down).
+
 **Nudge.** About one win in four arrives the hard way: the last reel stops one
 symbol short, looking like a loss, then gets a nudge onto the line a moment
 later. It's only how the win is shown; the result was the same all along.
+
+**Onkey walks in.** When a reel is due to show an Onkey, now and then it stops on
+an empty space instead, and Onkey walks down from the top-left logo and sits in
+it himself. When it's a Golden Onkey that's due (about half the time one shows),
+he turns gold on the way down. He goes back when you spin again. Win or lose,
+the result is the one the machine already drew.
 
 The reels clank as they turn and stop one at a time; when the result has
 a matching pair, those two reels stop first, so the last reel to stop is always

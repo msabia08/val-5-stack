@@ -245,7 +245,10 @@ window.FiveOnkey = (() => {
       'Wild! The Golden Onkey filled in and doubled up. +{net}!', 'Times {factor}?! Onkey owes his cousin a banana. +{net}!'],
     slots_tease: ['Ooh ooh ooh...', 'Come on, come on...', 'Onkey can\'t look!', 'Is it? Is it?!', 'Stop. STOP. Please stop.',
       'Onkey is holding his breath...'],
-    slots_max: ['500 a spin? Onkey loves a high roller.', 'Max bet! The machine just sat up straight.', 'Big stakes. Onkey is watching closely.'],
+    // He walked down into the reels and sat in for his own symbol (slots.js walkIn()), and the line still lost.
+    slots_cameo: ['Onkey filled in.', 'The reel was one Onkey short.', 'Onkey counts as an Onkey.', 'Onkey sat where the Onkey goes.',
+      'They needed an Onkey. Onkey was nearby.', 'Onkey is on the reel now. Carry on.'],
+    slots_max: ['250 a spin? Onkey loves a high roller.', 'Max bet! The machine just sat up straight.', 'Big stakes. Onkey is watching closely.'],
     slots_down: ['You\'re down {net} on slots this visit. Onkey suggests a snack break.',
       'Down {net} this visit. The bet page misses you.'],
     wheel_jackpot: ['THE JACKPOT! {amount} credits! Onkey is fainting!', 'You took the whole jackpot! Onkey has to sit down.'],
@@ -592,6 +595,8 @@ window.FiveOnkey = (() => {
         else if (d.event === 'slice') chime('st_slice', vars, 0.5);
         else if (d.payout > d.stake) chime('st_win', vars, 0.3);
         else if (!d.payout) chime('st_lose', vars, 0.06);
+      } else if (kind === 'slots_cameo') {
+        speak(pick(SAY.slots_cameo), {});
       } else if (kind === 'slots_tease') {
         // The tease: he gasps along with the reel (no chatter over its drone), whatever else he said a moment ago.
         speak(pick(SAY.slots_tease), { excited: true });
@@ -669,7 +674,8 @@ window.FiveOnkey = (() => {
   const pageRect = (r) => ({ x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height });
   const viewRect = (p) => ({ left: p.x - scrollX, top: p.y - scrollY, width: p.w, height: p.h });
 
-  function stride(from, to, done) {
+  // `tint(e)`, when given, is the CSS filter for the walker at eased progress e (0 to 1).
+  function stride(from, to, done, tint) {
     walker?.remove();
     const token = ++walkToken;
     const img = document.createElement('img');
@@ -692,6 +698,7 @@ window.FiveOnkey = (() => {
       img.style.left = `${from.left + dx * e}px`;
       img.style.top = `${from.top + dy * e - Math.abs(step) * 12 * (1 - u * 0.4)}px`;
       img.style.transform = `rotate(${(step * 9).toFixed(2)}deg)`;
+      if (tint) img.style.filter = tint(e);
       if (u < 1) { requestAnimationFrame(frame); return; }
       img.remove();
       if (walker === img) walker = null;
@@ -712,7 +719,35 @@ window.FiveOnkey = (() => {
     look();
   }
 
+  // A cameo: he walks from the logo to a spot on the page (a viewport rect) and stays there, the logo empty, until
+  // home() walks him back from `from` (or just puts him back, with none). The slots use it: he sits in for his own
+  // symbol. done(true) when he arrives; done(false) at once when he can't go (at a table, already out, tab hidden).
+  // With `golden` he turns gold over the last stretch of the way there (and back to himself on the way home): the
+  // slots' Golden Onkey, whose filter in style.css (.slots-img.golden) this ends on exactly.
+  let out = false;
+  const gilt = (g) => `sepia(${g}) saturate(${1 + 2.2 * g}) hue-rotate(${-8 * g}deg) brightness(${1 + .18 * g}) `
+    + `drop-shadow(0 0 4px rgba(255, 224, 102, ${g})) drop-shadow(0 0 12px rgba(255, 196, 0, ${.75 * g}))`;
+  const GILD_FROM = .35; // he starts turning this far along
+  function visit(to, done, golden) {
+    const from = logoRect();
+    if (away || out || !from || document.hidden) { done(false); return; }
+    out = true;
+    el?.closest('.brand')?.classList.remove('onkey-talking', 'onkey-excited');
+    root.classList.add('onkey-away');
+    stride(from, to, () => done(true), golden ? (e) => gilt(Math.max(0, (e - GILD_FROM) / (1 - GILD_FROM))) : null);
+  }
+  function home(from, golden) {
+    if (!out) return;
+    out = false;
+    const to = logoRect();
+    if (away) return;
+    if (!from || !to) { walker?.remove(); walker = null; walkToken += 1; root.classList.remove('onkey-away'); return; }
+    stride(from, to, () => { if (!away && !out) root.classList.remove('onkey-away'); },
+      golden ? (e) => gilt(Math.max(0, 1 - e / (1 - GILD_FROM))) : null);
+  }
+
   function walk(view) {
+    if (out) home(); // leaving the page he was visiting: straight back to the logo
     const atTable = WALK_VIEWS.has(view) && !onPhone(); // on a phone he stays in the logo and deals from there
     if (atTable) seatSel = SEATS[view] || DEALER_SEAT;
     if (atTable === away) {
@@ -782,5 +817,5 @@ window.FiveOnkey = (() => {
     if (state && WALK_VIEWS.has(state.view)) walk(state.view); // opened straight onto a table or the hunt
   }
 
-  return { init, start, note, settled, status, speak, scientist, IDLE, SAY, DYNAMIC, OMINOUS, SCIENTIST };
+  return { init, start, note, settled, status, speak, scientist, visit, home, IDLE, SAY, DYNAMIC, OMINOUS, SCIENTIST };
 })();

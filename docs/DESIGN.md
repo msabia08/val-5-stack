@@ -242,7 +242,18 @@ about half (never the tease). While the day's free spins last, a lit gold tag (`
 sits over the top of the Spin button, which reads "Free", and the readout's Bet shows the free spin's stake. Switching it on spins straight away and again after every spin
 (a longer pause after a win, longer still after one with a celebration) until it's
 switched off, the credits run short, a spin fails or you leave the tab. Chrome is `--slot-chrome` / `--slot-chrome-dark`. There's no footer. Two gold arrows (`.slots-line-arrow`) mark the centre line, with no rule drawn across the symbols (thin lines over the reels were distracting); the reels' shading leaves the middle row brightest;
-adjacent symbols remain partly visible above and below. A hold on offer (`holdBtn()`, `.slots-hold`) is a gold button on the bottom edge of the reel window, on a phone too: "Hold" and the
+adjacent symbols remain partly visible above and below. The settings gear (`.slots-gear`, the speaker's round button mirrored at the marquee's left) opens a small menu
+under it (`.slots-settings`, the cabinet's own dark colours in every theme; closed by a click outside or Escape):
+one row per setting, a bold name over a muted line, with a switch (`.slots-switch`) or a row of keys
+(`.slots-caps`, the chosen one lit gold). Today it holds Auto's two: "Auto takes holds" and "Auto stops
+after" (No limit / 10 / 25 / 50 / 100). With a limit the Auto key shows the spins left instead of "on".
+Onkey's walk-in: a reel stops on an empty cell and Onkey walks to it from the logo (`.onkey-walker`, the same
+waddle as his walk to a dealer's seat; the logo stays empty). He ends exactly on the box the symbol's picture is
+drawn in, at its size, and the picture takes his place in the same frame, so there's no jump and no pop. For a
+Golden Onkey he turns gold over the last two thirds of the walk (the walker's filter ramps to `.slots-img.golden`'s,
+glow included) and gets the usual "Spotted!" as he sits. Nothing about the result shows until he's sat down, and
+he walks back (turning back to himself) when the next spin starts.
+A hold on offer (`holdBtn()`, `.slots-hold`) is a gold button on the bottom edge of the reel window, on a phone too: "Hold" and the
 pair's two symbols over one small line ("10 to respin · 1 in 8.4 pays 80", or "Not enough credits", greyed);
 H presses it. While its reel spins the two kept reels are ringed in gold (`.slots-reel.held`). A nudge shows a
 "Nudge!" tag (`.slots-nudge-tag`) at the top of the reel that stopped short, where a Golden Onkey's "Spotted!"
