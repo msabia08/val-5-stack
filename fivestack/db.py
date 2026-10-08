@@ -271,6 +271,8 @@ CREATE TABLE IF NOT EXISTS slot_spins (
     request_id TEXT NOT NULL,
     season_id INTEGER REFERENCES seasons(id),
     rtp REAL,  -- the expected return the spin was played at; NULL before line stats and house tracking began
+    offer INTEGER,  -- 1 when this losing spin's pair was offered a hold
+    held INTEGER,  -- a hold's row: the id of the spin whose pair it held
     UNIQUE(bettor, request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_slots_season ON slot_spins(season_id, bettor);
@@ -474,7 +476,7 @@ CREATE TABLE IF NOT EXISTS house_payouts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bettor TEXT NOT NULL,
     amount REAL NOT NULL,
-    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot / stampede_daily
+    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot / stampede_daily / slots_daily
     ref TEXT NOT NULL UNIQUE,  -- objective:<id>:<bettor>, refund:<bet id>, insurance:<bet id> or wheel:<spin id>: paid once
     match_id TEXT,
     note TEXT,
@@ -563,7 +565,7 @@ MIGRATIONS = {
     "bettors": (("salt", "TEXT"), ("password_hash", "TEXT")),
     "members": (("previous_name", "TEXT"), ("name_checked_ts", "REAL"), ("bettor", "TEXT"), ("active", "INTEGER DEFAULT 1")),
     "member_games": (("team", "TEXT"),),
-    "slot_spins": (("rtp", "REAL"),),
+    "slot_spins": (("rtp", "REAL"), ("offer", "INTEGER"), ("held", "INTEGER")),
     "blackjack_hands": (("side", "TEXT"), ("tip", "REAL")),
     "hunt_days": (("bonus", "REAL NOT NULL DEFAULT 0"),),
 }

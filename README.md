@@ -24,7 +24,10 @@ button shows the page you're on.
 ## Slots
 
 Open **Casino → Slots** and sign in with your betting account. Pick a stake of
-5, 10, 25, 50, 100, 250 or 500 virtual credits, then spin. Three matching
+5, 10, 25, 50, 100 or 250 virtual credits, then spin. Your first three spins of
+the day are free (the day turns at midnight Pacific): the house puts up a
+100-credit stake for each, you keep what they win, and a tag over the Spin button
+counts them down. Three matching
 symbols on the centre line pay, and the bigger the payout the rarer the line:
 
 | Line | Chance | Pays |
@@ -60,7 +63,35 @@ the total counting up; a Golden Onkey flashes gold and gets a "Spotted!" tag
 the moment its reel stops.
 
 Pull the lever on the side of the machine, press the red Spin button or press
-Space. The reels clank as they turn and stop one at a time; when the result has
+Space. The Auto key beside the Spin button keeps the machine spinning until you
+switch it off (or run short of credits, or leave the tab), and the Turbo key next
+to it makes every spin faster.
+
+**Hold.** When a spin loses with two matching symbols on the line, the machine now
+and then (about one such spin in three) offers a hold: a gold Hold button under
+the reels, saying what it costs and what it's after. Take it (click it or press
+H) and the pair stays put while the third reel spins again on its own, for the
+same stake as the spin. If it lands the pair's symbol you're paid that line. The
+chance is set so a hold pays back exactly what the machine does (95%) whatever
+the symbol: about 1 in 3 for cherries, 1 in 84 for Onkeys. Spin again instead and
+the offer is gone.
+
+**Settings.** The gear at the top left of the machine has Auto's two settings,
+both remembered: **Auto takes holds** (on unless you switch it off: Auto takes
+every hold it's offered, each costing the stake again) and **Auto stops after**
+(no limit, or 10, 25, 50 or 100 spins; the Auto key counts them down).
+
+**Nudge.** About one win in four arrives the hard way: the last reel stops one
+symbol short, looking like a loss, then gets a nudge onto the line a moment
+later. It's only how the win is shown; the result was the same all along.
+
+**Onkey walks in.** When a reel is due to show an Onkey, now and then it stops on
+an empty space instead, and Onkey walks down from the top-left logo and sits in
+it himself. When it's a Golden Onkey that's due (about half the time one shows),
+he turns gold on the way down. He goes back when you spin again. Win or lose,
+the result is the one the machine already drew.
+
+The reels clank as they turn and stop one at a time; when the result has
 a matching pair, those two reels stop first, so the last reel to stop is always
 the one that decides the spin (and with no pair it follows close behind). The
 next reel waits longer the bigger the symbol already showing; the readout under the reels shows

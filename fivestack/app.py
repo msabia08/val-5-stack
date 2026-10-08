@@ -99,6 +99,7 @@ class App:
         self.arcade = ArcadeManager(self.db)
         self.slots = SlotManager(self.db, golden_boost=DEMO_GOLDEN_BOOST if demo else 1)  # demo: Golden Onkeys to test
         self.house = HouseManager(self.db, self.bets, self.rewards)  # the take (bets and the casino) and what it gives back
+        self.slots.giver = self.house  # the house gives the stakes of the slots' daily spins
         # demo: a spin can ask for a feature; the house holds the JACKPOT its vault door pays (the daily wheel's)
         self.stampede = StampedeManager(self.db, demo=demo, house=self.house)
         self.wheel = WheelManager(self.db, self.house, unlimited=demo)  # demo: spin as often as you like
@@ -860,7 +861,13 @@ class Handler(BaseHTTPRequestHandler):
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
                     return self._json({"error": "Sign in as a bettor to spin."}, 403)
-                return self._json(app.slots.spin(me["name"], body.get("machine"), body.get("stake"), body.get("request_id")))
+                return self._json(app.slots.spin(me["name"], body.get("machine"), body.get("stake"), body.get("request_id"),
+                                                  daily=body.get("daily") is True))
+            if path == "/api/slots/hold":
+                me = auth.current_bettor(self.headers.get("Cookie"), app.db)
+                if not me:
+                    return self._json({"error": "Sign in as a bettor to spin."}, 403)
+                return self._json(app.slots.hold(me["name"], body.get("spin"), body.get("request_id")))
             if path == "/api/stampede/spin":
                 me = auth.current_bettor(self.headers.get("Cookie"), app.db)
                 if not me:
