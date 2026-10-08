@@ -1661,7 +1661,13 @@ body.modal-open { overflow: hidden; }
 .slots-screw:nth-child(3) { bottom: 8px; left: 8px; } .slots-screw:nth-child(4) { bottom: 8px; right: 8px; }
 .slots-well { padding: 10px; border-radius: 12px; background: #0b0610; box-shadow: inset 0 3px 8px #000, inset 0 0 0 1px rgba(0, 0, 0, .7), 0 1px 0 rgba(255, 255, 255, .1); }
 .slots-stakes { display: flex; gap: 8px; }
-.slots-spin-well { padding: 8px; border-radius: 50%; }
+.slots-spin-well { position: relative; padding: 8px; border-radius: 50%; }
+/* The day's free spins: a lit tag over the top of the Spin button while any are left (on a phone, its copy over the
+   top of the reel window instead). */
+.slots-free.on-reels { display: none; }
+.slots-free { position: absolute; z-index: 1; top: -9px; left: 50%; transform: translateX(-50%); padding: 3px 10px; border-radius: 999px; white-space: nowrap; pointer-events: none;
+  font: 800 12px/1.3 ui-monospace, Consolas, monospace; letter-spacing: .05em; text-transform: uppercase; color: #3b2400;
+  background: linear-gradient(#fff1b0, #ffc533 60%, #e89200); box-shadow: 0 2px 0 #7a4a00, 0 0 14px rgba(255, 196, 0, .7); }
 /* The bet keys: backlit push buttons in a chrome edge, dim amber at rest and lit up when chosen. */
 .slots-stakes button, .slots-auto { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 60px; height: 56px; padding: 0 6px; border: 1px solid #000; border-radius: 7px; cursor: pointer;
   color: #b08a45; background: linear-gradient(#4a3514, #2a1d0b); text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
@@ -1673,9 +1679,9 @@ body.modal-open { overflow: hidden; }
   box-shadow: 0 0 0 2px var(--slot-chrome), 0 4px 0 2px #120a18, 0 0 20px rgba(255, 190, 40, .75), inset 0 1px 0 rgba(255, 255, 255, .7), inset 0 -4px 0 rgba(150, 80, 0, .45); }
 .slots-stakes button:active:not(:disabled), .slots-auto:active:not(:disabled) { transform: translateY(3px); }
 .slots-stakes button:disabled { cursor: default; opacity: .55; }
-/* The Auto key: a bet key in a well of its own, between the readout and the Spin button (the deck spaces all four
-   evenly), lit like a chosen bet while Auto is on. */
-.slots-auto-well { flex: 0 0 auto; display: flex; }
+/* The Auto and Turbo keys: bet keys in a well of their own, between the readout and the Spin button (the deck spaces
+   all four evenly), each lit like a chosen bet while it's on. */
+.slots-auto-well { flex: 0 0 auto; display: flex; gap: 8px; }
 .slots-auto { min-width: 56px; }
 /* The Spin button: a domed arcade button in a chrome ring, pressing in when hit. */
 .slots-spin-ring { flex: 0 0 auto; padding: 11px; border-radius: 50%; background: conic-gradient(from 200deg, #f6f3fb, var(--slot-chrome-dark), var(--slot-chrome), #4f4960, var(--slot-chrome), #f6f3fb);
@@ -3437,6 +3443,9 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .slots-reels { zoom: 0.65; }
   .slots-line-arrow { font-size: 22px; }
   .slots-result, .slots-spin-well { display: none; }
+  /* The free spins' tag sits over the top edge of the reel window, the phone's Spin control. */
+  .slots-window { position: relative; }
+  .slots-free.on-reels { display: block; top: -10px; }
   .slots-deck { flex-direction: column; gap: 10px; margin: 0 14px 20px; padding: 0; border-radius: 0; background: none; box-shadow: none; }  /* no panel: the wells sit on the case */
   .slots-screw { display: none; }
   .slots-stakes, .slots-readout { align-self: stretch; }
@@ -3446,10 +3455,11 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .slots-deck { flex-direction: row; flex-wrap: wrap; }  /* the readout and the Auto key share the second row */
   .slots-stakes { flex: 1 1 100%; }
   .slots-readout { flex: 1 1 0; min-width: 0; }
-  .slots-auto-well { align-self: stretch; padding: 8px; }
-  .slots-auto { height: auto; min-width: 48px; }
+  .slots-auto-well { align-self: stretch; flex-direction: column; gap: 6px; padding: 8px; }  /* Auto over Turbo */
+  .slots-auto { flex: 1 1 0; flex-direction: row; gap: 4px; height: auto; min-width: 62px; padding: 0 3px; }
+  .slots-auto b { font-size: 13px; }
   .slots-readout div { flex: 1 1 0; min-width: 0; }
-  .slots-readout b { font-size: 20px; }
+  .slots-readout b { font-size: 17px; }
   .slots-error { padding: 0 16px; }
   .slots-paytable { contain: none; overflow: visible; }
   .slots-lower { grid-template-columns: minmax(0, 1fr); gap: 12px; }

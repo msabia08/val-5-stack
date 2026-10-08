@@ -22,6 +22,14 @@ window.FiveSlots = (() => {
   // there's a win to read, and longer still for one with a celebration.
   const AUTO_GAP_MS = 500, AUTO_WIN_GAP_MS = 1300, AUTO_BIG_GAP_MS = 4500;
   let auto = false;
+  // Turbo: the Turbo key beside Auto shortens everything about a spin (the run-up, each reel's stop, the pauses between
+  // them, Auto's pause) to TURBO of its length. The tease is never shortened: it's the one part worth watching.
+  const TURBO = .4;
+  let turbo = localStorage.getItem('fs.slotsTurbo') === '1';
+  const quick = (ms) => (turbo ? ms * TURBO : ms);
+  // Daily spins (data.daily, from the server): while any are left today, a spin is free, at the daily stake.
+  const freeLeft = () => (state.me && data?.daily?.left) || 0;
+  const betNow = () => (pending ? pending.stake : freeLeft() ? data.daily.stake : stake);
   // The Golden Onkey (the secret symbol) is wild: it matches anything, and it pays when spotted (slots.py's payouts()).
   const wildIndex = () => data.symbols.findIndex((s) => s.secret);
   const matches = (a, b) => a === b || a === wildIndex() || b === wildIndex();
@@ -65,7 +73,7 @@ window.FiveSlots = (() => {
     motion?.cancel();
     owner = name; data = null; result = null; error = ''; pending = null; auto = false;
     try { pending = name ? JSON.parse(sessionStorage.getItem(storageKey(name))) : null; } catch (_) { /* unavailable */ }
-    if (pending) stake = pending.stake;
+    if (pending && !pending.daily) stake = pending.stake;
   }
   async function load() {
     syncOwner();
@@ -411,7 +419,7 @@ window.FiveSlots = (() => {
   // A snap with a little overshoot before it settles.
   const backOut = (t) => 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
   function startMotion() {
-    const start = performance.now(), positions = reelsNow().map((value, i) => cellFor(i, value)), brakes = [], stopped = [false, false, false];
+    const start = performance.now(), fast = turbo ? TURBO : 1, positions = reelsNow().map((value, i) => cellFor(i, value)), brakes = [], stopped = [false, false, false];
     const origin = [...positions];
     // order[k] is the reel that stops k-th (stopOrder(), set in settle()); last() is the one that decides the spin.
     let previous = start, frame = 0, targets = null, dues = null, ended = false, resolve, tease = null, order = [0, 1, 2];
@@ -478,7 +486,7 @@ window.FiveSlots = (() => {
         ];
         return { at: now, segs, end: from + dist, cell, secret };
       }
-      const dur = (1100 + order.indexOf(i) * 160) / 1000, run = velocity * dur / 2;
+      const dur = (1100 + order.indexOf(i) * 160) * fast / 1000, run = velocity * dur / 2;
       const { cell, secret, dist } = landing(i, from, run);
       return { at: now, segs: [{ dur, at: hermite(from, dist, velocity * dur, 0) }], end: from + dist, cell, secret };
     }
@@ -551,7 +559,7 @@ window.FiveSlots = (() => {
       teased: () => (tease?.on && !tease.spotted ? { reel: last(), won: tease.won } : null),
       settle: (reels) => {
         targets = reels; order = stopOrder(reels);
-        const stopAt = Math.max(performance.now(), start + 800), keyOf = (r) => data.symbols[r]?.key;
+        const stopAt = Math.max(performance.now(), start + 800 * fast), keyOf = (r) => data.symbols[r]?.key;
         const [a, b] = order.map((i) => reels[i]);
         // Decided from the first two reels to stop only (a Golden Onkey pairs with anything).
         const key = matches(a, b) ? keyOf(pairSymbol(a, b)) : null;
@@ -560,9 +568,10 @@ window.FiveSlots = (() => {
         // a teased last reel starts its run-in once the second has stopped. Two different symbols first means no
         // pair anywhere (stopOrder() puts one first), so the last reel follows close behind instead of making you wait.
         const bigWin = BIG_OPENING.includes(keyOf(lineOf(reels)));
-        const opening = bigWin || Math.random() < .1 ? 700 + Math.random() * 500 : 0;
-        const first = stopAt + opening, second = first + 180 + (PAUSE[keyOf(a)] || 0);
-        const third = tease ? second + 1260 + 150 : matches(a, b) ? second + 180 + (PAUSE[keyOf(b)] || 0) * 1.5 + 150 : second + 120;
+        // Turbo (fast) shortens all of these, but not the tease's own run-in.
+        const opening = (bigWin || Math.random() < .1 ? 700 + Math.random() * 500 : 0) * fast;
+        const first = stopAt + opening, second = first + (180 + (PAUSE[keyOf(a)] || 0)) * fast;
+        const third = tease ? second + 1260 * fast + 150 : matches(a, b) ? second + (180 + (PAUSE[keyOf(b)] || 0) * 1.5 + 150) * fast : second + 120 * fast;
         dues = [];
         [first, second, third].forEach((due, k) => { dues[order[k]] = due; });
         return done;
@@ -650,7 +659,7 @@ window.FiveSlots = (() => {
   // The machine's own readout: your credits, the bet and the last win, in lit digits.
   function readout() {
     const cell = (label, value) => `<div><span>${label}</span><b>${value}</b></div>`;
-    return `<div class="slots-well slots-readout">${cell('Credits', state.me ? money(displayBalance()) : '–')}${cell('Bet', money(stake))}${cell('Win', result && !busy ? money(result.payout) : '0')}</div>`;
+    return `<div class="slots-well slots-readout">${cell('Credits', state.me ? money(displayBalance()) : '–')}${cell('Bet', money(betNow()))}${cell('Win', result && !busy ? money(result.payout) : '0')}</div>`;
   }
   // The Auto key, in a well of its own left of the Spin button: lit while Auto is on.
   const autoLabel = () => (auto ? 'Auto spin is on. Turn it off' : 'Auto spin: keep spinning until turned off');
@@ -661,6 +670,11 @@ window.FiveSlots = (() => {
     b.setAttribute('aria-pressed', String(auto)); b.setAttribute('aria-label', autoLabel()); b.title = autoLabel();
     b.querySelector('b').textContent = auto ? 'on' : 'off';
   }
+  const turboLabel = () => (turbo ? 'Turbo is on: faster spins. Turn it off' : 'Turbo: faster spins');
+  const turboKey = () => `<button type="button" class="slots-auto" id="slot-turbo" aria-pressed="${turbo}" aria-label="${turboLabel()}" title="${turboLabel()}"><small>Turbo</small><b>${turbo ? 'on' : 'off'}</b></button>`;
+  // The tag over the Spin button while the day's free spins last. A phone has no Spin button, so there a second copy
+  // (`reels`) sits over the top of the reel window, and style.css shows whichever belongs.
+  const freeTag = (reels) => (freeLeft() ? `<span class="slots-free${reels ? ' on-reels' : ''}">${freeLeft()} free spin${freeLeft() === 1 ? '' : 's'}</span>` : '');
   function view() {
     syncOwner();
     if (!data || (data.me?.name || null) !== owner) {
@@ -670,21 +684,21 @@ window.FiveSlots = (() => {
       return '<section class="card" id="slot-loading">Loading slots…</section>';
     }
     const m = data.machines.find((g) => g.key === 'jackpot'), locked = busy || !!pending;
-    const insufficient = state.me && state.me.balance < stake;
+    const free = freeLeft(), insufficient = state.me && !free && state.me.balance < stake;
     const win = !busy && result?.net > 0, tier = busy ? 0 : tierOf(result);
     const message = result ? result.payout ? `${money(result.payout)} credits returned` : 'No winning line' : 'Ready when you are';
     const cashing = !busy && partsOf(result).length;
     const detail = result ? `${signed(result.net)} credits net` : 'Three matching symbols on the centre line pays. Space spins.';
     return `<div class="slots-layout"><section class="slots-cabinet ${win ? 'slots-win' : ''} ${tier ? `slots-tier-${tier}` : ''} ${busy ? 'slots-busy' : ''}"><div class="slots-leds" aria-hidden="true">${leds()}</div><div class="slots-body">
         <div class="slots-marquee"><h2>Slots</h2><button class="slots-sound" id="slot-sound" aria-pressed="${!muted}" aria-label="${soundLabel()}" title="${soundLabel()}">${speaker(muted)}</button></div>
-        <div class="slots-stage"><div class="slots-window"><div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span></div>${lever(insufficient)}
+        <div class="slots-stage"><div class="slots-window">${freeTag(true)}<div class="slots-glass"><div class="slots-reels ${busy ? 'spinning' : ''}" aria-label="${busy ? 'Reels spinning' : 'Reel result'}" aria-busy="${busy}">${reelsNow().map(reel).join('')}</div><span class="slots-line-arrow left" aria-hidden="true">▸</span><span class="slots-line-arrow right" aria-hidden="true">◂</span></div>${lever(insufficient)}
 </div>
           <div class="slots-result${cashing && freshId === result.id ? ' fresh' : ''}" role="status" aria-live="polite">${cashing ? cashouts(result) : `<b>${busy ? 'Spinning…' : esc(message)}</b>`}<span>${busy ? 'Let them roll.' : esc(detail)}</span></div>
         </div>
         <div class="slots-deck"><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span><span class="slots-screw" aria-hidden="true"></span>
           <div class="slots-well slots-stakes" role="group" aria-label="Credits per spin">${data.stakes.map((s) => `<button type="button" data-slot-stake="${s}" aria-pressed="${s === stake}" aria-label="Bet ${s} credits" ${locked ? 'disabled' : ''}><small>Bet</small><b>${s}</b></button>`).join('')}</div>
           ${readout()}
-          ${state.me ? `<div class="slots-well slots-auto-well">${autoKey()}</div>` : ''}<div class="slots-well slots-spin-well"><div class="slots-spin-ring">${state.me ? `<button class="slots-spin" id="slot-spin" aria-keyshortcuts="Space" ${busy || (insufficient && !pending) ? 'disabled' : ''} aria-label="${busy ? 'Spinning' : pending ? 'Check last spin' : `Spin for ${stake} credits`}"><span>${busy ? '···' : pending ? 'Check' : 'Spin'}</span>${pending && !busy ? '<small>last spin</small>' : ''}</button>` : '<button class="slots-spin" data-signin><span>Sign in</span><small>to spin</small></button>'}</div></div>
+          ${state.me ? `<div class="slots-well slots-auto-well">${autoKey()}${turboKey()}</div>` : ''}<div class="slots-well slots-spin-well">${freeTag()}<div class="slots-spin-ring">${state.me ? `<button class="slots-spin" id="slot-spin" aria-keyshortcuts="Space" ${busy || (insufficient && !pending) ? 'disabled' : ''} aria-label="${busy ? 'Spinning' : pending ? 'Check last spin' : free ? `Free spin, ${free} left today` : `Spin for ${stake} credits`}"><span>${busy ? '···' : pending ? 'Check' : free ? 'Free' : 'Spin'}</span>${pending && !busy ? '<small>last spin</small>' : ''}</button>` : '<button class="slots-spin" data-signin><span>Sign in</span><small>to spin</small></button>'}</div></div>
         </div>
         <p class="slots-error" role="alert">${esc(error || (insufficient && !pending ? 'Not enough credits. Choose a smaller stake.' : ''))}</p>
       </div></section>${paytable(m, win)}</div>
@@ -695,13 +709,16 @@ window.FiveSlots = (() => {
     const fresh = !pending;
     if (fresh) {
       const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
-      remember({ stake, request_id: Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('') });
+      const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      // One of the day's free spins while any are left: the server gives its stake.
+      remember(freeLeft() ? { stake: data.daily.stake, request_id: id, daily: true } : { stake, request_id: id });
     }
     const name = owner, request = pending;
     let landed = null;
     // The server pays the spin before the reels stop, so until they do the balance shown (here and in the top bar)
-    // is held at what it was less the stake: it can't give the result away. A retried spin's stake was already taken.
-    holdBalance(fresh ? state.me.balance - request.stake : state.me.balance);
+    // is held at what it was less the stake: it can't give the result away. A retried spin's stake was already taken,
+    // and a free spin's is the house's.
+    holdBalance(fresh && !request.daily ? state.me.balance - request.stake : state.me.balance);
     busy = true; error = ''; sound('start'); draw();
     $('.slots-lever')?.classList.add('pulled');
     const rolling = motion = startMotion();
@@ -724,8 +741,8 @@ window.FiveSlots = (() => {
       releaseBalance();
       // Auto: the next spin after a pause, unless something stops it.
       if (auto) {
-        if (!landed || owner !== name || state.me?.balance < stake || state.view !== 'slots' || document.hidden) auto = false;
-        else setTimeout(() => { if (auto && !busy && state.view === 'slots') spin(); }, tierOf(landed) ? AUTO_BIG_GAP_MS : landed.payout ? AUTO_WIN_GAP_MS : AUTO_GAP_MS);
+        if (!landed || owner !== name || (!freeLeft() && state.me?.balance < stake) || state.view !== 'slots' || document.hidden) auto = false;
+        else setTimeout(() => { if (auto && !busy && state.view === 'slots') spin(); }, tierOf(landed) ? AUTO_BIG_GAP_MS : quick(landed.payout ? AUTO_WIN_GAP_MS : AUTO_GAP_MS));
       }
       if (state.view === 'slots') {
         if (landed) freshId = landed.id;
@@ -755,6 +772,12 @@ window.FiveSlots = (() => {
       if (!auto && !busy && $('#slot-spin')?.disabled) return; // nothing to spin with
       auto = !auto; paintAuto();
       if (auto && !busy) spin();
+    });
+    $('#slot-turbo', viewEl)?.addEventListener('click', (e) => {
+      turbo = !turbo; localStorage.setItem('fs.slotsTurbo', turbo ? '1' : '0');
+      const b = e.currentTarget;
+      b.setAttribute('aria-pressed', String(turbo)); b.setAttribute('aria-label', turboLabel()); b.title = turboLabel();
+      b.querySelector('b').textContent = turbo ? 'on' : 'off';
     });
     // On a phone (style.css's phone block) there's no Spin button or lever to see: tapping the reel window spins. It
     // goes through the hidden Spin button, so a spin under way, too few credits and signing in behave the same.

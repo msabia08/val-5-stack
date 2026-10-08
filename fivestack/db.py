@@ -474,7 +474,7 @@ CREATE TABLE IF NOT EXISTS house_payouts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bettor TEXT NOT NULL,
     amount REAL NOT NULL,
-    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot / stampede_daily
+    kind TEXT NOT NULL,  -- objective / refund / insurance / wheel / jackpot / stampede_daily / slots_daily
     ref TEXT NOT NULL UNIQUE,  -- objective:<id>:<bettor>, refund:<bet id>, insurance:<bet id> or wheel:<spin id>: paid once
     match_id TEXT,
     note TEXT,

@@ -24,7 +24,10 @@ button shows the page you're on.
 ## Slots
 
 Open **Casino → Slots** and sign in with your betting account. Pick a stake of
-5, 10, 25, 50, 100, 250 or 500 virtual credits, then spin. Three matching
+5, 10, 25, 50, 100 or 250 virtual credits, then spin. Your first three spins of
+the day are free (the day turns at midnight Pacific): the house puts up a
+10-credit stake for each, you keep what they win, and a tag over the Spin button
+counts them down. Three matching
 symbols on the centre line pay, and the bigger the payout the rarer the line:
 
 | Line | Chance | Pays |
@@ -61,7 +64,8 @@ the moment its reel stops.
 
 Pull the lever on the side of the machine, press the red Spin button or press
 Space. The Auto key beside the Spin button keeps the machine spinning until you
-switch it off (or run short of credits, or leave the tab). The reels clank as they turn and stop one at a time; when the result has
+switch it off (or run short of credits, or leave the tab), and the Turbo key next
+to it makes every spin faster. The reels clank as they turn and stop one at a time; when the result has
 a matching pair, those two reels stop first, so the last reel to stop is always
 the one that decides the spin (and with no pair it follows close behind). The
 next reel waits longer the bigger the symbol already showing; the readout under the reels shows

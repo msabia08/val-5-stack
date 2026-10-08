@@ -5,8 +5,13 @@ import time
 
 from . import house
 from .bets import BetError
+from .wheel import wheel_day
 
-STAKES = (5, 10, 25, 50, 100, 250, 500)
+STAKES = (5, 10, 25, 50, 100, 250)
+# Daily spins: DAILY_SPINS free spins a day (the Pacific day, like the daily wheel) at DAILY_STAKE, the stake given by
+# the house (house_payouts kind `slots_daily`, free like the wheel's credits), so the machine's return is untouched.
+DAILY_SPINS = 3
+DAILY_STAKE = 10
 # Saved spins store these indexes, so keep the order and add new symbols at the end; a symbol's rank comes from its
 # multiplier in "triples". "img" replaces the emoji on the page ("glow" adds a golden glow to it). A "secret" symbol is
 # left out of the pay table and off the page's reel strips (it only shows where a reel stops on it). It is wild (it
@@ -163,8 +168,9 @@ DEMO_GOLDEN_BOOST = 20
 
 
 class SlotManager:
-    def __init__(self, db, golden_boost=1):
+    def __init__(self, db, golden_boost=1, giver=None):
         self.db = db
+        self.giver = giver  # the HouseManager that gives the daily spins' stakes; no daily spins without one
         self.machines = {k: boosted(m, golden_boost) if golden_boost != 1 else m for k, m in MACHINES.items()}
 
     @staticmethod
@@ -187,7 +193,18 @@ class SlotManager:
             return [{"kind": "line", "symbol": symbol, "mult": row["multiplier"], "wild": 0}]
         return []
 
-    def spin(self, name, machine, stake, request_id):
+    def daily(self, name, now=None):
+        """A bettor's daily spins today: how many are left, of DAILY_SPINS, at DAILY_STAKE (None without a giver)."""
+        if not self.giver:
+            return None
+        used = self.db.query_one("SELECT COUNT(*) AS n FROM house_payouts WHERE kind='slots_daily' AND ref LIKE ?",
+                                 (f"slots-daily:{name.lower()}:{wheel_day(now or time.time())}:%",))["n"]
+        return {"left": max(0, DAILY_SPINS - used), "total": DAILY_SPINS, "stake": DAILY_STAKE}
+
+    def spin(self, name, machine, stake, request_id, daily=False):
+        """One spin. `daily` makes it one of the day's free spins: the stake is DAILY_STAKE and the house gives it."""
+        if daily:
+            stake = DAILY_STAKE
         machine = "jackpot" if machine is None else machine
         if not isinstance(machine, str):
             raise BetError("This machine is no longer available. Reload the page.")
@@ -205,10 +222,18 @@ class SlotManager:
             if old:
                 if old["machine"] != machine or old["stake"] != stake:
                     raise BetError("That spin reference has already been used.")
-                return {"spin": self.public(old), "balance": round(bettor["balance"], 2)}
+                return {"spin": self.public(old), "balance": round(bettor["balance"], 2), "daily": self.daily(name)}
             # Old results remain recoverable, but retired machines cannot take new stakes.
             if machine not in self.machines:
                 raise BetError("This machine is no longer available. Reload the page.")
+            if daily:  # the house gives the stake, once per daily spin (the ref carries the request, so a retry can't)
+                now = time.time()
+                left = self.daily(name, now)
+                if not left or not left["left"]:
+                    raise BetError("No free spins left today. They come back at midnight Pacific.")
+                self.giver.pay(name, DAILY_STAKE, "slots_daily", f"slots-daily:{name.lower()}:{wheel_day(now)}:{request_id}",
+                               None, "Slots: a daily spin")
+                bettor = self.db.get_bettor(name)
             if bettor["balance"] < stake:
                 raise BetError("Not enough credits for that spin. Choose a smaller stake.")
             m = self.machines[machine]
@@ -229,7 +254,7 @@ class SlotManager:
                 self.db.conn.rollback()
                 raise
             row = self.db.query_one("SELECT * FROM slot_spins WHERE id=?", (cur.lastrowid,))
-            return {"spin": self.public(row), "balance": round(self.db.get_bettor(name)["balance"], 2)}
+            return {"spin": self.public(row), "balance": round(self.db.get_bettor(name)["balance"], 2), "daily": self.daily(name)}
 
     def house(self):
         """What the house has taken from slots, every season, since spins recorded their return (rtp): the estimate
@@ -270,7 +295,7 @@ class SlotManager:
         machines = [{"key": key, **m, "rtp": round(rtp(m) * 100, 2), "rtp_with_secret": round(rtp(m, True) * 100, 2),
                      "chances": chances(m), "win_chance": win_chance(m)}
                     for key, m in self.machines.items()]
-        out = {"machines": machines, "symbols": SYMBOLS, "stakes": STAKES, "me": None, "history": [], "lines": None,
+        out = {"machines": machines, "symbols": SYMBOLS, "stakes": STAKES, "me": None, "history": [], "lines": None, "daily": None,
                "house": self.house(), "big_wins": self.big_wins()}
         if me:
             with self.db.lock:
@@ -292,4 +317,5 @@ class SlotManager:
                 out["history"] = [self.public(row) for row in self.db.query(
                     "SELECT * FROM slot_spins WHERE bettor=? AND season_id IS NULL ORDER BY id DESC LIMIT 10", (name,))]
                 out["lines"] = self.lines(name)
+                out["daily"] = self.daily(name)
         return out

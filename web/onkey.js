@@ -596,7 +596,7 @@ window.FiveOnkey = (() => {
         // The tease: he gasps along with the reel (no chatter over its drone), whatever else he said a moment ago.
         speak(pick(SAY.slots_tease), { excited: true });
       } else if (kind === 'slots_stake') {
-        if (d.stake >= 500) chime('slots_max', {}, 0.8, { excited: true });
+        if (d.stake >= 250) chime('slots_max', {}, 0.8, { excited: true });
       } else if (kind === 'arcade') {
         const vars = { game: d.game, score: fmtN(d.score) };
         if (d.champion) react('arcade_champ', vars, { excited: true });

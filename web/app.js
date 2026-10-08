@@ -181,8 +181,9 @@
     try { seen = localStorage.getItem(key); localStorage.setItem(key, String(Math.max(newest, Number(seen) || 0))); }
     catch (e) { return; }
     if (seen === null) return;
-    // The daily wheel shows its own prizes as they land, so only objectives, refunds and insurance get a toast.
-    const fresh = got.filter((g) => g.id > Number(seen) && !['wheel', 'jackpot'].includes(g.kind));
+    // The daily wheel shows its own prizes as they land and a daily spin's stake is spent at once, so only objectives,
+    // refunds and insurance get a toast.
+    const fresh = got.filter((g) => g.id > Number(seen) && !['wheel', 'jackpot', 'slots_daily', 'stampede_daily'].includes(g.kind));
     if (!fresh.length) return;
     const total = fresh.reduce((a, g) => a + g.amount, 0);
     const what = (g) => (g.kind === 'objective' ? `secret objective met: ${g.note}` : g.note);
