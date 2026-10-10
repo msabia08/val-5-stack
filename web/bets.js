@@ -67,7 +67,11 @@ window.FiveBets = (() => {
     const q = (currentQuote() || {}).quote;
     return q ? q.odds_decimal : state.slip.reduce((a, x) => a * Number(x.decimal), 1);
   }
-  const parlayToWin = (stake) => (parlayBlocked() ? '' : `To win ${fmt.credits(stake * (parlayDecimal() - 1))}`);
+  // A parlay holding one of Onkey's Picks pays him a cut of the winnings (bets.py PICK_CUT; `onkey_pick` on the quote).
+  const onkeyCut = () => ((currentQuote() || {}).quote || {}).onkey_pick || null;
+  const parlayToWin = (stake) => (parlayBlocked() ? ''
+    : `To win ${fmt.credits(stake * (parlayDecimal() - 1) * (1 - (onkeyCut() ? onkeyCut().rate : 0)))}${onkeyCut() ? ' after Onkey\'s cut' : ''}`);
+  let loadedPick = null; // the key of the pick the slip was loaded with from Onkey's card, until the slip is cleared or placed
 
   function parlayQuoteHtml() {
     const pq = currentQuote(), q = pq && pq.quote;
@@ -94,6 +98,10 @@ window.FiveBets = (() => {
       if (boostIdx >= 0) {
         const cap = (state.odds && state.odds.boost && state.odds.boost.max_stake) || 250;
         notes.push(`<p class="muted small">⚡ Odds boost of the game, up from ${fmt.oddsDec(q.legs[boostIdx].boost)} on "${esc(q.legs[boostIdx].description)}". A parlay with it is capped at ${fmt.credits(cap)} credits.</p>`);
+      }
+      if (q.onkey_pick) {
+        notes.push(`<p class="muted small pick-cut">${loadedPick ? `Onkey's pick "${esc(q.onkey_pick.name)}"` : `Onkey recognises these: that's his pick "${esc(q.onkey_pick.name)}"`}. ` +
+          `Onkey takes ${fmt.pct(q.onkey_pick.rate)} of the winnings.</p>`);
       }
       const tokenLegs = q.legs.filter((l) => l.boost_token);
       if (tokenLegs.length) {
@@ -241,9 +249,10 @@ window.FiveBets = (() => {
         ${legRows ? `<div class="bet-legs">${legRows}</div>` : ''}
         <div class="bet-ticket-row muted small">
           <span>${fmt.credits(b.stake)} @ ${fmt.oddsDec(b.odds_decimal)}</span>
-          <span>${b.status === 'pending' ? `To win ${fmt.credits(b.stake * (b.odds_decimal - 1))}` : `Return ${fmt.credits(b.payout || 0)}`}</span>
+          <span>${b.status === 'pending' ? `To win ${fmt.credits(b.stake * (b.odds_decimal - 1) * (1 - (ctx && ctx.onkey_pick ? ctx.onkey_pick.rate : 0)))}` : `Return ${fmt.credits(b.payout || 0)}`}</span>
         </div>
         ${cut}
+        ${ctx && ctx.onkey_pick && b.status === 'pending' ? `<div class="muted small bet-note">Onkey's pick "${esc(ctx.onkey_pick.name)}": Onkey takes ${fmt.pct(ctx.onkey_pick.rate)} of the winnings</div>` : ''}
         ${perkNote(b)}
         ${b.note ? `<div class="muted small bet-note">${esc(b.note)}</div>` : ''}
         ${b.status === 'pending' && cancelBtn ? `<div class="bet-ticket-row">${cancelBtn}</div>` : ''}
@@ -352,6 +361,59 @@ window.FiveBets = (() => {
     return {};
   }
 
+  const slipItem = (mk, sel) => ({
+    market_id: mk.market_id, selection: sel.key, selLabel: sel.label,
+    desc: mk.type === 'ou' ? `${mk.member} ${mk.stat_label}` : mk.label,
+    american: sel.american, decimal: sel.decimal, line: mk.line, stake: state.stake, gameBoost: !!sel.boost,
+  });
+
+  // ---- Onkey's Picks ---------------------------------------------------------------------------------------------
+  // Ready-made parlays from the board (bets.py onkeys_picks, `picks` on /api/odds): the same for everyone, drawn again
+  // after every game. A tile's button swaps the slip for that parlay, in parlay mode, ready for a stake and Place.
+  const boardPicks = () => (state.odds && state.odds.picks) || [];
+  const pickLoaded = (p) => state.slip.length === p.legs.length &&
+    p.legs.every((l) => state.slip.some((x) => x.market_id === l.market_id && x.selection === l.selection));
+  const pickBtn = (p) => (pickLoaded(p) ? 'In your slip' : 'Load into slip');
+
+  function picksCard() {
+    const picks = boardPicks();
+    // Always there, so the phone layout's order of the cards after it doesn't shift when there are no picks.
+    if (!picks.length) return '<section class="card picks-card" hidden></section>';
+    const tiles = picks.map((p) => {
+      const price = { decimal: p.odds_decimal, american: p.american };
+      return `<div class="pick-slip"><div class="pick-head"><h3>${esc(p.name)}</h3><b class="pick-price">${fmt.odds(price)}</b></div>` +
+        `<p class="pick-line">${esc(p.line)}</p>` +
+        `<ul class="pick-legs">${p.legs.map((l) => `<li><span>${l.streak ? '🔥 ' : ''}${esc(l.description)}</span>` +
+          `<span class="muted num">${fmt.odds({ decimal: l.odds_decimal, american: l.american })}</span></li>`).join('')}</ul>` +
+        `<div class="muted small">${fmt.credits(state.stake)} to win ${fmt.credits(state.stake * (p.odds_decimal - 1) * (1 - p.cut))} after Onkey's cut</div>` +
+        `<button type="button" class="btn${pickLoaded(p) ? ' ghost' : ' primary'}" data-pick="${esc(p.key)}">${pickBtn(p)}</button></div>`;
+    }).join('');
+    return `<section class="card picks-card"><h2>Onkey's Picks</h2>` +
+      how(`Ready-made parlays for the next game. One click puts one in your bet slip. Onkey takes ${fmt.pct(picks[0].cut)} of the winnings.`,
+        'Onkey picks a new set after every game, the same for everyone: one from picks that have hit several games in a row (🔥), ' +
+        'one from the likelier picks, and one on a hunch. They\'re priced exactly like a parlay you build yourself, and when one wins ' +
+        `Onkey takes ${fmt.pct(picks[0].cut)} of the winnings (never of your stake); it goes to the house. That goes for any parlay holding every leg of one of his picks, ` +
+        'built by hand or with more legs added: he notices. Loading one replaces what\'s in your slip; you can still change the stake before placing it.') +
+      `<div class="pick-grid">${tiles}</div></section>`;
+  }
+
+  function loadPick(key) {
+    const p = boardPicks().find((x) => x.key === key);
+    if (!p) return;
+    const items = p.legs.map((l) => {
+      const { mk, sel } = findMarket(l.market_id, l.selection);
+      return mk && sel ? slipItem(mk, sel) : null;
+    });
+    if (items.some((x) => !x)) { toast('Those odds have moved. Reload the page for Onkey\'s latest picks.', 'bad'); return; }
+    state.slip = items;
+    state.slipMode = 'parlay';
+    loadedPick = p.key;
+    document.documentElement.classList.add('slip-open'); // on a phone, the slip's sheet opens with it
+    drawSlip();
+    syncOddButtons();
+    window.FiveOnkey?.note('slip', { picks: true, name: p.name });
+  }
+
   function toggleSlip(marketId, selKey) {
     const i = state.slip.findIndex((x) => x.market_id === marketId && x.selection === selKey);
     if (i >= 0) {
@@ -360,11 +422,7 @@ window.FiveBets = (() => {
       const { mk, sel } = findMarket(marketId, selKey);
       if (!mk || !sel) return;
       state.slip = state.slip.filter((x) => x.market_id !== marketId); // one side per market
-      state.slip.push({
-        market_id: marketId, selection: selKey, selLabel: sel.label,
-        desc: mk.type === 'ou' ? `${mk.member} ${mk.stat_label}` : mk.label,
-        american: sel.american, decimal: sel.decimal, line: mk.line, stake: state.stake, gameBoost: !!sel.boost,
-      });
+      state.slip.push(slipItem(mk, sel));
       window.FiveOnkey?.note('slip', { added: true, desc: `${state.slip[state.slip.length - 1].desc} ${sel.label}`, n: state.slip.length });
     }
     drawSlip();
@@ -376,6 +434,13 @@ window.FiveBets = (() => {
       const on = state.slip.some((x) => x.market_id === b.dataset.m && x.selection === b.dataset.s);
       b.classList.toggle('on', on);
       b.setAttribute('aria-pressed', String(on));
+    });
+    $$('[data-pick]').forEach((b) => {
+      const p = boardPicks().find((x) => x.key === b.dataset.pick);
+      if (!p) return;
+      b.textContent = pickBtn(p);
+      b.classList.toggle('ghost', pickLoaded(p));
+      b.classList.toggle('primary', !pickLoaded(p));
     });
   }
 
@@ -525,7 +590,7 @@ window.FiveBets = (() => {
     $$('.mode-btn', slip).forEach((b) => b.addEventListener('click', () => { state.slipMode = b.dataset.mode; drawSlip(); }));
     bindTokens(slip);
     bindRemove(slip);
-    $('#clear-slip')?.addEventListener('click', () => { state.slip = []; drawSlip(); syncOddButtons(); window.FiveOnkey?.note('slip', { cleared: true }); });
+    $('#clear-slip')?.addEventListener('click', () => { state.slip = []; loadedPick = null; drawSlip(); syncOddButtons(); window.FiveOnkey?.note('slip', { cleared: true }); });
     $('#place-bets')?.addEventListener('click', placeSlip);
     if ($('#parlay-quote', slip)) fetchParlayQuote();
   }
@@ -555,12 +620,16 @@ window.FiveBets = (() => {
       try {
         const res = await api('/api/bets', {
           method: 'POST',
-          body: JSON.stringify({ legs: parlayLegs(), stake, context: state.ctx }),
+          body: JSON.stringify({ legs: parlayLegs(), stake, context: state.ctx, pick: !!loadedPick }),
         });
         state.slip = [];
+        loadedPick = null;
         stampPlaced([res.bet.id]);
-        window.FiveOnkey?.note('bet', { parlay: true, legs: (JSON.parse(res.bet.context || '{}').legs || []).length, stake });
-        toast(`Parlay placed. It settles after the next ${stackWord()} game.`, 'good');
+        const placed = JSON.parse(res.bet.context || '{}'), op = placed.onkey_pick;
+        window.FiveOnkey?.note('bet', { parlay: true, legs: (placed.legs || []).length, stake, caught: !!(op && op.caught), name: op && op.name });
+        // Built by hand to match one of Onkey's Picks: he takes his cut all the same, and says so.
+        if (op && op.caught) toast(`Parlay placed. Onkey caught you copying "${op.name}": he still takes ${fmt.pct(op.rate)} of the winnings.`, 'good');
+        else toast(`Parlay placed. It settles after the next ${stackWord()} game.`, 'good');
       } catch (e) {
         toast(e.message, 'bad');
       }
@@ -980,6 +1049,7 @@ window.FiveBets = (() => {
     $('#settled-game', view)?.addEventListener('change', (e) => { state.settledGame = e.target.value; draw(); });
     bindSlip();
     bindCustom(view);
+    $$('[data-pick]').forEach((b) => b.addEventListener('click', () => loadPick(b.dataset.pick)));
     bindOffer(view);
     $$('.cancel-bet', view).forEach((b) => b.addEventListener('click', async () => {
       const headers = {};
@@ -1014,5 +1084,5 @@ window.FiveBets = (() => {
     });
   }
 
-  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, myBetsCard, loadWallet, walletHtml, bindWallet };
+  return { init, bind, loadBets, loadBettingReport, loadSeasons, betsSection, slipHtml, viewBettors, customLineCard, picksCard, myBetsCard, loadWallet, walletHtml, bindWallet };
 })();

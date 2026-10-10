@@ -1192,6 +1192,21 @@ stops, so they never give the result away. The odds are in `fivestack/wheel.py` 
 The jackpot grows with every bet and spin, and the daily wheel's rarest slice
 pays all of it.
 
+### Onkey's Picks
+
+The quick way to bet: at the top of Place bets, Onkey offers up to three
+ready-made parlays for the next game, the same for everyone, with a new set
+after every game. **Hot hands** is built from picks that have hit several games
+in a row, **The safe one** from the likelier picks, and the third is a hunch on
+a random theme (Everyone eats, Heads only, A bad feeling, Nobody dies, Long
+shots). One click loads a parlay into your bet slip; set the stake and place it.
+
+They're priced exactly like the same parlay built by hand, and when one wins
+**Onkey takes 5% of the winnings** (never of the stake); it goes to the house. That holds for any
+parlay containing every leg of one of his picks, whether you loaded it, built
+it leg by leg, or added more legs to it: the slip says so before you place it,
+and Onkey says so if he catches you copying.
+
 ### Odds boost of the game
 
 Separate from the house's money: one pick on the board pays **50% more

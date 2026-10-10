@@ -3587,6 +3587,100 @@ def streaks(shared):
     assert shared.bets.mark_streaks({"ready": False}) == {"ready": False}
 
 
+@section("onkey's picks")
+def onkeys_picks(shared):
+    # Ready-made parlays on the board: drawn once per game, the same on every request, priced like any parlay.
+    from fivestack.bets import PICK_CHANCE, PICK_KINDS, PICK_THEMES
+    bets, db = shared.bets, shared.db
+
+    def build():
+        board = bets.onkeys_picks(bets.mark_streaks(shared.engine.build(db)))
+        sels = {(mk["market_id"], s["key"]): s for g in ("team", "player_props", "top_markets") for mk in board[g] for s in mk["selections"]}
+        return board["picks"], sels
+
+    def ids(picks):
+        return [(p["key"], p.get("theme"), [(leg["market_id"], leg["selection"]) for leg in p["legs"]]) for p in picks]
+
+    picks, sels = build()
+    assert picks and len({p["key"] for p in picks}) == len(picks), picks
+    # "hot" needs picks on a streak in two markets that can share a parlay, which this history may not have.
+    assert {"steady", "hunch"} <= {p["key"] for p in picks} <= {"hot", "steady", "hunch"}, [p["key"] for p in picks]
+    lit = shared.engine.build(db)
+    for mk in lit["player_props"]:
+        mk["selections"][0]["streak"] = 4
+    hot = next(s for s in bets._draw_picks(lit, bets._recent_games(10)) if s["key"] == "hot")
+    assert len(hot["legs"]) == 3 and all(m.startswith("ou:") and s == "over" for m, s in hot["legs"]), hot
+    for p in picks:
+        legs = p["legs"]
+        assert 2 <= len(legs) <= 3 and len({leg["market_id"] for leg in legs}) == len(legs), p
+        assert all(PICK_CHANCE[0] <= sels[leg["market_id"], leg["selection"]]["fair_prob"] <= PICK_CHANCE[1] for leg in legs), p
+        # Never better value than the same slip built by hand: it's the parlay's own price.
+        quote = bets.quote_parlay([{"market_id": leg["market_id"], "selection": leg["selection"]} for leg in legs], {})[2]
+        assert quote["odds_decimal"] == p["odds_decimal"] <= p["independent_decimal"], (p, quote)
+        if p["key"] == "hot":
+            assert all(leg["streak"] for leg in legs) and p["name"] == PICK_KINDS["hot"]["name"], p
+        if p["key"] == "steady":
+            assert all(leg["fair_prob"] >= 0.58 for leg in legs), p
+        if p["key"] == "hunch":
+            theme = PICK_THEMES[p["theme"]]
+            assert p["name"] == theme["name"] and p["line"] == theme["line"], p
+            assert all(theme["want"](next(mk for g in ("team", "player_props", "top_markets") for mk in shared.engine.build(db)[g]
+                                          if mk["market_id"] == leg["market_id"]), sels[leg["market_id"], leg["selection"]]) for leg in legs), p
+    assert all("I " not in spec["line"] and "Onkey" in spec["line"] for spec in [*PICK_KINDS.values(), *PICK_THEMES.values()])
+    assert ids(build()[0]) == ids(picks)  # the same set until the next game
+    # A leg that left the board, or a new game, draws the set again.
+    stored = db.get_meta("onkey_picks")
+    stored["slips"][0]["legs"][0] = ["ou:kills:nobody", "over"]
+    db.set_meta("onkey_picks", stored)
+    fresh, sels = build()
+    assert fresh and all((leg["market_id"], leg["selection"]) in sels for p in fresh for leg in p["legs"]), fresh
+    db.set_meta("onkey_picks", {**db.get_meta("onkey_picks"), "after": "an-older-game"})
+    assert build()[0] and db.get_meta("onkey_picks")["after"] == db.matches(1)[0]["match_id"]
+    assert bets.onkeys_picks({"ready": False}) == {"ready": False}
+    # Onkey's cut: a parlay holding every leg of a pick owes him PICK_CUT of its winnings, however it was put together.
+    from fivestack.bets import PICK_CUT
+    picks, sels = build()
+    pick = next(p for p in picks if p["key"] == "steady")
+    legs = [{"market_id": leg["market_id"], "selection": leg["selection"]} for leg in pick["legs"]]
+    assert pick["cut"] == PICK_CUT == 0.05
+    assert bets.quote_parlay(legs, {})[2]["onkey_pick"] == {"key": "steady", "name": pick["name"], "rate": PICK_CUT}
+    db.create_bettor("Copycat", 1000)
+    loaded = bets.place_parlay("Copycat", legs, 100, {}, pick=True)  # from his card
+    copied = bets.place_parlay("Copycat", list(reversed(legs)), 100, {})  # built by hand: caught
+    extra = next({"market_id": m, "selection": s} for (m, s) in sels
+                 if m.startswith("ou:") and m not in {leg["market_id"] for leg in legs})
+    padded = bets.place_parlay("Copycat", legs + [extra], 100, {})  # another leg beside them doesn't hide it
+    plain = bets.place_parlay("Copycat", [legs[0], extra], 100, {})  # one of his legs alone is just a bet
+    marks = [json.loads(b["context"]).get("onkey_pick") for b in (loaded, copied, padded, plain)]
+    assert [m and m["caught"] for m in marks] == [False, True, True, None], marks
+    assert "onkey_pick" not in json.loads(loaded["context"])["corr"]
+    real_evaluate, bets._evaluate = bets._evaluate, lambda *a: ("won", None, None)
+    try:
+        latest = db.matches(1)[0]
+        for bet, taxed in ((loaded, True), (copied, True), (plain, False)):
+            status, payout, _, note, ctx = bets._evaluate_parlay(bet, latest, {})
+            full = round(bet["stake"] * bet["odds_decimal"], 2)
+            cut = round((full - bet["stake"]) * PICK_CUT, 2) if taxed else 0
+            assert status == "won" and payout == round(full - cut, 2), (payout, full, cut)
+            assert ("Onkey took" in (note or "")) == taxed and (json.loads(ctx).get("onkey_pick") or {}).get("cut") == (cut if taxed else None)
+        bets._evaluate = lambda *a: ("lost", None, None)
+        assert bets._evaluate_parlay(loaded, latest, {})[:2] == ("lost", 0.0)
+    finally:
+        bets._evaluate = real_evaluate
+    # His cut goes to the house: the payout is that much smaller, so it shows in the actual take.
+    before = bets.house()
+    full = round(loaded["stake"] * loaded["odds_decimal"], 2)
+    cut = round((full - loaded["stake"]) * PICK_CUT, 2)
+    db.execute("UPDATE bets SET status='won', payout=? WHERE id=?", (full - cut, loaded["id"]))
+    assert cut > 0 and abs(bets.house()["actual_take"] - before["actual_take"] - (loaded["stake"] - full + cut)) < 0.02
+    db.execute("UPDATE bets SET status='pending', payout=NULL WHERE id=?", (loaded["id"],))
+    for bet in (loaded, copied, padded, plain):
+        bets.cancel(bet["id"], admin=True)
+    assert db.get_bettor("Copycat")["balance"] == 1000
+    db.set_meta("onkey_picks", {"after": "an-older-game", "slips": []})  # an old set matches nothing: later sections' parlays stay untaxed
+    assert bets.quote_parlay(legs, {})[2].get("onkey_pick") is None
+
+
 @section("grace and cancel windows")
 def grace_and_cancel(shared):
     cfg, engine = shared.cfg, shared.engine

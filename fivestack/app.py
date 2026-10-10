@@ -536,7 +536,8 @@ class Handler(BaseHTTPRequestHandler):
                             k, v = part.split(":", 1)
                             ctx["agents"][k] = v
             if path == "/api/odds":
-                return self._json(app.bets.apply_boost(app.bets.mark_streaks(app.engine.build(app.db, ctx))))
+                board = app.bets.apply_boost(app.bets.mark_streaks(app.engine.build(app.db, ctx)))
+                return self._json(app.bets.onkeys_picks(board))
             # A custom line's price and reasonable range: ?puuid=&stat=&line=24.5, or an exact number: &exact=25
             # (plus the same map / agents).
             try:
@@ -842,7 +843,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not me:
                     return self._json({"error": "Sign in as a bettor to place bets."}, 403)
                 if body.get("legs"):
-                    bet = app.bets.place_parlay(me["name"], body.get("legs"), body.get("stake"), body.get("context") or {})
+                    bet = app.bets.place_parlay(me["name"], body.get("legs"), body.get("stake"), body.get("context") or {},
+                                                 pick=bool(body.get("pick")))
                 else:
                     bet = app.bets.place(
                         me["name"], body.get("market_id"), body.get("selection"),

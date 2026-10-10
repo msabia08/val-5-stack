@@ -207,6 +207,10 @@ window.FiveOnkey = (() => {
     slip_add: ['{desc}? Ooh.', 'Onkey sees you eyeing {desc}.', 'In the slip it goes.', '{desc}. Onkey nods slowly.',
       'Adding {desc}? Onkey is intrigued.', 'That\'s {n} in the slip. Onkey is counting.'],
     slip_many: ['{n} picks in the slip. Parlay? Onkey whispers parlay.', '{n} picks! The slip is getting heavy.'],
+    pick_caught: ['Onkey saw that. Those are Onkey\'s picks. Onkey takes his cut anyway.', 'Copying Onkey\'s homework? Onkey still gets paid.',
+      '{name}, leg for leg. Onkey noticed. Onkey always notices.', 'You built {name} by hand. Sneaky. Onkey\'s cut stays.'],
+    slip_picks: ['{name}. Onkey worked hard on that one.', 'Onkey\'s own picks. Excellent taste.', 'Onkey picked those himself. No pressure.',
+      '{name}! Onkey has never been wrong. Onkey has also never checked.'],
     slip_clear: ['Cleared! A fresh start.', 'Slip wiped. Onkey respects second thoughts.', 'All gone. Onkey didn\'t like those either.'],
     won: ['Cha-ching! {desc} paid {net}.', 'You won {net}. Onkey is happy. The house is not.', 'Called it. +{net} on {desc}.',
       '{desc} came in. +{net}. Do a little dance.', 'Winner! Onkey always believed in {desc}. Always.',
@@ -511,7 +515,8 @@ window.FiveOnkey = (() => {
   function note(kind, d = {}) {
     try {
       if (kind === 'bet') {
-        if (d.parlay) react('parlay', { legs: d.legs });
+        if (d.caught) react('pick_caught', { name: d.name }, { excited: true });
+        else if (d.parlay) react('parlay', { legs: d.legs });
         else if (d.count > 1) react('bets', { n: d.count });
         else if (d.token) react('bet_token', { desc: desc(d.desc) });
         else if (d.stake >= 500) react('bet_big', { stake: credits(d.stake) }, { excited: true });
@@ -570,6 +575,7 @@ window.FiveOnkey = (() => {
         chime(d.item ? 'equip' : 'unequip', { item: d.item }, 0.7);
       } else if (kind === 'slip') {
         if (d.cleared) chime('slip_clear', {}, 0.5);
+        else if (d.picks) chime('slip_picks', { name: d.name }, 0.7);
         else if (d.added) chime(d.n >= 3 ? 'slip_many' : 'slip_add', { desc: desc(d.desc), n: d.n }, d.n >= 3 ? 0.5 : 0.3);
       } else if (kind === 'theme') {
         chime(`theme_${d.theme}`, {}, d.theme.startsWith('th-') ? 0.9 : 0.5, { excited: d.theme === 'th-greg' });

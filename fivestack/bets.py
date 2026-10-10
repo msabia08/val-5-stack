@@ -48,6 +48,43 @@ BOOST_CHANCE = (0.3, 0.6)
 # (paid by HouseManager.refunds).
 TOKEN_BOOST = 0.5
 TOKEN_MAX_STAKE = 250
+# Onkey's Picks (BetManager.onkeys_picks): ready-made parlays on the Place bets page, the same for everyone and drawn
+# again after every game. A leg's fair chance is within PICK_CHANCE; a slip is `legs` picks, each from a different
+# market, that pass its `want(market, selection)`, tried up to PICK_TRIES times until they make a parlay the slip
+# would accept. PICK_KINDS are always drawn (when the board can fill them): "hot" from the picks on a streak
+# (mark_streaks) and "steady" from the likely ones. The third, "hunch", is one of PICK_THEMES, picked at random.
+# `name` and `line` (Onkey's own words, so "Onkey", never "I") are what the card shows.
+# Onkey's cut: a parlay holding every leg of one of his picks (loaded from the card, built by hand, or with more legs
+# added) pays him PICK_CUT of its winnings when it wins (BetManager.onkey_pick() at placing, _evaluate_parlay() at
+# settlement); the house keeps it (the payout is that much smaller, so it's in house()'s actual take). A bet that didn't say it was his pick (`pick` on place_parlay) is marked `caught`, which the page
+# has him say something about.
+PICK_CHANCE = (0.12, 0.85)
+PICK_TRIES = 40
+PICK_CUT = 0.05
+
+
+def _prop(stats, side):
+    return lambda mk, s: mk["type"] == "ou" and mk.get("stat") in stats and s["key"] == side
+
+
+PICK_KINDS = {
+    "hot": {"name": "Hot hands", "line": "These keep happening. Onkey has noticed.", "legs": 3,
+            "want": lambda mk, s: bool(s.get("streak")) and s["fair_prob"] >= 0.3},
+    "steady": {"name": "The safe one", "line": "Onkey would bet a banana on this. One banana.", "legs": 2,
+               "want": lambda mk, s: 0.58 <= s["fair_prob"] <= 0.8},
+}
+PICK_THEMES = {
+    "eats": {"name": "Everyone eats", "line": "Onkey believes in sharing. Kills for everyone.", "legs": 3,
+             "want": _prop(("kills", "assists"), "over")},
+    "heads": {"name": "Heads only", "line": "Onkey has been watching where they aim.", "legs": 3,
+              "want": _prop(("hs_pct",), "over")},
+    "rough": {"name": "A bad feeling", "line": "Onkey has a bad feeling. He hopes he's wrong.", "legs": 3,
+              "want": lambda mk, s: _prop(("kills",), "under")(mk, s) or _prop(("deaths",), "over")(mk, s)},
+    "careful": {"name": "Nobody dies", "line": "Onkey asked everyone to be careful. Nicely.", "legs": 3,
+                "want": _prop(("deaths",), "under")},
+    "long": {"name": "Long shots", "line": "It won't happen. Onkey picked it anyway.", "legs": 2,
+             "want": lambda mk, s: s["fair_prob"] <= 0.35},
+}
 
 
 def _credits(v):
@@ -380,7 +417,29 @@ class BetManager:
         if not board.get("ready"):
             raise BetError(board.get("message", "Odds are not available yet."))
         self.apply_boost(board)
+        built, quote = self._quote_on(board, legs)
+        pick = self.onkey_pick(built)
+        if pick:
+            quote["onkey_pick"] = pick  # Onkey takes his cut of the winnings (PICK_CUT)
+        return built, board, quote
 
+    def onkey_pick(self, legs):
+        """The Onkey's Pick a parlay's legs hold in full ({key, name, rate}), or None: one of the current game's
+        set, every leg of it, with or without other legs beside them."""
+        latest = self.db.matches(1)
+        cur = self.db.get_meta("onkey_picks")
+        if not cur or cur.get("after") != (latest[0]["match_id"] if latest else None):
+            return None
+        have = {(leg.get("market_id"), leg.get("selection")) for leg in legs}
+        for slip in cur["slips"]:
+            if all((m, s) in have for m, s in slip["legs"]):
+                spec = PICK_THEMES[slip["theme"]] if slip["key"] == "hunch" else PICK_KINDS[slip["key"]]
+                return {"key": slip["key"], "name": spec["name"], "rate": PICK_CUT}
+        return None
+
+    def _quote_on(self, board, legs, games=None):
+        """quote_parlay's legs and price on a board that's already built (and boosted). `games`: _recent_games(LOOKBACK),
+        when the caller prices several parlays in a row."""
         seen, built = set(), []
         for leg in legs:
             market_id, sel_key = (leg or {}).get("market_id"), (leg or {}).get("selection")
@@ -408,7 +467,7 @@ class BetManager:
         conflict = score_conflict(built, self._evaluate)
         if conflict:
             raise BetError(conflict)
-        hists = self.leg_history(built)
+        hists = self.leg_history(built) if games is None else self.leg_history(built, games)
         for leg, hist in zip(built, hists):
             leg["hist"] = hist  # kept on the bet, so settlement can re-price the legs that stood if some are voided
         corr = correlation(hists)
@@ -416,11 +475,13 @@ class BetManager:
         independent = 1.0
         for d in decimals:
             independent *= d
-        return built, board, {"odds_decimal": price(decimals, corr["factor"]),
-                              "independent_decimal": round(independent, 2), **corr}
+        return built, {"odds_decimal": price(decimals, corr["factor"]),
+                       "independent_decimal": round(independent, 2), **corr}
 
-    def place_parlay(self, bettor_name, legs, stake, context):
-        """Combine 2+ selections (from different markets) into a single all-or-nothing bet, at quote_parlay's price."""
+    def place_parlay(self, bettor_name, legs, stake, context, pick=False):
+        """Combine 2+ selections (from different markets) into a single all-or-nothing bet, at quote_parlay's price.
+        A parlay holding one of Onkey's Picks owes him PICK_CUT of its winnings (`onkey_pick` in the bet's context);
+        `pick` says the page loaded it from his card, and without it the bet is marked `caught`."""
         try:
             stake = round(float(stake), 2)
         except (TypeError, ValueError):
@@ -433,6 +494,9 @@ class BetManager:
         if stake > bettor["balance"] + 1e-9:
             raise BetError(f"{bettor['name']} only has {bettor['balance']:.0f} credits.")
         built, board, quote = self.quote_parlay(legs, context)
+        onkey = quote.pop("onkey_pick", None)
+        if onkey:
+            onkey["caught"] = not pick
         token_legs = [leg for leg in built if leg.get("boost_token")]
         if any(leg.get("boost") and not leg.get("boost_token") for leg in built) and stake > BOOST_MAX_STAKE:
             raise BetError(f"A parlay with the odds boost of the game takes up to {BOOST_MAX_STAKE} credits.")
@@ -459,7 +523,8 @@ class BetManager:
                 "odds_decimal": quote["odds_decimal"],
                 "stake": stake,
                 "placed_ts": time.time(),
-                "context": json.dumps({"legs": built, "ctx": board.get("context"), "corr": quote}),
+                "context": json.dumps({"legs": built, "ctx": board.get("context"), "corr": quote,
+                                       **({"onkey_pick": onkey} if onkey else {})}),
                 "status": "pending",
             }
             self.db.adjust_balance(bettor["name"], -stake)
@@ -641,10 +706,89 @@ class BetManager:
             games.append((match, metrics))
         return games
 
-    def leg_history(self, legs):
+    def onkeys_picks(self, board):
+        """Add Onkey's Picks to a board (after mark_streaks and apply_boost): ready-made parlays the page loads into
+        the bet slip in one click, the same for everyone, drawn once per game (meta `onkey_picks`, keyed by the latest
+        recorded game like the odds boost) and drawn again if a leg leaves the board. One from the picks on a streak
+        (PICK_HOT), one from the likely ones (PICK_STEADY) and one at random on a theme (PICK_THEMES). Each is priced
+        like any parlay (_quote_on), so legs that decide each other are never drawn together and nothing here is
+        better value than building the same slip by hand. Returns the board."""
+        if not board.get("ready"):
+            return board
+        latest = self.db.matches(1)
+        after = latest[0]["match_id"] if latest else None
+        games = self._recent_games(LOOKBACK)
+        cur = self.db.get_meta("onkey_picks")
+        slips = cur["slips"] if cur and cur.get("after") == after else None
+        priced = [self._price_pick(board, s["legs"], games) for s in slips] if slips is not None else []
+        if slips is None or not all(priced):
+            slips = self._draw_picks(board, games)
+            self.db.set_meta("onkey_picks", {"after": after, "slips": slips, "drawn_ts": time.time()})
+            priced = [self._price_pick(board, s["legs"], games) for s in slips]
+        out = []
+        for slip, (built, quote) in zip(slips, priced):
+            spec = PICK_THEMES[slip["theme"]] if slip["key"] == "hunch" else PICK_KINDS[slip["key"]]
+            legs = []
+            for leg in built:
+                sel = find_market(board, leg["market_id"], leg["selection"])[1]
+                legs.append({"market_id": leg["market_id"], "selection": leg["selection"],
+                             "description": leg["description"], "odds_decimal": leg["odds_decimal"],
+                             "american": decimal_to_american(leg["odds_decimal"]), "fair_prob": leg["fair_prob"],
+                             "streak": sel.get("streak")})
+            out.append({"key": slip["key"], "theme": slip.get("theme"), "name": spec["name"], "line": spec["line"],
+                        "legs": legs, "cut": PICK_CUT, "odds_decimal": quote["odds_decimal"],
+                        "american": decimal_to_american(quote["odds_decimal"]),
+                        "independent_decimal": quote["independent_decimal"]})
+        board["picks"] = out
+        return board
+
+    def _price_pick(self, board, legs, games):
+        """(built legs, price) for one of Onkey's Picks on this board, or None when it can't be a parlay any more."""
+        try:
+            return self._quote_on(board, [{"market_id": m, "selection": s} for m, s in legs], games)
+        except BetError:
+            return None
+
+    def _draw_picks(self, board, games):
+        """A fresh set of Onkey's Picks, as stored: [{key, legs: [[market_id, selection], ...], theme (the hunch)}].
+        A slip the board can't fill (too few picks on a streak, say) is left out."""
+        rng = secrets.SystemRandom()
+        options = [(mk, s) for group in ("team", "player_props", "top_markets") for mk in board.get(group, [])
+                   if mk.get("available", True) for s in mk["selections"]
+                   if s.get("available", True) and not s.get("boost")
+                   and PICK_CHANCE[0] <= s["fair_prob"] <= PICK_CHANCE[1]]
+
+        def draw(want, n):
+            by_market = {}
+            for mk, s in options:
+                if want(mk, s):
+                    by_market.setdefault(mk["market_id"], []).append(s["key"])
+            if len(by_market) < 2:
+                return None
+            for _ in range(PICK_TRIES):
+                legs = [[m, rng.choice(by_market[m])] for m in rng.sample(sorted(by_market), min(n, len(by_market)))]
+                if self._price_pick(board, legs, games):
+                    return legs
+            return None
+
+        slips = []
+        for key, spec in PICK_KINDS.items():
+            legs = draw(spec["want"], spec["legs"])
+            if legs:
+                slips.append({"key": key, "legs": legs})
+        themes = list(PICK_THEMES)
+        rng.shuffle(themes)
+        for theme in themes:
+            legs = draw(PICK_THEMES[theme]["want"], PICK_THEMES[theme]["legs"])
+            if legs:
+                slips.append({"key": "hunch", "theme": theme, "legs": legs})
+                break
+        return slips
+
+    def leg_history(self, legs, games=None):
         """Each parlay leg settled at its line on the last parlay.LOOKBACK games, newest first, as a string:
         "1" won, "0" lost, "-" void (see parlay.correlation)."""
-        games = self._recent_games(LOOKBACK)
+        games = games if games is not None else self._recent_games(LOOKBACK)
         out = []
         for leg in legs:
             bet = {"market_type": leg["market_type"], "selection": leg["selection"], "line": leg.get("line"),
@@ -691,6 +835,13 @@ class BetManager:
             note = f"{voided} leg(s) voided (no action); payout uses the remaining odds"
         else:
             note = None
+        onkey = ctx.get("onkey_pick")
+        if onkey and overall == "won":  # Onkey's cut of the winnings on one of his picks
+            cut = round(max(0.0, payout - b["stake"]) * onkey.get("rate", PICK_CUT), 2)
+            payout = round(payout - cut, 2)
+            ctx["onkey_pick"] = {**onkey, "cut": cut}
+            took = f"Onkey took {_credits(cut)} credits ({onkey.get('rate', PICK_CUT):.0%} of the winnings) for his pick"
+            note = f"{note}. {took}" if note else took
         return overall, payout, None, note, json.dumps({**ctx, "legs": results})
 
     def _evaluate(self, b, match, metrics):
