@@ -324,6 +324,17 @@ tr.detail td { background: var(--surface-2); padding: 10px 14px; }
 .tm-under > span:last-child { text-align: right; }
 .tm-form { display: flex; gap: 4px; position: relative; top: 3px; }  /* a nudge below the % labels either side */
 .tm-form .chip { margin: 0; }
+/* Onkey's Picks (Place bets, above the team markets): ready-made parlays as tiles side by side, each with its name
+   and price, Onkey's line, its legs and a button that loads it into the bet slip. */
+.pick-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; }
+.pick-slip { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 8px; padding: 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.pick-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pick-head h3 { margin: 0; font-size: 16px; }
+.pick-price { font-size: 18px; font-variant-numeric: tabular-nums; }
+.pick-line { margin: 0; color: var(--muted); font-size: 13px; font-style: italic; }
+.pick-legs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; font-size: 14px; }
+.pick-legs li { display: flex; justify-content: space-between; gap: 10px; }
+.pick-slip .btn { width: 100%; }
 .tm-qgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .tm-q { display: grid; gap: 10px; align-content: space-between; padding: 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
 .tm-q.wide { grid-column: span 2; }
@@ -3579,9 +3590,10 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .wheel-banner.big { font-size: 32px; }
   .wheel-spins.who li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
   .wheel-spins li > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* a long name is cut, not wrapped under its swatch */
-  /* Place bets: one column. The odds format and the boost come first, then team markets, player props, the custom
-     line, the scoreboard cards, your open bets and everyone's. The bet slip is a bar pinned to the bottom of the
-     screen once it holds a pick; tapping it opens the slip as a sheet (bets.js, html.slip-open). */
+  /* Place bets: one column. The odds format and the boost come first, then Onkey's Picks (one tile per row), team
+     markets, player props, the custom line, the scoreboard cards, your open bets and everyone's. The bet slip is a bar
+     pinned to the bottom of the screen once it holds a pick; tapping it opens the slip as a sheet (bets.js,
+     html.slip-open). */
   .odds-layout { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding-bottom: 56px; }  /* stretch: every card the full width */
   .odds-layout > div, .odds-side { display: contents; }
   .odds-layout .card { margin: 0; }
@@ -3589,10 +3601,13 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .boost-card { order: 2; }
   .odds-layout > div > section:nth-child(1) { order: 3; }
   .odds-layout > div > section:nth-child(2) { order: 4; }
-  #custom-line { order: 5; }
-  .odds-layout > div > section:nth-child(3) { order: 6; }
-  .my-bets { order: 7; }
-  .odds-layout > div > :nth-child(n+4) { order: 8; }
+  .odds-layout > div > section:nth-child(3) { order: 5; }
+  #custom-line { order: 6; }
+  .odds-layout > div > section:nth-child(4) { order: 7; }
+  .my-bets { order: 8; }
+  .odds-layout > div > :nth-child(n+5) { order: 9; }
+  .pick-grid { grid-auto-flow: row; gap: 8px; }
+  .pick-slip { padding: 10px; }
   /* The match result: Win and Loss side by side, the chances and the last five results under them. */
   .tm-match { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .tm-match > .odd { padding: 12px; }
