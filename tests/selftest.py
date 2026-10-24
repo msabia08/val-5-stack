@@ -753,6 +753,51 @@ def bananas(shared):
     assert len({i["id"] for i in CATALOG}) == len(CATALOG) and bm.shop(db.get_bettor("Tester"))["me"]["owned"] == ["bd-banana", "bd-monkey"]
 
 
+@section("shop-restock")
+def shop_restock(shared):
+    # The restock: every look the shop sells has CSS to draw it, the day's deals are the same for everyone and change by
+    # day, and a deal is charged at its sale price (and counts at full price in a collection).
+    from fivestack.bananas import DEAL_COUNT, DEAL_OFF, ITEMS, SLOT_KEYS, SOCIAL, deals
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "web", "style.css"), encoding="utf-8") as f:
+        css = f.read()
+    for item in list(CATALOG) + SOCIAL:
+        look = item["look"]
+        assert item["slot"] in SLOT_KEYS if "slot" in item else True
+        for key in ("cls", "ticket_cls"):
+            if look.get(key):
+                assert re.search(r"\." + re.escape(look[key]) + r"(?![\w-])", css), f"no CSS for {item['id']} ({look[key]})"
+        if look.get("theme") and look["theme"] not in ("greg",):
+            assert f'data-theme="{look["theme"]}"' in css, f"no theme tokens for {item['id']}"
+    app_js = open(os.path.join(root, "web", "app.js"), encoding="utf-8").read()
+    assert all(f"{i['look']['theme']}:" in app_js for i in CATALOG if i["slot"] == "theme"), "a theme is missing from app.js THEMES"
+    assert sum(1 for i in CATALOG if i.get("new")) >= 100 and {i["slot"] for i in CATALOG} >= {"frame"}
+    # Deals.
+    d1, d2 = deals("2026-10-23"), deals("2026-10-24")
+    assert d1 == deals("2026-10-23") and d1 != d2 and len(d1) == DEAL_COUNT
+    assert len({ITEMS[i]["slot"] for i in d1}) == DEAL_COUNT and not any(ITEMS[i].get("earn") for i in d1)
+    assert all(price < ITEMS[i]["price"] and abs(price - ITEMS[i]["price"] * (1 - DEAL_OFF)) <= 0.5 for i, price in d1.items())
+    db = DB(os.path.join(shared.tmp, "restock.db"))
+    db.create_bettor("Shopper", 1000)
+    db.execute("INSERT INTO banana_ledger(bettor, delta, reason, ref, note, created_ts) VALUES('Shopper', 5000, 'test', 'grant', '', ?)", (time.time(),))
+    bm = BananaManager({}, db, None)
+    sale = bm.sale()
+    assert sale["items"] == deals(sale["day"]) and sale["ends_ts"] > time.time() and bm.shop()["deals"]["items"] == sale["items"]
+    on_sale = next(iter(sale["items"]))
+    other = next(i for i in CATALOG if i["id"] not in sale["items"] and not i.get("earn") and i["slot"] != ITEMS[on_sale]["slot"])
+    before = bm.wallet("Shopper")
+    assert bm.buy("Shopper", on_sale)["paid"] == sale["items"][on_sale]
+    assert bm.wallet("Shopper") == before - sale["items"][on_sale]
+    assert bm.buy("Shopper", other["id"])["paid"] == other["price"]  # not on sale: full price
+    assert [r["price"] for r in db.banana_items("Shopper") if r["item_id"] == on_sale] == [sale["items"][on_sale]]
+    # A new prank and a new slot work end to end.
+    bm.buy("Shopper", "fr-gold")
+    assert bm.looks()["shopper"]["worn"]["frame"]["cls"] == "fr-gold"
+    db.create_bettor("Target", 1000)
+    bm.buy("Shopper", "sc-disco", "Target")
+    assert bm.looks()["target"]["pranks"][0]["cls"] == "discoed"
+
+
 @section("arcade")
 def arcade(shared):
     db, bets = shared.db, shared.bets

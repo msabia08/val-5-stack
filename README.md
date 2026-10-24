@@ -891,13 +891,14 @@ everyone a fresh 50; items you bought stay yours.
 
 | Slot | What it changes | Price |
 | --- | --- | --- |
-| Name colour | how your name is written on rankings, tickets, the casino tables and the Monkeys page (12, from Ripe to an animated Rainbow) | 120-1200 |
-| Badge | an emoji next to your name, and your avatar (17) | 40-500 |
-| Title | a line under your name on the Monkeys page, your profile and your casino seat (17) | 100-800 |
-| Profile banner | the header of your profile (9) | 300-600 |
-| Ticket style | your bet tickets on Place bets and Standings, for everyone | 300-600 |
-| Win celebration | what bursts out of your balance when a bet wins | 250-350 |
-| Site theme | unlocks Greg Mode, Onkey Mode, Jungle Mode, Sakura, Midnight, Terminal or Synthwave (dark and light are free). With only those two, ◐ toggles between them; once you own a theme, ◐ opens a picker | 750-1200 |
+| Name colour | how your name is written on rankings, tickets, the casino tables and the Monkeys page (20, from Ripe to an animated Rainbow and the shifting Holo) | 120-1500 |
+| Badge | an emoji next to your name, and your avatar (39) | 40-500 |
+| Title | a line under your name on the Monkeys page, your profile and your casino seat (33, from Cheeky Monkey to Hall of Famer) | 100-1000 |
+| Profile banner | the header of your profile (18) | 300-650 |
+| Avatar frame | the ring round your avatar on your profile card (8, from a leaf ring to the rainbow Prism) | 120-800 |
+| Ticket style | your bet tickets on Place bets and Standings, for everyone (11) | 300-800 |
+| Win celebration | what bursts out of your balance when a bet wins (11) | 250-450 |
+| Site theme | unlocks Greg Mode, Onkey Mode, Jungle Mode, Sakura, The Lab, Midnight, Terminal, Synthwave, Ember, Deep Sea or Paper (dark and light are free). With only those two, ◐ toggles between them; once you own a theme, ◐ opens a picker | 750-1200 |
 
 **Onkey's Casino** is the shop's second section: your style at the casino
 tables, seen by everyone sitting with you. Your name colour, badge and title come
@@ -905,11 +906,20 @@ to the tables too.
 
 | Slot | What it changes | Price |
 | --- | --- | --- |
-| Card backs | your face-down cards at the poker table, and Onkey's hole card at your solo blackjack table (6, up to a shimmering Gold Leaf) | 150-600 |
-| Chips | your bets at poker and your stake chips at blackjack (6) | 100-700 |
-| Seat style | your nameplate at the poker table and your spot at blackjack (5, up to the Gold Throne) | 150-800 |
-| Entrance | what Onkey announces when you sit down at a shared table (6) | 60-600 |
-| Table win | what bursts out of your seat when you win a pot or a blackjack hand (5) | 150-500 |
+| Card backs | your face-down cards at the poker table, and Onkey's hole card at your solo blackjack table (11, up to a shimmering Gold Leaf) | 150-600 |
+| Chips | your bets at poker and your stake chips at blackjack (12) | 100-700 |
+| Seat style | your nameplate at the poker table and your spot at blackjack (9, up to the Gold Throne) | 150-800 |
+| Entrance | what Onkey announces when you sit down at a shared table (12) | 60-600 |
+| Table win | what bursts out of your seat when you win a pot or a blackjack hand (11) | 150-500 |
+
+**Finding things:** the shop has a search box, filter chips (Everything, New, On
+sale, Not owned, Owned, I can afford) and a sort (shop order, price either way,
+name, new first). Items from the latest restock are marked **New**.
+
+**Today's deals:** each Pacific day (it resets at midnight Pacific, like the
+wheel) four items from four different sections go on sale at 25% off. Everyone
+sees the same ones, and the price is charged at checkout; a deal still counts at
+full price in your collection. Earned items are never on sale.
 
 Click any item for a **preview** of your profile card and bet tickets as they
 are now and with the item (a theme shows a small page in its colours, a
@@ -933,6 +943,12 @@ themselves. Everyone sees who sent what.
 | Wall Note | a note you write (80 characters) pinned on their profile | 3 days | 25 |
 | Nickname | a nickname you write (20 characters) in quotes after their name | 24 hours | 60 |
 | Title Swap | a title you write (24 characters) replaces theirs | 24 hours | 80 |
+| Sleepy | their name goes grey and drowsy, with 💤 | 3 games | 40 |
+| Rubber Duck | their badge and avatar become 🦆 | 3 games | 50 |
+| Disco Ball | their name flashes every colour | 3 games | 55 |
+| Haunted | their name flickers in and out, with a ghost | 3 games | 60 |
+| Roast | their bet tickets smoulder | 3 games | 65 |
+| Participation Medal | a 🏅 beside their name | 3 games | 35 |
 
 "3 games" means until three 5-stack games have started since, and a week at
 most.

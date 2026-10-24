@@ -3685,3 +3685,146 @@ rect.rl-zone:hover { fill: rgba(255, 255, 255, .12); }
   .btn.cr-go { min-width: 0; flex: 1 1 100%; }
   .cr-cash { padding: 12px 28px; }
 }
+
+/* ==== The shop restock (bananas.py, the items tagged new): name colours, banners, avatar frames, ticket styles,
+   three themes, the casino's card backs / chips / seats, and four more pranks. ==== */
+
+/* ---- name colours ---- */
+.nc-mint { background-image: linear-gradient(90deg, #3ddc97, #1fa971); }
+.nc-blush { background-image: linear-gradient(90deg, #ff9ec4, #f06292); }
+.nc-ember { background-image: linear-gradient(90deg, #ff9a3c, #ff3d3d); }
+.nc-vapor { background-image: linear-gradient(90deg, #36d6ff, #ff3fa4); }
+.nc-royal { background-image: linear-gradient(90deg, #8e4dff, #5a2bc4 50%, #f5c518); }
+.nc-pulse { background-image: linear-gradient(90deg, #36ffd1, #3fa4ff); animation: nc-pulse 2s ease-in-out infinite; }
+@keyframes nc-pulse { 0%, 100% { filter: drop-shadow(0 0 0 rgba(54, 255, 209, 0)); } 50% { filter: drop-shadow(0 0 5px rgba(54, 255, 209, 0.9)); } }
+.nc-aurora { background-image: linear-gradient(90deg, #4dffb0, #4da6ff, #b06bff, #4dffb0); background-size: 250% 100%; animation: aurora-run 6s linear infinite; }
+@keyframes aurora-run { to { background-position: -250% 0; } }
+.nc-holo { background-image: linear-gradient(110deg, #ff9ad5, #9ae7ff 25%, #fff6a8 45%, #b8ffb0 65%, #c9a6ff 85%, #ff9ad5); background-size: 300% 100%;
+  animation: aurora-run 4s linear infinite; }
+
+/* ---- banners ---- */
+.bn-ocean { background: repeating-radial-gradient(ellipse at 50% 140%, transparent 0 14px, rgba(255, 255, 255, 0.18) 14px 16px), linear-gradient(180deg, #7fd3ff 0%, #1f7fc4 50%, #0b3d6e 100%); }
+.bn-forest { background: linear-gradient(180deg, #cfe9ff 0%, #8fbfa8 55%, #1d4a2e 56%, #0d2a1a 100%),
+  repeating-linear-gradient(90deg, transparent 0 22px, rgba(10, 40, 20, 0.65) 22px 30px); background-blend-mode: normal, multiply; }
+.bn-cherry { background: radial-gradient(circle at 18% 30%, #fff 0 3px, transparent 4px), radial-gradient(circle at 62% 22%, #fff 0 2px, transparent 3px),
+  radial-gradient(circle at 84% 60%, #fff 0 3px, transparent 4px), radial-gradient(circle at 40% 70%, #fff 0 2px, transparent 3px), linear-gradient(160deg, #ffd1e3, #f78fb3 60%, #c9507a); }
+.bn-checker { background: conic-gradient(#111 25%, #f5c518 0 50%, #111 0 75%, #f5c518 0) 0 0 / 28px 28px; }
+.bn-circuit { background: linear-gradient(90deg, transparent 0 28%, #19c37d 28% 29%, transparent 29% 62%, #19c37d 62% 63%, transparent 63%) 0 0 / 120px 100%,
+  linear-gradient(transparent 0 40%, #19c37d 40% 41%, transparent 41% 78%, #19c37d 78% 79%, transparent 79%) 0 0 / 100% 40px, linear-gradient(#06130d, #0b2a1d); }
+.bn-vegas { background: repeating-linear-gradient(90deg, #b3121f 0 26px, #ffd700 26px 30px, #8d0d17 30px 56px, #ffd700 56px 60px); }
+.bn-sunrise { background: radial-gradient(circle at 50% 100%, #fff4b0 0 14%, #ffbf5c 30%, transparent 62%), linear-gradient(180deg, #3b4a8c 0%, #e07a8e 62%, #ffc27a 100%); }
+.bn-aurora { background: linear-gradient(115deg, transparent 20%, rgba(77, 255, 176, 0.55) 35%, transparent 50%, rgba(176, 107, 255, 0.5) 65%, transparent 80%), linear-gradient(#050814, #0e1d3d);
+  background-size: 200% 100%, 100% 100%; animation: banner-drift 9s ease-in-out infinite alternate; }
+@keyframes banner-drift { to { background-position: 100% 0, 0 0; } }
+.bn-fire { background: radial-gradient(circle at 20% 90%, #ffd34d 0 3px, transparent 4px), radial-gradient(circle at 55% 70%, #ffb347 0 2px, transparent 3px),
+  radial-gradient(circle at 80% 85%, #ffd34d 0 2px, transparent 3px), radial-gradient(ellipse at 50% 120%, #ff7a00 0, #b32a00 45%, #1a0500 90%); }
+
+/* ---- avatar frames (the ring on .pf-avatar: profile cards and the preview) ---- */
+.pf-avatar.fr-leaf { border-color: #2f9a45; box-shadow: 0 0 0 2px #7ac943, 0 0 8px rgba(47, 154, 69, 0.6); }
+.pf-avatar.fr-peel { border-color: #f5c518; box-shadow: 0 0 0 2px #a5732f; }
+.pf-avatar.fr-ice { border-color: #8fd3ff; box-shadow: 0 0 10px rgba(143, 211, 255, 0.8), inset 0 0 8px rgba(143, 211, 255, 0.5); }
+.pf-avatar.fr-neon { border-color: #ff3fa4; box-shadow: 0 0 0 2px #36d6ff, 0 0 14px #ff3fa4; }
+.pf-avatar.fr-fire { border-color: #ff7a00; box-shadow: 0 0 12px #ff4d00, 0 0 0 2px #ffd34d; animation: fr-flicker 1.4s ease-in-out infinite alternate; }
+@keyframes fr-flicker { from { box-shadow: 0 0 8px #ff4d00, 0 0 0 2px #ffd34d; } to { box-shadow: 0 0 16px #ff7a00, 0 0 0 3px #ffb347; } }
+.pf-avatar.fr-gold, .pf-avatar.fr-rainbow { border-color: transparent; background-origin: border-box; background-clip: padding-box, border-box; }
+.pf-avatar.fr-gold { background-image: linear-gradient(var(--surface), var(--surface)), linear-gradient(120deg, #b8860b, #ffd700, #fff3c4, #ffd700, #b8860b);
+  background-size: 100% 100%, 300% 100%; animation: gold-flow 5s linear infinite; }
+.pf-avatar.fr-rainbow { background-image: linear-gradient(var(--surface), var(--surface)), linear-gradient(90deg, #ff4d4d, #ffe14d, #4dd964, #4da6ff, #a64dff, #ff4d4d);
+  background-size: 100% 100%, 300% 100%; animation: gold-flow 4s linear infinite; }
+.pf-avatar.fr-dash { border: 3px dashed var(--accent); animation: fr-turn 14s linear infinite; }
+.pf-avatar.fr-dash > * { animation: fr-turn 14s linear infinite reverse; }
+@keyframes fr-turn { to { transform: rotate(360deg); } }
+.pf-avatar.big.fr-dash { border-width: 4px; border-color: var(--accent); }
+
+/* ---- ticket styles ---- */
+.bet-slip-card.tk-neon { border: 1px solid #ff3fa4; box-shadow: 0 0 10px rgba(255, 63, 164, 0.55), inset 0 0 12px rgba(54, 214, 255, 0.18); }
+.bet-slip-card.tk-frost { background: linear-gradient(160deg, rgba(190, 230, 255, 0.28), rgba(190, 230, 255, 0.05)), var(--surface-2); border-color: #9fd6f5; backdrop-filter: blur(2px); }
+.bet-slip-card.tk-paper { background: #d9bf94; color: #2f2210; border: 2px dashed #8a6a3a; }
+.bet-slip-card.tk-paper .muted, .bet-slip-card.tk-paper .small { color: #5a4524; }
+.bet-slip-card.tk-casino { background: linear-gradient(160deg, #146b3a, #0c4326); border: 2px solid #ffd700; color: #f4ffe9; }
+.bet-slip-card.tk-casino .muted, .bet-slip-card.tk-casino .small { color: #bfe3c6; }
+.bet-slip-card.tk-ember { border-color: #ff7a00; box-shadow: 0 0 0 1px rgba(255, 122, 0, 0.5), inset 0 -18px 26px rgba(255, 90, 0, 0.18); }
+.bet-slip-card.tk-stripes { border-color: var(--border); box-shadow: inset 6px 0 0 #d6263a, inset 11px 0 0 var(--surface-2), inset 14px 0 0 #d6263a; padding-left: 22px; }
+.bet-slip-card.tk-holo { border: 2px solid transparent; padding: 9px 11px;
+  background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box, linear-gradient(110deg, #ff9ad5, #9ae7ff, #fff6a8, #b8ffb0, #c9a6ff, #ff9ad5) border-box;
+  background-size: 100% 100%, 300% 100%; animation: gold-flow 4s linear infinite; }
+
+/* ---- themes: Ember and Deep Sea (dark), Paper (light) ---- */
+:root[data-theme="ember"], [data-theme-preview="ember"] {
+  color-scheme: dark;
+  --bg: #120a07; --surface: #1d110c; --surface-2: #2a1810; --border: rgba(255, 140, 60, 0.16);
+  --text: #fff1e6; --text-2: #e3c3ac; --muted: #a08068; --grid: #34211a;
+  --accent: #ff7a1a; --accent-ink: #1a0a00; --accent-soft: rgba(255, 122, 26, 0.17); --good: #6ccf7a; --warn: #ffd23f; --bad: #ff5a4a; --up: #6ccf7a; --down: #ff6b5a;
+  --s1: #ff9a3c; --s2: #4aa8ff; --s3: #6ccf7a; --s4: #ffd23f; --s5: #ff7ab8; --s6: #a3f75c; --s7: #b58cff; --s8: #ff6b5a;
+  --spark: #6b3d24; --bar-track: #3a2217; --bar-fill: #ff9a3c; --shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  --axis: #5a3623; --div-pos: #ff9a3c; --div-neg: #4aa8ff; --div-mid: #3a2217; --aim-1: #ffd9bd; --aim-2: #ff7a1a; --aim-3: #a3400a; --pair-lo: #a3400a; --pair-hi: #ffd9bd;
+}
+:root[data-theme="ocean"], [data-theme-preview="ocean"] {
+  color-scheme: dark;
+  --bg: #04161b; --surface: #082229; --surface-2: #0d2f38; --border: rgba(110, 230, 235, 0.15);
+  --text: #e8fcfd; --text-2: #b0dde1; --muted: #6fa3aa; --grid: #123942;
+  --accent: #2dd4cf; --accent-ink: #00201f; --accent-soft: rgba(45, 212, 207, 0.16); --good: #4be3a0; --warn: #ffd23f; --bad: #ff6b6b; --up: #4be3a0; --down: #ff7b7b;
+  --s1: #2dd4cf; --s2: #ff9a5c; --s3: #7ae04a; --s4: #ffd23f; --s5: #ff7ab8; --s6: #5ca8ff; --s7: #b58cff; --s8: #ff7b7b;
+  --spark: #2a6b72; --bar-track: #12414a; --bar-fill: #4de0da; --shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  --axis: #1f5660; --div-pos: #2dd4cf; --div-neg: #ff7b7b; --div-mid: #12414a; --aim-1: #c4f7f5; --aim-2: #2dd4cf; --aim-3: #12706c; --pair-lo: #12706c; --pair-hi: #c4f7f5;
+}
+:root[data-theme="paper"], [data-theme-preview="paper"] {
+  color-scheme: light;
+  --bg: #f6f1e7; --surface: #fffdf8; --surface-2: #f0e9da; --border: rgba(60, 45, 20, 0.14);
+  --text: #231c10; --text-2: #4f4330; --muted: #8d806a; --grid: #e3dac6;
+  --accent: #3b3226; --accent-ink: #fffdf8; --accent-soft: rgba(59, 50, 38, 0.1); --good: #2f7d4f; --warn: #b9860b; --bad: #b3362b; --up: #2f7d4f; --down: #b3362b;
+  --s1: #2a78d6; --s2: #d95f2b; --s3: #1b9a6b; --s4: #b9860b; --s5: #a1327a; --s6: #4b8b1f; --s7: #6a4cc7; --s8: #c43d3d;
+  --spark: #cfc3a8; --bar-track: #e8dfcb; --bar-fill: #6b5d44; --shadow: 0 1px 2px rgba(60, 45, 20, 0.1);
+  --axis: #cfc3a8; --div-pos: #2a78d6; --div-neg: #c43d3d; --div-mid: #ece3d0; --aim-1: #3b3226; --aim-2: #8d7a55; --aim-3: #d9cdb0; --pair-lo: #d9cdb0; --pair-hi: #3b3226;
+}
+:root[data-theme="ember"] body { background: radial-gradient(900px 420px at 10% -10%, rgba(255, 122, 26, 0.16), transparent 70%), var(--bg); background-attachment: fixed; }
+:root[data-theme="ocean"] body { background: radial-gradient(900px 420px at 90% -10%, rgba(45, 212, 207, 0.16), transparent 70%), var(--bg); background-attachment: fixed; }
+
+/* ---- Onkey's Casino: card backs, chips, seats ---- */
+.pcard.back.cbk-spade { background: radial-gradient(circle, #e8e8ee 0 2px, transparent 3px) 0 0 / 10px 10px, #15151c; }
+.pcard.back.cbk-cherry { background: radial-gradient(circle at 30% 35%, #ff6b7a 0 3px, transparent 4px) 0 0 / 11px 11px, radial-gradient(circle at 70% 70%, #fff 0 1.5px, transparent 2px) 0 0 / 11px 11px, #a81428; }
+.pcard.back.cbk-carbon { background: repeating-linear-gradient(45deg, #1a1a1d 0 3px, #2c2c31 3px 6px), #1a1a1d; }
+.pcard.back.cbk-circuit { background: linear-gradient(90deg, transparent 0 40%, #19c37d 40% 44%, transparent 44%) 0 0 / 14px 14px, linear-gradient(transparent 0 60%, #19c37d 60% 63%, transparent 63%) 0 0 / 14px 14px, #07170f; }
+.pcard.back.cbk-sunset { background: linear-gradient(160deg, #ff9a3c, #e0476e 50%, #5a2bc4); }
+
+.chp-sakura { --chip-bg: radial-gradient(#fff 1.4px, transparent 2px) 0 0 / 9px 9px, #f27aa6; --chip-fg: #4a0f26; }
+.chp-ocean { --chip-bg: #0f7f86; --chip-fg: #e6ffff; }
+.chp-carbon { --chip-bg: repeating-linear-gradient(45deg, #1a1a1d 0 3px, #2e2e33 3px 6px); --chip-fg: #fff; }
+.chp-gold { --chip-bg: linear-gradient(135deg, #a87600, #ffd700 45%, #a87600); --chip-fg: #3a2a00; }
+.chp-lava { --chip-bg: linear-gradient(135deg, #ffb000, #ff5a1f 50%, #a31a00); --chip-fg: #fff; }
+.chp-galaxy { --chip-bg: radial-gradient(#fff 0.8px, transparent 1.4px) 0 0 / 8px 8px, linear-gradient(135deg, #5a2bc4, #2a4fd6 50%, #d63fa4); --chip-fg: #fff; }
+.chp-carbon.chip-stake, .chp-carbon.chip-dot, .chp-carbon.stake-key { border: 2px solid #ccc; }
+.chp-gold.chip-stake, .chp-gold.chip-dot, .chp-gold.stake-key { border: 2px solid #fff3c4; }
+
+.pk-seat.st-carbon .pk-plate, .bj-spot.st-carbon { background: repeating-linear-gradient(45deg, #1a1a1d 0 4px, #25252a 4px 8px); border: 1px solid #d8d8e0; }
+.pk-seat.st-ice .pk-plate, .bj-spot.st-ice { background: linear-gradient(#2a5f85, #173a55); border: 2px solid #bfe6ff; box-shadow: 0 0 12px rgba(143, 211, 255, 0.5); }
+.pk-seat.st-royal .pk-plate, .bj-spot.st-royal { background: linear-gradient(#18307a, #0b1a4a); border: 2px solid #cfd8ff; box-shadow: 0 0 10px rgba(130, 160, 255, 0.4); }
+.pk-seat.st-lava .pk-plate, .bj-spot.st-lava { background: linear-gradient(#5a1200, #240600); border: 2px solid #ff7a00; box-shadow: 0 0 14px rgba(255, 90, 0, 0.55), inset 0 -10px 14px rgba(255, 90, 0, 0.25); }
+
+/* ---- more pranks: Disco Ball, Haunted, Sleepy and Roast ---- */
+.bname.discoed { background: linear-gradient(90deg, #ff4d4d, #ffe14d, #4dd964, #4da6ff, #a64dff, #ff4d4d) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent; animation: rainbow-run 0.9s linear infinite; }
+.bname.haunted { display: inline-block; animation: haunt 3.2s ease-in-out infinite; }
+@keyframes haunt { 0%, 100% { opacity: 1; transform: translateY(0); } 45% { opacity: 0.35; transform: translateY(-2px); } 55% { opacity: 0.9; } 70% { opacity: 0.3; transform: translateY(1px); } }
+.bname.sleepy { filter: grayscale(0.85); opacity: 0.7; font-style: italic; }
+.bet-slip-card.scorched { position: relative; border-color: #ff7a00; box-shadow: 0 0 0 1px rgba(255, 122, 0, 0.5), inset 0 -14px 22px rgba(255, 90, 0, 0.2); }
+.bet-slip-card.scorched::after { content: "🔥"; position: absolute; top: -9px; right: -7px; font-size: 18px; }
+
+/* ---- the shop's toolbar, today's deals and the New / Sale marks ---- */
+.shop-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.shop-search { flex: 1 1 220px; min-width: 0; }
+.shop-search input { width: 100%; }
+.shop-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.shop-chip { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.shop-chip:hover { border-color: var(--accent); }
+.shop-chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.shop-chip:focus-visible, .shop-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.shop-none { padding: 18px; text-align: center; }
+.deal-card { border-color: #e0b100; background: linear-gradient(160deg, rgba(245, 197, 24, 0.14), transparent 55%), var(--surface); }
+.deal-card .section-head h2::before { content: "🏷️ "; }
+.shop-item.sale { border-color: #e0b100; }
+.shop-tag { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: 2px; }
+.shop-tag.new { background: var(--accent); color: var(--accent-ink); }
+.shop-tag.sale { background: #e0b100; color: #2a2000; }
+.shop-was { text-decoration: line-through; color: var(--muted); font-weight: 400; margin-right: 6px; font-size: 12px; }
+.shop-price.deal { color: #c99700; }
