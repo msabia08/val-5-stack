@@ -16,6 +16,9 @@ window.FiveShop = (() => {
   function init(ctx) {
     ({ state, $, $$, api, draw, esc, fmt, kpi, toast, confetti, onShop } = ctx);
     state.shopSlot ||= 'all';
+    state.shopQ ||= ''; // the toolbar: search text, filter (all / new / sale / unowned / owned / afford) and sort
+    state.shopFilter ||= 'all';
+    state.shopSort ||= 'default';
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#shop-modal')) closePreview(); });
   }
 
@@ -49,6 +52,12 @@ window.FiveShop = (() => {
   };
   const myShop = () => (state.shop && state.shop.me) || null;
   const owns = (id) => !!myShop() && myShop().owned.includes(id);
+  // Today's deals (server: bananas.deals): the sale price of an item, or null when it isn't on sale.
+  const saleOf = (item) => {
+    const d = state.shop && state.shop.deals;
+    return d && item.slot && d.items[item.id] != null ? d.items[item.id] : null;
+  };
+  const costOf = (item) => { const sale = saleOf(item); return sale != null ? sale : item.price; };
 
   // ---- names everywhere ---------------------------------------------------------------
   const lookOf = (name) => (state.looks || {})[String(name || '').toLowerCase()] || { worn: {} };
@@ -120,6 +129,7 @@ window.FiveShop = (() => {
       case 'badge': return `<span class="shop-emoji">${l.emoji}</span>`;
       case 'title': return `<span class="btitle big">${esc(l.text)}</span>`;
       case 'banner': return `<span class="shop-banner ${l.cls}"></span>`;
+      case 'frame': return `<span class="pf-avatar ${l.cls}"><span>🐒</span></span>`;
       case 'ticket': return `<span class="shop-ticket bet-slip-card ${l.cls}"><span class="bet-ticket-row small"><b>Win</b><span class="status won">won</span></span></span>`;
       case 'celebration': return `<span class="shop-emoji">${l.emoji ? l.emoji.join('') : l.colors.map((c) => `<i class="shop-dot" style="background:${c}"></i>`).join('')}</span>`;
       case 'theme': return `<span class="shop-theme" data-theme-preview="${l.theme}"><i></i><i></i><i></i></span>`;
@@ -136,7 +146,7 @@ window.FiveShop = (() => {
   function miniProfile(name, look) {
     const w = look.worn || {};
     return `<div class="pf-mini"><div class="pf-banner ${w.banner ? w.banner.cls : ''}"></div>
-      <div class="pf-mini-body"><span class="pf-avatar">${avatarOf(look)}</span>
+      <div class="pf-mini-body"><span class="pf-avatar ${w.frame ? w.frame.cls : ''}"><span>${avatarOf(look)}</span></span>
         <div class="pf-mini-name">${nameHtml(name, { look, title: true })}</div></div></div>`;
   }
 
@@ -185,12 +195,14 @@ window.FiveShop = (() => {
       kpi('Your bananas', bananas(me.wallet), 'ready to spend'),
       kpi('Earned this season', bananas(me.season_earned), `from ${me.season_games} game${me.season_games === 1 ? '' : 's'} played`),
       kpi('Spent in all', bananas(me.spent), 'on looks, pranks and the arcade'),
+      kpi('On sale today', dealCount(s), `${Math.round((s.deals ? s.deals.off : 0) * 100)}% off, ${dealsEnd(s)}`),
     ] : [];
     const signIn = me ? '' : '<div class="viz-note"><a href="#" data-signin>Sign in</a> to spend bananas. You can still preview everything.</div>';
     const f = state.shopSlot;
     const showSlot = (slot) => f === 'all' || f === slot.key || f === `g:${slot.group || 'looks'}`;
     const slotCard = (slot) => {
-      const items = s.catalog.filter((i) => i.slot === slot.key);
+      const items = shown(s.catalog.filter((i) => i.slot === slot.key), me);
+      if (!items.length) return '';
       const worn = me && me.worn[slot.key];
       return `<section class="card"><div class="section-head"><h2>${esc(slot.label)}</h2>` +
         `${worn ? `<button class="btn ghost small shop-unequip" data-slot="${slot.key}">Take off</button>` : ''}</div>
@@ -201,17 +213,20 @@ window.FiveShop = (() => {
       const slots = s.slots.filter((x) => (x.group || 'looks') === g.key && showSlot(x));
       const social = g.key === 'looks' && (f === 'all' || f === 'social' || f === 'g:looks');
       if (!slots.length && !social) continue;
-      if (g.key === 'casino') {
+      const cards = slots.map(slotCard).filter(Boolean);
+      if (g.key === 'casino' && cards.length) {
         sections.push(`<section class="card shop-group-head casino-head"><div class="shop-group-art" aria-hidden="true">🃏</div><div><h2>${esc(g.label)}</h2>
           ${how(esc(g.desc), '<p>Card backs, chips and your seat style show on your seat at the poker table and your spot at blackjack. Your Entrance is what Onkey announces when you sit down at a shared table, and your Table win bursts out of your seat when you win a pot or a blackjack hand. Your name colour, badge and title come with you to the tables too.</p><p>Like everything in the shop, these are bought with bananas and never change your credits or your chances.</p>')}</div></section>`);
       }
-      sections.push(...slots.map(slotCard));
-      if (social) {
+      sections.push(...cards);
+      const pranks = social ? shown(s.social, me) : [];
+      if (pranks.length) {
         sections.push(`<section class="card"><h2>Monkey business</h2>${how('Pranks for your friends. They wear off by themselves.',
           'Most last for the next 3 5-stack games (a week at most). A Wall Note stays on their profile for 3 days; a Nickname or Title Swap lasts 24 hours. Everyone can see who sent what.')}
-          <div class="shop-grid">${s.social.map((i) => itemCard(i, me)).join('')}</div></section>`);
+          <div class="shop-grid">${pranks.map((i) => itemCard(i, me)).join('')}</div></section>`);
       }
     }
+    const empty = !sections.length ? '<section class="card shop-none muted">Nothing in the shop matches that. Try clearing the search or the filter.</section>' : '';
     return `${tiles.length ? `<section class="kpis">${tiles.join('')}</section>` : ''}
       <section class="card shop-hero"><div class="shop-hero-art" aria-hidden="true"></div><div>
         <h2>Onkey's Shop</h2>
@@ -220,14 +235,58 @@ window.FiveShop = (() => {
           '<p>Spending bananas never changes your credits, your bets or the leaderboard. A season reset takes bananas back to zero with the credits, but everything you bought stays yours.</p>')}
         ${signIn}</div></section>
       ${collectionMap(s, me)}
-      ${sections.join('')}
+      ${dealsCard(s, me)}
+      ${toolbar(me)}
+      ${sections.join('')}${empty}
       ${me ? historyCard(me) : ''}`;
+  }
+
+  // ---- toolbar: search, filter, sort; and today's deals ----------------------------------------------------------
+  const FILTERS = [['all', 'Everything'], ['new', 'New'], ['sale', 'On sale'], ['unowned', 'Not owned'], ['owned', 'Owned'], ['afford', 'I can afford']];
+  const SORTS = [['default', 'Shop order'], ['low', 'Price: low to high'], ['high', 'Price: high to low'], ['name', 'Name A-Z'], ['new', 'New first']];
+  // The items that pass the search and filter, in the chosen order. (Pranks are never new, on sale or owned.)
+  function shown(items, me) {
+    const q = state.shopQ.trim().toLowerCase(), f = state.shopFilter;
+    let out = items.filter((i) => {
+      if (q && !`${i.name} ${i.desc}`.toLowerCase().includes(q)) return false;
+      if (f === 'new') return !!i.new;
+      if (f === 'sale') return saleOf(i) != null;
+      if (f === 'owned') return !!i.slot && owns(i.id);
+      if (f === 'unowned') return !(i.slot && owns(i.id)) && !i.earn;
+      if (f === 'afford') return !!me && !(i.slot && owns(i.id)) && !i.earn && me.wallet + 1e-9 >= costOf(i);
+      return true;
+    });
+    const by = { low: (a, b) => costOf(a) - costOf(b), high: (a, b) => costOf(b) - costOf(a), name: (a, b) => a.name.localeCompare(b.name),
+      new: (a, b) => (b.new ? 1 : 0) - (a.new ? 1 : 0) }[state.shopSort];
+    if (by) out = out.slice().sort(by); // a stable sort keeps the shop order inside ties
+    return out;
+  }
+  function toolbar(me) {
+    const chip = ([k, label]) => (k === 'afford' && !me ? '' : `<button type="button" class="shop-chip ${state.shopFilter === k ? 'on' : ''}" data-filter="${k}" aria-pressed="${state.shopFilter === k}">${label}</button>`);
+    return `<section class="card shop-tools"><label class="shop-search"><span class="sr-only">Search the shop</span>
+        <input id="shop-q" type="search" placeholder="Search the shop…" value="${esc(state.shopQ)}" autocomplete="off"></label>
+      <span class="shop-chips">${FILTERS.map(chip).join('')}</span>
+      <label class="shop-sortbox"><span class="sr-only">Sort by</span><select id="shop-sort" class="shop-sort">${SORTS.map(([k, label]) =>
+        `<option value="${k}" ${state.shopSort === k ? 'selected' : ''}>${label}</option>`).join('')}</select></label></section>`;
+  }
+  const dealCount = (s) => (s.deals ? Object.keys(s.deals.items).length : 0);
+  function dealsEnd(s) {
+    const left = s.deals ? Math.max(0, s.deals.ends_ts - Date.now() / 1000) : 0, h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60);
+    return h ? `${h}h ${m}m left` : `${m}m left`;
+  }
+  // Today's deals: a few items at a discount until midnight Pacific. Hidden while the shop is narrowed to a slot or searched.
+  function dealsCard(s, me) {
+    if (!s.deals || state.shopSlot !== 'all' || state.shopQ.trim()) return '';
+    const items = s.catalog.filter((i) => s.deals.items[i.id] != null);
+    if (!items.length) return '';
+    return `<section class="card deal-card"><div class="section-head"><h2>Today's deals</h2><span class="muted small">${Math.round(s.deals.off * 100)}% off, ${dealsEnd(s)}. Same for everyone; new ones at midnight Pacific.</span></div>
+      <div class="shop-grid">${items.map((i) => itemCard(i, me)).join('')}</div></section>`;
   }
 
   // The shop at a glance, and its filter: a ring of how much of the catalogue you own (click it for everything), then
   // one card per section with its icon, owned / total, a dot per item (filled = owned, ringed = worn) and its cheapest price.
   const SLOT_ICONS = { name_color: '🎨', badge: '🏅', title: '🏷️', banner: '🖼️', ticket: '🎟️', celebration: '🎉', theme: '🌓', social: '🙈',
-    card_back: '🂠', chips: '🪙', seat: '🪑', entrance: '📣', table_win: '💰' };
+    frame: '⭕', card_back: '🂠', chips: '🪙', seat: '🪑', entrance: '📣', table_win: '💰' };
   // The shop's groups (your looks, Onkey's Casino); an older server sends no groups, which means one.
   const groupsOf = (s) => s.groups || [{ key: 'looks', label: 'Your looks', desc: '' }];
   function collectionMap(s, me) {
@@ -267,7 +326,8 @@ window.FiveShop = (() => {
 
   function itemCard(item, me) {
     const social = !item.slot, have = !social && owns(item.id), worn = have && me.worn[item.slot] === item.id;
-    const afford = me && me.wallet + 1e-9 >= item.price;
+    const sale = social ? null : saleOf(item), cost = sale != null ? sale : item.price;
+    const afford = me && me.wallet + 1e-9 >= cost;
     let action;
     if (!me) action = `<button class="btn small shop-preview" data-item="${item.id}">Preview</button>`;
     else if (worn) action = `<button class="btn ghost small shop-unequip" data-slot="${item.slot}">Take off</button>`;
@@ -276,10 +336,12 @@ window.FiveShop = (() => {
     // An earned item (Onkey Stampede's achievements) is never sold: it says so instead of a price.
     const price = have ? `<span class="shop-owned">${worn ? 'Wearing' : 'Owned'}</span>`
       : item.earn ? '<span class="shop-earned">🏆 Earned, not sold</span>'
+      : sale != null ? `<span class="shop-price deal ${me && !afford ? 'short' : ''}"><span class="shop-was">${bn(item.price)}</span>${bn(sale)} ${BANANA}</span>`
       : `<span class="shop-price ${me && !afford ? 'short' : ''}">${bn(item.price)} ${BANANA}</span>`;
-    return `<div class="shop-item ${worn ? 'worn' : have ? 'owned' : ''}">
+    const tags = (item.new ? '<span class="shop-tag new">New</span>' : '') + (sale != null && !have ? `<span class="shop-tag sale">Sale</span>` : '');
+    return `<div class="shop-item ${worn ? 'worn' : have ? 'owned' : ''} ${sale != null && !have ? 'sale' : ''}">
       <button type="button" class="shop-sample shop-preview" data-item="${item.id}" aria-label="Preview ${esc(item.name)}">${sampleHtml(item)}</button>
-      <div class="shop-item-name">${esc(item.name)}</div>
+      <div class="shop-item-name">${esc(item.name)}${tags}</div>
       <div class="muted small shop-item-desc">${esc(item.desc)}</div>
       <div class="shop-item-foot">${price}${action}</div></div>`;
   }
@@ -368,14 +430,14 @@ window.FiveShop = (() => {
           <div><div class="preview-label">With ${esc(item.name)}</div>${miniProfile(who, after)}${sampleTicket(who, after)}</div></div>`;
       }
     }
-    const have = !social && owns(item.id), afford = me && me.wallet + 1e-9 >= item.price;
+    const have = !social && owns(item.id), cost = costOf(item), afford = me && me.wallet + 1e-9 >= cost;
     const buy = !me ? '<button type="button" class="btn" data-signin>Sign in to buy</button>'
       : have ? `<button class="btn modal-buy" disabled>You own this</button>`
       : item.earn ? '<button class="btn modal-buy" disabled>Earned, not sold</button>'
-      : `<button class="btn modal-buy" ${afford ? '' : 'disabled'}>${social ? 'Use' : 'Buy'} for ${bn(item.price)} ${BANANA}</button>`;
+      : `<button class="btn modal-buy" ${afford ? '' : 'disabled'}>${social ? 'Use' : 'Buy'} for ${bn(cost)} ${BANANA}${saleOf(item) != null ? ` <span class="shop-was">${bn(item.price)}</span>` : ''}</button>`;
     const wallet = item.earn && !have ? `<span class="muted small">🏆 ${esc(item.earn)}</span>`
-      : me ? `<span class="muted small">You have ${bn(me.wallet)} ${BANANA}${afford || have ? '' : ` · ${bn(item.price - me.wallet)} short`}</span>` : '';
-    return `<div class="modal-head"><div><h2 id="shop-modal-title">${esc(item.name)}</h2><div class="muted small">${esc(item.desc)}</div></div>
+      : me ? `<span class="muted small">You have ${bn(me.wallet)} ${BANANA}${afford || have ? '' : ` · ${bn(cost - me.wallet)} short`}</span>` : '';
+    return `<div class="modal-head"><div><h2 id="shop-modal-title">${esc(item.name)}${item.new ? '<span class="shop-tag new">New</span>' : ''}${saleOf(item) != null && !have ? '<span class="shop-tag sale">Sale</span>' : ''}</h2><div class="muted small">${esc(item.desc)}</div></div>
         <button class="btn ghost icon modal-close" aria-label="Close">✕</button></div>
       ${body}
       <div class="modal-foot">${wallet}<span class="right btn-row">${buy}<button class="btn ghost modal-close">Close</button></span></div>`;
@@ -496,7 +558,7 @@ window.FiveShop = (() => {
     const per = p.per_game ?? 5;
     return `${back}
       <section class="card pf-card"><div class="pf-banner big ${w.banner ? w.banner.cls : ''}"></div>
-        <div class="pf-head"><span class="pf-avatar big">${avatarOf(look)}</span>
+        <div class="pf-head"><span class="pf-avatar big ${w.frame ? w.frame.cls : ''}"><span>${avatarOf(look)}</span></span>
           <div class="pf-who"><h2>${nameHtml(p.name, { look, title: true })}</h2>
             <div class="muted small">${p.claimed ? 'Bettor' : 'Unclaimed account'}${p.created_at ? ` since ${fmt.date(p.created_at * 1000)}` : ''}${isMe ? ' · this is you, <a href="#shop">go shopping ›</a>' : ''}</div></div></div>
         <div class="ov-tiles pf-stats">
@@ -532,6 +594,13 @@ window.FiveShop = (() => {
   }
 
   function bind(view) {
+    const q = $('#shop-q', view);
+    if (q) {
+      q.addEventListener('input', () => { state.shopQ = q.value; state.shopCaret = q.selectionStart; draw(); });
+      if (state.shopCaret != null) { q.focus(); q.setSelectionRange(state.shopCaret, state.shopCaret); state.shopCaret = null; }
+    }
+    $$('.shop-chip', view).forEach((b) => b.addEventListener('click', () => { state.shopFilter = b.dataset.filter; draw(); }));
+    $('#shop-sort', view)?.addEventListener('change', (e) => { state.shopSort = e.target.value; draw(); });
     $$('.shop-slot', view).forEach((b) => b.addEventListener('click', () => { state.shopSlot = b.dataset.v; draw(); }));
     $$('.shop-preview', view).forEach((b) => b.addEventListener('click', () => openPreview(b.dataset.item)));
     $$('.shop-wear', view).forEach((b) => b.addEventListener('click', () => {

@@ -477,6 +477,13 @@ on a small felt (`.shop-felt`) on their cards, and their preview is a before / a
 it (`casinoSample()`: plate, face-down cards, a bet and a stake chip), Onkey announcing you (`entranceSample()`), or a
 Play button for a Table win.
 
+The shop page also has a toolbar card (`.shop-tools`: a search box, filter chips `.shop-chip` and a sort select; their state is
+`state.shopQ` / `shopFilter` / `shopSort`, and a search keeps its caret across the redraw), a gold "Today's deals" card
+(`.deal-card`, from `shop.deals`; hidden while a section is picked or a search is typed), and two marks on an item's name:
+`.shop-tag.new` (an item tagged `new` by `bananas._new()`) and `.shop-tag.sale`, with the old price struck through in
+`.shop-was`. Avatar frames are classes on `.pf-avatar` (`fr-*`): the avatar's emoji sits in a `<span>` so a turning frame
+can keep it upright.
+
 ### Blackjack and poker
 
 `#blackjack` and `#poker` live under Casino. Both are a `.casino-page`: a `.casino-bar` (the page's own controls, the
